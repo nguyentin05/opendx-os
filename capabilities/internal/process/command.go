@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opendx-os/opendx-os/capabilities/pkg/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
 var validTableNameRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*$`)

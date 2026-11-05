@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Command dxos-operator plans and applies application manifest configuration.
 package main
 
 import (
@@ -22,8 +23,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/opendx-os/opendx-os/operator/pkg/manifest"
-	"github.com/opendx-os/opendx-os/operator/pkg/planner"
+	"github.com/opendx-os/opendx-os/operator/internal/manifest"
+	"github.com/opendx-os/opendx-os/operator/internal/planner"
 )
 
 func main() {

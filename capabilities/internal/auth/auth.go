@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package auth extracts caller identity from HTTP request headers.
 package auth
 
 import (

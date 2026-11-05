@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package manifest defines and parses application manifests.
 package manifest
 
 // ColumnDef defines a column in a domain table.

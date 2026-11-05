@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package planner generates database DDL and Hasura metadata from application manifests.
 package planner
 
 import (
@@ -20,7 +21,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/opendx-os/opendx-os/operator/pkg/manifest"
+	"github.com/opendx-os/opendx-os/operator/internal/manifest"
 )
 
 // GenerateDDL generates the idempotent PostgreSQL DDL required for a DXApplication.
