@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 
+# Private local planning
+/docs/superpowers/
+
 # Build & release artifacts
 bin/
 dist/

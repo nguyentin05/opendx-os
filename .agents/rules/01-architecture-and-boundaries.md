@@ -16,8 +16,8 @@ Applies when designing, implementing, or reviewing architecture, modules, and ap
 
 | Owner | Scope |
 | --- | --- |
-| Member 1 — Platform & Control Plane | `platform/`, `operator/`, `gitops/`, `scripts/`, `Makefile`, `compose.yaml` |
-| Member 2 — Capabilities, App Shell & Apps | `capabilities/`, `workspace-ui/`, `apps/` |
+| Member 1 — DevOps contributor: Platform & Control Plane | `platform/`, the entire `operator/` (manifest validation, DDL/Hasura metadata generation, lifecycle/reconcile, and Operator tests), `gitops/`, `scripts/`, `Makefile`, `compose.yaml` |
+| Member 2 — Backend contributor (the user): Capabilities, App Shell & Apps | `capabilities/`, `workspace-ui/`, `apps/`; runtime APIs, business workflows, application fixtures, and capability/UI tests |
 | Both sides review together | Data/manifest contracts, API behavior, the acceptance matrix, changes that force the other side to edit |
 
 Ownership does not automatically prevent merge conflicts. When a contract changes, identify the producer/consumer, update them within the task scope, and record what needs coordination. Reviewing or editing documentation does not require creating a branch, issue, or contacting other people.
