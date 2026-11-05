@@ -1,4 +1,4 @@
-# Rule 04 — Licensing, source hygiene, and PoF evidence
+# Licensing and source hygiene
 
 Applies when creating/editing source files, distribution metadata, or preparing a release. Apache-2.0 is the license choice for the project's self-written code. "50/50" is the PoF goal; scoring requires the official rules, the applicable version, and corresponding evidence, and must not be inferred from the existence of a checklist.
 
@@ -17,8 +17,7 @@ Copyright for self-written code: `Copyright 2026 DX-OS Open-Core Contributors`. 
 ## Hygiene and artifacts
 
 - Text files use UTF-8 and LF. Do not change the line endings of binaries. Dependencies are restored from manifests/lockfiles; do not commit `node_modules/`, `vendor/`, or `.venv/`, and do not copy library code into the project source.
-- Before releasing, check `LICENSE`, `NOTICE`, `COPYRIGHT.txt`, README, CHANGELOG, CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, SBOM, installation instructions, and sample configuration. The content must match the actual dependencies/artifact; do not claim every license has been verified when it has not been checked.
-- When excluding internal documents from the archive, configure `.gitattributes` using the **actual paths** of the guidance package. Check the generated archive contents; do not assume `export-ignore` is enough if the packager does not use `git archive`.
-- The archive `dxos-open-core-X.Y.Z.tar.gz` extracts into the `dxos-open-core-X.Y.Z/` directory, with checksums. Test installing from that extracted archive into a target other than the source tree.
 
-During the design phase, record which artifacts/checks are expected and the criteria to verify. When no PoF rules are defined, report only the project rules that were checked; do not conclude that a competition score has been achieved. Detailed processes: [pof-compliance](../skills/pof-compliance/SKILL.md), [release-package](../workflows/release-package.md).
+Artifact contents, SBOM, archive exclusions, and installation evidence are defined
+in [releasing](releasing.md). When no official PoF rules are available, report
+only the project requirements actually checked; no checklist guarantees a score.

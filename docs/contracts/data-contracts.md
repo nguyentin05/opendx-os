@@ -1,6 +1,10 @@
 # Data contracts, permissions, and manifests
 
-Shared source of truth for Platform/Operator and Capabilities/UI/Apps. This is the design contract; migrations, JSON Schema/CRD, and the test suite will implement it during development. [Rule 02](../rules/02-data-contracts-and-permissions.md) holds the invariants, and [Rule 03](../rules/03-anti-patterns-and-security.md) holds the acceptance criteria.
+This document defines the intended data and manifest contract shared by the
+Operator, capabilities, UI, and application packages. The implementation is
+partial; existing Go types and sample YAML are not evidence that every requirement
+below is enforced. See [architecture and decision changes](../architecture/README.md#decisions-and-contract-changes)
+and [security acceptance criteria](security-and-acceptance.md).
 
 ## 1. Identity and same-workspace links
 
@@ -17,18 +21,40 @@ The field inventory below uses logical names. Entity IDs use UUID; audit IDs use
 | Table | Fields and specific constraints |
 | --- | --- |
 | `core.workspaces` | `id`, unique `code`, `name` |
-| `core.employees` | `id`, `workspace_id`, `full_name`, `email`, `department`, `skill_level`, `work_shift` |
-| `core.devices` | `id`, `workspace_id`, `device_code`, `name`, `location`, `status`, `last_reading` |
-| `core.ot_events` | `id`, `workspace_id`, `device_id`, `event_dedup_key`, `metric_name`, `metric_value`, `created_at`; unique `(workspace_id, device_id, event_dedup_key)` |
-| `core.work_items` | `id`, `workspace_id`, `title`, `description`, `priority`, `assigned_employee_id`, `source_device_id`, `created_at` |
+| `core.employees` | `id`, `workspace_id`, `full_name`, `email`, `department`, `created_at`; unique `(workspace_id, email)` |
+| `core.work_items` | `id`, `workspace_id`, `title`, `description`, `priority`, `assigned_employee_id`, `created_at` |
 | `core.file_objects` | `id`, `workspace_id`, `bucket`, `object_key`, `file_name`, `scan_status`, `sha256_hash`, `uploaded_by`, `scanned_at` |
 | `core.audit_logs` | `id`, `workspace_id`, `actor_id`, `action`, `entity_type`, `entity_id`, `entity_version`, `payload`, `prev_hash`, `row_hash`, `created_at` |
-| `core.export_batches` | Batch identity, workspace, Parquet location, row count, publication status, and reconciliation information |
-| `core.data_lineage` | Links a batch to the source `(workspace_id, entity_type, entity_id, entity_version)` |
+| `core.outbox_events` | Durable event identity, workspace, event type, payload, and dispatch status; producer transaction and retry-safe delivery |
 | `core.app_registry` | Published app configuration by `(workspace_id, app_id)`: display name, role/permissions, domain tables, UI schema, state machine, dependent capabilities, and deployment status |
 | `core.capability_registry` | Shared capability inventory: `cap_id`, `category_hpdi`, `base_route`, `enabled`; permission to use a capability is still evaluated per caller and app |
 
 The registry/audit/export tables are written by the control plane or the assigned service. User roles may read only the parts they are granted. `core.work_items` keeps the shared work identity; business state lives in each domain table.
+
+As established by [ADR 0002](../adr/0002-semantic-schema-governance-and-cross-app-data-sync.md),
+domain attributes such as `skill_level` and `work_shift` belong in application
+tables. Employee relationships expose only the domain tables authorized for the
+effective role; a shared employee does not grant cross-app traversal.
+
+### Optional capability storage
+
+[ADR 0003](../adr/0003-modular-capability-schema-separation-for-iot-data.md)
+separates the base kernel from capability SQL. The `core.*` namespace does not
+imply that every table is part of the base installation.
+
+| Module | Tables and logical fields |
+| --- | --- |
+| `cap-process` | `core.command_receipts` for durable command results; `core.processed_workflow_steps` for effect deduplication |
+| `cap-data` | `core.devices`: `id`, `workspace_id`, `device_code`, `name`, `location`, `status`, `last_reading` |
+| `cap-data` | `core.device_work_items`: same-workspace device/work-item association; the base work item has no `source_device_id` |
+| `cap-data` | `core.ot_events`: `id`, `workspace_id`, `device_id`, `event_dedup_key`, `metric_name`, `metric_value`, `created_at`; unique `(workspace_id, device_id, event_dedup_key)` |
+| `cap-data` | `core.export_batches`: batch identity, workspace, Parquet location, row count, publication status, reconciliation information |
+| `cap-data` | `core.data_lineage`: batch links to `(workspace_id, entity_type, entity_id, entity_version)` |
+
+These modules live in `platform/postgres/capabilities/` and are loaded by enabled
+capability configuration. Apps without a `cap-data` declaration receive no device
+or telemetry permissions or relationships. Removing access or disabling a module
+does not by itself authorize deleting its stored data.
 
 ## 3. Domain tables and initial state
 
@@ -56,6 +82,10 @@ Remove `status`, `version`, `workspace_id`, and server-managed actor/timestamp f
 
 Read permissions are declared per table, role, and column. For example, `role_maintenance` reads the employee columns needed for maintenance and the relationship to maintenance; `role_timesheet` reads the timesheet area and the relationship to timesheet. Grant a relationship only when the target table is also readable. Manager roles must have explicit grants per app; the name `role_manager` does not imply system-wide permissions.
 
+Hasura enforces permissions per table, operation, role, row, and column;
+PostgreSQL `GRANT` does not replace its metadata. Domain tables keep independent
+state and version even when they share an employee or work item.
+
 ## 5. Version, command, audit, and retry
 
 **Chosen mechanism:** a `BEFORE UPDATE` trigger on the domain table sets `NEW.version = OLD.version + 1` and `updated_at` for every successful UPDATE. The client and the Command API do not increment the version themselves; the Operator generates the trigger together with the table. A retry that has been recognized does not perform another UPDATE.
@@ -64,7 +94,7 @@ A command compares `id`, workspace, permissions, state, and `expected_version` i
 
 Example: the approver reads `version=1`; the requester edits `quoted_amount` through CRUD, making the record `version=2`; an approval command carrying `expected_version=1` must be rejected. When two commands with the same version run concurrently, at most one state transition succeeds.
 
-Each command carries an idempotency key. The lock scope includes workspace, actor, app, entity, and command; the server stores the payload fingerprint and result in the same transaction. Retrying the same key/payload returns the recorded result after checking current permissions, before re-evaluating the old version; the same key with a different payload returns `409`. The result-storage schema is settled during implementation, but it must not be kept only in memory.
+Each command carries an idempotency key. The lock scope includes workspace, actor, app, entity, and command; the server stores the payload fingerprint and result in the same transaction. Retrying the same key/payload returns the recorded result after checking current permissions, before re-evaluating the old version; the same key with a different payload returns `409`. The receipt schema and its consumers must implement this full scope; storing the result only in memory is insufficient.
 
 Write the change, audit, and durable event in the same transaction. Use Hasura Event Triggers or an equivalently durable outbox to deliver to Kestra; do not rely on an HTTP call to Kestra after commit as the sole delivery mechanism. The workflow deduplicates each effect by event identity and step; a retry after a crash does not create duplicate business effects.
 
@@ -78,11 +108,14 @@ OT validates the device/workspace, stores a unique event per the key in section 
 
 The full BI source key is `(workspace_id, entity_type, entity_id, entity_version)`. Export only records in the app-declared `terminalStates`, and read only successfully published batches. Re-exporting the same source version adds no contribution; choose the latest version by `(workspace_id, entity_type, entity_id)`. Two entity types with the same UUID remain two distinct sources. Two exports with the same version key but different content must be detected as a reconciliation error rather than arbitrarily choosing one.
 
-Lineage must preserve the full source record set behind each aggregate metric, not just one representative ID. The DDL-level representation of the registry, batch, receipt, and lineage must be settled before writing consumers that depend on them.
+Lineage must preserve the full source record set behind each aggregate metric, not just one representative ID. Check the registry, batch, receipt, and lineage DDL against these requirements before connecting consumers; the presence of a table alone does not prove compliance.
 
 ## 7. `DXApplication` manifest contract
 
-This is the shared logical shape; before implementing parsers and independent apps, settle a versioned schema, a validator, and at least one valid sample manifest. Do not guess two different serializations on the two sides.
+This is the intended logical shape. Before extending parsers or app packages,
+agree on a versioned serialization, validator, and sample that consumers all use.
+The existing parser and app examples are partial implementations; differences
+from this table must be resolved explicitly rather than guessed independently.
 
 | Field | Meaning and required data |
 | --- | --- |
@@ -99,3 +132,40 @@ This is the shared logical shape; before implementing parsers and independent ap
 | `spec.uiSchema` | `listColumns`, `formFields`, views/actions referencing declared fields and commands; creates no additional permissions |
 
 A workflow is registered only in a deployed workspace/app and runs under a least-privilege service identity. Event content does not grant permissions beyond the workspace. Table names, columns, relationships, and declared expressions must pass validator checks before DDL/metadata generation.
+
+### Implementation gaps
+
+The current Go types use `stateMachine.initialState` and `transitions`; the logical
+contract above also needs editable/terminal states and command validation.
+Attachment-column bindings, constraint/FK declarations, per-role access rules, and
+workflow field names need one serialization shared by the parser, sample apps,
+validators, services, and UI. Resolve compatibility and migrations for existing
+data/manifests when changing that serialization. An example without matching
+validation remains illustrative.
+
+## 8. Semantic concept ownership
+
+[ADR 0002](../adr/0002-semantic-schema-governance-and-cross-app-data-sync.md#3-three-scenario-governance-for-domain-attributes-tier-3)
+defines three cases: independent domain attributes, an explicitly shared concept
+identified by a `semanticType` URI, and conflicting declarations rejected during
+planning/reconcile. A shared concept has one authoritative Write Owner and
+Multi-Reader replicas; owner updates produce transactional outbox events for
+workflow fan-out. Matching column names alone never establishes shared meaning.
+
+Incompatible types or multiple Write Owners for the same concept must fail before
+configuration is published. The manifest serialization, ownership registry,
+replica delivery contract, and enforcing validator still need to be specified and
+implemented; the current parser does not define `semanticType` fields. This section
+records the accepted requirement without claiming that synchronization works.
+
+## 9. Capability interfaces
+
+| Capability | Intended interface |
+| --- | --- |
+| `cap-process` | `POST /api/cap/process/files/upload`, `POST /api/cap/process/commands/{app_id}/{command}` |
+| `cap-data` | `POST /api/cap/data/ot/events`, `POST /api/cap/data/lakehouse/export`, `GET /api/cap/data/lakehouse/analytics` |
+| `cap-ai` | `POST /api/cap/ai/extract`, `POST /api/cap/ai/rag` |
+
+Inspect actual handlers and agree on request/response schemas and service
+identity before connecting callers. This logical route inventory includes work
+still to implement; it is not an assertion that every endpoint is running.
