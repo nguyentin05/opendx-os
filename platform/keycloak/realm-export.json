@@ -1,0 +1,35 @@
+{
+  "realm": "dxos",
+  "enabled": true,
+  "displayName": "DX-OS Open-Core Realm",
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "roles": {
+    "realm": [
+      {
+        "name": "role_operator",
+        "description": "Platform and infrastructure operator role"
+      },
+      {
+        "name": "role_auditor",
+        "description": "System auditor role for cross-workspace compliance"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "dxos-portal",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*"
+      ],
+      "webOrigins": [
+        "*"
+      ]
+    }
+  ]
+}

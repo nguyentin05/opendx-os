@@ -1,0 +1,28 @@
+OpenDX-OS (DX-OS Open-Core)
+Copyright 2026 DX-OS Open-Core Contributors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+-------------------------------------------------------------------------------
+Purpose of this NOTICE file
+-------------------------------------------------------------------------------
+This NOTICE file is provided in accordance with Section 4(d) of the Apache
+License, Version 2.0. All original source code, SQL schemas, declarative
+application manifests, and documentation authored by the DX-OS Open-Core
+Contributors in this repository are made available under the Apache License,
+Version 2.0.
+
+No third-party source code is vendored or bundled into this repository. External
+open-source services and library dependencies referenced by the project retain
+their respective licenses as documented in COPYRIGHT.txt and the project SBOMs
+once dependency manifests are introduced.

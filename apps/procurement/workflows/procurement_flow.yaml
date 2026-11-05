@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+
+id: procurement_approval_flow
+namespace: dxos.apps.procurement
+description: Handles submitted procurement requests with idempotent approval inbox creation.
+
+inputs:
+  - id: event_id
+    type: STRING
+  - id: event_type
+    type: STRING
+  - id: workspace_id
+    type: STRING
+  - id: entity_id
+    type: STRING
+  - id: entity_version
+    type: INT
+
+tasks:
+  - id: log_procurement_transition
+    type: io.kestra.plugin.core.log.Log
+    message: "Procurement event {{ inputs.event_id }} for request {{ inputs.entity_id }} v{{ inputs.entity_version }} in workspace {{ inputs.workspace_id }}"

@@ -1,0 +1,42 @@
+{
+  "format_version": 2,
+  "kind": "dxos-agent-guidance-index",
+  "purpose": "Chỉ mục tài liệu chung; không phải cấu hình runtime hay hook runner.",
+  "path_conventions": {
+    "references": "Tính từ thư mục chứa AGENTS.md của bộ hướng dẫn.",
+    "implementation_paths": "Tính từ project triển khai do nhiệm vụ xác định; không suy ra từ vị trí gói hướng dẫn."
+  },
+  "entrypoint": "AGENTS.md",
+  "sources": {
+    "architecture_rules": ".agents/rules/01-architecture-and-boundaries.md",
+    "data_rules": ".agents/rules/02-data-contracts-and-permissions.md",
+    "security_and_acceptance": ".agents/rules/03-anti-patterns-and-security.md",
+    "license_and_release_rules": ".agents/rules/04-pof-50-compliance.md",
+    "architecture": ".agents/memory/architecture.md",
+    "data_contracts": ".agents/memory/data-contracts.md",
+    "anti_patterns": ".agents/memory/anti-patterns.md"
+  },
+  "skills": {
+    "go-operator": ".agents/skills/go-operator/SKILL.md",
+    "hpdi-capability": ".agents/skills/hpdi-capability/SKILL.md",
+    "dynamic-ui-shell": ".agents/skills/dynamic-ui-shell/SKILL.md",
+    "declarative-app": ".agents/skills/declarative-app/SKILL.md",
+    "pof-compliance": ".agents/skills/pof-compliance/SKILL.md"
+  },
+  "personas": {
+    "platform-engineer": ".agents/agents/platform-engineer.md",
+    "capability-engineer": ".agents/agents/capability-engineer.md",
+    "architect-guardian": ".agents/agents/architect-guardian.md",
+    "pof-auditor": ".agents/agents/pof-auditor.md"
+  },
+  "workflows": {
+    "develop-and-pr": ".agents/workflows/develop-and-pr.md",
+    "plug-new-app": ".agents/workflows/plug-new-app.md",
+    "release-package": ".agents/workflows/release-package.md"
+  },
+  "checklists": {
+    "pre-change": ".agents/hooks/pre-change.md",
+    "post-change": ".agents/hooks/post-change.md",
+    "pre-pr-gate": ".agents/hooks/pre-pr-gate.md"
+  }
+}

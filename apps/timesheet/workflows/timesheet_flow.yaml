@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+
+id: timesheet_review_flow
+namespace: dxos.apps.timesheet
+description: Processes timesheet approval and rejection events for labor analytics.
+
+inputs:
+  - id: event_id
+    type: STRING
+  - id: event_type
+    type: STRING
+  - id: workspace_id
+    type: STRING
+  - id: entity_id
+    type: STRING
+  - id: entity_version
+    type: INT
+
+tasks:
+  - id: log_timesheet_event
+    type: io.kestra.plugin.core.log.Log
+    message: "Timesheet event {{ inputs.event_id }} for entry {{ inputs.entity_id }} v{{ inputs.entity_version }} in workspace {{ inputs.workspace_id }}"

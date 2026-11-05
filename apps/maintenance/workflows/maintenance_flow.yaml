@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+
+id: maintenance_ot_and_lifecycle
+namespace: dxos.apps.maintenance
+description: Evaluates OT threshold events and coordinates maintenance lifecycle notifications.
+
+inputs:
+  - id: event_id
+    type: STRING
+  - id: event_type
+    type: STRING
+  - id: workspace_id
+    type: STRING
+  - id: entity_id
+    type: STRING
+  - id: entity_version
+    type: INT
+
+tasks:
+  - id: process_maintenance_event
+    type: io.kestra.plugin.core.log.Log
+    message: "Processing maintenance event {{ inputs.event_id }} ({{ inputs.event_type }}) for workspace {{ inputs.workspace_id }}"

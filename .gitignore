@@ -1,0 +1,34 @@
+# Local environment & secrets
+.env
+.env.*
+!.env.example
+
+# Build & release artifacts
+bin/
+dist/
+build/
+coverage/
+*.out
+*.test
+*.tar.gz
+SHA256SUMS
+
+# Third-party dependencies (never commit bundled dependencies)
+node_modules/
+vendor/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS & editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/

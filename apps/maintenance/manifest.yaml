@@ -1,0 +1,103 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+
+apiVersion: dxos.io/v1alpha1
+kind: DXApplication
+metadata:
+  name: maintenance
+  displayName: "Equipment Maintenance"
+  version: "0.1.0"
+spec:
+  role: role_maintenance
+  sharedAccess:
+    - table: core.employees
+      roles: [role_maintenance, role_manager_maintenance]
+      columns: [id, workspace_id, full_name, department]
+      relationships:
+        - name: maintenance_records
+          type: array
+          targetTable: domain.maintenance_records
+          mapping:
+            workspace_id: workspace_id
+            id: assigned_employee_id
+    - table: core.devices
+      roles: [role_maintenance, role_manager_maintenance]
+      columns: [id, workspace_id, device_code, name, location, status, last_reading]
+    - table: core.work_items
+      roles: [role_maintenance, role_manager_maintenance]
+      columns: [id, workspace_id, title, description, priority, assigned_employee_id, created_at]
+  domainTable:
+    name: domain.maintenance_records
+    columns:
+      - name: assigned_employee_id
+        type: uuid
+        nullable: false
+      - name: device_id
+        type: uuid
+        nullable: true
+      - name: issue_summary
+        type: text
+        nullable: false
+        check: "length(trim(issue_summary)) > 0"
+      - name: resolution_note
+        type: text
+        nullable: true
+    compositeForeignKeys:
+      - columns: [workspace_id, work_item_id]
+        referencesTable: core.work_items
+        referencesColumns: [workspace_id, id]
+      - columns: [workspace_id, assigned_employee_id]
+        referencesTable: core.employees
+        referencesColumns: [workspace_id, id]
+      - columns: [workspace_id, device_id]
+        referencesTable: core.devices
+        referencesColumns: [workspace_id, id]
+  domainAccess:
+    select:
+      - role: role_maintenance
+        columns: [id, workspace_id, work_item_id, assigned_employee_id, device_id, issue_summary, resolution_note, status, version, updated_at]
+      - role: role_manager_maintenance
+        columns: [id, workspace_id, work_item_id, assigned_employee_id, device_id, issue_summary, resolution_note, status, version, updated_at]
+    insert:
+      - role: role_maintenance
+        columns: [work_item_id, assigned_employee_id, device_id, issue_summary, resolution_note]
+    update:
+      - role: role_maintenance
+        columns: [issue_summary, resolution_note]
+  stateMachine:
+    initial: OPEN
+    editableStates: [OPEN, IN_PROGRESS]
+    terminalStates: [CLOSED, CANCELLED]
+    commands:
+      - name: submit
+        from: [OPEN]
+        to: IN_PROGRESS
+        allowedRoles: [role_maintenance]
+      - name: close
+        from: [IN_PROGRESS]
+        to: CLOSED
+        allowedRoles: [role_manager_maintenance]
+      - name: cancel
+        from: [OPEN, IN_PROGRESS]
+        to: CANCELLED
+        allowedRoles: [role_manager_maintenance]
+  attachments: []
+  workflows:
+    - id: maintenance_ot_and_lifecycle
+      file: workflows/maintenance_flow.yaml
+      subscribedEvents:
+        - ot.event.accepted
+        - command.committed
+  capabilities:
+    - cap-process
+    - cap-data
+    - cap-ai
+  uiSchema:
+    listColumns: [issue_summary, assigned_employee_id, device_id, status, version, updated_at]
+    formFields:
+      - { name: work_item_id, label: "Work Item", type: uuid, required: true }
+      - { name: assigned_employee_id, label: "Assigned Technician", type: uuid, required: true }
+      - { name: device_id, label: "Equipment / Device", type: uuid, required: false }
+      - { name: issue_summary, label: "Issue Summary", type: text, required: true }
+      - { name: resolution_note, label: "Resolution Note", type: text, required: false }
+    actions: [submit, close, cancel]

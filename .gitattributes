@@ -1,0 +1,37 @@
+# Enforce LF line endings for all text files
+* text=auto eol=lf
+
+# Explicitly declare text formats
+*.go text eol=lf
+*.py text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.sql text eol=lf
+*.sh text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.dot text eol=lf
+*.svg text eol=lf
+Makefile text eol=lf
+Dockerfile text eol=lf
+
+# Binary formats
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.tar.gz binary
+*.tgz binary
+
+# Exclude internal agent rules from git archive release tarballs
+.agents export-ignore
+.agents/** export-ignore
+AGENTS.md export-ignore
