@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Command cap-ai serves document extraction and policy retrieval endpoints.
 package main
 
 import (
@@ -23,8 +24,8 @@ import (
 	"os"
 
 	_ "github.com/lib/pq"
-	"github.com/opendx-os/opendx-os/capabilities/pkg/ai"
-	"github.com/opendx-os/opendx-os/capabilities/pkg/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/ai"
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
 type ExtractionRequest struct {

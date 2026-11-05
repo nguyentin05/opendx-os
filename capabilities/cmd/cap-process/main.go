@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Command cap-process serves work item state command endpoints.
 package main
 
 import (
@@ -23,8 +24,8 @@ import (
 	"os"
 
 	_ "github.com/lib/pq"
-	"github.com/opendx-os/opendx-os/capabilities/pkg/auth"
-	"github.com/opendx-os/opendx-os/capabilities/pkg/process"
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/process"
 )
 
 func main() {

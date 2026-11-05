@@ -19,7 +19,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opendx-os/opendx-os/operator/pkg/manifest"
+	"github.com/opendx-os/opendx-os/operator/internal/manifest"
 )
 
 func sampleApp() *manifest.DXApplication {

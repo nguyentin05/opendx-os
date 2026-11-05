@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Command cap-data serves OT ingestion, lakehouse export, and analytics endpoints.
 package main
 
 import (
@@ -23,7 +24,7 @@ import (
 	"os"
 
 	_ "github.com/lib/pq"
-	"github.com/opendx-os/opendx-os/capabilities/pkg/data"
+	"github.com/opendx-os/opendx-os/capabilities/internal/data"
 )
 
 func main() {

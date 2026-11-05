@@ -18,7 +18,7 @@ package planner
 import (
 	"strings"
 
-	"github.com/opendx-os/opendx-os/operator/pkg/manifest"
+	"github.com/opendx-os/opendx-os/operator/internal/manifest"
 )
 
 // HasuraMetadataPayload represents an operation for Hasura v1/metadata endpoint.

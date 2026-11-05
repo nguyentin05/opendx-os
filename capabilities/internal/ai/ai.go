@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package ai provides document extraction and policy retrieval capabilities.
 package ai
 
 import (

@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package process implements work item state commands and their request and response types.
 package process
 
 import "time"
