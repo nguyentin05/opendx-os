@@ -66,3 +66,8 @@ environment and Compose are not fully aligned.
 
 Original project code is licensed under [Apache-2.0](LICENSE). See [NOTICE](NOTICE)
 and [COPYRIGHT.txt](COPYRIGHT.txt) for attribution and dependency information.
+
+Backend C0 command/file demos and explicit acceptance prerequisites are documented
+in [backend handoff](docs/development/backend-handoff.md) and
+[demo scenarios](docs/demo/scenarios.md). UI A5 and live-service acceptance remain
+deferred; the current App Shell is not a connected C0 portal.
