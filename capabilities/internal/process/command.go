@@ -33,11 +33,12 @@ import (
 )
 
 type Engine struct {
-	db   *sql.DB
-	apps *registry.Store
+	db                       *sql.DB
+	apps                     *registry.Store
+	serviceUser, serviceRole string
 }
 
-func NewEngine(db *sql.DB, apps *registry.Store) *Engine { return &Engine{db, apps} }
+func NewEngine(db *sql.DB, apps *registry.Store) *Engine { return &Engine{db: db, apps: apps} }
 
 var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 var namePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)

@@ -33,7 +33,7 @@ CREATE TABLE core.outbox_events(id uuid PRIMARY KEY,workspace_id uuid,app_id tex
 CREATE TABLE core.audit_logs(workspace_id uuid,actor_id uuid,action text,entity_id uuid,entity_version bigint);
 CREATE TABLE core.file_objects(id uuid,workspace_id uuid,app_id text,scan_status text,PRIMARY KEY(workspace_id,id));
 CREATE TABLE core.work_items(id uuid,workspace_id uuid,title text,description text,priority text,assigned_employee_id uuid,PRIMARY KEY(workspace_id,id));
-CREATE TABLE core.processed_workflow_steps(event_id uuid,step_name text,workspace_id uuid,work_item_id uuid,result jsonb,outcome text,processed_at timestamptz DEFAULT now(),PRIMARY KEY(event_id,step_name));
+CREATE TABLE core.processed_workflow_steps(event_id uuid,step_name text,workspace_id uuid NOT NULL,work_item_id uuid NOT NULL,result jsonb NOT NULL,outcome text,processed_at timestamptz DEFAULT now(),PRIMARY KEY(event_id,step_name),FOREIGN KEY(workspace_id,event_id) REFERENCES core.outbox_events(workspace_id,id),FOREIGN KEY(workspace_id,work_item_id) REFERENCES core.work_items(workspace_id,id));
 `)
 	if e != nil {
 		t.Fatal(e)

@@ -145,3 +145,49 @@ func (w *envelopeWriter) Write(b []byte) (int, error) {
 	}
 	return w.ResponseWriter.Write(b)
 }
+
+// AuthenticatedEffectHandler admits only the configured workflow service principal.
+func (e *Engine) AuthenticatedEffectHandler(v auth.Verifier) http.Handler {
+	return auth.Middleware(v, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, err := auth.ExtractIdentity(r)
+		if err != nil {
+			WriteError(w, 401)
+			return
+		}
+		b, err := io.ReadAll(io.LimitReader(r.Body, 4097))
+		if err != nil || len(b) > 4096 {
+			WriteError(w, 400)
+			return
+		}
+		d := json.NewDecoder(bytes.NewReader(b))
+		if uniqueJSON(d) != nil {
+			WriteError(w, 400)
+			return
+		}
+		if _, err = d.Token(); err != io.EOF {
+			WriteError(w, 400)
+			return
+		}
+		var req struct {
+			EventID  string `json:"event_id"`
+			StepName string `json:"step_name"`
+		}
+		d = json.NewDecoder(bytes.NewReader(b))
+		d.DisallowUnknownFields()
+		if d.Decode(&req) != nil {
+			WriteError(w, 400)
+			return
+		}
+		result, err := e.ExecuteWorkItemEffect(r.Context(), id, req.EventID, req.StepName)
+		if err != nil {
+			status := 503
+			if errors.Is(err, ErrEffectDenied) {
+				status = 403
+			}
+			WriteError(w, status)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"work_item_id": result})
+	}))
+}

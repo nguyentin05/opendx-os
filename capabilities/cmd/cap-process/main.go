@@ -20,9 +20,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"github.com/opendx-os/opendx-os/capabilities/internal/events"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	_ "github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
@@ -31,6 +36,8 @@ import (
 )
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8081"
@@ -52,6 +59,33 @@ func main() {
 		log.Fatal(err)
 	}
 	engine := process.NewEngine(db, registry.NewStore(db))
+	if err := engine.ConfigureWorkflowService(os.Getenv("WORKFLOW_SERVICE_USER_ID"), os.Getenv("WORKFLOW_SERVICE_ROLE")); err != nil {
+		log.Fatal("valid WORKFLOW_SERVICE_USER_ID and WORKFLOW_SERVICE_ROLE are required")
+	}
+	endpoint := os.Getenv("KESTRA_URL")
+	if events.ValidateEndpoint(endpoint) != nil || os.Getenv("KESTRA_API_TOKEN") == "" {
+		log.Fatal("valid KESTRA_URL webhook endpoint and KESTRA_API_TOKEN are required")
+	}
+	client := &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+	publisher := events.NewPublisher(db, client, endpoint)
+	publisher.SetBearerToken(os.Getenv("KESTRA_API_TOKEN"))
+	workerDone := make(chan struct{})
+	go func() {
+		defer close(workerDone)
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := publisher.PublishPending(ctx, 50); err != nil && ctx.Err() == nil {
+					log.Print("outbox delivery cycle failed")
+				}
+			}
+		}
+	}()
+	defer func() { stop(); <-workerDone }()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -61,9 +95,17 @@ func main() {
 	})
 
 	mux.Handle("POST /api/cap/process/commands/{app_id}/{command}", engine.AuthenticatedHandler(verifier))
+	mux.Handle("POST /api/cap/process/effects/work-item", engine.AuthenticatedEffectHandler(verifier))
 
 	log.Printf("[cap-process] Listening on port %s", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
-		log.Fatalf("server exited: %v", err)
+	server := &http.Server{Addr: ":" + port, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	go func() {
+		<-ctx.Done()
+		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		server.Shutdown(shutdown)
+	}()
+	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Print("HTTP server stopped unexpectedly")
 	}
 }

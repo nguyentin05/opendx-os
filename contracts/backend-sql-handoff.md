@@ -77,3 +77,56 @@ file app scope and runtime DB privileges. Active publication occurs after all
 DDL/Hasura/workflow validation succeeds; failed attempt preserves the prior active
 snapshot. Real PostgreSQL concurrency, Hasura permission and crash/restart tests
 remain NOT_RUN until B's service/schema handoff. Fixture agreement is static only.
+
+## A3 implemented consumer requirements
+
+The backend publisher now consumes the proposed delivery column names above. It
+claims one event atomically using `FOR UPDATE SKIP LOCKED`, uses 60-second leases,
+20-second delivery timeouts, a maximum batch of 1000 and bounded exponential retry
+(2 to 1024 seconds). Token **and unexpired lease** gate both acknowledgement and
+rescheduling. Payloads above 1 MiB fail delivery; responses are drained up to
+64 KiB and oversized responses fail acknowledgement. Errors persisted/logged are
+generic and exclude endpoints, response bodies and credentials.
+
+Effects require `core.employees(workspace_id,id)` for configured assignment lookup
+and the existing work-item same-workspace employee FK. The work-item insert uses
+`id,workspace_id,title,description,priority,assigned_employee_id`; B must ensure
+other required columns have defaults. Successful receipts use outcome `success`.
+Production migrations remain B-owned; integration fixtures install receipt
+composite FKs but do not establish production migration readiness.
+
+`cap-process` requires explicit `WORKFLOW_SERVICE_USER_ID` (UUID) and
+`WORKFLOW_SERVICE_ROLE` (role identifier), in addition to existing signed OIDC
+identity verification. No role is implicitly trusted. The signed caller must match
+both, include the role in its signed grants, and match the persisted event's
+workspace. The active Ready app, enabled dependencies, subscribed event and
+literal effect command mapping are checked again before cached results.
+
+`KESTRA_URL` is the **complete webhook trigger URL**, including its configured
+namespace/flow/trigger/key path, not a base Kestra API URL. The publisher posts the
+persisted command event JSON directly and sets `Idempotency-Key: <event_id>` and
+`Authorization: Bearer <KESTRA_API_TOKEN>`. `KESTRA_API_TOKEN` is required at
+startup. Redirects are rejected. B4 must configure and verify that concrete webhook
+and authentication scheme against its actual Kestra deployment; no live Kestra
+compatibility is claimed by HTTP fixture evidence. Transport credentials and URLs
+must remain private backend configuration.
+
+A workflow HTTP task must invoke the effect API with a signed token for that
+configured principal, for example (Kestra syntax/version verification deferred B4):
+
+```yaml
+- id: create_review
+  type: io.kestra.plugin.core.http.Request
+  uri: "{{ secret('PROCESS_BASE_URL') }}/api/cap/process/effects/work-item"
+  method: POST
+  contentType: application/json
+  headers:
+    Authorization: "Bearer {{ secret('WORKFLOW_SERVICE_ACCESS_TOKEN') }}"
+  body: |
+    {"event_id":"{{ trigger.body.event_id }}","step_name":"create_review"}
+```
+
+The service access token must carry the event workspace and configured role. The
+HTTP request owns no app/entity/title/assignment fields. The app's deployed effect
+mapping owns those literal fields. Token issuance/refresh and real workflow YAML
+publication are B4/A6 handoffs; a static example token is not authentication.
