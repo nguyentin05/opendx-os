@@ -16,170 +16,182 @@
 package process
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
 	"regexp"
 	"strings"
 	"time"
-
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
-var validTableNameRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*$`)
-
-// Engine executes state transitions and command reconciliation.
 type Engine struct {
-	db *sql.DB
+	db   *sql.DB
+	apps *registry.Store
 }
 
-// NewEngine creates a new process command engine.
-func NewEngine(db *sql.DB) *Engine {
-	return &Engine{db: db}
-}
+func NewEngine(db *sql.DB, apps *registry.Store) *Engine { return &Engine{db, apps} }
 
-// Custom errors
-var (
-	ErrNotFound            = errors.New("record not found in workspace")
-	ErrVersionConflict     = errors.New("version conflict: record has been modified")
-	ErrQuarantinedFile     = errors.New("file is quarantined or infected (scan_status != 'CLEAN')")
-	ErrInvalidTargetTable  = errors.New("invalid target table name format")
-	ErrUnauthorizedRole    = errors.New("unauthorized role for this command")
-)
+var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+var namePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+var errCommand = errors.New("command rejected")
 
-// Execute handles state mutation with strict idempotency, quarantine, and version checking.
-func (e *Engine) Execute(ctx context.Context, iden *auth.Identity, req *CommandRequest) (*CommandResponse, int, error) {
-	if !validTableNameRegex.MatchString(req.TargetTable) {
-		return nil, 400, ErrInvalidTargetTable
+func (e *Engine) Execute(ctx context.Context, id *auth.Identity, app, command, key string, req *CommandRequest) (*CommandResponse, int, error) {
+	fail := func(status int) (*CommandResponse, int, error) { return nil, status, errCommand }
+	if id == nil || !uuidPattern.MatchString(id.UserID) || !uuidPattern.MatchString(id.WorkspaceID) {
+		return fail(401)
 	}
-
-	// 1. Check idempotency receipt
-	var cachedResp string
-	err := e.db.QueryRowContext(ctx,
-		`SELECT response_payload::text FROM core.command_receipts WHERE workspace_id = $1 AND command_id = $2`,
-		iden.WorkspaceID, req.CommandID,
-	).Scan(&cachedResp)
-
-	if err == nil {
-		var resp CommandResponse
-		if jsonErr := json.Unmarshal([]byte(cachedResp), &resp); jsonErr == nil {
-			resp.IdempotentRe = true
-			return &resp, 200, nil
-		}
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return nil, 500, fmt.Errorf("failed to check idempotency receipt: %w", err)
+	if !contains(id.AllowedRoles, id.Role) {
+		return fail(403)
 	}
-
-	// 2. Quarantine check on attachments
-	if req.AttachmentID != "" {
-		var scanStatus string
-		err := e.db.QueryRowContext(ctx,
-			`SELECT scan_status FROM core.file_objects WHERE workspace_id = $1 AND id = $2`,
-			iden.WorkspaceID, req.AttachmentID,
-		).Scan(&scanStatus)
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, 404, errors.New("attached file object not found in workspace")
-		} else if err != nil {
-			return nil, 500, fmt.Errorf("failed to check file scan status: %w", err)
-		}
-
-		if scanStatus != "CLEAN" {
-			return nil, 422, ErrQuarantinedFile
-		}
+	if req == nil || !uuidPattern.MatchString(req.EntityID) || req.ExpectedVersion < 1 || req.Payload == nil || len(req.Payload) != 0 || !namePattern.MatchString(app) || !namePattern.MatchString(command) || strings.TrimSpace(key) == "" || len(key) > 1024 {
+		return fail(400)
 	}
-
-	// 3. Begin database transaction
-	tx, err := e.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	request := *req
+	request.EntityID = strings.ToLower(req.EntityID)
+	b, _ := json.Marshal(request)
+	hash := sha256.Sum256(b)
+	fingerprint := hex.EncodeToString(hash[:])
+	a, err := e.apps.Load(ctx, id.WorkspaceID, app)
 	if err != nil {
-		return nil, 500, fmt.Errorf("failed to begin transaction: %w", err)
+		return fail(503)
+	}
+	var cmd *registry.Command
+	for i := range a.ManifestSpec.StateMachine.Commands {
+		if a.ManifestSpec.StateMachine.Commands[i].Name == command {
+			cmd = &a.ManifestSpec.StateMachine.Commands[i]
+		}
+	}
+	if cmd == nil || !contains(cmd.AllowedRoles, id.Role) {
+		return fail(403)
+	}
+	tx, err := e.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fail(503)
 	}
 	defer tx.Rollback()
-
-	// 4. Lock and load target domain record
-	var currentStatus string
-	var currentVersion int
-	query := fmt.Sprintf(
-		`SELECT status, version FROM %s WHERE workspace_id = $1 AND id = $2 FOR UPDATE`,
-		req.TargetTable,
-	)
-	err = tx.QueryRowContext(ctx, query, iden.WorkspaceID, req.TargetID).Scan(&currentStatus, &currentVersion)
+	scope, _ := json.Marshal([]string{id.WorkspaceID, id.UserID, app, request.EntityID, command, key})
+	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, string(scope)); err != nil {
+		return fail(503)
+	}
+	// Lock before checking current row filters and cache. Cached retries bypass only stale version/state.
+	var raw []byte
+	err = tx.QueryRowContext(ctx, `SELECT to_jsonb(d) FROM `+a.DomainTable+` d WHERE workspace_id=$1 AND id=$2 FOR UPDATE`, id.WorkspaceID, request.EntityID).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, 404, ErrNotFound
-	} else if err != nil {
-		return nil, 500, fmt.Errorf("failed to query target record: %w", err)
+		return fail(404)
 	}
-
-	// 5. Version check (Optimistic concurrency control)
-	if currentVersion != req.ExpectedVersion {
-		return nil, 409, fmt.Errorf("%w: expected %d, got %d", ErrVersionConflict, req.ExpectedVersion, currentVersion)
-	}
-
-	// 6. Update target domain record status (trigger will increment version)
-	updateQuery := fmt.Sprintf(
-		`UPDATE %s SET status = $1 WHERE workspace_id = $2 AND id = $3 RETURNING version`,
-		req.TargetTable,
-	)
-	var newVersion int
-	err = tx.QueryRowContext(ctx, updateQuery, req.TargetStatus, iden.WorkspaceID, req.TargetID).Scan(&newVersion)
 	if err != nil {
-		return nil, 500, fmt.Errorf("failed to update record: %w", err)
+		return fail(503)
 	}
-
-	// 7. Serialize workspace audit lock to maintain SHA-256 hash-chain integrity
-	_, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1::text))`, iden.WorkspaceID)
+	var row map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if decoder.Decode(&row) != nil {
+		return fail(503)
+	}
+	columnTypes := map[string]string{"id": "uuid", "workspace_id": "uuid", "work_item_id": "uuid", "version": "bigint", "status": "text", "updated_at": "timestamptz"}
+	for _, c := range a.ManifestSpec.DomainTable.Columns {
+		columnTypes[c.Name] = c.Type
+	}
+	readable := false
+	for _, p := range a.ManifestSpec.DomainAccess.Select {
+		if p.Role == id.Role {
+			ok, er := matches(p.RecordFilter, row, id, columnTypes)
+			if er != nil {
+				return fail(503)
+			}
+			readable = readable || ok
+		}
+	}
+	if !readable {
+		return fail(404)
+	}
+	ok, err := matches(cmd.RecordFilter, row, id, columnTypes)
 	if err != nil {
-		return nil, 500, fmt.Errorf("failed to acquire audit lock: %w", err)
+		return fail(503)
 	}
-
-	// 8. Insert into core.audit_logs
-	payloadJSON, _ := json.Marshal(req)
-	_, err = tx.ExecContext(ctx,
-		`INSERT INTO core.audit_logs (workspace_id, actor_id, action, entity_type, entity_id, entity_version, payload)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
-		iden.WorkspaceID, iden.UserID, req.Action, req.TargetTable, req.TargetID, newVersion, payloadJSON,
-	)
+	if !ok {
+		return fail(403)
+	}
+	var oldHash string
+	var body []byte
+	var status int
+	err = tx.QueryRowContext(ctx, `SELECT payload_hash,response_status,response_body FROM core.command_receipts WHERE workspace_id=$1 AND actor_id=$2 AND app_id=$3 AND entity_id=$4 AND command=$5 AND idempotency_key=$6`, id.WorkspaceID, id.UserID, app, request.EntityID, command, key).Scan(&oldHash, &status, &body)
+	if err == nil {
+		if oldHash != fingerprint {
+			return fail(409)
+		}
+		var resp CommandResponse
+		if json.Unmarshal(body, &resp) != nil {
+			return fail(503)
+		}
+		return &resp, status, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return fail(503)
+	}
+	var current struct {
+		Status  string `json:"status"`
+		Version int64  `json:"version"`
+	}
+	if json.Unmarshal(raw, &current) != nil {
+		return fail(503)
+	}
+	if current.Version != req.ExpectedVersion || !contains(cmd.From, current.Status) {
+		return fail(409)
+	}
+	for _, att := range a.ManifestSpec.Attachments {
+		if !contains(att.RequireCleanOnCommands, command) {
+			continue
+		}
+		file, ok := row[att.Column].(string)
+		if !ok {
+			return fail(422)
+		}
+		var scan string
+		err = tx.QueryRowContext(ctx, `SELECT scan_status FROM core.file_objects WHERE workspace_id=$1 AND app_id=$2 AND id=$3 FOR SHARE`, id.WorkspaceID, app, file).Scan(&scan)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fail(404)
+		}
+		if err != nil {
+			return fail(503)
+		}
+		if scan != "CLEAN" {
+			return fail(422)
+		}
+	}
+	if _, err = tx.ExecContext(ctx, `SELECT set_config('dxos.actor_id',$1,true),set_config('dxos.action',$2,true)`, id.UserID, command); err != nil {
+		return fail(503)
+	}
+	resp := &CommandResponse{EntityID: request.EntityID, Status: cmd.To, ExecutedAt: time.Now().UTC()}
+	err = tx.QueryRowContext(ctx, `UPDATE `+a.DomainTable+` SET status=$1 WHERE workspace_id=$2 AND id=$3 RETURNING version`, cmd.To, id.WorkspaceID, request.EntityID).Scan(&resp.Version)
 	if err != nil {
-		return nil, 500, fmt.Errorf("failed to write audit log: %w", err)
+		return fail(503)
 	}
-
-	// 9. Insert durable outbox event for async workflows
-	eventType := fmt.Sprintf("%s.%s", strings.TrimPrefix(req.TargetTable, "domain."), strings.ToLower(req.Action))
-	_, err = tx.ExecContext(ctx,
-		`INSERT INTO core.outbox_events (workspace_id, event_type, aggregate_type, aggregate_id, aggregate_version, payload)
-		 VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
-		iden.WorkspaceID, eventType, req.TargetTable, req.TargetID, newVersion, payloadJSON,
-	)
-	if err != nil {
-		return nil, 500, fmt.Errorf("failed to emit outbox event: %w", err)
+	var random [16]byte
+	if _, err = rand.Read(random[:]); err != nil {
+		return fail(503)
 	}
-
-	resp := CommandResponse{
-		CommandID:    req.CommandID,
-		TargetID:     req.TargetID,
-		Status:       req.TargetStatus,
-		Version:      newVersion,
-		ExecutedAt:   time.Now().UTC(),
-		IdempotentRe: false,
+	random[6] = random[6]&15 | 64
+	random[8] = random[8]&63 | 128
+	eventID := fmt.Sprintf("%x-%x-%x-%x-%x", random[:4], random[4:6], random[6:8], random[8:10], random[10:])
+	event, _ := json.Marshal(map[string]any{"event_id": eventID, "event_type": "command.committed", "workspace_id": id.WorkspaceID, "app_id": app, "entity_type": a.DomainTable, "entity_id": request.EntityID, "entity_version": resp.Version, "payload": map[string]any{"command": command, "actor_id": id.UserID, "from_status": current.Status, "to_status": cmd.To, "executed_at": resp.ExecutedAt}})
+	if _, err = tx.ExecContext(ctx, `INSERT INTO core.outbox_events(id,workspace_id,app_id,event_type,entity_type,entity_id,entity_version,payload) VALUES($1,$2,$3,'command.committed',$4,$5,$6,$7::jsonb)`, eventID, id.WorkspaceID, app, a.DomainTable, request.EntityID, resp.Version, string(event)); err != nil {
+		return fail(503)
 	}
-
-	respBytes, _ := json.Marshal(resp)
-
-	// 10. Record command receipt
-	_, err = tx.ExecContext(ctx,
-		`INSERT INTO core.command_receipts (workspace_id, command_id, target_table, target_id, action, status, version, response_payload)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
-		iden.WorkspaceID, req.CommandID, req.TargetTable, req.TargetID, req.Action, req.TargetStatus, newVersion, respBytes,
-	)
-	if err != nil {
-		return nil, 500, fmt.Errorf("failed to record command receipt: %w", err)
+	body, _ = json.Marshal(resp)
+	if _, err = tx.ExecContext(ctx, `INSERT INTO core.command_receipts(workspace_id,actor_id,app_id,entity_id,command,idempotency_key,payload_hash,response_status,response_body) VALUES($1,$2,$3,$4,$5,$6,$7,200,$8::jsonb)`, id.WorkspaceID, id.UserID, app, request.EntityID, command, key, fingerprint, string(body)); err != nil {
+		return fail(503)
 	}
-
-	if err = tx.Commit(); err != nil {
-		return nil, 500, fmt.Errorf("failed to commit transaction: %w", err)
+	if tx.Commit() != nil {
+		return fail(503)
 	}
-
-	return &resp, 200, nil
+	return resp, 200, nil
 }

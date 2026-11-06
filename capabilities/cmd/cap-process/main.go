@@ -17,6 +17,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"log"
@@ -26,6 +27,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/process"
+	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
 )
 
 func main() {
@@ -36,7 +38,7 @@ func main() {
 
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://dxos_app:dxos_secret@localhost:5432/dxos_db?sslmode=disable"
+		log.Fatal("DATABASE_URL is required")
 	}
 
 	db, err := sql.Open("postgres", dsn)
@@ -45,7 +47,11 @@ func main() {
 	}
 	defer db.Close()
 
-	engine := process.NewEngine(db)
+	verifier, err := auth.NewVerifier(context.Background(), auth.VerifierConfig{IssuerURL: os.Getenv("OIDC_ISSUER_URL"), JWKSURL: os.Getenv("OIDC_JWKS_URL"), Audience: os.Getenv("OIDC_AUDIENCE")})
+	if err != nil {
+		log.Fatal(err)
+	}
+	engine := process.NewEngine(db, registry.NewStore(db))
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -54,31 +60,7 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "service": "cap-process"})
 	})
 
-	mux.HandleFunc("POST /api/cap/process/commands/{app_id}/{action}", func(w http.ResponseWriter, r *http.Request) {
-		iden, err := auth.ExtractIdentity(r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-			return
-		}
-
-		var req process.CommandRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid request body", http.StatusBadRequest)
-			return
-		}
-
-		resp, status, err := engine.Execute(r.Context(), iden, &req)
-		if err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(status)
-			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		json.NewEncoder(w).Encode(resp)
-	})
+	mux.Handle("POST /api/cap/process/commands/{app_id}/{command}", engine.AuthenticatedHandler(verifier))
 
 	log.Printf("[cap-process] Listening on port %s", port)
 	if err := http.ListenAndServe(":"+port, mux); err != nil {
