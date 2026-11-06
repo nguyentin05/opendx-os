@@ -13,65 +13,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package auth extracts caller identity from HTTP request headers.
+// Package auth verifies caller identity before exposing runtime context.
 package auth
 
 import (
 	"errors"
 	"net/http"
-	"strings"
 )
 
-// Identity represents the authenticated caller context.
 type Identity struct {
-	UserID      string `json:"user_id"`
-	WorkspaceID string `json:"workspace_id"`
-	Role        string `json:"role"`
+	UserID       string   `json:"user_id"`
+	WorkspaceID  string   `json:"workspace_id"`
+	Role         string   `json:"role"`
+	AllowedRoles []string `json:"allowed_roles"`
 }
+type identityKey struct{}
 
-// ExtractIdentity extracts caller identity from request headers.
-// Supports standard DX-OS headers and Hasura forwarding headers.
 func ExtractIdentity(r *http.Request) (*Identity, error) {
-	workspaceID := r.Header.Get("X-Hasura-Workspace-Id")
-	if workspaceID == "" {
-		workspaceID = r.Header.Get("X-Workspace-Id")
+	id, ok := r.Context().Value(identityKey{}).(*Identity)
+	if !ok || id == nil {
+		return nil, errors.New("verified identity required")
 	}
-
-	role := r.Header.Get("X-Hasura-Role")
-	if role == "" {
-		role = r.Header.Get("X-Role")
-	}
-
-	userID := r.Header.Get("X-Hasura-User-Id")
-	if userID == "" {
-		userID = r.Header.Get("X-User-Id")
-	}
-
-	// Also support Authorization: Bearer <token> fallback
-	authHeader := r.Header.Get("Authorization")
-	if (userID == "" || role == "") && strings.HasPrefix(authHeader, "Bearer ") {
-		// In test and mock mode, token format can be "mock:<role>:<user_id>:<workspace_id>"
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		parts := strings.Split(token, ":")
-		if len(parts) == 4 && parts[0] == "mock" {
-			role = parts[1]
-			userID = parts[2]
-			if workspaceID == "" {
-				workspaceID = parts[3]
-			}
-		}
-	}
-
-	if workspaceID == "" {
-		return nil, errors.New("workspace ID is required (missing X-Hasura-Workspace-Id or X-Workspace-Id)")
-	}
-	if role == "" {
-		role = "anonymous"
-	}
-
-	return &Identity{
-		UserID:      userID,
-		WorkspaceID: workspaceID,
-		Role:        role,
-	}, nil
+	copy := *id
+	copy.AllowedRoles = append([]string(nil), id.AllowedRoles...)
+	return &copy, nil
 }
