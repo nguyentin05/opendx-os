@@ -130,3 +130,88 @@ The service access token must carry the event workspace and configured role. The
 HTTP request owns no app/entity/title/assignment fields. The app's deployed effect
 mapping owns those literal fields. Token issuance/refresh and real workflow YAML
 publication are B4/A6 handoffs; a static example token is not authentication.
+
+## A4 implemented immutable file consumer
+
+A4 now requires these exact `core.file_objects` columns: existing `id UUID`,
+`workspace_id UUID`, `bucket TEXT`, `object_key TEXT`, `file_name TEXT`,
+`sha256_hash TEXT`, `uploaded_by UUID`, `scan_status TEXT`, `scanned_at TIMESTAMPTZ`,
+`created_at TIMESTAMPTZ`; plus proposed `app_id TEXT NOT NULL`,
+`mime_type TEXT NOT NULL CHECK IN ('application/pdf','image/png','image/jpeg')`,
+`size_bytes BIGINT NOT NULL CHECK (size_bytes BETWEEN 1 AND 20971520)`.
+Retain unique `(bucket,object_key)`, same-workspace uploader FK and attachment FK.
+Add `scan_attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (scan_attempt_count>=0)`
+and `scan_next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now()`. A partial index on
+`(bucket,scan_next_attempt_at,created_at,id)` where scan_status='QUARANTINED' supports
+fair due selection and retries.
+Production migrations, retention/backfill, grants and immutable-column triggers
+remain B-owned and **PROPOSED / NOT_RUN**. B must deny ordinary file metadata
+writes and scan-state updates; only the private trusted scanner connection may
+change scan_status/scanned_at and retry scheduling fields, with all identity/content
+metadata immutable.
+The current service uses its private DB connection for upload and scanning; B must
+agree the corresponding least-privilege deployment role rather than exposing it
+to Hasura/user SQL. No HTTP endpoint changes content, scan state or existing IDs.
+
+Upload authorizes the signed workspace, selected Ready app, enabled dependencies
+and a current deployed domain grant for the signed selected role. Each upload
+creates a fresh UUID/key `<workspace>/<app>/<UUID>`, stores only sniffed PDF/PNG/JPEG
+bytes at most 20 MiB, and hashes the exact bounded content. Client extension and
+MIME never grant authority. The success body always returns QUARANTINED, even if a
+worker races after insertion. SQL insertion failure can leave an unreachable
+orphan object; B should define retention/garbage collection rather than reusing it.
+The storage gateway/bucket and credentials remain private. No filesystem fallback
+is implemented. Storage retention/credentials must prevent external content
+mutation. Downloads additionally verify the whole bounded object's SHA-256 before
+releasing any bytes, so post-scan replacement cannot release altered content.
+
+Download first authorizes workspace/app and either uploader ownership with a
+current app grant, or a declared attachment column included in a matching current
+SELECT grant whose recordFilter matches the attached row. Status is queried only
+after authorization. Only CLEAN bytes download; QUARANTINED/INFECTED return 422
+for authorized users, while unauthorized requests return the same generic 403.
+A2 retains its locked same-workspace/app CLEAN attachment command checks.
+The shared strict filter evaluator preserves SQL null, typed UUID and lossless
+numeric comparison semantics across commands and file access.
+
+The scanner retries QUARANTINED rows, reads verified immutable bytes and sends
+those same bytes through ClamAV INSTREAM. Scanner errors/timeouts, malformed
+responses and hash mismatch remain unclean. A result updates status only with
+matching ID/bucket/key/hash and the complete immutable metadata snapshot (excluding
+scan status/time and retry scheduling), while the row remains QUARANTINED. A short
+atomic `FOR UPDATE SKIP LOCKED` claim orders due rows by next-attempt time, creation
+time and ID; before network I/O it increments attempts and schedules bounded
+exponential retry at 2, 4, 8, ... 256 seconds. Failed/hash-mismatched objects stay
+unclean and move behind other due uploads, so a permanently failing prefix cannot
+starve later uploads. Cancellation or process crash leaves the persisted deadline
+reclaimable when due. No scan claim holds a database transaction open during network
+I/O; concurrent workers may duplicate slow scans after the retry deadline, with
+only a still-matching quarantined row eligible for an update.
+
+Private startup configuration now additionally requires `S3_REGION`,
+`S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, alongside `S3_ENDPOINT` (HTTP(S) root
+endpoint), `S3_BUCKET` (existing private bucket), and `CLAMAV_ADDRESS` (`host:port`).
+`FILES_TIMEOUT` is an optional Go duration, default 30s, maximum 5m; storage requests
+and scanner operations have bounded deadlines and cancellation. S3 uses path-style
+AWS Signature V4 without redirects; no public URLs or credentials appear in API
+responses. ClamAV uses `zINSTREAM` with network-byte-order chunk lengths and a
+zero-length terminator. B must configure StreamMaxLength >= 20 MiB and verify
+actual gateway signature compatibility, scanner definitions/readiness and private
+network restrictions. Startup rejects malformed/missing configuration; worker
+failures log only generic messages. Upload/download routes use the existing OIDC
+middleware; scanner and outbox loops shut down with the process context.
+
+Protocol references: [AWS Signature V4 header authentication](https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html)
+and [ClamAV INSTREAM protocol](https://docs.clamav.net/manual/Usage/ClamdProtocol.html).
+Local HTTP/TCP fixtures establish framing and signed request shape, not live
+SeaweedFS or ClamAV compatibility. PostgreSQL lifecycle tests use isolated test
+schemas and controlled adapters, not production migrations or live scanners.
+
+Real services are opt-in through
+`go test -tags=serviceintegration ./internal/files -run TestRealSeaweedFSClamAV -count=1`
+with all private S3/ClamAV variables above. Missing prerequisites fail explicitly;
+these external-service tests are excluded from `-tags=integration`. The opt-in
+check covers clean bytes, harmless EICAR scanner detection and object retrieval
+from a newly constructed client. Actual service outage/restart, production schema
+immutability/privileges, and real persisted-object restart acceptance require B4
+and remain **NOT_RUN**; client reconstruction is not a server restart claim.

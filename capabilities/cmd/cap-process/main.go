@@ -31,6 +31,7 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/files"
 	"github.com/opendx-os/opendx-os/capabilities/internal/process"
 	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
 )
@@ -58,6 +59,23 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	fileTimeout := 30 * time.Second
+	if value := os.Getenv("FILES_TIMEOUT"); value != "" {
+		parsed, e := time.ParseDuration(value)
+		if e != nil || parsed <= 0 || parsed > 5*time.Minute {
+			log.Fatal("invalid FILES_TIMEOUT")
+		}
+		fileTimeout = parsed
+	}
+	storage, err := files.NewS3Storage(os.Getenv("S3_ENDPOINT"), os.Getenv("S3_BUCKET"), os.Getenv("S3_REGION"), os.Getenv("S3_ACCESS_KEY_ID"), os.Getenv("S3_SECRET_ACCESS_KEY"), fileTimeout)
+	if err != nil {
+		log.Fatal("invalid S3 configuration")
+	}
+	scanner, err := files.NewClamAV(os.Getenv("CLAMAV_ADDRESS"), fileTimeout)
+	if err != nil {
+		log.Fatal("invalid scanner configuration")
+	}
+	fileService := files.NewService(db, registry.NewStore(db), storage, scanner, os.Getenv("S3_BUCKET"))
 	engine := process.NewEngine(db, registry.NewStore(db))
 	if err := engine.ConfigureWorkflowService(os.Getenv("WORKFLOW_SERVICE_USER_ID"), os.Getenv("WORKFLOW_SERVICE_ROLE")); err != nil {
 		log.Fatal("valid WORKFLOW_SERVICE_USER_ID and WORKFLOW_SERVICE_ROLE are required")
@@ -85,7 +103,23 @@ func main() {
 			}
 		}
 	}()
-	defer func() { stop(); <-workerDone }()
+	scannerDone := make(chan struct{})
+	go func() {
+		defer close(scannerDone)
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := fileService.ScanPending(ctx, 50); err != nil && ctx.Err() == nil {
+					log.Print("file scanning cycle failed")
+				}
+			}
+		}
+	}()
+	defer func() { stop(); <-workerDone; <-scannerDone }()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -94,6 +128,8 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "service": "cap-process"})
 	})
 
+	mux.Handle("POST /api/cap/process/files/upload", fileService.AuthenticatedHandler(verifier))
+	mux.Handle("GET /api/cap/process/files/{file_id}", fileService.AuthenticatedHandler(verifier))
 	mux.Handle("POST /api/cap/process/commands/{app_id}/{command}", engine.AuthenticatedHandler(verifier))
 	mux.Handle("POST /api/cap/process/effects/work-item", engine.AuthenticatedEffectHandler(verifier))
 
