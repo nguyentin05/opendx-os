@@ -39,6 +39,17 @@ Controller verification before A6: complete capabilities
 This is backend transaction/protocol evidence, not live OIDC/Hasura/Kestra/
 SeaweedFS/ClamAV acceptance. Actual services and runtime acceptance remain NOT_RUN.
 
+A3 process recovery now has integration/race evidence from
+`TestPublisherRecoversAfterProcessCrash`: a helper OS process runs the production
+publisher against a disposable PostgreSQL database; the controlled HTTP receiver
+reads the event and withholds acknowledgement, then the parent kills and waits
+for that process. A new OS process uses the same database without resetting the
+fixture, redelivers the identical event ID/body, and records durable delivery on
+attempt two. The test expires only the persisted lease deadline to avoid waiting
+60 seconds; actual process termination/restart is not simulated. This closes the
+module-level publisher recreation evidence gap, not live Kestra acceptance or
+an end-to-end cap-process deployment restart check.
+
 Available Operator command is plan, not validate/apply. Running
 `GOCACHE=/tmp/opendx-backend-gocache go run ./cmd/dxos-operator plan ../apps/APP/manifest.yaml`
 from operator/ on procurement, process-fixture, maintenance and timesheet fails
