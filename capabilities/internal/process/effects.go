@@ -71,20 +71,9 @@ func (e *Engine) ExecuteWorkItemEffect(ctx context.Context, actor *auth.Identity
 	if json.Unmarshal(payload, &envelope) != nil {
 		return "", ErrEffectDenied
 	}
-	var effect *registry.Effect
-	for _, w := range a.ManifestSpec.Workflows {
-		if !contains(w.SubscribedEvents, eventType) {
-			continue
-		}
-		for _, f := range w.Effects {
-			if f.StepName == stepName && f.Kind == "create_work_item" && contains(f.WhenCommands, envelope.Payload.Command) {
-				copy := f
-				effect = &copy
-			}
-		}
-	}
-	if effect == nil {
-		return "", ErrEffectDenied
+	effect, err := resolveEffect(a.ManifestSpec.Workflows, eventType, envelope.Payload.Command, stepName)
+	if err != nil {
+		return "", err
 	}
 	var workID string
 	err = tx.QueryRowContext(ctx, `SELECT work_item_id::text FROM core.processed_workflow_steps WHERE event_id=$1 AND step_name=$2 AND workspace_id=$3`, eventID, stepName, actor.WorkspaceID).Scan(&workID)
@@ -120,4 +109,26 @@ func (e *Engine) ExecuteWorkItemEffect(ctx context.Context, actor *auth.Identity
 		return "", err
 	}
 	return workID, nil
+}
+
+func resolveEffect(workflows []registry.Workflow, eventType, command, stepName string) (*registry.Effect, error) {
+	var effect *registry.Effect
+	for _, w := range workflows {
+		if !contains(w.SubscribedEvents, eventType) {
+			continue
+		}
+		for _, f := range w.Effects {
+			if f.StepName == stepName && f.Kind == "create_work_item" && contains(f.WhenCommands, command) {
+				if effect != nil {
+					return nil, ErrEffectDenied
+				}
+				copy := f
+				effect = &copy
+			}
+		}
+	}
+	if effect == nil {
+		return nil, ErrEffectDenied
+	}
+	return effect, nil
 }

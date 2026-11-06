@@ -203,12 +203,13 @@ func (a *AppDefinition) Validate() error {
 		}
 	}
 	flows := map[string]bool{}
+	// Receipts and effect requests identify a step across the entire app.
+	steps := map[string]bool{}
 	for _, f := range s.Workflows {
 		if !identifier.MatchString(f.ID) || flows[f.ID] || !workflowPath.MatchString(f.File) || !reflect.DeepEqual(f.SubscribedEvents, []string{"command.committed"}) || len(f.Effects) == 0 {
 			return errors.New("unsupported workflow")
 		}
 		flows[f.ID] = true
-		steps := map[string]bool{}
 		for _, e := range f.Effects {
 			if !identifier.MatchString(e.StepName) || steps[e.StepName] || e.Kind != "create_work_item" || !uniqueNames(e.WhenCommands, identifier) || strings.TrimSpace(e.Fields.Title) == "" || !oneOf(e.Fields.Priority, "LOW", "MEDIUM", "HIGH", "CRITICAL") || (e.Fields.AssignedEmployeeID != "" && !uuidPattern.MatchString(e.Fields.AssignedEmployeeID)) {
 				return errors.New("invalid workflow effect")

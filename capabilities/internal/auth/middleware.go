@@ -17,6 +17,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 )
@@ -25,12 +26,12 @@ func Middleware(v Verifier, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fields := strings.Fields(r.Header.Get("Authorization"))
 		if v == nil || len(fields) != 2 || !strings.EqualFold(fields[0], "Bearer") {
-			http.Error(w, "authentication required", 401)
+			writeAuthenticationError(w, http.StatusUnauthorized)
 			return
 		}
 		id, e := v.Verify(r.Context(), fields[1])
 		if e != nil || id == nil {
-			http.Error(w, "invalid authentication", 401)
+			writeAuthenticationError(w, http.StatusUnauthorized)
 			return
 		}
 		selected := r.Header.Get("X-Hasura-Role")
@@ -42,7 +43,7 @@ func Middleware(v Verifier, next http.Handler) http.Handler {
 			granted = granted || selected == role
 		}
 		if !granted {
-			http.Error(w, "role not granted", 403)
+			writeAuthenticationError(w, http.StatusForbidden)
 			return
 		}
 		copy := *id
@@ -50,4 +51,11 @@ func Middleware(v Verifier, next http.Handler) http.Handler {
 		copy.AllowedRoles = append([]string(nil), id.AllowedRoles...)
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), identityKey{}, &copy)))
 	})
+}
+
+// writeAuthenticationError preserves the C0 envelope without exposing verifier details.
+func writeAuthenticationError(w http.ResponseWriter, status int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": http.StatusText(status), "message": http.StatusText(status)}})
 }

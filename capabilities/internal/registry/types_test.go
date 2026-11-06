@@ -116,3 +116,23 @@ func TestRequesterInsertPresetRequiresSignedUser(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkflowStepsUniqueAcrossApp(t *testing.T) {
+	a, err := Decode(fixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := a.ManifestSpec.Workflows[0]
+	second.ID = "second_workflow"
+	second.File = "workflows/second_workflow.yaml"
+	second.Effects = append([]Effect(nil), second.Effects...)
+	second.Effects[0].StepName = "second_step"
+	a.ManifestSpec.Workflows = append(a.ManifestSpec.Workflows, second)
+	if err := a.Validate(); err != nil {
+		t.Fatalf("valid two workflows: %v", err)
+	}
+	a.ManifestSpec.Workflows[1].Effects[0].StepName = a.ManifestSpec.Workflows[0].Effects[0].StepName
+	if err := a.Validate(); err == nil {
+		t.Fatal("ambiguous app-wide step accepted")
+	}
+}
