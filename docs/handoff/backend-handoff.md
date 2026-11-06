@@ -2,7 +2,7 @@
 
 The backend consumes proposed C0 v1 contracts. Start only after B's SQL, active
 registry publication and Hasura grants are reviewed; current compose/platform SQL
-is not a sufficient production migration. See [SQL handoff](../../contracts/backend-sql-handoff.md)
+is not a sufficient production migration. See [SQL handoff](backend-sql-handoff.md)
 and [demo prerequisites](../demo/scenarios.md).
 
 From capabilities/:

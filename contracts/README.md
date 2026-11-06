@@ -83,7 +83,7 @@ retries preserve ID and payload. DB `outbox_events.id` maps to wire `event_id`.
 The event is persisted with the command transaction. Delivery does not grant
 permission; effects resolve source from the persisted event and current deployed
 step mapping, not from a caller-supplied body. Workflow source association is
-stored in the processed-step row described in the [SQL handoff](backend-sql-handoff.md).
+stored in the processed-step row described in the [SQL handoff](../docs/handoff/backend-sql-handoff.md).
 
 ## Fixtures and checks
 
