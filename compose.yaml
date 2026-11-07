@@ -23,6 +23,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-dxos_admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dxos_secret}
       POSTGRES_DB: ${POSTGRES_DB:-dxos_db}
+      ENABLED_CAPABILITIES: ${ENABLED_CAPABILITIES:-cap-process}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -30,7 +31,7 @@ services:
       - ./platform/postgres/init:/docker-entrypoint-initdb.d:ro
       - ./platform/postgres/capabilities:/docker-entrypoint-initdb.d/capabilities:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dxos_admin -d dxos_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dxos_admin} -d ${POSTGRES_DB:-dxos_db}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -43,9 +44,10 @@ services:
     environment:
       HASURA_GRAPHQL_DATABASE_URL: postgres://${POSTGRES_USER:-dxos_admin}:${POSTGRES_PASSWORD:-dxos_secret}@postgres:5432/${POSTGRES_DB:-dxos_db}
       HASURA_GRAPHQL_ADMIN_SECRET: ${HASURA_ADMIN_SECRET:-dxos_admin_secret}
-      HASURA_GRAPHQL_ENABLE_CONSOLE: "true"
-      HASURA_GRAPHQL_DEV_MODE: "true"
+      HASURA_GRAPHQL_ENABLE_CONSOLE: "false"
+      HASURA_GRAPHQL_DEV_MODE: "false"
       HASURA_GRAPHQL_UNAUTHORIZED_ROLE: "anonymous"
+      HASURA_GRAPHQL_JWT_SECRET: '{"jwk_url":"${OIDC_JWKS_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/certs}","issuer":"${OIDC_ISSUER_URL:-http://localhost:8085/realms/dxos}","audience":"${OIDC_AUDIENCE:-dxos-runtime}"}'
     depends_on:
       postgres:
         condition: service_healthy
@@ -66,6 +68,68 @@ services:
       postgres:
         condition: service_healthy
 
+  seaweedfs:
+    image: chrislusf/seaweedfs:3.80
+    restart: unless-stopped
+    command: server -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -dir=/data
+    volumes:
+      - seaweedfs-data:/data
+      - ./platform/seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+
+  clamav:
+    image: clamav/clamav:1.4
+    restart: unless-stopped
+    volumes:
+      - clamav-data:/var/lib/clamav
+
+  kestra:
+    image: kestra/kestra:v0.20.7
+    restart: unless-stopped
+    command: server standalone --config /app/config/config.yaml
+    environment:
+      KESTRA_USER: ${KESTRA_USER:-admin@dxos.local}
+      KESTRA_PASSWORD: ${KESTRA_PASSWORD:-change-me-local-kestra}
+    ports:
+      - "${KESTRA_PORT:-8082}:8080"
+    volumes:
+      - kestra-data:/app/storage
+      - ./platform/kestra/config.yaml:/app/config/config.yaml:ro
+
+  cap-process:
+    build:
+      context: ./capabilities
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "8081"
+      DATABASE_URL: postgres://${POSTGRES_USER:-dxos_admin}:${POSTGRES_PASSWORD:-dxos_secret}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-http://localhost:8085/realms/dxos}
+      OIDC_JWKS_URL: ${OIDC_JWKS_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/certs}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-dxos-runtime}
+      WORKFLOW_SERVICE_USER_ID: ${WORKFLOW_SERVICE_USER_ID:-99999999-9999-4999-8999-999999999999}
+      WORKFLOW_SERVICE_ROLE: ${WORKFLOW_SERVICE_ROLE:-role_workflow_service}
+      KESTRA_URL: ${KESTRA_URL:-http://kestra:8080/api/v1/executions/webhook/dxos/procurement_approval_flow/webhook-key}
+      KESTRA_API_TOKEN: ${KESTRA_API_TOKEN:-change-me-local-kestra-token}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://seaweedfs:8333}
+      S3_BUCKET: ${S3_BUCKET:-dxos-attachments}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-dxos_s3_access_key}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-dxos_s3_secret_key}
+      CLAMAV_ADDRESS: ${CLAMAV_ADDRESS:-clamav:3310}
+    ports:
+      - "${CAP_PROCESS_PORT:-8091}:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+      seaweedfs:
+        condition: service_started
+      clamav:
+        condition: service_started
+      kestra:
+        condition: service_started
+
   apisix:
     image: apache/apisix:3.10.0-debian
     restart: unless-stopped
@@ -77,6 +141,21 @@ services:
       - ./platform/apisix/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
     depends_on:
       - hasura
+      - cap-process
+      - keycloak
+
+  workspace-ui:
+    build:
+      context: ./workspace-ui
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${WORKSPACE_UI_PORT:-5173}:80"
+    depends_on:
+      - apisix
 
 volumes:
   pg-data:
+  seaweedfs-data:
+  clamav-data:
+  kestra-data:

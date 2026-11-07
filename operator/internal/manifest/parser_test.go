@@ -16,79 +16,77 @@
 package manifest
 
 import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestParseValidManifest(t *testing.T) {
-	raw := `
-apiVersion: core.dxos.org/v1alpha1
-kind: DXApplication
-metadata:
-  name: testapp
-  workspaceScope: tenant-scoped
-  version: "1.0.0"
-spec:
-  role: role_testapp
-  sharedAccess:
-    - table: core.employees
-      columns: [id, workspace_id, full_name]
-      filter: {}
-  domainTable:
-    name: domain.testapp_records
-    columns:
-      - name: id
-        type: uuid
-        primaryKey: true
-      - name: workspace_id
-        type: uuid
-        references: core.workspaces(id)
-      - name: note
-        type: text
-      - name: status
-        type: text
-      - name: version
-        type: integer
-      - name: updated_at
-        type: timestamptz
-  domainAccess:
-    insert:
-      - columns: [note]
-    update:
-      - columns: [note]
-  stateMachine:
-    states: [DRAFT, ACTIVE]
-  attachments:
-    enforceCleanStatus: true
-  uiSchema:
-    navigation:
-      title: "Test App"
-`
-	app, err := Parse(strings.NewReader(raw))
+func loadFixture(t *testing.T, name string) *DXApplication {
+	t.Helper()
+	path := filepath.Join("..", "..", "..", "contracts", "fixtures", name)
+	app, err := ParseFile(path)
 	if err != nil {
-		t.Fatalf("unexpected error parsing valid manifest: %v", err)
+		t.Fatalf("failed to parse fixture %s: %v", name, err)
 	}
-	if app.Metadata.Name != "testapp" {
-		t.Errorf("expected name testapp, got %s", app.Metadata.Name)
+	return app
+}
+
+func TestParseValidManifest(t *testing.T) {
+	app := loadFixture(t, "procurement.yaml")
+	if app.Metadata.Name != "procurement" {
+		t.Fatalf("expected name procurement, got %s", app.Metadata.Name)
+	}
+	if app.Spec.DomainTable.Name != "domain.procurement_requests" {
+		t.Fatalf("unexpected domainTable: %s", app.Spec.DomainTable.Name)
+	}
+
+	// Verify serialized Spec matches registry-ready.json manifest_spec
+	regBytes, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "fixtures", "registry-ready.json"))
+	if err != nil {
+		t.Fatalf("read registry-ready.json: %v", err)
+	}
+	var reg struct {
+		ManifestSpec json.RawMessage `json:"manifest_spec"`
+	}
+	if err := json.Unmarshal(regBytes, &reg); err != nil {
+		t.Fatalf("unmarshal registry-ready.json: %v", err)
+	}
+
+	specBytes, err := json.Marshal(app.Spec)
+	if err != nil {
+		t.Fatalf("marshal app.Spec: %v", err)
+	}
+	var want, got any
+	json.Unmarshal(reg.ManifestSpec, &want)
+	json.Unmarshal(specBytes, &got)
+	bWant, _ := json.Marshal(want)
+	bGot, _ := json.Marshal(got)
+	if !bytes.Equal(bWant, bGot) {
+		t.Fatalf("serialized spec mismatch:\ngot:  %s\nwant: %s", bGot, bWant)
 	}
 }
 
-func TestRejectSystemManagedColumnsInInsert(t *testing.T) {
-	raw := `
-apiVersion: core.dxos.org/v1alpha1
-kind: DXApplication
-metadata:
-  name: badapp
-spec:
-  role: role_bad
-  domainTable:
-    name: domain.bad_records
-  domainAccess:
-    insert:
-      - columns: [status, note]
-`
-	_, err := Parse(strings.NewReader(raw))
-	if err == nil {
-		t.Fatalf("expected error when inserting system managed column 'status', got nil")
+func TestRejectMultipleYAMLDocuments(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "fixtures", "procurement.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	multi := string(raw) + "\n---\napiVersion: dxos.io/v1alpha1\nkind: DXApplication\n"
+	if _, err := Parse(strings.NewReader(multi)); err == nil {
+		t.Fatal("expected error for multiple YAML documents")
+	}
+}
+
+func TestRejectUnknownFieldAndSemanticType(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "fixtures", "procurement.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	withSemantic := strings.Replace(string(raw), "type: numeric(14,2)", "type: numeric(14,2)\n      semanticType: urn:example:amount", 1)
+	if _, err := Parse(strings.NewReader(withSemantic)); err == nil {
+		t.Fatal("expected error for unsupported semanticType field")
 	}
 }

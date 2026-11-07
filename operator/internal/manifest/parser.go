@@ -16,66 +16,66 @@
 package manifest
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 
 	"gopkg.in/yaml.v3"
 )
 
-var systemManagedColumns = map[string]bool{
-	"id":           true,
-	"workspace_id": true,
-	"status":       true,
-	"version":      true,
-	"updated_at":   true,
-}
-
-// Parse parses a DXApplication manifest from raw bytes.
+// Parse parses and validates a DXApplication manifest from an io.Reader.
 func Parse(r io.Reader) (*DXApplication, error) {
-	dec := yaml.NewDecoder(r)
+	rawBytes, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("read manifest: %w", err)
+	}
+	if len(bytes.TrimSpace(rawBytes)) == 0 {
+		return nil, errors.New("empty manifest")
+	}
+
+	// 1. Decode into generic shape to check unknown fields, null scalars, and multiple documents
+	shapeDec := yaml.NewDecoder(bytes.NewReader(rawBytes))
+	var shape any
+	if err := shapeDec.Decode(&shape); err != nil {
+		return nil, fmt.Errorf("decode manifest YAML: %w", err)
+	}
+	if err := shapeDec.Decode(new(any)); err != io.EOF {
+		return nil, errors.New("multiple YAML documents are not allowed")
+	}
+	if err := checkShape(shape, reflect.TypeOf(DXApplication{})); err != nil {
+		return nil, fmt.Errorf("invalid manifest structure: %w", err)
+	}
+
+	// 2. Normalize through JSON with UseNumber so numeric literals in recordFilter preserve exact precision
+	jsonBytes, err := json.Marshal(shape)
+	if err != nil {
+		return nil, fmt.Errorf("marshal manifest shape: %w", err)
+	}
 	var app DXApplication
-	if err := dec.Decode(&app); err != nil {
-		return nil, fmt.Errorf("failed to decode manifest: %w", err)
+	jsonDec := json.NewDecoder(bytes.NewReader(jsonBytes))
+	jsonDec.DisallowUnknownFields()
+	jsonDec.UseNumber()
+	if err := jsonDec.Decode(&app); err != nil {
+		return nil, fmt.Errorf("decode normalized manifest: %w", err)
 	}
 
-	if app.Kind != "DXApplication" {
-		return nil, fmt.Errorf("invalid manifest kind: %q (expected DXApplication)", app.Kind)
-	}
-	if app.Metadata.Name == "" {
-		return nil, fmt.Errorf("manifest metadata.name is required")
-	}
-	if app.Spec.Role == "" {
-		return nil, fmt.Errorf("manifest spec.role is required")
-	}
-	if app.Spec.DomainTable.Name == "" {
-		return nil, fmt.Errorf("manifest spec.domainTable.name is required")
-	}
-
-	// Validate domainAccess: system managed columns cannot be in insert or update
-	for _, rule := range app.Spec.DomainAccess.Insert {
-		for _, col := range rule.Columns {
-			if systemManagedColumns[col] {
-				return nil, fmt.Errorf("system managed column %q cannot be in domainAccess.insert allowlist", col)
-			}
-		}
-	}
-	for _, rule := range app.Spec.DomainAccess.Update {
-		for _, col := range rule.Columns {
-			if systemManagedColumns[col] {
-				return nil, fmt.Errorf("system managed column %q cannot be in domainAccess.update allowlist", col)
-			}
-		}
+	// 3. Validate semantic and C0 contract rules
+	if err := Validate(&app); err != nil {
+		return nil, err
 	}
 
 	return &app, nil
 }
 
-// ParseFile parses a manifest from a file path.
+// ParseFile parses and validates a manifest from a file path.
 func ParseFile(path string) (*DXApplication, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open manifest file: %w", err)
+		return nil, fmt.Errorf("open manifest file: %w", err)
 	}
 	defer f.Close()
 	return Parse(f)

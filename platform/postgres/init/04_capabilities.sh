@@ -21,7 +21,7 @@ if [ ! -d "$CAP_DIR" ]; then
     CAP_DIR="$(cd "$(dirname "$0")/../capabilities" && pwd)"
 fi
 
-ENABLED="${ENABLED_CAPABILITIES:-all}"
+ENABLED="${ENABLED_CAPABILITIES:-cap-process}"
 
 echo "[dxos-init] Applying pluggable capabilities from: $CAP_DIR (Filter: $ENABLED)"
 for sql_file in "$CAP_DIR"/*.sql; do

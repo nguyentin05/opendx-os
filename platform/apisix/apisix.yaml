@@ -16,6 +16,13 @@
 routes:
   - id: hasura-graphql
     uri: /v1/graphql
+    plugins:
+      proxy-rewrite:
+        headers:
+          remove:
+            - X-Hasura-Admin-Secret
+            - X-Hasura-User-Id
+            - X-Hasura-Workspace-Id
     upstream:
       type: roundrobin
       nodes:
@@ -23,23 +30,23 @@ routes:
 
   - id: cap-process-commands
     uri: /api/cap/process/*
+    plugins:
+      proxy-rewrite:
+        headers:
+          remove:
+            - X-Hasura-Admin-Secret
+            - X-Hasura-User-Id
+            - X-Hasura-Workspace-Id
     upstream:
       type: roundrobin
       nodes:
         "cap-process:8081": 1
 
-  - id: cap-data-service
-    uri: /api/cap/data/*
+  - id: keycloak-oidc
+    uri: /realms/*
     upstream:
       type: roundrobin
       nodes:
-        "cap-data:8082": 1
-
-  - id: cap-ai-service
-    uri: /api/cap/ai/*
-    upstream:
-      type: roundrobin
-      nodes:
-        "cap-ai:8083": 1
+        "keycloak:8085": 1
 
 #END

@@ -1,0 +1,368 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+openapi: 3.1.0
+info:
+  title: PROPOSED OpenDX runtime API
+  version: 1.0.0
+  description: C0 backend handoff; not jointly frozen or runtime integration evidence.
+security:
+- bearerAuth: []
+paths:
+  /api/cap/process/commands/{app_id}/{command}:
+    post:
+      operationId: executeCommand
+      description: Resolve table/state/actor/workspace from verified identity and
+        active Ready manifest. Recheck current permission before returning any receipt.
+        Empty payload is the supported core command payload.
+      parameters:
+      - name: app_id
+        in: path
+        required: true
+        schema: &id001
+          type: string
+          pattern: ^[a-z][a-z0-9_]*$
+      - name: command
+        in: path
+        required: true
+        schema: *id001
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema: &id003
+          type: string
+          minLength: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResponse'
+        '400':
+          description: Malformed or unsupported request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Absent or outside workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Stale version or idempotency payload conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Unclean attachment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Unavailable dependency
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/cap/process/effects/work-item:
+    post:
+      operationId: createWorkItemEffect
+      description: Only the configured workflow service identity. Persisted event
+        and deployed step determine source and fields; event/step retries return the
+        same stored result.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EffectRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EffectResponse'
+        '400':
+          description: Malformed or unsupported request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Absent or outside workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Stale version or idempotency payload conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Unclean attachment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Unavailable dependency
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/cap/process/files/upload:
+    post:
+      operationId: uploadFile
+      description: Content maximum 20971520 bytes (20 MiB); sniff PDF, PNG or JPEG.
+        Every upload has a fresh UUID/object key; permission-check selected app_id.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                app_id: *id001
+              required:
+              - file
+              - app_id
+              additionalProperties: false
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResponse'
+        '400':
+          description: Malformed or unsupported request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Absent or outside workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Stale version or idempotency payload conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Unclean attachment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Unavailable dependency
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/cap/process/files/{file_id}:
+    get:
+      operationId: downloadFile
+      description: Authorize caller workspace/app and ownership or readable attachment
+        before exposing scan state. Only CLEAN immutable content is downloadable.
+      parameters:
+      - name: file_id
+        in: path
+        required: true
+        schema: &id002
+          type: string
+          format: uuid
+      responses:
+        '400':
+          description: Malformed or unsupported request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Absent or outside workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Stale version or idempotency payload conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Unclean attachment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Unavailable dependency
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Clean bytes
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    CommandRequest:
+      type: object
+      properties:
+        entity_id: *id002
+        expected_version: &id004
+          type: integer
+          minimum: 1
+        payload:
+          type: object
+          properties: {}
+          required: []
+          additionalProperties: false
+      required:
+      - entity_id
+      - expected_version
+      - payload
+      additionalProperties: false
+    CommandResponse:
+      type: object
+      properties:
+        entity_id: *id002
+        status: *id003
+        version: *id004
+        executed_at:
+          type: string
+          format: date-time
+      required:
+      - entity_id
+      - status
+      - version
+      - executed_at
+      additionalProperties: false
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: *id003
+            message: *id003
+          required:
+          - code
+          - message
+          additionalProperties: false
+      required:
+      - error
+      additionalProperties: false
+    EffectRequest:
+      type: object
+      properties:
+        event_id: *id002
+        step_name: *id001
+      required:
+      - event_id
+      - step_name
+      additionalProperties: false
+    EffectResponse:
+      type: object
+      properties:
+        work_item_id: *id002
+      required:
+      - work_item_id
+      additionalProperties: false
+    UploadResponse:
+      type: object
+      properties:
+        file_id: *id002
+        scan_status:
+          const: QUARANTINED
+      required:
+      - file_id
+      - scan_status
+      additionalProperties: false
