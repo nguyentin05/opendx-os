@@ -13,97 +13,102 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package planner generates database DDL and Hasura metadata from application manifests.
+// Package planner generates database DDL and Hasura metadata from validated application manifests.
 package planner
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/opendx-os/opendx-os/operator/internal/manifest"
 )
 
-// GenerateDDL generates the idempotent PostgreSQL DDL required for a DXApplication.
+// GenerateDDL generates the idempotent PostgreSQL DDL required for a validated DXApplication.
 func GenerateDDL(app *manifest.DXApplication) (string, error) {
+	if err := manifest.Validate(app); err != nil {
+		return "", fmt.Errorf("validate manifest before DDL generation: %w", err)
+	}
+
 	var sb strings.Builder
+	tbl := app.Spec.DomainTable
+	safeTbl := sanitizeName(tbl.Name)
+	initialState := strings.ReplaceAll(app.Spec.StateMachine.Initial, "'", "''")
 
 	sb.WriteString("-- Auto-generated DDL by dxos-operator. DO NOT EDIT DIRECTLY.\n")
 	sb.WriteString("CREATE SCHEMA IF NOT EXISTS domain;\n\n")
+	sb.WriteString(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n", quoteTable(tbl.Name)))
 
-	tbl := app.Spec.DomainTable
-	sb.WriteString(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n", tbl.Name))
-
-	var colDefs []string
-	hasWorkspaceID := false
-	hasID := false
+	colDefs := []string{
+		`    "id" uuid PRIMARY KEY DEFAULT gen_random_uuid()`,
+		`    "workspace_id" uuid NOT NULL REFERENCES "core"."workspaces"("id")`,
+		`    "work_item_id" uuid NOT NULL`,
+		fmt.Sprintf(`    "status" text NOT NULL DEFAULT '%s'`, initialState),
+		`    "version" bigint NOT NULL DEFAULT 1 CHECK ("version" > 0)`,
+		`    "updated_at" timestamptz NOT NULL DEFAULT now()`,
+	}
 
 	for _, col := range tbl.Columns {
-		if col.Name == "id" {
-			hasID = true
-		}
-		if col.Name == "workspace_id" {
-			hasWorkspaceID = true
-		}
-
-		line := fmt.Sprintf("    %s %s", col.Name, col.Type)
-		if col.PrimaryKey {
-			line += " PRIMARY KEY"
-		}
-		if !col.Nullable && !col.PrimaryKey {
+		line := fmt.Sprintf("    %s %s", quoteIdent(col.Name), col.Type)
+		if !col.Nullable {
 			line += " NOT NULL"
 		}
-		if col.Default != "" {
-			line += " DEFAULT " + col.Default
+		if col.Check != "" {
+			line += fmt.Sprintf(" CHECK (%s)", col.Check)
 		}
 		colDefs = append(colDefs, line)
 	}
 
-	// Composite unique constraint on (workspace_id, id) for composite FK references
-	if hasWorkspaceID && hasID {
-		colDefs = append(colDefs, "    CONSTRAINT uq_"+sanitizeName(tbl.Name)+"_ws_id UNIQUE (workspace_id, id)")
-	}
+	colDefs = append(colDefs, fmt.Sprintf(`    CONSTRAINT "uq_%s_ws_id" UNIQUE ("workspace_id", "id")`, safeTbl))
 
-	// Add foreign key constraints
-	for _, col := range tbl.Columns {
-		if col.References != "" {
-			fkName := fmt.Sprintf("fk_%s_%s", sanitizeName(tbl.Name), col.Name)
-			if strings.Contains(col.References, "workspace_id") {
-				// Composite FK
-				targetTable := strings.Split(col.References, "(")[0]
-				colDefs = append(colDefs, fmt.Sprintf("    CONSTRAINT %s FOREIGN KEY (workspace_id, %s) REFERENCES %s(workspace_id, id) ON DELETE CASCADE", fkName, col.Name, targetTable))
-			} else {
-				colDefs = append(colDefs, fmt.Sprintf("    CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s ON DELETE RESTRICT", fkName, col.Name, col.References))
-			}
-		}
+	for _, fk := range tbl.CompositeForeignKeys {
+		fkCol := fk.Columns[1]
+		fkName := fmt.Sprintf("fk_%s_%s", safeTbl, fkCol)
+		colDefs = append(colDefs, fmt.Sprintf(
+			`    CONSTRAINT %s FOREIGN KEY ("workspace_id", %s) REFERENCES %s("workspace_id", "id") ON DELETE RESTRICT`,
+			quoteIdent(fkName),
+			quoteIdent(fkCol),
+			quoteTable(fk.ReferencesTable),
+		))
 	}
 
 	sb.WriteString(strings.Join(colDefs, ",\n"))
 	sb.WriteString("\n);\n\n")
 
-	// Index on workspace_id
-	if hasWorkspaceID {
-		sb.WriteString(fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_workspace_id ON %s (workspace_id);\n", sanitizeName(tbl.Name), tbl.Name))
-	}
-
-	// Version bump trigger
-	triggerName := fmt.Sprintf("trg_bump_version_%s", sanitizeName(tbl.Name))
-	sb.WriteString(fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s;\n", triggerName, tbl.Name))
-	sb.WriteString(fmt.Sprintf("CREATE TRIGGER %s\nBEFORE UPDATE ON %s\nFOR EACH ROW EXECUTE FUNCTION core.bump_domain_record_version();\n\n", triggerName, tbl.Name))
-
-	// Register app in core.app_registry
-	specJSON, err := json.Marshal(app.Spec)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal app spec to json: %w", err)
-	}
-	escapedJSON := strings.ReplaceAll(string(specJSON), "'", "''")
-
 	sb.WriteString(fmt.Sprintf(
-		"INSERT INTO core.app_registry (app_name, version, manifest_spec, status)\nVALUES ('%s', '%s', '%s'::jsonb, 'ACTIVE')\nON CONFLICT (app_name) DO UPDATE SET version = EXCLUDED.version, manifest_spec = EXCLUDED.manifest_spec, status = 'ACTIVE', updated_at = NOW();\n",
-		app.Metadata.Name, app.Metadata.Version, escapedJSON,
+		"CREATE INDEX IF NOT EXISTS %s ON %s (\"workspace_id\");\n\n",
+		quoteIdent("idx_"+safeTbl+"_workspace_id"),
+		quoteTable(tbl.Name),
+	))
+
+	bumpTrig := "trg_bump_version_" + safeTbl
+	sb.WriteString(fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s;\n", quoteIdent(bumpTrig), quoteTable(tbl.Name)))
+	sb.WriteString(fmt.Sprintf(
+		"CREATE TRIGGER %s\nBEFORE UPDATE ON %s\nFOR EACH ROW EXECUTE FUNCTION core.bump_domain_record_version();\n\n",
+		quoteIdent(bumpTrig),
+		quoteTable(tbl.Name),
+	))
+
+	auditTrig := "trg_audit_update_" + safeTbl
+	sb.WriteString(fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s;\n", quoteIdent(auditTrig), quoteTable(tbl.Name)))
+	sb.WriteString(fmt.Sprintf(
+		"CREATE TRIGGER %s\nAFTER UPDATE ON %s\nFOR EACH ROW EXECUTE FUNCTION core.record_domain_update_audit();\n",
+		quoteIdent(auditTrig),
+		quoteTable(tbl.Name),
 	))
 
 	return sb.String(), nil
+}
+
+func quoteIdent(ident string) string {
+	return `"` + strings.ReplaceAll(ident, `"`, `""`) + `"`
+}
+
+func quoteTable(qualified string) string {
+	parts := strings.Split(qualified, ".")
+	if len(parts) == 2 {
+		return quoteIdent(parts[0]) + "." + quoteIdent(parts[1])
+	}
+	return quoteIdent(qualified)
 }
 
 func sanitizeName(name string) string {
