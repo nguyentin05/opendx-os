@@ -19,6 +19,7 @@
 package files
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"os"
@@ -68,6 +69,14 @@ func TestRealSeaweedFSClamAV(t *testing.T) {
 	result, e := scanner.Scan(ctx, strings.NewReader(clean))
 	if e != nil || result != Clean {
 		t.Fatalf("clean scan %s: %v", result, e)
+	}
+	// The deployment must scan the full public upload limit, not silently reject
+	// larger valid objects because of a smaller daemon stream configuration.
+	large := make([]byte, MaxSize)
+	copy(large, "%PDF-1.7\n")
+	result, e = scanner.Scan(ctx, bytes.NewReader(large))
+	if e != nil || result != Clean {
+		t.Fatalf("20 MiB clean scan %s: %v", result, e)
 	}
 	// Standard harmless EICAR test string, never executable; direct scanner test
 	// intentionally bypasses the upload MIME allowlist.

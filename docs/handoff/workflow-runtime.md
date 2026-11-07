@@ -55,3 +55,17 @@ supplies the supported PostgreSQL repository/queue settings. Kestra's
 base64 `SECRET_` environment mechanism, verified here through actual tasks and
 recreation. No plugin syntax changes were needed: the existing declared HTTP and
 Webhook plugin classes imported and executed on the pinned real service.
+
+## Verified webhook authentication boundary
+
+Task 7's real webhook positive-control/no-effect test distinguishes the admin
+API's Basic authentication from delivery authorization: the secret webhook key
+authorizes the actual webhook. Correct key with missing or invalid Basic returns
+200 and executes the flow; wrong key returns the specific404 `Webhook not found`
+response even with valid Basic. Missing-key routes return a generic404. Invalid
+key/missing-key calls create no actual execution or effect; valid-key repeated
+executions preserve one backend effect through signed caller checks and dedup.
+See [file/supporting-services evidence](file-lifecycle-runtime.md). A generic404
+is never sufficient proof of authentication, and the shell probe targets the
+admin API separately. Keep webhook keys private even when Basic credentials
+are configured on the publisher. Alpha-only workflow availability is unchanged.

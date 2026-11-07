@@ -199,3 +199,52 @@ cap-process without resetting PostgreSQL or volumes. It waits at most 100 second
 for the real 60-second lease to expire and re-deliver. Exact event/body/attempt
 state and UTC action times are private in `workflow-recovery.json`; sanitized
 qualification evidence is recorded in the Task 6 report.
+
+## Files and supporting-service checks
+
+Consume a fresh files phase sequentially; it stops actual Kestra before seeding
+and freezes a quarantine fixture by stopping ClamAV. The file suite starts the
+scanner as needed and leaves ClamAV, SeaweedFS and cap-process running. It keeps
+Kestra stopped so submit rejection has an isolated effect window:
+
+```sh
+TEST_DISPOSABLE_DATABASE=yes python3 scripts/integration/seed.py --phase files
+TEST_DISPOSABLE_DATABASE=yes python3 -m unittest tests.integration.file_cases -v
+TEST_DISPOSABLE_DATABASE=yes python3 -m scripts.integration.supporting_services file-adapters
+```
+
+The file suite performs real ClamAV/SeaweedFS stop/start and process-worker restart
+without deleting volumes. Cleanup restores those services even on test failure.
+It uses fresh uploaded IDs per case and the harmless EICAR string inside a PDF
+stream; appending EICAR beyond PDF EOF does not exercise the real PDF scanner.
+Ignored `build/integration/file-recovery.json` records UTC actions and row states.
+ClamAV explicitly allows 25 MiB streams/files and 50 MiB scan expansion; its
+healthcheck requires protocol PING/PONG. The adapter test scans a full 20 MiB
+object as well as clean content and EICAR using actual services.
+
+After the file phase, restore Kestra with explicit signed-token renewal before
+using the automatic workflow or webhook positive-control test:
+
+```sh
+TEST_DISPOSABLE_DATABASE=yes python3 -m scripts.integration.workflows renew
+TEST_DISPOSABLE_DATABASE=yes python3 -m unittest tests.integration.supporting_service_cases -v
+python3 -m unittest tests.operations.test_supporting_services -v
+TEST_DISPOSABLE_DATABASE=yes python3 -m scripts.integration.supporting_services probe
+```
+
+The supporting helper resolves addresses only from the guarded project's actual
+containers and supplies private S3 credentials to the child adapter test. It never
+prints credentials. The shell probe's `KESTRA_URL` is the **admin API**
+`/api/v1/flows/search` for this check, distinct from the runtime publisher's base
+URL and secret webhook destination. Shell success requires S3 403 XML AccessDenied,
+Kestra API 401, and a real ClamAV PONG. Generic404, redirects, server errors and
+connection failures are failures; controlled HTTP tests qualify these exit
+semantics only. Actual webhook-key authentication is qualified separately using
+real execution/effect observations. OCR remains deferred and unavailable.
+
+Selected file/S06, real recovery and strict probe results are recorded in
+[file lifecycle evidence](file-lifecycle-runtime.md). The extra controlled-IP
+case temporarily reassigns only the verified process endpoint on its project
+network, restores its exact original IP/aliases in finally, and checks unchanged
+gateway start time plus direct/gateway original bytes. This is separate from
+the natural scanner/storage/process restart case.

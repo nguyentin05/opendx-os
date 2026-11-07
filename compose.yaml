@@ -84,6 +84,16 @@ services:
   clamav:
     image: clamav/clamav:1.4
     restart: unless-stopped
+    environment:
+      CLAMD_CONF_StreamMaxLength: 25M
+      CLAMD_CONF_MaxFileSize: 25M
+      CLAMD_CONF_MaxScanSize: 50M
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/clamdcheck.sh"]
+      interval: 5s
+      timeout: 5s
+      start_period: 120s
+      retries: 12
     volumes:
       - clamav-data:/var/lib/clamav
 
@@ -134,7 +144,7 @@ services:
       seaweedfs:
         condition: service_started
       clamav:
-        condition: service_started
+        condition: service_healthy
       kestra:
         condition: service_started
 
