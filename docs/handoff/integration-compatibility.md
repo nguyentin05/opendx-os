@@ -118,3 +118,17 @@ never forged. Manual data intentionally freezes the scanner and stops Kestra.
 Automatic seed completion remains deferred to Task 6. These results do not
 qualify file recovery, workflow delivery, unsupported app packages or release
 acceptance.
+
+Task 6 adapter reconciliation: publisher routing is now a deployment-owned
+workspace/app/version/workflow route map derived from Ready manifests and actual
+workflow YAML. Explicit Basic transport authentication supports pinned Kestra
+0.20.7; legacy full-endpoint Bearer mode remains available. Repository/queue use
+Kestra's supported PostgreSQL backend with a dedicated restricted owner/database.
+Effect service identity remains separate from transport authentication.
+
+Automatic workflow qualification is limited to alpha for both actual apps.
+Beta has no configured authorized workflow route; events remain retryable and
+alpha-principal effects on beta events are denied. Beta automatic workflows are
+NOT_READY pending provisioned per-workspace service identity/credential delivery.
+No multi-destination/fan-out delivery contract was introduced. See the setup guide
+for explicit signed-token renewal/reload and the final qualification evidence.

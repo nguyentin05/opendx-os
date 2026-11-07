@@ -169,3 +169,22 @@ records the accepted requirement without claiming that synchronization works.
 Inspect actual handlers and agree on request/response schemas and service
 identity before connecting callers. This logical route inventory includes work
 still to implement; it is not an assertion that every endpoint is running.
+
+### Current workflow deployment adapter
+
+The process publisher supports a legacy full `KESTRA_URL` with Bearer
+`KESTRA_API_TOKEN`, or deployment-owned single-destination routing via
+`KESTRA_ROUTES_FILE`. The private JSON route array binds `workspace_id`, `app_id`,
+package `version`, `workflow_id`, and a complete `endpoint`. Deployment derives
+namespace/flow identity from the manifest-referenced workflow YAML and supplies
+the private webhook key; event callers cannot supply a destination. Before each
+send, the publisher requires a validated Ready app snapshot and exactly one
+workflow subscribed to that event type. Missing, stale, or ambiguous routing
+retains the event for retry. Multiple subscribed destinations require a separately
+designed delivery contract; they are not silently reduced to one.
+
+`KESTRA_AUTH_SCHEME` explicitly selects `Bearer` (legacy default) or `Basic`;
+`KESTRA_API_TOKEN` is the credential following that scheme. Transport credentials
+are separate from the signed effect service token. Routes/auth are loaded on
+process startup; deployment changes require process recreation. The disposable
+integration helper provides that lifecycle and renews private Kestra secrets.

@@ -33,6 +33,8 @@ type Publisher struct {
 	db              *sql.DB
 	client          *http.Client
 	endpoint, token string
+	authScheme      string
+	routes          []Route
 }
 
 func NewPublisher(db *sql.DB, client *http.Client, endpoint string) *Publisher {
@@ -46,7 +48,7 @@ func NewPublisher(db *sql.DB, client *http.Client, endpoint string) *Publisher {
 	}
 	return &Publisher{db: db, client: &copyClient, endpoint: endpoint}
 }
-func (p *Publisher) SetBearerToken(token string) { p.token = token }
+func (p *Publisher) SetBearerToken(token string) { p.token = token; p.authScheme = "Bearer" }
 func ValidateEndpoint(endpoint string) error {
 	u, e := url.Parse(endpoint)
 	if e != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "http" && u.Scheme != "https") {
@@ -89,12 +91,16 @@ func (p *Publisher) PublishPending(ctx context.Context, limit int) error {
 		sendErr := errors.New("delivery failed")
 		if len(payload) <= 1048576 {
 			sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-			req, e := http.NewRequestWithContext(sendCtx, "POST", p.endpoint, bytes.NewReader(payload))
+			endpoint, routeErr := p.resolveEndpoint(sendCtx, payload)
+			req, e := http.NewRequestWithContext(sendCtx, "POST", endpoint, bytes.NewReader(payload))
+			if routeErr != nil {
+				e = routeErr
+			}
 			if e == nil {
 				req.Header.Set("Content-Type", "application/json")
 				req.Header.Set("Idempotency-Key", id)
 				if p.token != "" {
-					req.Header.Set("Authorization", "Bearer "+p.token)
+					req.Header.Set("Authorization", p.authScheme+" "+p.token)
 				}
 				resp, e := p.client.Do(req)
 				if e == nil {

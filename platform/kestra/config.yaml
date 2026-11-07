@@ -13,11 +13,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+datasources:
+  postgres:
+    url: "jdbc:postgresql://${KESTRA_DATABASE_HOST:postgres}:5432/${KESTRA_DATABASE_NAME:dxos_kestra}"
+    driverClassName: org.postgresql.Driver
+    username: "${KESTRA_DATABASE_USER:dxos_kestra}"
+    password: "${KESTRA_DATABASE_PASSWORD}"
+
 kestra:
   repository:
-    type: memory
+    type: postgres
   queue:
-    type: memory
+    type: postgres
   storage:
     type: local
     local:

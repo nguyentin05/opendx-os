@@ -47,6 +47,8 @@ def execute(action):
     fixture = json.loads((ROOT / 'tests/fixtures/actors.json').read_text())['actors']
     credentials_path = PRIVATE / 'actor-credentials.json'
     credentials = json.loads(credentials_path.read_text()) if credentials_path.exists() else {name: secrets.token_urlsafe(32) for name in fixture}
+    for name in fixture:
+        credentials.setdefault(name, secrets.token_urlsafe(32))
     if action == 'provision':
         admin = request(base + '/realms/master/protocol/openid-connect/token', {'grant_type': 'password', 'client_id': 'admin-cli', 'username': values.get('KEYCLOAK_ADMIN', 'admin'), 'password': values['KEYCLOAK_ADMIN_PASSWORD']}, form=True)['access_token']
         clients = request(base + '/admin/realms/dxos/clients?clientId=dxos-portal', token=admin)

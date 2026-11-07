@@ -69,8 +69,12 @@ cases cover selected S01/S03/S04/S05/S06 assertions, not full S01–S08 acceptan
 Hasura CRUD/FK isolation, concurrent approval, scanner restart, webhook import/auth,
 operational restart still need the integration window.
 Kestra YAML/plugin expression and webhook key configuration require deployment review;
-no real Kestra execution is claimed. Supply DXOS_PROCESS_URL, DXOS_WORKFLOW_TOKEN,
-DXOS_WEBHOOK_KEY through Kestra secrets. KESTRA_API_TOKEN protects publisher delivery;
+The source-branch fixture evidence does not establish real Kestra execution. The
+integration [workflow setup](../handoff/integration-setup.md) records the separate
+alpha automatic phase, explicit auth and private deployment/renewal lifecycle.
+Supply DXOS_PROCESS_URL, DXOS_WORKFLOW_TOKEN,
+DXOS_WEBHOOK_KEY through Kestra secrets. KESTRA_API_TOKEN carries the selected
+transport scheme credential;
 DXOS_WORKFLOW_TOKEN is the distinct signed OIDC service token for effect calls.
 
 The live acceptance module additionally requires TEST_WORKSPACE_ID equal to alpha,

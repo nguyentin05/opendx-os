@@ -14,9 +14,11 @@ GOCACHE=/tmp/opendx-backend-gocache go run ./cmd/cap-process
 
 Export DATABASE_URL, OIDC_ISSUER_URL, OIDC_JWKS_URL, OIDC_AUDIENCE,
 WORKFLOW_SERVICE_USER_ID, WORKFLOW_SERVICE_ROLE, KESTRA_URL, KESTRA_API_TOKEN,
+KESTRA_AUTH_SCHEME, optional KESTRA_ROUTES_FILE,
 S3_ENDPOINT, S3_BUCKET, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY,
 CLAMAV_ADDRESS. PORT defaults to 8081; FILES_TIMEOUT defaults to 30s (maximum 5m).
-KESTRA_URL is the complete webhook trigger URL, not a Kestra base URL. Secrets
+Legacy KESTRA_URL is the complete webhook trigger URL. The integration route-map
+adapter and explicit transport auth are defined in the [current contract](../contracts/data-contracts.md#current-workflow-deployment-adapter). Secrets
 remain private. S3 requires an existing private bucket and path-style SigV4 support;
 ClamAV StreamMaxLength must permit 20 MiB. The process starts publisher/scanner
 workers and authenticated command, effect, upload/download routes; /healthz is

@@ -92,6 +92,7 @@ services:
     restart: unless-stopped
     command: server standalone --config /app/config/config.yaml
     environment:
+      KESTRA_DATABASE_PASSWORD: ${KESTRA_DATABASE_PASSWORD:-}
       KESTRA_USER: ${KESTRA_USER:-admin@dxos.local}
       KESTRA_PASSWORD: ${KESTRA_PASSWORD:-change-me-local-kestra}
     ports:
@@ -115,6 +116,8 @@ services:
       WORKFLOW_SERVICE_ROLE: ${WORKFLOW_SERVICE_ROLE:-role_workflow}
       KESTRA_URL: ${KESTRA_URL:-http://kestra:8080/api/v1/executions/webhook/dxos/procurement_approval_flow/webhook-key}
       KESTRA_API_TOKEN: ${KESTRA_API_TOKEN:-change-me-local-kestra-token}
+      KESTRA_AUTH_SCHEME: ${KESTRA_AUTH_SCHEME:-Bearer}
+      KESTRA_ROUTES_FILE: ${KESTRA_ROUTES_FILE:-}
       S3_ENDPOINT: ${S3_ENDPOINT:-http://seaweedfs:8333}
       S3_BUCKET: ${S3_BUCKET:-dxos-attachments}
       S3_REGION: ${S3_REGION:-us-east-1}

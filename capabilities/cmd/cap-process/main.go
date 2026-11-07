@@ -86,7 +86,20 @@ func main() {
 	}
 	client := &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
 	publisher := events.NewPublisher(db, client, endpoint)
-	publisher.SetBearerToken(os.Getenv("KESTRA_API_TOKEN"))
+	scheme := os.Getenv("KESTRA_AUTH_SCHEME")
+	if scheme == "" {
+		scheme = "Bearer"
+	}
+	if publisher.SetAuthorization(scheme, os.Getenv("KESTRA_API_TOKEN")) != nil {
+		log.Fatal("invalid Kestra authorization configuration")
+	}
+	if path := os.Getenv("KESTRA_ROUTES_FILE"); path != "" {
+		raw, err := os.ReadFile(path)
+		var routes []events.Route
+		if err != nil || json.Unmarshal(raw, &routes) != nil || publisher.SetRoutes(routes) != nil {
+			log.Fatal("invalid deployment-owned workflow routes")
+		}
+	}
 	workerDone := make(chan struct{})
 	go func() {
 		defer close(workerDone)

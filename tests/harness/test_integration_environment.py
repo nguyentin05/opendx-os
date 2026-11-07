@@ -62,6 +62,8 @@ class EnvironmentTests(unittest.TestCase):
             env.private_config()
             self.assertEqual((env.ROOT / '.env.integration').stat().st_mode & 0o777, 0o600)
             self.assertEqual((env.ROOT / 'build/integration/s3.json').stat().st_mode & 0o777, 0o600)
+            for name in ('kestra.env', 'workflow-routes.json'):
+                self.assertEqual((env.ROOT / 'build/integration' / name).stat().st_mode & 0o777, 0o600)
 
     def test_reset_refuses_foreign_volume_before_down(self):
         import json

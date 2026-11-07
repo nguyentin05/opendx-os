@@ -87,6 +87,15 @@ def operate(action, values, runner=run):
 
 
 def private_config():
+    companion = ROOT / 'build/integration'
+    companion.mkdir(parents=True, exist_ok=True, mode=0o700)
+    for name, initial in [('kestra.env', ''), ('workflow-routes.json', '[]')]:
+        target = companion / name
+        if target.is_symlink() or (target.exists() and target.stat().st_mode & 0o077):
+            raise Refused('workflow companion configuration must have mode 0600')
+        if not target.exists():
+            with open(target, 'x', opener=lambda p, f: os.open(p, f, 0o600)) as stream:
+                stream.write(initial)
     s3 = ROOT / 'build/integration/s3.json'
     if s3.is_symlink() or (s3.exists() and s3.stat().st_mode & 0o077):
         raise Refused('build/integration/s3.json must be a private regular file with mode 0600')

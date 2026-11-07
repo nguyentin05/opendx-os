@@ -102,17 +102,16 @@ both, include the role in its signed grants, and match the persisted event's
 workspace. The active Ready app, enabled dependencies, subscribed event and
 literal effect command mapping are checked again before cached results.
 
-`KESTRA_URL` is the **complete webhook trigger URL**, including its configured
-namespace/flow/trigger/key path, not a base Kestra API URL. The publisher posts the
-persisted command event JSON directly and sets `Idempotency-Key: <event_id>` and
-`Authorization: Bearer <KESTRA_API_TOKEN>`. `KESTRA_API_TOKEN` is required at
-startup. Redirects are rejected. B4 must configure and verify that concrete webhook
-and authentication scheme against its actual Kestra deployment; no live Kestra
-compatibility is claimed by HTTP fixture evidence. Transport credentials and URLs
-must remain private backend configuration.
+Legacy endpoint mode uses a complete `KESTRA_URL` and Bearer credential.
+Integration additionally supports deployment-owned single-destination route maps
+and explicit Basic transport authentication; see the current
+[workflow adapter contract](../contracts/data-contracts.md#current-workflow-deployment-adapter)
+and [deployment/renewal setup](integration-setup.md). Publisher payload identity,
+`Idempotency-Key`, redirect rejection and persisted retries remain unchanged.
+Transport configuration is private and separate from the signed effect token.
 
 A workflow HTTP task must invoke the effect API with a signed token for that
-configured principal, for example (Kestra syntax/version verification deferred B4):
+configured principal, for example (verified against Kestra 0.20.7 in the alpha integration phase):
 
 ```yaml
 - id: create_review

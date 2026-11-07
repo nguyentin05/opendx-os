@@ -96,21 +96,8 @@ class LiveSeed:
         # Stopping the full standalone server stops its scheduler, workers and queued executions.
 
     def automatic_ready(self):
-        import base64
-        import yaml
-        flow = yaml.safe_load((ROOT / 'apps/procurement/workflows/procurement_flow.yaml').read_text())
-        namespace, flow_id = flow['namespace'], flow['id']
-        base = 'http://localhost:' + self.config.get('KESTRA_PORT', '18082')
-        auth = base64.b64encode((self.config.get('KESTRA_USERNAME', 'admin@dxos.local') + ':' + self.config['KESTRA_PASSWORD']).encode()).decode()
-        req = Request(base + '/api/v1/flows/' + namespace + '/' + flow_id, headers={'Authorization': 'Basic ' + auth})
-        try:
-            with urlopen(req, timeout=10) as response:
-                actual = json.load(response)
-        except (OSError, ValueError):
-            raise Refused('automatic phase requires the deployed declared Kestra flow and verified publisher routing (Task 6)') from None
-        endpoint = self.config.get('KESTRA_URL', '')
-        if actual.get('disabled') or ('/' + namespace + '/' + flow_id + '/') not in endpoint:
-            raise Refused('automatic phase requires declared flow routing in KESTRA_URL (Task 6)')
+        from scripts.integration.workflows import verify_ready
+        verify_ready(self)
 
     def provision_bucket(self):
         # Host-side access uses the verified project's private container address.

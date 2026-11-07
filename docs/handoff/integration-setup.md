@@ -94,8 +94,9 @@ docker compose --env-file .env.integration -p opendx-integration \
 
 Do not restart ClamAV before consuming a frozen manual quarantine case. A new
 seed phase resumes it to build its own clean fixtures, so consume phases
-sequentially. Restarting Kestra is not workflow recovery qualification: its
-current memory repository/queue remains a Task 6 concern.
+sequentially. Task 6 replaces the original memory repository/queue with PostgreSQL.
+A service restart alone is not workflow recovery qualification; the automatic
+phase below verifies persisted lease redelivery and effect deduplication.
 
 `build/integration/{manual,files}.json` are ignored mode-0600 files containing
 `TEST_CASES_JSON`, `TEST_INDEPENDENCE_JSON`, URLs, read-only assertion DSN, actual
@@ -139,3 +140,61 @@ not running after publication; the independence runner additionally requires
 `TEST_EFFECT_DELIVERY_PAUSED=yes` and `scanner_stopped=true` correspond to the
 whole Kestra and ClamAV containers being stopped, with cap-process continuing to
 run. Do not run another seed phase concurrently with these acceptance cases.
+
+Task 6 workflow deployment uses actual Kestra 0.20.7 PostgreSQL repository and
+queue in the separate `dxos_kestra` database. Bootstrap creates its dedicated
+`dxos_kestra` LOGIN role without superuser, CREATEDB, CREATEROLE, replication or
+BYPASSRLS. Runtime owns only that dedicated database. Shared integration data and
+storage volumes are preserved during service recreation.
+
+After Ready publication and identity provisioning, run:
+
+```sh
+TEST_DISPOSABLE_DATABASE=yes python3 -m scripts.integration.workflows deploy
+TEST_DISPOSABLE_DATABASE=yes python3 scripts/integration/seed.py --phase automatic
+TEST_DISPOSABLE_DATABASE=yes python3 -m unittest tests.integration.workflow_cases -v
+```
+
+Consume the manual phase before these commands. Deployment imports each actual
+manifest-referenced YAML and generates mode-0600 private route/secrets files under
+`build/integration/`. The integration process container runs under the invoking
+host's nonroot UID/GID to read its private route mount. Compose initialization
+creates empty restricted companion files before the first deployment.
+
+**Automatic workflow availability is alpha-only.** The configured signed workflow
+subject is alpha-scoped. Routes for beta are intentionally absent: beta events
+remain pending/retryable and effects from the alpha principal are denied. Beta
+CRUD/command isolation does not establish beta automatic-workflow readiness.
+`wrong_workflow` is an integration-only actor with the workflow role and a distinct
+subject, used to prove that the role alone cannot invoke effects.
+
+The publisher posts persisted event JSON with `Idempotency-Key: event_id` to its
+private single destination. `KESTRA_AUTH_SCHEME=Basic` and `KESTRA_API_TOKEN` carry
+private encoded Kestra transport credentials; the historical Bearer-only claim
+applies to legacy endpoint mode. The signed effect token remains separate.
+Automatic seeding validates both deployed app flow bodies, actual running
+publisher configuration, route identities/version/webhook key, and signed-token
+workspace/role/lifetime before creating any automatic-phase business data.
+
+Renew before `build/integration/workflow-deployment.json`'s private
+`token_expires_at` (allow at least 90 seconds for deployment/work):
+
+```sh
+TEST_DISPOSABLE_DATABASE=yes python3 -m scripts.integration.workflows renew
+```
+
+This acquires fresh Keycloak tokens, writes base64 `SECRET_DXOS_*` environment
+values privately, recreates Kestra to load them, verifies its authenticated API,
+reimports declarations, and recreates the publisher if its configuration changed.
+The PostgreSQL queue/repository preserves existing execution IDs during this
+planned reload. Token renewal is explicit local operator work, not an autonomous
+renewal daemon; keep the workload paused/bounded during renewal and do not let
+long-running effects outlive the token. Re-run renewal before any later live
+suite. No token or webhook key belongs in a tracked example.
+
+The restart case pauses actual Kestra, commits a fresh event, observes its
+`in_flight` lease, SIGKILLs the real process service, restores Kestra and starts
+cap-process without resetting PostgreSQL or volumes. It waits at most 100 seconds
+for the real 60-second lease to expire and re-deliver. Exact event/body/attempt
+state and UTC action times are private in `workflow-recovery.json`; sanitized
+qualification evidence is recorded in the Task 6 report.

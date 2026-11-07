@@ -19,11 +19,16 @@ services:
     environment:
       HASURA_GRAPHQL_DATABASE_URL: postgres://dxos_hasura:${INTEGRATION_HASURA_PASSWORD}@postgres:5432/opendx_integration
   cap-process:
+    user: "${INTEGRATION_UID:-1000}:${INTEGRATION_GID:-1000}"
+    volumes:
+      - ./build/integration/workflow-routes.json:/app/config/workflow-routes.json:ro
     ports: !override
       - "127.0.0.1:${CAP_PROCESS_PORT:-18091}:8081"
     environment:
       DATABASE_URL: postgres://dxos_process:${INTEGRATION_PROCESS_PASSWORD}@postgres:5432/opendx_integration?sslmode=disable
   kestra:
+    env_file:
+      - ./build/integration/kestra.env
     ports: !override
       - "127.0.0.1:${KESTRA_PORT:-18082}:8080"
   workspace-ui:
