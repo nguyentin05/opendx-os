@@ -149,9 +149,18 @@ class RegistryCrudCases(unittest.TestCase):
         # Nested master-data inserts are absent from the role's schema.
         self.assertIn('errors',self.create(requester={'data':{'full_name':'Forged','email':'forged@example.invalid','department':'Ops'}}))
         for actor in ('requester','beta_requester'):
-            body=self.gql('query {domain_procurement_requests{workspace_id requester {workspace_id}}}',actor=actor)
+            known = self.create(actor=actor)
+            self.assertNotIn('errors', known, known)
+            known_id = known['data']['insert_domain_procurement_requests_one']['id']
+            body=self.gql('query {domain_procurement_requests{id workspace_id requester {id workspace_id}}}',actor=actor)
             self.assertNotIn('errors',body,body)
+            rows = body['data']['domain_procurement_requests']
+            expected = next((r for r in rows if r['id'] == known_id), None)
+            self.assertIsNotNone(expected, 'Known authorized row must be visible')
+            self.assertEqual(expected['requester']['id'], self.actors['actors'][actor]['employee_id'])
             self.assertTrue(all(r['workspace_id']==self.actors['actors'][actor]['workspace_id'] and r['requester']['workspace_id']==r['workspace_id'] for r in body['data']['domain_procurement_requests']))
         body=self.gql('query {core_employees{id workspace_id}}')
         self.assertNotIn('errors',body,body)
-        self.assertTrue(all(r['workspace_id']==self.actors['workspaces']['alpha'] for r in body['data']['core_employees']))
+        employees = body['data']['core_employees']
+        self.assertIn(self.actors['actors']['requester']['employee_id'], [r['id'] for r in employees])
+        self.assertTrue(all(r['workspace_id']==self.actors['workspaces']['alpha'] for r in employees))

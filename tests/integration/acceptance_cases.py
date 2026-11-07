@@ -26,6 +26,11 @@ class BackendAcceptance(unittest.TestCase):
 
     def body(self, name):
         case = self.cases[name]
+        if name == 'retry':
+            source = domain_snapshot(case['entity_id'], self.workspace)
+            values = {k: source[k] for k in ('work_item_id', 'vendor_name', 'item_description', 'quoted_amount', 'quote_file_id')}
+            row = self.requester.graphql('mutation($object:domain_procurement_requests_insert_input!){insert_domain_procurement_requests_one(object:$object){id version}}', {'object': values})['insert_domain_procurement_requests_one']
+            case = {'entity_id': row['id'], 'expected_version': row['version']}
         return {'entity_id': str(uuid.UUID(case['entity_id'])),
                 'expected_version': case['expected_version'], 'payload': {}}
 
@@ -97,3 +102,16 @@ class BackendAcceptance(unittest.TestCase):
         self.assertEqual(status, 422)
         self.assertIn('error', result)
         self.assertEqual(before, self.protected(body))
+
+    def test_S01_authentication_and_permission_before_resource_details(self):
+        body = self.body('quarantined')
+        before = self.protected(body)
+        invalid = Client('invalid-bearer', 'role_procurement')
+        self.assertEqual(invalid.command('procurement', 'submit', body, str(uuid.uuid4()))[0], 401)
+        self.assertEqual(self.protected(body), before)
+        denied = self.noaccess.command('procurement', 'submit', body, str(uuid.uuid4()))
+        self.assertEqual(denied[0], 403)
+        self.assertEqual(self.protected(body), before)
+        missing = dict(body, entity_id=str(uuid.uuid4()))
+        self.assertEqual(self.noaccess.command('procurement', 'submit', missing, str(uuid.uuid4())), denied)
+        self.assertEqual(self.protected(body), before)
