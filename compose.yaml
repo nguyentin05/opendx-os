@@ -28,7 +28,12 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pg-data:/var/lib/postgresql/data
-      - ./platform/postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./platform/postgres/init/01_core_schema.sql:/docker-entrypoint-initdb.d/01_core_schema.sql:ro
+      - ./platform/postgres/init/02_capability_registry.sql:/docker-entrypoint-initdb.d/02_capability_registry.sql:ro
+      - ./platform/postgres/init/03_app_registry.sql:/docker-entrypoint-initdb.d/03_app_registry.sql:ro
+      - ./platform/postgres/init/04_capabilities.sh:/docker-entrypoint-initdb.d/04_capabilities.sh:ro
+      - ./platform/postgres/init/05_operator_deployments.sql:/docker-entrypoint-initdb.d/05_operator_deployments.sql:ro
+      - ./platform/postgres/init/06_runtime_roles.sql:/docker-entrypoint-initdb.d/06_runtime_roles.sql:ro
       - ./platform/postgres/capabilities:/docker-entrypoint-initdb.d/capabilities:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dxos_admin} -d ${POSTGRES_DB:-dxos_db}"]
@@ -42,7 +47,7 @@ services:
     ports:
       - "${HASURA_PORT:-8080}:8080"
     environment:
-      HASURA_GRAPHQL_DATABASE_URL: postgres://${POSTGRES_USER:-dxos_admin}:${POSTGRES_PASSWORD:-dxos_secret}@postgres:5432/${POSTGRES_DB:-dxos_db}
+      HASURA_GRAPHQL_DATABASE_URL: postgres://dxos_hasura:${HASURA_DATABASE_PASSWORD:-}@postgres:5432/${POSTGRES_DB:-dxos_db}
       HASURA_GRAPHQL_ADMIN_SECRET: ${HASURA_ADMIN_SECRET:-dxos_admin_secret}
       HASURA_GRAPHQL_ENABLE_CONSOLE: "false"
       HASURA_GRAPHQL_DEV_MODE: "false"
@@ -102,12 +107,12 @@ services:
     restart: unless-stopped
     environment:
       PORT: "8081"
-      DATABASE_URL: postgres://${POSTGRES_USER:-dxos_admin}:${POSTGRES_PASSWORD:-dxos_secret}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
+      DATABASE_URL: postgres://dxos_process:${PROCESS_DATABASE_PASSWORD:-}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
       OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-http://localhost:8085/realms/dxos}
       OIDC_JWKS_URL: ${OIDC_JWKS_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/certs}
       OIDC_AUDIENCE: ${OIDC_AUDIENCE:-dxos-runtime}
-      WORKFLOW_SERVICE_USER_ID: ${WORKFLOW_SERVICE_USER_ID:-99999999-9999-4999-8999-999999999999}
-      WORKFLOW_SERVICE_ROLE: ${WORKFLOW_SERVICE_ROLE:-role_workflow_service}
+      WORKFLOW_SERVICE_USER_ID: ${WORKFLOW_SERVICE_USER_ID:-22222222-2222-4222-8222-000000000005}
+      WORKFLOW_SERVICE_ROLE: ${WORKFLOW_SERVICE_ROLE:-role_workflow}
       KESTRA_URL: ${KESTRA_URL:-http://kestra:8080/api/v1/executions/webhook/dxos/procurement_approval_flow/webhook-key}
       KESTRA_API_TOKEN: ${KESTRA_API_TOKEN:-change-me-local-kestra-token}
       S3_ENDPOINT: ${S3_ENDPOINT:-http://seaweedfs:8333}

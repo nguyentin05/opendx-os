@@ -15,7 +15,7 @@
         "description": "System auditor role for cross-workspace compliance"
       },
       {
-        "name": "role_workflow_service",
+        "name": "role_workflow",
         "description": "Trusted Kestra workflow effect service role"
       }
     ]
@@ -30,7 +30,9 @@
       "redirectUris": [
         "http://localhost:5173/*",
         "http://127.0.0.1:5173/*",
-        "http://localhost:9080/*"
+        "http://localhost:9080/*",
+        "http://localhost:15173/*",
+        "http://127.0.0.1:15173/*"
       ],
       "webOrigins": [
         "*"
@@ -54,7 +56,7 @@
           "consentRequired": false,
           "config": {
             "user.attribute": "id",
-            "claim.name": "https://hasura.io/jwt/claims.x-hasura-user-id",
+            "claim.name": "https://hasura\\.io/jwt/claims.x-hasura-user-id",
             "jsonType.label": "String",
             "id.token.claim": "false",
             "access.token.claim": "true"
@@ -67,7 +69,7 @@
           "consentRequired": false,
           "config": {
             "user.attribute": "workspace_id",
-            "claim.name": "https://hasura.io/jwt/claims.x-hasura-workspace-id",
+            "claim.name": "https://hasura\\.io/jwt/claims.x-hasura-workspace-id",
             "jsonType.label": "String",
             "id.token.claim": "false",
             "access.token.claim": "true"
@@ -80,7 +82,7 @@
           "consentRequired": false,
           "config": {
             "user.attribute": "default_role",
-            "claim.name": "https://hasura.io/jwt/claims.x-hasura-default-role",
+            "claim.name": "https://hasura\\.io/jwt/claims.x-hasura-default-role",
             "jsonType.label": "String",
             "id.token.claim": "false",
             "access.token.claim": "true"
@@ -89,14 +91,15 @@
         {
           "name": "hasura-allowed-roles",
           "protocol": "openid-connect",
-          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
           "consentRequired": false,
           "config": {
             "multivalued": "true",
-            "claim.name": "https://hasura.io/jwt/claims.x-hasura-allowed-roles",
+            "claim.name": "https://hasura\\.io/jwt/claims.x-hasura-allowed-roles",
             "jsonType.label": "String",
             "id.token.claim": "false",
-            "access.token.claim": "true"
+            "access.token.claim": "true",
+            "user.attribute": "allowed_roles"
           }
         }
       ]

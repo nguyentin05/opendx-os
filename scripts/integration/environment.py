@@ -112,16 +112,50 @@ def private_config():
                    'secretKey': values['S3_SECRET_ACCESS_KEY']}], 'actions': ['Admin', 'Read', 'List', 'Tagging', 'Write']}]}, stream)
 
 
+def configure_roles(values):
+    guard(values)
+    verify_target(run)
+    sql = (ROOT / 'platform/postgres/init/06_runtime_roles.sql').read_text()
+    for role, key in [('dxos_process','INTEGRATION_PROCESS_PASSWORD'), ('dxos_hasura','INTEGRATION_HASURA_PASSWORD'), ('dxos_reader','INTEGRATION_READER_PASSWORD'), ('dxos_caller','INTEGRATION_CALLER_PASSWORD'), ('dxos_module_test','INTEGRATION_MODULE_TEST_PASSWORD')]:
+        # Generated hex avoids SQL/URL quoting ambiguity; existing private values are checked.
+        value = values.setdefault(key, secrets.token_hex(24))
+        if not value.isalnum():
+            raise Refused('runtime passwords must be alphanumeric')
+        sql += "\nALTER ROLE " + role + " PASSWORD '" + value + "';"
+    result = subprocess.run(compose('exec','-T','postgres','psql','-v','ON_ERROR_STOP=1','-U','integration_bootstrap','-d',DATABASE), input=sql, text=True, capture_output=True, cwd=ROOT)
+    if result.returncode:
+        raise Refused('runtime bootstrap failed; output withheld')
+    path = ROOT / '.env.integration'
+    persisted = dict(line.split('=', 1) for line in path.read_text().splitlines() if line and not line.startswith('#'))
+    persisted.update({k: v for k, v in values.items() if k.startswith('INTEGRATION_')})
+    with open(path, 'w') as stream:
+        stream.write(''.join(k + '=' + v + '\n' for k,v in persisted.items()))
+    os.chmod(path, 0o600)
+    connections = {}
+    for name, role, key in [('bootstrap','integration_bootstrap','POSTGRES_PASSWORD'), ('process','dxos_process','INTEGRATION_PROCESS_PASSWORD'), ('hasura','dxos_hasura','INTEGRATION_HASURA_PASSWORD'), ('assertion','dxos_reader','INTEGRATION_READER_PASSWORD'), ('caller','dxos_caller','INTEGRATION_CALLER_PASSWORD'), ('module_test','dxos_module_test','INTEGRATION_MODULE_TEST_PASSWORD')]:
+        connections[name] = 'postgres://' + role + ':' + values[key] + '@localhost:' + values.get('POSTGRES_PORT','15432') + '/' + DATABASE + '?sslmode=disable'
+    output = ROOT / 'build/integration/connections.json'
+    if output.is_symlink():
+        raise Refused('private connections file cannot be a symlink')
+    with open(output, 'w', opener=lambda p, flags: os.open(p, flags, 0o600)) as stream:
+        os.fchmod(stream.fileno(), 0o600)
+        json.dump(connections, stream)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['up', 'down', 'reset', 'inspect'])
+    parser.add_argument('action', choices=['up', 'down', 'reset', 'inspect', 'roles'])
     action = parser.parse_args().action
     try:
         guard(os.environ, action == 'reset')
         private_config()
         values = dict(line.split('=', 1) for line in (ROOT / '.env.integration').read_text().splitlines() if line and not line.startswith('#'))
         values.update(os.environ)
-        print(json.dumps(operate(action, values)))
+        if action == 'roles':
+            configure_roles(values)
+            print(json.dumps({'action': 'roles', 'result': 'completed'}))
+        else:
+            print(json.dumps(operate(action, values)))
     except Refused as exc:
         parser.exit(1, str(exc) + '\n')
 
