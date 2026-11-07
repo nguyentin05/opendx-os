@@ -17,6 +17,10 @@ routes:
   - id: hasura-graphql
     uri: /v1/graphql
     plugins:
+      cors:
+        allow_origins: "http://localhost:15173"
+        allow_methods: "GET,POST,PUT,OPTIONS"
+        allow_headers: "Authorization,Content-Type,X-Hasura-Role,Idempotency-Key"
       proxy-rewrite:
         headers:
           remove:
@@ -31,6 +35,10 @@ routes:
   - id: cap-process-commands
     uri: /api/cap/process/*
     plugins:
+      cors:
+        allow_origins: "http://localhost:15173"
+        allow_methods: "GET,POST,PUT,OPTIONS"
+        allow_headers: "Authorization,Content-Type,X-Hasura-Role,Idempotency-Key"
       proxy-rewrite:
         headers:
           remove:

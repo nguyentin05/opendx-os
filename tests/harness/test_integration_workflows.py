@@ -56,3 +56,34 @@ class WorkflowDeploymentTests(unittest.TestCase):
         for command in process_updates:
             self.assertIn('--force-recreate', command,
                           'startup-loaded routes require recreation even with unchanged image/environment')
+
+
+    def test_existing_replication_role_is_refused(self):
+        queries = []
+        def sql(query, role):
+            queries.append(query)
+            if "count(*)" in query:
+                return '1'
+            # PostgreSQL expression has replication=true and all other flags=false.
+            return 't' if 'rolreplication' in query else 'f'
+        live = SimpleNamespace(config={'KESTRA_DATABASE_PASSWORD': 'fixtureonly'}, sql=sql)
+        with self.assertRaises(workflows.Refused):
+            workflows.provision_database(live)
+
+    def test_automatic_phase_refuses_stopped_or_paused_publisher(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'build/integration').mkdir(parents=True)
+            (root / 'build/integration/workflow-routes.json').write_text('[]')
+            live = SimpleNamespace(workspace='workspace', config={
+                'KESTRA_AUTH_SCHEME': 'Basic',
+                'KESTRA_ROUTES_FILE': '/app/config/workflow-routes.json'})
+            for state in ({'Running': False, 'Paused': False}, {'Running': True, 'Paused': True}):
+                container = {'State': state, 'Config': {'Env': []}}
+                def run(command):
+                    return json.dumps([container, container]) if 'inspect' in command else 'container'
+                with self.subTest(state=state), patch.object(workflows, 'ROOT', root), \
+                     patch.object(workflows, 'declarations', return_value=[]), \
+                     patch.object(workflows, 'run', side_effect=run):
+                    with self.assertRaisesRegex(workflows.Refused, 'running.*unpaused'):
+                        workflows.verify_ready(live)

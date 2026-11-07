@@ -159,3 +159,18 @@ class EnvironmentTests(unittest.TestCase):
             self.assertEqual(json.loads(s3.read_text()), expected)
             self.assertEqual(s3.stat().st_mode & 0o777, 0o600)
             self.assertEqual((env.ROOT / '.env.integration').read_bytes(), before)
+
+    def test_fresh_infrastructure_does_not_start_unprovisioned_kestra(self):
+        import json
+        env = load('environment')
+        calls = []
+        def runner(command):
+            calls.append(command)
+            if 'config' in command:
+                return json.dumps({'name': env.PROJECT, 'services': {'postgres': {
+                    'environment': {'POSTGRES_DB': env.DATABASE}}}, 'volumes': {}})
+            if 'up' in command and 'kestra' in command:
+                raise env.Refused('dedicated Kestra database does not exist before deployment')
+            return ''
+        env.operate('up', {'TEST_DISPOSABLE_DATABASE': 'yes'}, runner)
+        self.assertTrue(any('up' in c and 'postgres' in c for c in calls))

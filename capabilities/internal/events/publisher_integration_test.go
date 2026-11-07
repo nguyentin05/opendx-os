@@ -20,9 +20,13 @@ package events
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"github.com/lib/pq"
+	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
 	"github.com/opendx-os/opendx-os/capabilities/internal/testutil"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 )
 
@@ -83,5 +87,71 @@ func TestExpiredClaimRestartAndStaleAcknowledgement(t *testing.T) {
 	db.QueryRow(`SELECT delivery_status FROM core.outbox_events`).Scan(&state)
 	if state != "in_flight" {
 		t.Fatal(state)
+	}
+}
+
+// Both transport auth and destination selection are observed on the real HTTP
+// request; a route miss must retain the durable event without fallback delivery.
+func TestRoutedBasicDeliveryAndMissingRouteRetention(t *testing.T) {
+	db := publisherFixture(t)
+	raw, err := os.ReadFile("../../../contracts/fixtures/registry-ready.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := registry.Decode(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, _ := json.Marshal(a.ManifestSpec)
+	ui, _ := json.Marshal(a.UISchema)
+	sm, _ := json.Marshal(a.StateMachine)
+	if _, err = db.Exec(`INSERT INTO core.capability_registry VALUES('cap-process',true)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(`INSERT INTO core.app_registry VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NULL,$12)`, a.WorkspaceID, a.AppID, a.DisplayName, a.Version, a.RoleName, a.DomainTable, spec, ui, sm, pq.Array(a.DependentCapabilities), a.Status, a.UpdatedAt); err != nil {
+		t.Fatal(err)
+	}
+	envelope, _ := json.Marshal(map[string]string{"workspace_id": a.WorkspaceID, "app_id": a.AppID, "event_type": "command.committed", "event_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"})
+	if _, err = db.Exec(`UPDATE core.outbox_events SET payload=$1`, envelope); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.URL.Path != "/declared" || r.Header.Get("Authorization") != "Basic dXNlcjpwYXNz" || r.Header.Get("Idempotency-Key") != "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" {
+			t.Error("incorrect outbound transport/path/identity")
+		}
+		w.WriteHeader(204)
+	}))
+	defer server.Close()
+	p := NewPublisher(db, server.Client(), server.URL+"/fallback")
+	if err = p.SetAuthorization("Basic", "dXNlcjpwYXNz"); err != nil {
+		t.Fatal(err)
+	}
+	route := Route{WorkspaceID: a.WorkspaceID, AppID: a.AppID, Version: a.Version, WorkflowID: a.ManifestSpec.Workflows[0].ID, Endpoint: server.URL + "/declared"}
+	if err = p.SetRoutes([]Route{route}); err != nil {
+		t.Fatal(err)
+	}
+	if err = p.PublishPending(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	if err = db.QueryRow(`SELECT delivery_status FROM core.outbox_events`).Scan(&state); err != nil || state != "delivered" || calls != 1 {
+		t.Fatalf("delivery %s calls=%d err=%v", state, calls, err)
+	}
+	if _, err = db.Exec(`UPDATE core.outbox_events SET delivery_status='pending',next_attempt_at=now()`); err != nil {
+		t.Fatal(err)
+	}
+	route.Version = "not-current"
+	if err = p.SetRoutes([]Route{route}); err != nil {
+		t.Fatal(err)
+	}
+	if err = p.PublishPending(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	var attempts int
+	var next bool
+	if err = db.QueryRow(`SELECT delivery_status,attempt_count,next_attempt_at>now() FROM core.outbox_events`).Scan(&state, &attempts, &next); err != nil || state != "pending" || attempts != 2 || !next || calls != 1 {
+		t.Fatalf("missing route lost event: %s attempts=%d retry=%v calls=%d err=%v", state, attempts, next, calls, err)
 	}
 }

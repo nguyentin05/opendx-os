@@ -11,7 +11,8 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[2]
 PROJECT = 'opendx-integration'
 DATABASE = 'opendx_integration'
-INFRA = ['postgres', 'keycloak', 'seaweedfs', 'clamav', 'kestra']
+# Kestra requires the dedicated database provisioned by workflows.deploy.
+INFRA = ['postgres', 'keycloak', 'seaweedfs', 'clamav']
 
 
 class Refused(RuntimeError):

@@ -86,7 +86,7 @@ def provision_database(live):
     if live.sql("SELECT count(*) FROM pg_database WHERE datname='dxos_kestra'", 'bootstrap') == '0':
         live.sql('CREATE DATABASE dxos_kestra OWNER dxos_kestra', 'bootstrap')
         live.sql('REVOKE CONNECT ON DATABASE dxos_kestra FROM PUBLIC', 'bootstrap')
-    if live.sql("SELECT rolsuper OR rolcreatedb OR rolcreaterole OR rolbypassrls FROM pg_roles WHERE rolname='dxos_kestra'", 'bootstrap') != 'f':
+    if live.sql("SELECT rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls FROM pg_roles WHERE rolname='dxos_kestra'", 'bootstrap') != 'f':
         raise Refused('Kestra runtime role exceeds its database owner scope')
 
 
@@ -148,6 +148,8 @@ def verify_ready(live):
     if live.config.get('KESTRA_AUTH_SCHEME') != 'Basic' or live.config.get('KESTRA_ROUTES_FILE') != '/app/config/workflow-routes.json':
         raise Refused('automatic phase requires deployed manifest routing and explicit auth')
     containers = json.loads(run(['docker', 'inspect', run(compose('ps', '-q', 'cap-process')).strip(), run(compose('ps', '-q', 'kestra')).strip()]))
+    if len(containers) != 2 or any(not c['State']['Running'] or c['State']['Paused'] for c in containers):
+        raise Refused('automatic phase requires running and unpaused publisher and Kestra')
     runtime = dict(v.split('=', 1) for v in containers[0]['Config']['Env'])
     secrets_env = dict(v.split('=', 1) for v in containers[1]['Config']['Env'])
     for key in ('KESTRA_AUTH_SCHEME', 'KESTRA_API_TOKEN', 'KESTRA_URL', 'KESTRA_ROUTES_FILE'):

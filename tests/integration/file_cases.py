@@ -25,6 +25,18 @@ EICAR = b'X5O!P%@AP[4' + b'\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!
 INFECTED_PDF = b'%PDF-1.4\n1 0 obj\n<< /Length ' + str(len(EICAR)).encode() + b' >>\nstream\n' + EICAR + b'\nendstream\nendobj\n%%EOF\n'
 
 
+def restore_services(*actions):
+    """Attempt each restoration even when an earlier service cannot restart."""
+    failures = []
+    for action in actions:
+        try:
+            action()
+        except Exception as error:
+            failures.append(type(error).__name__)
+    if failures:
+        raise RuntimeError('service restoration failed: ' + ', '.join(failures))
+
+
 class FileCases(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -109,8 +121,8 @@ class FileCases(unittest.TestCase):
         self.assertEqual(self.live.sql("SELECT to_jsonb(d) FROM domain.procurement_requests d WHERE id='%s'" % entity), snapshot)
 
     def test_quarantine_blocks_download_and_submit(self):
-        run(compose('stop', '--timeout', '5', 'clamav'))
         try:
+            run(compose('stop', '--timeout', '5', 'clamav'))
             file = self.upload()
             initial = self.row(file)
             self.wait(lambda: self.row(file)['scan_attempt_count'] > initial['scan_attempt_count'], 30)
@@ -159,8 +171,8 @@ class FileCases(unittest.TestCase):
             self.live.create(actor='beta_requester', file_id=file)
 
     def test_ordinary_caller_cannot_mark_clean(self):
-        run(compose('stop', '--timeout', '5', 'clamav'))
         try:
+            run(compose('stop', '--timeout', '5', 'clamav'))
             file = self.upload()
             for role in ('caller', 'hasura'):
                 result = subprocess.run(['psql', self.live.connections[role], '-XAt', '-v', 'ON_ERROR_STOP=1', '-c', "UPDATE core.file_objects SET scan_status='CLEAN' WHERE id='%s'" % file], capture_output=True, text=True)
@@ -185,8 +197,8 @@ class FileCases(unittest.TestCase):
             self.assertIn('permission denied', result.stderr)
         for method in ('PUT', 'PATCH'):
             self.assertIn(self.download(original, method=method, body=b'{"scan_status":"CLEAN"}')[0], (404, 405))
-        run(compose('stop', '--timeout', '5', 'clamav'))
         try:
+            run(compose('stop', '--timeout', '5', 'clamav'))
             replacement = self.upload(PDF + b'new quote\n')
             self.assertNotEqual(replacement, original)
             self.assertNotEqual(self.row(replacement)['object_key'], original_row['object_key'])
@@ -205,9 +217,9 @@ class FileCases(unittest.TestCase):
         clean_row = self.wait_status(clean, 'CLEAN')
         infected = self.upload(INFECTED_PDF)
         self.wait_status(infected, 'INFECTED')
-        run(compose('stop', '--timeout', '5', 'clamav'))
-        self.record('stopped real ClamAV', {'process_address': self.address('cap-process', 8081)[0]})
         try:
+            run(compose('stop', '--timeout', '5', 'clamav'))
+            self.record('stopped real ClamAV', {'process_address': self.address('cap-process', 8081)[0]})
             pending = self.upload(PDF + b'persist through restart\n')
             initial = self.row(pending)
             failed = self.wait(lambda: (r if (r := self.row(pending))['scan_attempt_count'] > initial['scan_attempt_count'] else None), 40)
@@ -238,9 +250,10 @@ class FileCases(unittest.TestCase):
             self.assertEqual(self.download(infected)[0], 422)
             self.record('pending CLEAN with original identity/hash/bytes; prior clean and infected rows survive', final)
         finally:
-            run(compose('start', 'seaweedfs'))
-            run(['docker', 'start', run(compose('ps', '-a', '-q', 'cap-process')).strip()])
-            self.start_scanner()
+            restore_services(
+                lambda: run(compose('start', 'seaweedfs')),
+                lambda: run(['docker', 'start', run(compose('ps', '-a', '-q', 'cap-process')).strip()]),
+                self.start_scanner)
 
     def test_gateway_recovers_after_process_address_change(self):
         # Natural restart need not allocate a different address. This separate

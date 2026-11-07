@@ -131,7 +131,7 @@ GRANT SELECT ON domain.identity_boundary TO dxos_reader;""")
             self.assertEqual(self.http(realm_url,{'accessTokenLifespan':2},{'Authorization':'Bearer '+admin},'PUT')[0],204)
             token = request(self.keycloak+'/realms/dxos/protocol/openid-connect/token',{'grant_type':'password','client_id':'dxos-portal','username':'requester','password':credentials['requester'],'scope':'openid'},form=True)['access_token']
         finally:
-            self.http(realm_url,{'accessTokenLifespan':original},{'Authorization':'Bearer '+admin},'PUT')
+            self.assertEqual(self.http(realm_url,{'accessTokenLifespan':original},{'Authorization':'Bearer '+admin},'PUT')[0],204)
         time.sleep(3)
         self.denied(token=token)
 
