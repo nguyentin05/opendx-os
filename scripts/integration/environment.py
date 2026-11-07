@@ -18,10 +18,10 @@ class Refused(RuntimeError):
     pass
 
 
-def run(command):
+def run(command, input=None):
     try:
         return subprocess.run(command, cwd=ROOT, check=True, capture_output=True,
-                              text=True, timeout=600, env={k: v for k, v in os.environ.items()
+                              text=True, input=input, timeout=600, env={k: v for k, v in os.environ.items()
                               if not k.startswith(('COMPOSE_', 'POSTGRES_', 'DOCKER_'))}).stdout
     except (subprocess.SubprocessError, OSError):
         raise Refused('service command failed; output withheld to protect credentials') from None
@@ -122,9 +122,7 @@ def configure_roles(values):
         if not value.isalnum():
             raise Refused('runtime passwords must be alphanumeric')
         sql += "\nALTER ROLE " + role + " PASSWORD '" + value + "';"
-    result = subprocess.run(compose('exec','-T','postgres','psql','-v','ON_ERROR_STOP=1','-U','integration_bootstrap','-d',DATABASE), input=sql, text=True, capture_output=True, cwd=ROOT)
-    if result.returncode:
-        raise Refused('runtime bootstrap failed; output withheld')
+    run(compose('exec','-T','postgres','psql','-v','ON_ERROR_STOP=1','-U','integration_bootstrap','-d',DATABASE), input=sql)
     path = ROOT / '.env.integration'
     persisted = dict(line.split('=', 1) for line in path.read_text().splitlines() if line and not line.startswith('#'))
     persisted.update({k: v for k, v in values.items() if k.startswith('INTEGRATION_')})

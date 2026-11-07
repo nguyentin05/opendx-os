@@ -96,3 +96,48 @@ class EnvironmentTests(unittest.TestCase):
                 env.private_config()
             self.assertEqual(config.read_text(), 'existing public config')
             self.assertFalse((env.ROOT / '.env.integration').exists())
+
+    def test_role_bootstrap_uses_verified_environment_and_preserves_sql_stdin(self):
+        import json
+        import os
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        env = load('environment')
+        observed = []
+
+        def execute(command, **kwargs):
+            effective = dict(kwargs.get('env', os.environ))
+            observed.append((command, kwargs, effective))
+            if 'config' in command:
+                stdout = json.dumps({'name': 'opendx-integration', 'services': {
+                    'postgres': {'environment': {'POSTGRES_DB': 'opendx_integration'}}}, 'volumes': {}})
+            else:
+                stdout = ''
+            return SimpleNamespace(stdout=stdout, returncode=0)
+
+        inherited = {'DOCKER_HOST': 'tcp://foreign:2375', 'DOCKER_CONTEXT': 'foreign',
+                     'COMPOSE_FILE': '/foreign/compose.yaml', 'POSTGRES_HOST': 'foreign',
+                     'PATH': '/usr/bin'}
+        with tempfile.TemporaryDirectory() as directory:
+            env.ROOT = Path(directory)
+            env.private_config()
+            sql_file = env.ROOT / 'platform/postgres/init/06_runtime_roles.sql'
+            sql_file.parent.mkdir(parents=True)
+            sql_file.write_text('SELECT 17; -- reviewed bootstrap marker\n')
+            values = dict(line.split('=', 1) for line in
+                          (env.ROOT / '.env.integration').read_text().splitlines())
+            values['TEST_DISPOSABLE_DATABASE'] = 'yes'
+            with patch.dict(os.environ, inherited, clear=True), patch.object(
+                    env.subprocess, 'run', side_effect=execute):
+                env.configure_roles(values)
+
+        self.assertGreater(len(observed), 1)
+        verification_environment = observed[0][2]
+        mutation = next(item for item in observed if 'psql' in item[0])
+        self.assertEqual(mutation[2], verification_environment)
+        self.assertEqual(mutation[2], {'PATH': '/usr/bin'})
+        self.assertIn('SELECT 17; -- reviewed bootstrap marker', mutation[1]['input'])
+        self.assertIn('ALTER ROLE dxos_process PASSWORD', mutation[1]['input'])
+        self.assertTrue(mutation[1]['capture_output'])
+        self.assertTrue(mutation[1]['text'])
