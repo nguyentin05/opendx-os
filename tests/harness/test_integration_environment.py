@@ -141,3 +141,19 @@ class EnvironmentTests(unittest.TestCase):
         self.assertIn('ALTER ROLE dxos_process PASSWORD', mutation[1]['input'])
         self.assertTrue(mutation[1]['capture_output'])
         self.assertTrue(mutation[1]['text'])
+
+    def test_private_config_reconstructs_missing_s3_from_existing_credentials(self):
+        import json
+        import tempfile
+        env = load('environment')
+        with tempfile.TemporaryDirectory() as directory:
+            env.ROOT = Path(directory)
+            env.private_config()
+            before = (env.ROOT / '.env.integration').read_bytes()
+            s3 = env.ROOT / 'build/integration/s3.json'
+            expected = json.loads(s3.read_text())
+            s3.unlink()
+            env.private_config()
+            self.assertEqual(json.loads(s3.read_text()), expected)
+            self.assertEqual(s3.stat().st_mode & 0o777, 0o600)
+            self.assertEqual((env.ROOT / '.env.integration').read_bytes(), before)

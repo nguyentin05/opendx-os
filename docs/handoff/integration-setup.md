@@ -49,22 +49,93 @@ the identity/publication work before starting Hasura or cap-process. Do not star
 the entire base Compose stack with its bootstrap defaults. PostgreSQL bootstrap
 credentials are private and solely for isolated initialization/operator setup.
 
-Identity, app publication and phase data are pending separate integration gates.
-The supported phase entrypoint currently fails closed before creating records:
+Identity and actual supported-package publication are now wired through the
+[identity/runtime setup](identity-runtime.md) and the phase workflow below.
+Automatic workflow routing and full file lifecycle/recovery remain separate gates.
+
+## Actual package publication and phase data
+
+Task 4 replaces the pending phase boundary described above. After role and
+identity provisioning, start restricted Hasura/process and the gateway, then run:
 
 ```sh
-python3 scripts/integration/seed.py --phase manual
-python3 scripts/integration/seed.py --phase automatic
-python3 scripts/integration/seed.py --phase files
+python3 -m unittest tests.integration.registry_crud_cases -v
+TEST_DISPOSABLE_DATABASE=yes python3 scripts/integration/seed.py --phase manual
+TEST_DISPOSABLE_DATABASE=yes python3 scripts/integration/seed.py --phase files
 ```
 
-Actual registry Ready snapshots for both `procurement` and `process_fixture`
-are required; caller assertions of readiness are not accepted. Subsequent work
-must obtain fixture identities from `tests/fixtures/actors.json`, use authorized
-CRUD/command transitions for fresh records, capture submitted/stale versions and
-write ignored 0600 `build/integration/{manual,automatic,files}.json` context files
-with `TEST_CASES_JSON`, `TEST_INDEPENDENCE_JSON` and phase record IDs. No context
-file or READY/PASS assertion is fabricated now. Manual delivery must be paused
-including queued work; automatic delivery requires the real Kestra path. The full
-seed/reset round trip and unrelated-project preservation live check remain
-NOT_RUN until those gates are available.
+The registry suite provisions the actor fixture's shared workspaces/employees,
+validates the two actual package paths, applies them in both workspaces, and
+reconciles a temporary directory containing only those supported packages.
+Single-package apply retains other active packages. Explicit directory reconcile
+still removes omitted packages and their managed grants; do not pass all `apps/`
+while maintenance/timesheet remain unsupported. Registry publication/CRUD success
+is limited to these two packages.
+
+Seeding requires actual Ready snapshots and enabled dependencies in both
+workspaces. Each invocation creates fresh UUIDs through authenticated Hasura,
+uploads real PDFs to the private bucket, waits for actual ClamAV CLEAN results,
+and uses Command API transitions to establish submitted/self-approval/stale
+cases. Only shared master/work-item setup uses bootstrap; business records and
+state changes use fixture identities and restricted runtime services. Scanner
+status is never written by seed SQL.
+
+Manual/files phases stop the whole Kestra server before creating records, so its
+workers and queued tasks cannot execute effects. After observing clean fixtures,
+they stop ClamAV and upload a further file that remains QUARANTINED for negative
+checks. `scanner_stopped` in the private context records this operational state.
+The process service remains running and persists scan retries. Resume the real
+scanner for Task 7 with:
+
+```sh
+docker compose --env-file .env.integration -p opendx-integration \
+  -f compose.yaml -f compose.integration.yaml start clamav
+```
+
+Do not restart ClamAV before consuming a frozen manual quarantine case. A new
+seed phase resumes it to build its own clean fixtures, so consume phases
+sequentially. Restarting Kestra is not workflow recovery qualification: its
+current memory repository/queue remains a Task 6 concern.
+
+`build/integration/{manual,files}.json` are ignored mode-0600 files containing
+`TEST_CASES_JSON`, `TEST_INDEPENDENCE_JSON`, URLs, read-only assertion DSN, actual
+record IDs/versions and file IDs. Load their environment keys and separately load
+renewed bearer tokens from `build/integration/tokens.json`; contexts do not embed
+tokens. Refresh tokens after seeding if required by `token-expiry.json`.
+Automatic seeding refuses until the actual declared Kestra flow and its configured
+publisher routing exist; this prerequisite remains Task 6, not a Task 4 success.
+It creates a separate dataset and sends its transition through the real API.
+
+`roles` also provisions `opendx_module_test`, owned by the dedicated CREATEDB role,
+and writes its DSN under `module_test`. Operator integration tests require that
+test-named anchor and create/drop their own random databases. Assertions retain
+`dxos_reader` against `opendx_integration`. Missing private S3 companion config is
+reconstructed from existing `.env.integration` credentials without rotating them.
+
+Load a manual context without printing private values (after generating the manual
+phase and renewing tokens). This starts only the selected test process:
+
+```sh
+python3 scripts/integration/identity.py tokens
+python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+import subprocess
+context = json.loads(Path('build/integration/manual.json').read_text())
+tokens = json.loads(Path('build/integration/tokens.json').read_text())
+env = {**os.environ, **tokens,
+       **{k: v for k, v in context.items() if k.startswith('TEST_')}}
+subprocess.run(['python3', '-m', 'unittest',
+                'tests.integration.acceptance_cases', '-v'], env=env, check=True)
+PY
+```
+
+`TEST_INDEPENDENCE_JSON` contains `fixture_entity_id` for the OPEN
+process_fixture row, its actual `expected_version`, and a separate
+`procurement_entity_id` comparison row. The operator is a one-shot CLI and is
+not running after publication; the independence runner additionally requires
+`TEST_OPERATOR_STOPPED=yes`. Manual context values
+`TEST_EFFECT_DELIVERY_PAUSED=yes` and `scanner_stopped=true` correspond to the
+whole Kestra and ClamAV containers being stopped, with cap-process continuing to
+run. Do not run another seed phase concurrently with these acceptance cases.

@@ -16,8 +16,8 @@ python3 -m unittest tests.integration.identity_cases -v
 The roles command must run after PostgreSQL initialization and before starting
 Hasura/process. It generates private runtime passwords in `.env.integration` and
 host DSNs in `build/integration/connections.json` (mode 0600). `bootstrap` is for
-Operator/schema administration; `module_test` separately permits disposable
-CREATE DATABASE. Use `assertion` for read-only observations, `process` for the
+Operator/schema administration; `module_test` points to the dedicated `opendx_module_test` anchor and separately
+permits disposable CREATE DATABASE. Use `assertion` for read-only observations, `process` for the
 trusted process/scanner backend, and `hasura` for Hasura. `caller` has schema
 usage but no business DML grants. Runtime roles have neither superuser nor
 BYPASSRLS, cannot create roles/databases, and share no memberships. The module

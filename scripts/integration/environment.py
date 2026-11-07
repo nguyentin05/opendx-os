@@ -94,6 +94,10 @@ def private_config():
     if path.exists():
         if path.stat().st_mode & 0o077:
             raise Refused('.env.integration must have mode 0600')
+        values = dict(line.split('=', 1) for line in path.read_text().splitlines()
+                      if line and not line.startswith('#'))
+        if not s3.exists():
+            write_s3_config(s3, values)
         return
     values = dict(POSTGRES_DB=DATABASE, POSTGRES_USER='integration_bootstrap', COMPOSE_PROJECT_NAME=PROJECT,
                   POSTGRES_PORT='15432', HASURA_PORT='18080', KEYCLOAK_PORT='18085', KESTRA_PORT='18082',
@@ -104,10 +108,14 @@ def private_config():
         values[key] = secrets.token_hex(24)
     with open(path, 'x', opener=lambda p, flags: os.open(p, flags, 0o600)) as stream:
         stream.write(''.join(k + '=' + v + '\n' for k, v in values.items()))
-    folder = ROOT / 'build/integration'
-    folder.mkdir(parents=True, exist_ok=True, mode=0o700)
-    s3 = folder / 's3.json'
-    with open(s3, 'w', opener=lambda p, flags: os.open(p, flags, 0o600)) as stream:
+    write_s3_config(s3, values)
+
+
+def write_s3_config(path, values):
+    if not values.get('S3_ACCESS_KEY_ID') or not values.get('S3_SECRET_ACCESS_KEY'):
+        raise Refused('existing integration environment lacks S3 credentials')
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with open(path, 'x', opener=lambda p, flags: os.open(p, flags, 0o600)) as stream:
         json.dump({'identities': [{'name': 'integration', 'credentials': [{'accessKey': values['S3_ACCESS_KEY_ID'],
                    'secretKey': values['S3_SECRET_ACCESS_KEY']}], 'actions': ['Admin', 'Read', 'List', 'Tagging', 'Write']}]}, stream)
 
@@ -123,6 +131,11 @@ def configure_roles(values):
             raise Refused('runtime passwords must be alphanumeric')
         sql += "\nALTER ROLE " + role + " PASSWORD '" + value + "';"
     run(compose('exec','-T','postgres','psql','-v','ON_ERROR_STOP=1','-U','integration_bootstrap','-d',DATABASE), input=sql)
+    anchor = run(compose('exec','-T','postgres','psql','-U','integration_bootstrap','-d',DATABASE,
+                         '-Atqc', "SELECT 1 FROM pg_database WHERE datname='opendx_module_test'")).strip()
+    if anchor != '1':
+        run(compose('exec','-T','postgres','psql','-v','ON_ERROR_STOP=1','-U','integration_bootstrap','-d',DATABASE,
+                    '-c','CREATE DATABASE opendx_module_test OWNER dxos_module_test'))
     path = ROOT / '.env.integration'
     persisted = dict(line.split('=', 1) for line in path.read_text().splitlines() if line and not line.startswith('#'))
     persisted.update({k: v for k, v in values.items() if k.startswith('INTEGRATION_')})
@@ -131,7 +144,7 @@ def configure_roles(values):
     os.chmod(path, 0o600)
     connections = {}
     for name, role, key in [('bootstrap','integration_bootstrap','POSTGRES_PASSWORD'), ('process','dxos_process','INTEGRATION_PROCESS_PASSWORD'), ('hasura','dxos_hasura','INTEGRATION_HASURA_PASSWORD'), ('assertion','dxos_reader','INTEGRATION_READER_PASSWORD'), ('caller','dxos_caller','INTEGRATION_CALLER_PASSWORD'), ('module_test','dxos_module_test','INTEGRATION_MODULE_TEST_PASSWORD')]:
-        connections[name] = 'postgres://' + role + ':' + values[key] + '@localhost:' + values.get('POSTGRES_PORT','15432') + '/' + DATABASE + '?sslmode=disable'
+        connections[name] = 'postgres://' + role + ':' + values[key] + '@localhost:' + values.get('POSTGRES_PORT','15432') + '/' + ('opendx_module_test' if name == 'module_test' else DATABASE) + '?sslmode=disable'
     output = ROOT / 'build/integration/connections.json'
     if output.is_symlink():
         raise Refused('private connections file cannot be a symlink')
