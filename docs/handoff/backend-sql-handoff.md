@@ -1,23 +1,26 @@
-# Proposed backend SQL requirements for B
+# Backend SQL integration contract and historical requirements
 
-Status: **PROPOSED; B acceptance and implementation pending**. B owns all platform
-SQL and Operator migrations; this document changes no DDL. Inventory reviewed:
-`platform/postgres/init/01_core_schema.sql`, `03_app_registry.sql`, and
-`platform/postgres/capabilities/cap_process.sql`. Consumers are A1 registry,
-A2 command transactions, A3 delivery/effect transactions and A4 files.
+Status: reviewed implementations are integrated for the supported disposable
+apps; see [compatibility dispositions](integration-compatibility.md) and
+[final evidence](integration-evidence.md). The inventory/proposal descriptions
+below retain original design context; they no longer mean all fields are pending.
+SQL currently includes durable delivery leases, workspace/result step fields,
+composite FKs, file retry/identity guards and trusted audit/version context.
+Runtime roles are provisioned separately and are restricted. Existing-database
+migration/backfill and retention/fan-out policy remain outside this handoff.
 
-| Surface | Existing inventory | Proposed requirement / ownership |
+| Surface | Existing inventory | Integrated requirement / ownership |
 | --- | --- | --- |
 | Registry | workspace_id/app_id PK; display_name/version/role_name/domain_table/manifest_spec/ui_schema/state_machine/dependent_capabilities/status/last_error/updated_at | B publishes one coherent Ready active snapshot atomically. A1 reads only Ready. Deployment-attempt state must be separate, never overwrite an old active row with Pending/Applying/Failed. |
 | Receipts | Full workspace/actor/app/entity/command/key PK, payload_hash, response_status/body, created_at | Retain these columns; serialize scope before lookup/update. A2 rechecks current permission before returning response. Hash full canonical request (README), not payload alone. No receipt for rollback/failure. |
-| Outbox | id, workspace/app/type/entity/version/payload/created_at; unique workspace/id and source version/type | B adds durable delivery fields below; A3 implements claim/retry/ack. |
-| Processed steps | event_id FK, step_name, outcome, processed_at; PK event/step | Add workspace_id, work_item_id, result JSONB; composite FKs below. A3 owns atomic effect/result writes. |
+| Outbox | id, workspace/app/type/entity/version/payload/created_at; unique workspace/id and source version/type | Durable delivery fields below are implemented; publisher implements claim/retry/ack. |
+| Processed steps | event_id FK, step_name, outcome, processed_at; PK event/step | workspace_id, work_item_id, result JSONB and composite FKs below are implemented. A3 owns atomic effect/result writes. |
 | Audit/version | Core bump function; audit hash/immutability triggers | B generates domain BEFORE UPDATE version/time trigger plus domain audit insertion trigger. A2 sets validated transaction-local context before UPDATE; never manually insert duplicate audit. |
 | Files | immutable identity metadata, hash, uploader, scan state/time, unique bucket/key | B/A agree app-scoped authorization storage below; A4 owns immutable upload/scan transitions. |
 
 ## Durable delivery columns
 
-Propose adding to `core.outbox_events`: `delivery_status TEXT NOT NULL DEFAULT
+Implemented on the disposable schema in `core.outbox_events`: `delivery_status TEXT NOT NULL DEFAULT
 'pending' CHECK IN ('pending','in_flight','delivered')`, `attempt_count INTEGER
 NOT NULL DEFAULT 0 CHECK >= 0`, `next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
 `lease_token UUID NULL`, `lease_until TIMESTAMPTZ NULL`, `delivered_at TIMESTAMPTZ
@@ -36,7 +39,7 @@ B/A must agree a per-destination delivery table before adding fan-out.
 
 ## Work-item effect result and source association
 
-`core.processed_workflow_steps` gains NOT NULL workspace_id, work_item_id UUID and
+`core.processed_workflow_steps` implements NOT NULL workspace_id, work_item_id UUID and
 result JSONB for successful create_work_item results (stored
 `{"work_item_id":"UUID"}`). Retain event_id/step_name uniqueness, processed_at and
 outcome; only a successful atomic effect is stored. Require
@@ -48,39 +51,35 @@ event/step scope; create work item and processed-step result in one transaction.
 A rollback leaves neither; duplicate invocation returns the stored result after
 service/workspace authorization. No partial `processing` result counts as success.
 
-## Audit and file access gaps
+## Audit and file access boundaries
 
 Audit insertion must derive actor/action from authenticated Hasura `hasura.user`
 or validated transaction-local `dxos.actor_id` / `dxos.action`. Reject missing or
 malformed context for domain writes; ordinary DB callers cannot set arbitrary
-trusted context. B must define restricted connection/function privileges. Version
+trusted context. Restricted connection/function privileges are provisioned; session_user gates trusted context. Version
 trigger increments once; audit uses resulting version. Recognized retries and
 failed commands perform no UPDATE and produce no new audit/event.
-The existing audit hash trigger hashes inserted rows but does not create a domain
-update audit record. External anchoring remains deferred; no new security claim.
+Generated domain triggers append update audit records, then the core audit hash trigger hashes inserted rows. External anchoring remains deferred; no new security claim.
 
-Existing file_objects has no app_id. Propose NOT NULL app_id for new uploads and
-a same-workspace/app reference to active app identity (retention-safe registry key
-policy needs B review). Authorization must cover both newly uploaded owner files
-and readable declared attachments, before scan-state disclosure. Preserve uploader
-same-workspace FK and immutable bucket/key/hash/content; only trusted scanner
-writes scan status. B must decide migration/backfill for existing unscoped files;
-A must not infer cross-app read permission from ownership alone. MIME/size may be
-stored for consistency but are validated against bytes by A4, not client metadata.
+File objects carry NOT NULL app_id for new uploads. Authorization resolves the
+current Ready app, owner/declared attachment permissions and workspace before
+scan-state disclosure. Uploader FK and immutable storage/content metadata are
+implemented; only the trusted process/scanner connection updates scan/retry
+columns. The retention-safe registry FK policy and migration/backfill of existing
+unscoped data remain separate design/deployment work.
 
 ## Review and migration boundary
 
-Do not mark these names frozen until B accepts column/check/index names, migration
-strategy, deployment-attempt storage (proposed separate core.app_deployment_attempts
-with attempt UUID, workspace/app, requested version, status, last_error and times),
-file app scope and runtime DB privileges. Active publication occurs after all
-DDL/Hasura/workflow validation succeeds; failed attempt preserves the prior active
-snapshot. Real PostgreSQL concurrency, Hasura permission and crash/restart tests
-remain NOT_RUN until B's service/schema handoff. Fixture agreement is static only.
+The disposable schema and supported-package publication are qualified in
+[final evidence](integration-evidence.md). Deployment attempts use
+`core.app_deployments`, separate from active Ready rows. Failed deployment retains
+the previous active snapshot. Real PostgreSQL concurrency, Hasura permissions and
+service recovery are individually attributed there; no production migration or
+backfill is claimed. Do not apply this setup to an existing/shared database.
 
 ## A3 implemented consumer requirements
 
-The backend publisher now consumes the proposed delivery column names above. It
+The backend publisher now consumes the implemented delivery column names above. It
 claims one event atomically using `FOR UPDATE SKIP LOCKED`, uses 60-second leases,
 20-second delivery timeouts, a maximum batch of 1000 and bounded exponential retry
 (2 to 1024 seconds). Token **and unexpired lease** gate both acknowledgement and
@@ -143,14 +142,14 @@ Add `scan_attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (scan_attempt_count>=0)
 and `scan_next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now()`. A partial index on
 `(bucket,scan_next_attempt_at,created_at,id)` where scan_status='QUARANTINED' supports
 fair due selection and retries.
-Production migrations, retention/backfill, grants and immutable-column triggers
-remain B-owned and **PROPOSED / NOT_RUN**. B must deny ordinary file metadata
-writes and scan-state updates; only the private trusted scanner connection may
+Disposable grants and immutable-column triggers are implemented and exercised.
+Production migration and retention/backfill remain NOT_RUN. Ordinary file metadata
+writes and scan-state updates are denied; only the private trusted scanner connection may
 change scan_status/scanned_at and retry scheduling fields, with all identity/content
 metadata immutable.
-The current service uses its private DB connection for upload and scanning; B must
-agree the corresponding least-privilege deployment role rather than exposing it
-to Hasura/user SQL. No HTTP endpoint changes content, scan state or existing IDs.
+The current service uses its private DB connection for upload and scanning; the
+restricted dxos_process role owns this service boundary, and its credential must
+not be exposed to Hasura/user SQL. No HTTP endpoint changes content, scan state or existing IDs.
 
 Upload authorizes the signed workspace, selected Ready app, enabled dependencies
 and a current deployed domain grant for the signed selected role. Each upload
@@ -194,9 +193,10 @@ endpoint), `S3_BUCKET` (existing private bucket), and `CLAMAV_ADDRESS` (`host:po
 and scanner operations have bounded deadlines and cancellation. S3 uses path-style
 AWS Signature V4 without redirects; no public URLs or credentials appear in API
 responses. ClamAV uses `zINSTREAM` with network-byte-order chunk lengths and a
-zero-length terminator. B must configure StreamMaxLength >= 20 MiB and verify
-actual gateway signature compatibility, scanner definitions/readiness and private
-network restrictions. Startup rejects malformed/missing configuration; worker
+zero-length terminator. The integration config sets 25 MiB stream/file and 50 MiB
+expansion limits and verifies actual SigV4, scanner readiness and 20 MiB content;
+production network restrictions
+remain deployment work. Startup rejects malformed/missing configuration; worker
 failures log only generic messages. Upload/download routes use the existing OIDC
 middleware; scanner and outbox loops shut down with the process context.
 
@@ -210,7 +210,9 @@ Real services are opt-in through
 `go test -tags=serviceintegration ./internal/files -run TestRealSeaweedFSClamAV -count=1`
 with all private S3/ClamAV variables above. Missing prerequisites fail explicitly;
 these external-service tests are excluded from `-tags=integration`. The opt-in
-check covers clean bytes, harmless EICAR scanner detection and object retrieval
-from a newly constructed client. Actual service outage/restart, production schema
-immutability/privileges, and real persisted-object restart acceptance require B4
-and remain **NOT_RUN**; client reconstruction is not a server restart claim.
+check covers clean bytes, 20 MiB content, harmless EICAR scanner detection and object
+retrieval from a newly constructed client. Actual disposable service outage/restart,
+schema immutability/privileges and persisted-object recovery are separately qualified
+by the live file suite in
+[final evidence](integration-evidence.md). Production migration remains NOT_RUN;
+client reconstruction alone is not a server restart claim.

@@ -7,7 +7,7 @@ semantics and [compatibility](integration-compatibility.md) for unresolved gates
 
 Prerequisites: Python 3, Docker Engine and Compose supporting `!override` (2.24.4
 or newer), local loopback ports 15432/18085/18082 and sufficient resources for
-PostgreSQL, Keycloak, SeaweedFS, ClamAV and Kestra. Image tags remain those in
+PostgreSQL, Keycloak, SeaweedFS, ClamAV and (after bootstrap) Kestra. Image tags remain those in
 `compose.yaml`; cached images do not justify substituting versions.
 
 Run from the repository root:
@@ -23,7 +23,7 @@ TEST_ALLOW_RESET=opendx-integration python3 scripts/integration/environment.py r
 The first invocation generates ignored `.env.integration` (0600) and private
 `build/integration/s3.json`. Do not print rendered Compose configuration or commit
 these files. The inspect output is a sanitized target summary, not a readiness
-result. `up` starts infrastructure only with a bounded 180-second Compose wait
+result. `up` starts PostgreSQL, Keycloak, SeaweedFS and ClamAV only with a bounded 180-second Compose wait
 (and 600-second command ceiling); services without healthchecks are merely
 started. `down` retains state. `reset` checks effective project/database,
 container service labels, mounted volumes and volume ownership before removing
@@ -51,12 +51,26 @@ credentials are private and solely for isolated initialization/operator setup.
 
 Identity and actual supported-package publication are now wired through the
 [identity/runtime setup](identity-runtime.md) and the phase workflow below.
-Automatic workflow routing and full file lifecycle/recovery remain separate gates.
+Final results and remaining discovery/beta limits are in [final evidence](integration-evidence.md). Kestra starts only after workflow deployment provisions its dedicated database/role; starting it during initial infrastructure bootstrap creates an initialization cycle.
 
 ## Actual package publication and phase data
 
-Task 4 replaces the pending phase boundary described above. After role and
-identity provisioning, start restricted Hasura/process and the gateway, then run:
+After infrastructure startup, wait for the direct Keycloak realm JWKS endpoint
+and PostgreSQL readiness, then provision roles/identity and start restricted
+runtime services explicitly without premature Kestra dependencies:
+
+```sh
+python3 scripts/integration/environment.py roles
+python3 scripts/integration/identity.py provision
+python3 scripts/integration/identity.py tokens
+docker compose --env-file .env.integration -p opendx-integration \
+  -f compose.yaml -f compose.integration.yaml up -d --no-deps --build hasura cap-process apisix
+python3 -m unittest tests.integration.identity_cases -v
+```
+
+`TEST_DISPOSABLE_DATABASE=yes` remains required. Wait for Hasura `/healthz`,
+process `/healthz`, and real authenticated identity calls; the latter establish
+more than listener liveness. Then publish and consume phases sequentially:
 
 ```sh
 python3 -m unittest tests.integration.registry_crud_cases -v
@@ -103,8 +117,7 @@ phase below verifies persisted lease redelivery and effect deduplication.
 record IDs/versions and file IDs. Load their environment keys and separately load
 renewed bearer tokens from `build/integration/tokens.json`; contexts do not embed
 tokens. Refresh tokens after seeding if required by `token-expiry.json`.
-Automatic seeding refuses until the actual declared Kestra flow and its configured
-publisher routing exist; this prerequisite remains Task 6, not a Task 4 success.
+Automatic seeding refuses until actual declared Kestra flows, running/unpaused containers and configured publisher routing are verified.
 It creates a separate dataset and sends its transition through the real API.
 
 `roles` also provisions `opendx_module_test`, owned by the dedicated CREATEDB role,
@@ -214,7 +227,7 @@ TEST_DISPOSABLE_DATABASE=yes python3 -m scripts.integration.supporting_services 
 ```
 
 The file suite performs real ClamAV/SeaweedFS stop/start and process-worker restart
-without deleting volumes. Cleanup restores those services even on test failure.
+without deleting volumes. Cleanup protects the full outage window and attempts independent restorations even if an earlier restart fails, reporting aggregated sanitized failure types.
 It uses fresh uploaded IDs per case and the harmless EICAR string inside a PDF
 stream; appending EICAR beyond PDF EOF does not exercise the real PDF scanner.
 Ignored `build/integration/file-recovery.json` records UTC actions and row states.
@@ -248,3 +261,22 @@ case temporarily reassigns only the verified process endpoint on its project
 network, restores its exact original IP/aliases in finally, and checks unchanged
 gateway start time plus direct/gateway original bytes. This is separate from
 the natural scanner/storage/process restart case.
+
+## Final browser and qualification entry points
+
+Run the actual Chromium HTTP smoke after a fresh files phase has produced CLEAN
+fixtures and final workflow renewal has restored services:
+
+```sh
+TEST_DISPOSABLE_DATABASE=yes python3 -m scripts.integration.browser_smoke
+```
+
+This uses a temporary loopback origin on15173, private in-memory bearer data and
+an isolated Chromium profile; stdout contains only statuses/errors/byte hashes.
+Keep15173 free; `/usr/bin/chromium` is required. It observes gateway preflights,
+known-app GraphQL, readable process404 and positive CLEAN bytes, plus the actual
+registry validation failure. Exit success means the smoke collected observations;
+read each result, especially `matches_fixture` and GraphQL errors. Registry
+discovery remains blocked; direct process browser fetch fails by design of this
+local gateway-only browser setup. Direct authenticated process HTTP remains
+available to service/CLI callers. See [frontend guide](frontend-integration.md).

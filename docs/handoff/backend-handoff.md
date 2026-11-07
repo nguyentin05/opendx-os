@@ -1,9 +1,12 @@
 # Backend A1–A6 run and handoff
 
-The backend consumes proposed C0 v1 contracts. Start only after B's SQL, active
-registry publication and Hasura grants are reviewed; current compose/platform SQL
-is not a sufficient production migration. See [SQL handoff](backend-sql-handoff.md)
-and [demo prerequisites](../demo/scenarios.md).
+The integrated disposable runtime implements the reviewed C0 v1 contracts for
+procurement and process_fixture. [Final evidence](integration-evidence.md) and
+[frontend guide](frontend-integration.md) supersede historical source-branch
+pending claims below. This is a partial frontend handoff: registry discovery is
+missing, beta automatic workflows are NOT_READY, and the existing UI remains
+scaffolding. Production migration/release qualification is not established.
+See [SQL handoff](backend-sql-handoff.md) and [setup](integration-setup.md).
 
 From capabilities/:
 
@@ -24,7 +27,7 @@ ClamAV StreamMaxLength must permit 20 MiB. The process starts publisher/scanner
 workers and authenticated command, effect, upload/download routes; /healthz is
 liveness, not deployment readiness. Data/AI stubs fail closed and remain deferred.
 
-| Dependency / consumer | B handoff required before live use |
+| Dependency / consumer | Integrated requirement (verification linked above) |
 | --- | --- |
 | Registry / all process reads | Ready active manifest snapshot, matching state/UI/dependencies; failed deployment preserves prior active row |
 | Domain commands | C0 domain DDL/FKs/checks/defaults, version and actor/action audit triggers, restricted trusted transaction context |
@@ -39,7 +42,7 @@ Controller verification before A6: complete capabilities
 `GOCACHE=/tmp/opendx-backend-gocache go test -race -tags=integration ./... -count=1`
 **PASS**, using disposable PostgreSQL and controlled HTTP/TCP/storage adapters.
 This is backend transaction/protocol evidence, not live OIDC/Hasura/Kestra/
-SeaweedFS/ClamAV acceptance. Actual services and runtime acceptance remain NOT_RUN.
+SeaweedFS/ClamAV acceptance. Those source-branch checks did not establish live acceptance; current integrated live results are separately recorded in [final evidence](integration-evidence.md).
 
 A3 process recovery now has integration/race evidence from
 `TestPublisherRecoversAfterProcessCrash`: a helper OS process runs the production

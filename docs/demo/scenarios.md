@@ -1,8 +1,11 @@
 # Backend demo scenarios (A6 / G20)
 
-Status: prepared fixtures, **real-system acceptance NOT_RUN**. C0 remains proposed;
-B must accept SQL/validator/privilege handoff before deploying. UI A5 is deferred.
-The existing App Shell is scaffolding, not a compatible connected portal.
+Status: selected real-system assertions are qualified on the integrated runtime
+in [final evidence](../handoff/integration-evidence.md); this is a partial frontend
+handoff because authenticated registry discovery is unavailable. Follow the
+[actual setup](../handoff/integration-setup.md), not source-branch fixtures alone.
+Automatic effects are alpha-only; beta remains NOT_READY. UI A5 is deferred and
+the existing App Shell is scaffolding, not a compatible connected portal.
 
 Procurement uses only cap-process (including files). B provisions both workspaces,
 publishes coherent Ready snapshots, imports the reviewed Kestra workflows and seeds
@@ -66,9 +69,8 @@ python3 -m unittest tests.integration.runtime_independence_cases -v
 Missing configuration is an error, never a passing skip. These filenames intentionally
 avoid test_ so default unittest discovery stays a static/local-double suite. The live
 cases cover selected S01/S03/S04/S05/S06 assertions, not full S01–S08 acceptance:
-Hasura CRUD/FK isolation, concurrent approval, scanner restart, webhook import/auth,
-operational restart still need the integration window.
-Kestra YAML/plugin expression and webhook key configuration require deployment review;
+The final evidence separately records real Hasura CRUD/FK isolation, concurrent commands, scanner/storage recovery, webhook authentication and publisher restart; none is inherited from static discovery.
+Kestra YAML/plugins and webhook keys were exercised on the pinned real service;
 The source-branch fixture evidence does not establish real Kestra execution. The
 integration [workflow setup](../handoff/integration-setup.md) records the separate
 alpha automatic phase, explicit auth and private deployment/renewal lifecycle.

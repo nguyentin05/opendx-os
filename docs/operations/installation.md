@@ -1,5 +1,14 @@
 # OpenDX-OS Installation Guide
 
+For the qualified local backend/platform environment use the
+[guarded disposable integration setup](../handoff/integration-setup.md) and
+[final evidence](../handoff/integration-evidence.md). That path provisions restricted
+roles before Hasura/process and delays persistent Kestra until its database is
+created. The generic archive procedure below is a release procedure, **NOT_RUN**
+in this handoff; it must not be used as evidence of clean-machine installation or
+frontend readiness. Only procurement/process_fixture are supported in this scope;
+registry discovery and beta automatic-workflow readiness remain open.
+
 ## Prerequisites
 
 - Docker Engine & Docker Compose v2
