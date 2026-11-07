@@ -87,6 +87,9 @@ def operate(action, values, runner=run):
 
 
 def private_config():
+    s3 = ROOT / 'build/integration/s3.json'
+    if s3.is_symlink() or (s3.exists() and s3.stat().st_mode & 0o077):
+        raise Refused('build/integration/s3.json must be a private regular file with mode 0600')
     path = ROOT / '.env.integration'
     if path.exists():
         if path.stat().st_mode & 0o077:

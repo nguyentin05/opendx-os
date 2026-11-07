@@ -82,3 +82,17 @@ class EnvironmentTests(unittest.TestCase):
         with self.assertRaises(env.Refused):
             env.operate('reset', {'TEST_DISPOSABLE_DATABASE': 'yes', 'TEST_ALLOW_RESET': 'opendx-integration'}, runner)
         self.assertFalse(any('down' in call for call in calls))
+
+    def test_private_config_refuses_existing_readable_s3_file(self):
+        import tempfile
+        env = load('environment')
+        with tempfile.TemporaryDirectory() as directory:
+            env.ROOT = Path(directory)
+            config = env.ROOT / 'build/integration/s3.json'
+            config.parent.mkdir(parents=True)
+            config.write_text('existing public config')
+            config.chmod(0o644)
+            with self.assertRaises(env.Refused):
+                env.private_config()
+            self.assertEqual(config.read_text(), 'existing public config')
+            self.assertFalse((env.ROOT / '.env.integration').exists())
