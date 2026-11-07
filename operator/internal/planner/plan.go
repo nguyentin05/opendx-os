@@ -159,3 +159,16 @@ func dropPermOp(opType string, table TableRef, role string) HasuraMetadataPayloa
 		},
 	}
 }
+
+// BuildApplyPlan updates one package while retaining the other active packages.
+// Only explicit full-set reconcile removes packages and their managed grants.
+func BuildApplyPlan(app manifest.DXApplication, live ManagedState) (Plan, error) {
+	desired := make([]manifest.DXApplication, 0, len(live.ActiveApps)+1)
+	for _, active := range live.ActiveApps {
+		if active.Metadata.Name != app.Metadata.Name {
+			desired = append(desired, active)
+		}
+	}
+	desired = append(desired, app)
+	return BuildPlan(desired, live)
+}

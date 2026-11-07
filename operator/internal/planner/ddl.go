@@ -96,6 +96,13 @@ func GenerateDDL(app *manifest.DXApplication) (string, error) {
 		quoteTable(tbl.Name),
 	))
 
+	// Roles are provisioned by platform initialization. Do not grant to ordinary
+	// callers; Hasura enforces the manifest field and row permissions.
+	sb.WriteString(fmt.Sprintf("GRANT SELECT, INSERT, UPDATE ON %s TO dxos_hasura, dxos_process;\n", quoteTable(tbl.Name)))
+	sb.WriteString(fmt.Sprintf("GRANT SELECT ON %s TO dxos_reader;\n", quoteTable(tbl.Name)))
+	for _, shared := range app.Spec.SharedAccess {
+		sb.WriteString(fmt.Sprintf("GRANT SELECT ON %s TO dxos_hasura;\n", quoteTable(shared.Table)))
+	}
 	return sb.String(), nil
 }
 

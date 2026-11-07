@@ -47,7 +47,7 @@ func TestPermissionsAndCrossWorkspaceFKIntegration(t *testing.T) {
 	wiA := "33333333-3333-4333-8333-333333333333"
 	recID := "44444444-4444-4444-8444-444444444444"
 
-	_, err = db.Exec(`
+	err = testutil.ExecStatements(db, `
 		INSERT INTO core.workspaces (id, code, name) VALUES ($1, 'ws-a', 'Workspace A'), ($2, 'ws-b', 'Workspace B');
 		INSERT INTO core.employees (id, workspace_id, full_name, email, department) VALUES ($3, $1, 'Alice', 'alice@example.org', 'Ops');
 		INSERT INTO core.work_items (id, workspace_id, title, description, priority, assigned_employee_id) VALUES ($4, $1, 'Work', 'Desc', 'MEDIUM', $3);

@@ -88,3 +88,20 @@ func TestGenerateHasuraOperations(t *testing.T) {
 		t.Fatalf("missing expected Hasura ops: track=%v insert=%v update=%v", foundTrack, foundInsert, foundUpdate)
 	}
 }
+
+func TestDDLGrantsDeclaredDomainToRestrictedRuntimeRoles(t *testing.T) {
+	app := loadFixtureApp(t)
+	ddl, err := GenerateDDL(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, grant := range []string{
+		`GRANT SELECT, INSERT, UPDATE ON "domain"."procurement_requests" TO dxos_hasura, dxos_process;`,
+		`GRANT SELECT ON "domain"."procurement_requests" TO dxos_reader;`,
+		`GRANT SELECT ON "core"."employees" TO dxos_hasura;`,
+	} {
+		if !strings.Contains(ddl, grant) {
+			t.Errorf("missing restricted runtime grant: %s", grant)
+		}
+	}
+}

@@ -25,7 +25,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -97,4 +99,31 @@ func NewDatabase(t *testing.T) *sql.DB {
 	}
 
 	return db
+}
+
+// ExecStatements executes test-owned multi-statement fixtures with bound values.
+// lib/pq intentionally rejects multi-command extended-protocol statements.
+func ExecStatements(db *sql.DB, query string, args ...any) error {
+	for _, statement := range strings.Split(query, ";") {
+		if strings.TrimSpace(statement) == "" {
+			continue
+		}
+		var bound []any
+		indexes := map[string]int{}
+		statement = regexp.MustCompile(`\$([0-9]+)`).ReplaceAllStringFunc(statement, func(parameter string) string {
+			index, exists := indexes[parameter]
+			if !exists {
+				n, _ := strconv.Atoi(parameter[1:])
+				bound = append(bound, args[n-1])
+				index = len(bound)
+				indexes[parameter] = index
+			}
+			return "$" + strconv.Itoa(index)
+		})
+		if _, err := db.Exec(statement, bound...); err != nil {
+			return err
+		}
+
+	}
+	return nil
 }

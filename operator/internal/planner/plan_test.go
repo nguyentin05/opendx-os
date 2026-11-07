@@ -69,3 +69,22 @@ func TestBuildPlanPreservesSharedGrantsAndDropsExcess(t *testing.T) {
 		t.Fatal("shared grant for role_procurement on core.employees must be preserved for active app1")
 	}
 }
+
+func TestBuildApplyPlanPreservesOtherActivePackages(t *testing.T) {
+	first, err := manifest.ParseFile("../../../apps/procurement/manifest.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := manifest.ParseFile("../../../apps/process-fixture/manifest.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	live := ManagedState{ActiveApps: []manifest.DXApplication{*first}}
+	plan, err := BuildApplyPlan(*second, live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.RemovedApps) != 0 || len(plan.Apps) != 2 {
+		t.Fatalf("single app apply discarded active package: %+v", plan.RemovedApps)
+	}
+}

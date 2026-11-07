@@ -193,7 +193,7 @@ func runApplyCmd(args []string, stdout, stderr io.Writer, applier *apply.Runner)
 		fmt.Fprintf(stderr, "Failed reading live state: %v\n", err)
 		return 1
 	}
-	plan, err := planner.BuildPlan([]manifest.DXApplication{*app}, live)
+	plan, err := planner.BuildApplyPlan(*app, live)
 	if err != nil {
 		fmt.Fprintf(stderr, "Failed building plan: %v\n", err)
 		return 1
