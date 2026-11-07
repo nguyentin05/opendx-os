@@ -134,7 +134,9 @@ def deploy(live, reload=False):
         except Refused:
             method, path = 'POST', '/api/v1/flows'
         api(live, path, yaml.safe_dump(flow).encode(), method, 'application/x-yaml')
-    run(compose('up', '-d', '--no-deps', '--build', 'cap-process'))
+    # Routes are startup-loaded; mounted-file changes do not affect Compose's
+    # image/environment hash, so every deployment must recreate the publisher.
+    run(compose('up', '-d', '--no-deps', '--build', '--force-recreate', 'cap-process'))
     private_json(ROOT / 'build/integration/workflow-deployment.json', {'routes': routes, 'renewed_at': int(time.time()), 'token_expires_at': claims['exp']})
     print(json.dumps({'result': 'deployed', 'workflows': len(unique), 'workspace_routes': len(routes), 'persistent_queue': 'postgres'}))
 

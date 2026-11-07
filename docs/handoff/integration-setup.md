@@ -185,7 +185,8 @@ TEST_DISPOSABLE_DATABASE=yes python3 -m scripts.integration.workflows renew
 
 This acquires fresh Keycloak tokens, writes base64 `SECRET_DXOS_*` environment
 values privately, recreates Kestra to load them, verifies its authenticated API,
-reimports declarations, and recreates the publisher if its configuration changed.
+reimports declarations, and always recreates the publisher to load the private
+route map, including package/version-only changes with unchanged image/environment.
 The PostgreSQL queue/repository preserves existing execution IDs during this
 planned reload. Token renewal is explicit local operator work, not an autonomous
 renewal daemon; keep the workload paused/bounded during renewal and do not let
