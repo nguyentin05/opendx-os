@@ -18,24 +18,15 @@ package process
 
 import "time"
 
-// CommandRequest represents a state transition command.
+// CommandRequest contains only caller-owned command inputs.
 type CommandRequest struct {
-	CommandID       string         `json:"command_id"`
-	TargetTable     string         `json:"target_table"`
-	TargetID        string         `json:"target_id"`
-	Action          string         `json:"action"`
-	ExpectedVersion int            `json:"expected_version"`
-	TargetStatus    string         `json:"target_status"`
-	AttachmentID    string         `json:"attachment_id,omitempty"`
-	Payload         map[string]any `json:"payload,omitempty"`
+	EntityID        string         `json:"entity_id"`
+	ExpectedVersion int64          `json:"expected_version"`
+	Payload         map[string]any `json:"payload"`
 }
-
-// CommandResponse represents the execution result.
 type CommandResponse struct {
-	CommandID    string    `json:"command_id"`
-	TargetID     string    `json:"target_id"`
-	Status       string    `json:"status"`
-	Version      int       `json:"version"`
-	ExecutedAt   time.Time `json:"executed_at"`
-	IdempotentRe bool      `json:"idempotent_re"`
+	EntityID   string    `json:"entity_id"`
+	Status     string    `json:"status"`
+	Version    int64     `json:"version"`
+	ExecutedAt time.Time `json:"executed_at"`
 }

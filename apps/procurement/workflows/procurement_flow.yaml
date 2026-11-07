@@ -1,23 +1,25 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 DX-OS Open-Core Contributors
-
+# Import and verify against the deployed Kestra plugin version before enabling.
 id: procurement_approval_flow
 namespace: dxos.apps.procurement
-description: Handles submitted procurement requests with idempotent approval inbox creation.
-
-inputs:
-  - id: event_id
-    type: STRING
-  - id: event_type
-    type: STRING
-  - id: workspace_id
-    type: STRING
-  - id: entity_id
-    type: STRING
-  - id: entity_version
-    type: INT
-
+triggers:
+  - id: command_webhook
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: "{{ secret('DXOS_WEBHOOK_KEY') }}"
 tasks:
-  - id: log_procurement_transition
-    type: io.kestra.plugin.core.log.Log
-    message: "Procurement event {{ inputs.event_id }} for request {{ inputs.entity_id }} v{{ inputs.entity_version }} in workspace {{ inputs.workspace_id }}"
+  - id: submit_only
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ trigger.body.app_id == 'procurement' and trigger.body.payload.command == 'submit' }}"
+    then:
+      - id: create_review
+        type: io.kestra.plugin.core.http.Request
+        uri: "{{ secret('DXOS_PROCESS_URL') }}/api/cap/process/effects/work-item"
+        method: POST
+        contentType: application/json
+        headers:
+          Authorization: "Bearer {{ secret('DXOS_WORKFLOW_TOKEN') }}"
+          X-Hasura-Role: role_workflow
+          Idempotency-Key: "{{ trigger.body.event_id }}:create_review"
+        body: |
+          {"event_id":"{{ trigger.body.event_id }}","step_name":"create_review"}
