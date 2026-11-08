@@ -24,6 +24,7 @@ import (
 	"os"
 
 	_ "github.com/lib/pq"
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/data"
 )
 
@@ -54,7 +55,7 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "service": "cap-data"})
 	})
 
-	mux.HandleFunc("POST /api/cap/data/ot/events", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/cap/data/ot/events", requireIdentity(func(w http.ResponseWriter, r *http.Request) {
 		var req data.OTIngestionRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -69,9 +70,9 @@ func main() {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
-	})
+	}))
 
-	mux.HandleFunc("POST /api/cap/data/lakehouse/export", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/cap/data/lakehouse/export", requireIdentity(func(w http.ResponseWriter, r *http.Request) {
 		var req data.ExportBatchRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -86,10 +87,22 @@ func main() {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"batch_id": batchID, "status": "COMPLETED"})
-	})
+	}))
 
 	log.Printf("[cap-data] Listening on port %s", port)
 	if err := http.ListenAndServe(":"+port, mux); err != nil {
 		log.Fatalf("server exited: %v", err)
+	}
+}
+
+// Deferred data routes have no verified caller/app authorization wiring yet.
+// Reject before parsing caller-owned workspace IDs or touching the database.
+func requireIdentity(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if _, err := auth.ExtractIdentity(r); err != nil {
+			http.Error(w, "authentication required", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
 	}
 }

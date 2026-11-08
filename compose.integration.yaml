@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+name: opendx-integration
+services:
+  postgres:
+    ports: !override
+      - "127.0.0.1:${POSTGRES_PORT:-15432}:5432"
+  keycloak:
+    ports: !override
+      - "127.0.0.1:${KEYCLOAK_PORT:-18085}:8085"
+    volumes:
+      - integration-keycloak-data:/opt/keycloak/data
+  seaweedfs:
+    volumes:
+      - ./build/integration/s3.json:/etc/seaweedfs/s3.json:ro
+  hasura:
+    ports: !override
+      - "127.0.0.1:${HASURA_PORT:-18080}:8080"
+    environment:
+      HASURA_GRAPHQL_DATABASE_URL: postgres://dxos_hasura:${INTEGRATION_HASURA_PASSWORD}@postgres:5432/opendx_integration
+  cap-process:
+    user: "${INTEGRATION_UID:-1000}:${INTEGRATION_GID:-1000}"
+    volumes:
+      - ./build/integration/workflow-routes.json:/app/config/workflow-routes.json:ro
+    ports: !override
+      - "127.0.0.1:${CAP_PROCESS_PORT:-18091}:8081"
+    environment:
+      DATABASE_URL: postgres://dxos_process:${INTEGRATION_PROCESS_PASSWORD}@postgres:5432/opendx_integration?sslmode=disable
+  kestra:
+    env_file:
+      - ./build/integration/kestra.env
+    ports: !override
+      - "127.0.0.1:${KESTRA_PORT:-18082}:8080"
+  workspace-ui:
+    ports: !override
+      - "127.0.0.1:${WORKSPACE_UI_PORT:-15173}:80"
+  apisix:
+    ports: !override
+      - "127.0.0.1:${APISIX_GATEWAY_PORT:-19080}:9080"
+volumes:
+  integration-keycloak-data:

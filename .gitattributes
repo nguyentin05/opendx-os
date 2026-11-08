@@ -31,7 +31,10 @@ Dockerfile text eol=lf
 *.tar.gz binary
 *.tgz binary
 
-# Exclude internal agent rules from git archive release tarballs
+# Exclude internal agent rules and planning docs from git archive release tarballs
 .agents export-ignore
 .agents/** export-ignore
 AGENTS.md export-ignore
+CLAUDE.md export-ignore
+docs/superpowers export-ignore
+docs/superpowers/** export-ignore

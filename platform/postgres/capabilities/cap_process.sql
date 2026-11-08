@@ -33,11 +33,16 @@ CREATE TABLE IF NOT EXISTS core.command_receipts (
 
 -- 2. Workflow Step Idempotency Tracking (S03)
 CREATE TABLE IF NOT EXISTS core.processed_workflow_steps (
-    event_id UUID NOT NULL REFERENCES core.outbox_events(id),
+    event_id UUID NOT NULL,
     step_name TEXT NOT NULL CHECK (length(trim(step_name)) > 0),
-    outcome TEXT NOT NULL,
+    workspace_id UUID NOT NULL,
+    work_item_id UUID NOT NULL,
+    result JSONB NOT NULL,
+    outcome TEXT NOT NULL CHECK (length(trim(outcome)) > 0),
     processed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (event_id, step_name)
+    PRIMARY KEY (event_id, step_name),
+    FOREIGN KEY (workspace_id, event_id) REFERENCES core.outbox_events(workspace_id, id),
+    FOREIGN KEY (workspace_id, work_item_id) REFERENCES core.work_items(workspace_id, id)
 );
 
 -- 3. Register cap-process in capability registry

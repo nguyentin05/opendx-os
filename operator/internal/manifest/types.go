@@ -13,129 +13,139 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package manifest defines and parses application manifests.
+// Package manifest defines, parses, and validates C0 v1 application manifests.
 package manifest
 
-// ColumnDef defines a column in a domain table.
-type ColumnDef struct {
-	Name       string `yaml:"name"`
-	Type       string `yaml:"type"`
-	PrimaryKey bool   `yaml:"primaryKey,omitempty"`
-	Nullable   bool   `yaml:"nullable,omitempty"`
-	Default    string `yaml:"default,omitempty"`
-	References string `yaml:"references,omitempty"`
-}
-
-// DomainTableDef defines the domain table specification.
-type DomainTableDef struct {
-	Name    string      `yaml:"name"`
-	Columns []ColumnDef `yaml:"columns"`
-}
-
-// RelationshipDef defines a Hasura object/array relationship.
-type RelationshipDef struct {
-	Name        string            `yaml:"name"`
-	TargetTable string            `yaml:"targetTable"`
-	Mapping     map[string]string `yaml:"mapping"`
-}
-
-// SharedAccessDef defines how an app role accesses shared core entities.
-type SharedAccessDef struct {
-	Table         string            `yaml:"table"`
-	Columns       []string          `yaml:"columns"`
-	Filter        map[string]any    `yaml:"filter"`
-	Relationships []RelationshipDef `yaml:"relationships,omitempty"`
-}
-
-// AccessRule defines permissions for select, insert, or update.
-type AccessRule struct {
-	Filter  map[string]any `yaml:"filter,omitempty"`
-	Check   map[string]any `yaml:"check,omitempty"`
-	Columns []string       `yaml:"columns"`
-}
-
-// DomainAccessDef defines CRUD permissions on the domain table.
-type DomainAccessDef struct {
-	Select []AccessRule `yaml:"select,omitempty"`
-	Insert []AccessRule `yaml:"insert,omitempty"`
-	Update []AccessRule `yaml:"update,omitempty"`
-	Delete []AccessRule `yaml:"delete,omitempty"`
-}
-
-// TransitionDef defines a valid state transition in the state machine.
-type TransitionDef struct {
-	From   string   `yaml:"from"`
-	To     string   `yaml:"to"`
-	Action string   `yaml:"action"`
-	Roles  []string `yaml:"roles"`
-}
-
-// StateMachineDef defines allowed states and transitions.
-type StateMachineDef struct {
-	InitialState string          `yaml:"initialState"`
-	States       []string        `yaml:"states"`
-	Transitions  []TransitionDef `yaml:"transitions"`
-}
-
-// AttachmentsDef defines file attachments policy.
-type AttachmentsDef struct {
-	AllowedFileTypes   []string `yaml:"allowedFileTypes"`
-	MaxSizeBytes       int64    `yaml:"maxSizeBytes"`
-	EnforceCleanStatus bool     `yaml:"enforceCleanStatus"`
-}
-
-// WorkflowBindingDef defines workflow file bindings.
-type WorkflowBindingDef struct {
-	Name           string `yaml:"name"`
-	TriggerEvent   string `yaml:"triggerEvent"`
-	DefinitionFile string `yaml:"definitionFile"`
-}
-
-// CapabilityRefDef defines capability dependencies.
-type CapabilityRefDef struct {
-	Name     string `yaml:"name"`
-	Required bool   `yaml:"required"`
-}
-
-// NavigationDef defines UI navigation metadata.
-type NavigationDef struct {
-	Title string `yaml:"title"`
-	Icon  string `yaml:"icon"`
-	Order int    `yaml:"order"`
-}
-
-// UISchemaDef defines the schema-driven UI metadata.
-type UISchemaDef struct {
-	Navigation   NavigationDef `yaml:"navigation"`
-	PrimaryView  string        `yaml:"primaryView"`
-	ListColumns  []string      `yaml:"listColumns"`
-	QuickActions []string      `yaml:"quickActions"`
-}
-
-// AppSpec defines the full specification of a DXApplication.
-type AppSpec struct {
-	Role         string               `yaml:"role"`
-	SharedAccess []SharedAccessDef    `yaml:"sharedAccess"`
-	DomainTable  DomainTableDef       `yaml:"domainTable"`
-	DomainAccess DomainAccessDef      `yaml:"domainAccess"`
-	StateMachine StateMachineDef      `yaml:"stateMachine"`
-	Attachments  AttachmentsDef       `yaml:"attachments"`
-	Workflows    []WorkflowBindingDef `yaml:"workflows"`
-	Capabilities []CapabilityRefDef   `yaml:"capabilities"`
-	UISchema     UISchemaDef          `yaml:"uiSchema"`
+// DXApplication defines the root C0 v1 manifest structure.
+type DXApplication struct {
+	APIVersion string      `yaml:"apiVersion" json:"apiVersion"`
+	Kind       string      `yaml:"kind" json:"kind"`
+	Metadata   AppMetadata `yaml:"metadata" json:"metadata"`
+	Spec       AppSpec     `yaml:"spec" json:"spec"`
 }
 
 // AppMetadata defines metadata for the manifest.
 type AppMetadata struct {
-	Name           string `yaml:"name"`
-	WorkspaceScope string `yaml:"workspaceScope"`
-	Version        string `yaml:"version"`
+	Name        string `yaml:"name" json:"name"`
+	DisplayName string `yaml:"displayName" json:"displayName"`
+	Version     string `yaml:"version" json:"version"`
 }
 
-// DXApplication defines the root manifest structure.
-type DXApplication struct {
-	APIVersion string      `yaml:"apiVersion"`
-	Kind       string      `yaml:"kind"`
-	Metadata   AppMetadata `yaml:"metadata"`
-	Spec       AppSpec     `yaml:"spec"`
+// AppSpec defines the full specification of a DXApplication.
+type AppSpec struct {
+	Role         string            `yaml:"role" json:"role"`
+	SharedAccess []SharedAccessDef `yaml:"sharedAccess" json:"sharedAccess"`
+	DomainTable  DomainTableDef    `yaml:"domainTable" json:"domainTable"`
+	DomainAccess DomainAccessDef   `yaml:"domainAccess" json:"domainAccess"`
+	StateMachine StateMachineDef   `yaml:"stateMachine" json:"stateMachine"`
+	Attachments  []AttachmentDef   `yaml:"attachments" json:"attachments"`
+	Workflows    []WorkflowDef     `yaml:"workflows" json:"workflows"`
+	Capabilities []string          `yaml:"capabilities" json:"capabilities"`
+	UISchema     UISchemaDef       `yaml:"uiSchema" json:"uiSchema"`
+}
+
+// SharedAccessDef defines how app roles access shared core entities.
+type SharedAccessDef struct {
+	Table   string   `yaml:"table" json:"table"`
+	Roles   []string `yaml:"roles" json:"roles"`
+	Columns []string `yaml:"columns" json:"columns"`
+}
+
+// DomainTableDef defines the domain table specification.
+type DomainTableDef struct {
+	Name                 string          `yaml:"name" json:"name"`
+	Columns              []ColumnDef     `yaml:"columns" json:"columns"`
+	CompositeForeignKeys []ForeignKeyDef `yaml:"compositeForeignKeys" json:"compositeForeignKeys"`
+}
+
+// ColumnDef defines a business column in a domain table.
+type ColumnDef struct {
+	Name     string `yaml:"name" json:"name"`
+	Type     string `yaml:"type" json:"type"`
+	Nullable bool   `yaml:"nullable" json:"nullable"`
+	Check    string `yaml:"check,omitempty" json:"check,omitempty"`
+}
+
+// ForeignKeyDef defines a same-workspace composite foreign key.
+type ForeignKeyDef struct {
+	Columns           []string `yaml:"columns" json:"columns"`
+	ReferencesTable   string   `yaml:"referencesTable" json:"referencesTable"`
+	ReferencesColumns []string `yaml:"referencesColumns" json:"referencesColumns"`
+}
+
+// DomainAccessDef defines CRUD permissions on the domain table.
+type DomainAccessDef struct {
+	Select []AccessRule `yaml:"select" json:"select"`
+	Insert []AccessRule `yaml:"insert" json:"insert"`
+	Update []AccessRule `yaml:"update" json:"update"`
+}
+
+// AccessRule defines role-scoped permissions for select, insert, or update.
+type AccessRule struct {
+	Role         string            `yaml:"role" json:"role"`
+	Columns      []string          `yaml:"columns" json:"columns"`
+	RecordFilter map[string]any    `yaml:"recordFilter,omitempty" json:"recordFilter,omitempty"`
+	Presets      map[string]string `yaml:"presets,omitempty" json:"presets,omitempty"`
+}
+
+// StateMachineDef defines allowed states and transitions.
+type StateMachineDef struct {
+	Initial        string       `yaml:"initial" json:"initial"`
+	EditableStates []string     `yaml:"editableStates" json:"editableStates"`
+	TerminalStates []string     `yaml:"terminalStates" json:"terminalStates"`
+	Commands       []CommandDef `yaml:"commands" json:"commands"`
+}
+
+// CommandDef defines a version-checked state transition command.
+type CommandDef struct {
+	Name         string         `yaml:"name" json:"name"`
+	From         []string       `yaml:"from" json:"from"`
+	To           string         `yaml:"to" json:"to"`
+	AllowedRoles []string       `yaml:"allowedRoles" json:"allowedRoles"`
+	RecordFilter map[string]any `yaml:"recordFilter,omitempty" json:"recordFilter,omitempty"`
+}
+
+// AttachmentDef defines file attachment clean-status requirements.
+type AttachmentDef struct {
+	Column                 string   `yaml:"column" json:"column"`
+	RequireCleanOnCommands []string `yaml:"requireCleanOnCommands" json:"requireCleanOnCommands"`
+}
+
+// WorkflowDef defines workflow file bindings and effect declarations.
+type WorkflowDef struct {
+	ID               string      `yaml:"id" json:"id"`
+	File             string      `yaml:"file" json:"file"`
+	SubscribedEvents []string    `yaml:"subscribedEvents" json:"subscribedEvents"`
+	Effects          []EffectDef `yaml:"effects" json:"effects"`
+}
+
+// EffectDef defines a repeatable workflow effect.
+type EffectDef struct {
+	StepName     string          `yaml:"stepName" json:"stepName"`
+	Kind         string          `yaml:"kind" json:"kind"`
+	WhenCommands []string        `yaml:"whenCommands" json:"whenCommands"`
+	Fields       EffectFieldsDef `yaml:"fields" json:"fields"`
+}
+
+// EffectFieldsDef defines literal parameters for a create_work_item effect.
+type EffectFieldsDef struct {
+	Title              string `yaml:"title" json:"title"`
+	Description        string `yaml:"description" json:"description"`
+	Priority           string `yaml:"priority" json:"priority"`
+	AssignedEmployeeID string `yaml:"assignedEmployeeId,omitempty" json:"assignedEmployeeId,omitempty"`
+}
+
+// UISchemaDef defines the schema-driven UI metadata.
+type UISchemaDef struct {
+	ListColumns []string       `yaml:"listColumns" json:"listColumns"`
+	FormFields  []FormFieldDef `yaml:"formFields" json:"formFields"`
+	Actions     []string       `yaml:"actions" json:"actions"`
+}
+
+// FormFieldDef defines a form input field in the dynamic UI shell.
+type FormFieldDef struct {
+	Name     string `yaml:"name" json:"name"`
+	Label    string `yaml:"label" json:"label"`
+	Type     string `yaml:"type" json:"type"`
+	Required bool   `yaml:"required" json:"required"`
 }

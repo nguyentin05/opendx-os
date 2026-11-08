@@ -55,18 +55,52 @@ CREATE TABLE IF NOT EXISTS core.work_items (
 CREATE TABLE IF NOT EXISTS core.file_objects (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL REFERENCES core.workspaces(id),
+    app_id TEXT NOT NULL CHECK (length(trim(app_id)) > 0),
     bucket TEXT NOT NULL CHECK (length(trim(bucket)) > 0),
     object_key TEXT NOT NULL CHECK (length(trim(object_key)) > 0),
     file_name TEXT NOT NULL CHECK (length(trim(file_name)) > 0),
     scan_status TEXT NOT NULL DEFAULT 'QUARANTINED' CHECK (scan_status IN ('QUARANTINED', 'CLEAN', 'INFECTED')),
     sha256_hash TEXT NOT NULL CHECK (length(trim(sha256_hash)) = 64),
     uploaded_by UUID,
+    mime_type TEXT NOT NULL CHECK (mime_type IN ('application/pdf', 'image/png', 'image/jpeg')),
+    size_bytes BIGINT NOT NULL CHECK (size_bytes BETWEEN 1 AND 20971520),
+    scan_attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (scan_attempt_count >= 0),
+    scan_next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     scanned_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (workspace_id, id),
     UNIQUE (bucket, object_key),
     FOREIGN KEY (workspace_id, uploaded_by) REFERENCES core.employees(workspace_id, id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_file_objects_quarantined_due
+    ON core.file_objects (bucket, scan_next_attempt_at, created_at, id)
+    WHERE scan_status = 'QUARANTINED';
+
+CREATE OR REPLACE FUNCTION core.enforce_file_object_immutability()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.id IS DISTINCT FROM OLD.id
+       OR NEW.workspace_id IS DISTINCT FROM OLD.workspace_id
+       OR NEW.app_id IS DISTINCT FROM OLD.app_id
+       OR NEW.bucket IS DISTINCT FROM OLD.bucket
+       OR NEW.object_key IS DISTINCT FROM OLD.object_key
+       OR NEW.file_name IS DISTINCT FROM OLD.file_name
+       OR NEW.sha256_hash IS DISTINCT FROM OLD.sha256_hash
+       OR NEW.uploaded_by IS DISTINCT FROM OLD.uploaded_by
+       OR NEW.mime_type IS DISTINCT FROM OLD.mime_type
+       OR NEW.size_bytes IS DISTINCT FROM OLD.size_bytes
+       OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+        RAISE EXCEPTION 'core.file_objects identity and content metadata are immutable';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_file_object_immutable ON core.file_objects;
+CREATE TRIGGER trg_file_object_immutable
+BEFORE UPDATE ON core.file_objects
+FOR EACH ROW EXECUTE FUNCTION core.enforce_file_object_immutability();
 
 -- 5. Serialized Per-Workspace Audit Hash-Chain
 CREATE TABLE IF NOT EXISTS core.audit_logs (
@@ -77,7 +111,7 @@ CREATE TABLE IF NOT EXISTS core.audit_logs (
     action TEXT NOT NULL CHECK (length(trim(action)) > 0),
     entity_type TEXT NOT NULL CHECK (length(trim(entity_type)) > 0),
     entity_id UUID NOT NULL,
-    entity_version INTEGER NOT NULL CHECK (entity_version > 0),
+    entity_version BIGINT NOT NULL CHECK (entity_version > 0),
     payload JSONB NOT NULL DEFAULT '{}'::jsonb,
     prev_hash TEXT NOT NULL,
     row_hash TEXT NOT NULL,
@@ -160,14 +194,30 @@ CREATE TABLE IF NOT EXISTS core.outbox_events (
     event_type TEXT NOT NULL CHECK (length(trim(event_type)) > 0),
     entity_type TEXT NOT NULL CHECK (length(trim(entity_type)) > 0),
     entity_id UUID NOT NULL,
-    entity_version INTEGER NOT NULL CHECK (entity_version > 0),
+    entity_version BIGINT NOT NULL CHECK (entity_version > 0),
     payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    delivery_status TEXT NOT NULL DEFAULT 'pending' CHECK (delivery_status IN ('pending', 'in_flight', 'delivered')),
+    attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    lease_token UUID NULL,
+    lease_until TIMESTAMPTZ NULL,
+    delivered_at TIMESTAMPTZ NULL,
+    last_error TEXT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (workspace_id, id),
-    UNIQUE (workspace_id, app_id, entity_type, entity_id, entity_version, event_type)
+    UNIQUE (workspace_id, app_id, entity_type, entity_id, entity_version, event_type),
+    CHECK (
+        (delivery_status = 'pending' AND lease_token IS NULL AND lease_until IS NULL AND delivered_at IS NULL)
+        OR (delivery_status = 'in_flight' AND lease_token IS NOT NULL AND lease_until IS NOT NULL AND delivered_at IS NULL)
+        OR (delivery_status = 'delivered' AND lease_token IS NULL AND lease_until IS NULL AND delivered_at IS NOT NULL)
+    )
 );
 
--- 7. Shared Server-Side Version Bump Function for Domain Records (S04)
+CREATE INDEX IF NOT EXISTS idx_outbox_events_due
+    ON core.outbox_events (created_at)
+    WHERE delivery_status IN ('pending', 'in_flight');
+
+-- 7. Shared Server-Side Version Bump & Audit Trigger Functions for Domain Records (S04)
 CREATE OR REPLACE FUNCTION core.bump_domain_record_version()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
@@ -176,6 +226,50 @@ BEGIN
     END IF;
     NEW.version := OLD.version + 1;
     NEW.updated_at := now();
+    RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION core.record_domain_update_audit()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+    v_actor TEXT;
+    v_action TEXT;
+    v_hasura_user TEXT;
+BEGIN
+    v_actor := nullif(trim( coalesce(current_setting('dxos.actor_id', true), '') ), '');
+    v_action := nullif(trim( coalesce(current_setting('dxos.action', true), '') ), '');
+
+    IF v_actor IS NULL THEN
+        v_hasura_user := nullif(trim( coalesce(current_setting('hasura.user', true), '') ), '');
+        IF v_hasura_user IS NOT NULL THEN
+            v_actor := nullif(trim( coalesce(v_hasura_user::jsonb ->> 'x-hasura-user-id', '') ), '');
+            v_action := coalesce(v_action, 'UPDATE');
+        END IF;
+    END IF;
+
+    IF v_actor IS NULL OR v_action IS NULL THEN
+        RAISE EXCEPTION 'missing authenticated actor context for domain update';
+    END IF;
+
+    INSERT INTO core.audit_logs (
+        workspace_id,
+        actor_id,
+        action,
+        entity_type,
+        entity_id,
+        entity_version,
+        payload
+    ) VALUES (
+        NEW.workspace_id,
+        v_actor,
+        v_action,
+        TG_TABLE_SCHEMA || '.' || TG_TABLE_NAME,
+        NEW.id,
+        NEW.version,
+        to_jsonb(NEW)
+    );
+
     RETURN NEW;
 END;
 $$;

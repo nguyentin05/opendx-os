@@ -16,32 +16,43 @@
 
 set -euo pipefail
 
-TARGET_DIR="${1:-/opt/opendx-os}"
+if [ $# -lt 1 ] || [ -z "${1:-}" ]; then
+    echo "Usage: $0 <target_dir>" >&2
+    exit 1
+fi
+
+TARGET_DIR="$1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+if ! command -v go >/dev/null 2>&1; then
+    echo "ERROR: prerequisite 'go' is not installed or not in PATH" >&2
+    exit 1
+fi
+
+for req in platform apps contracts operator capabilities workspace-ui compose.yaml .env.example LICENSE NOTICE COPYRIGHT.txt; do
+    if [ ! -e "${REPO_ROOT}/${req}" ]; then
+        echo "ERROR: missing required source component: ${req}" >&2
+        exit 1
+    fi
+done
 
 echo "==> Installing OpenDX-OS (DX-OS Open-Core) into: ${TARGET_DIR}"
 
 mkdir -p "${TARGET_DIR}/bin"
-mkdir -p "${TARGET_DIR}/platform"
-mkdir -p "${TARGET_DIR}/apps"
-mkdir -p "${TARGET_DIR}/config"
 
-echo "--> Copying platform schemas and compose configurations..."
-cp -r "${REPO_ROOT}/platform" "${TARGET_DIR}/"
-cp -r "${REPO_ROOT}/apps" "${TARGET_DIR}/"
-cp "${REPO_ROOT}/compose.yaml" "${TARGET_DIR}/compose.yaml"
-if [ -f "${REPO_ROOT}/.env.example" ]; then
-    cp "${REPO_ROOT}/.env.example" "${TARGET_DIR}/.env.example"
-fi
+for item in platform apps contracts operator capabilities workspace-ui scripts compose.yaml .env.example LICENSE NOTICE COPYRIGHT.txt Makefile; do
+    if [ -e "${REPO_ROOT}/${item}" ]; then
+        cp -R "${REPO_ROOT}/${item}" "${TARGET_DIR}/"
+    fi
+done
 
-echo "--> Building and installing dxos-operator binary..."
-if command -v go >/dev/null 2>&1; then
-    (cd "${REPO_ROOT}/operator" && go build -o "${TARGET_DIR}/bin/dxos-operator" ./cmd/dxos-operator)
-    chmod +x "${TARGET_DIR}/bin/dxos-operator"
-    echo "--> dxos-operator installed to ${TARGET_DIR}/bin/dxos-operator"
-else
-    echo "--> Warning: Go not found, skipping operator compilation"
-fi
+echo "--> Building dxos-operator binary..."
+(cd "${REPO_ROOT}/operator" && go build -o "${TARGET_DIR}/bin/dxos-operator" ./cmd/dxos-operator)
+chmod +x "${TARGET_DIR}/bin/dxos-operator"
+
+echo "--> Building cap-process binary..."
+(cd "${REPO_ROOT}/capabilities" && go build -o "${TARGET_DIR}/bin/cap-process" ./cmd/cap-process)
+chmod +x "${TARGET_DIR}/bin/cap-process"
 
 echo "==> OpenDX-OS installation completed successfully at: ${TARGET_DIR}"

@@ -1,0 +1,243 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+apiVersion: dxos.io/v1alpha1
+kind: DXApplication
+metadata:
+  name: process_fixture
+  displayName: Independent Review Fixture
+  version: 0.1.0
+spec:
+  role: role_review
+  sharedAccess:
+  - table: core.employees
+    roles:
+    - role_review
+    - role_manager_review
+    columns:
+    - id
+    - workspace_id
+    - full_name
+    - email
+    - department
+  - table: core.work_items
+    roles:
+    - role_review
+    - role_manager_review
+    columns:
+    - id
+    - workspace_id
+    - title
+    - description
+    - priority
+    - created_at
+  - table: core.file_objects
+    roles:
+    - role_review
+    - role_manager_review
+    columns:
+    - id
+    - workspace_id
+    - file_name
+    - scan_status
+    - sha256_hash
+    - scanned_at
+  domainTable:
+    name: domain.review_requests
+    columns:
+    - name: requester_id
+      type: uuid
+      nullable: false
+    - name: vendor_name
+      type: text
+      nullable: false
+      check: length(trim(vendor_name)) > 0
+    - name: item_description
+      type: text
+      nullable: false
+      check: length(trim(item_description)) > 0
+    - name: quoted_amount
+      type: numeric(14,2)
+      nullable: false
+      check: quoted_amount > 0
+    - name: quote_file_id
+      type: uuid
+      nullable: true
+    - name: rejection_reason
+      type: text
+      nullable: true
+    compositeForeignKeys:
+    - columns:
+      - workspace_id
+      - work_item_id
+      referencesTable: core.work_items
+      referencesColumns:
+      - workspace_id
+      - id
+    - columns:
+      - workspace_id
+      - requester_id
+      referencesTable: core.employees
+      referencesColumns:
+      - workspace_id
+      - id
+    - columns:
+      - workspace_id
+      - quote_file_id
+      referencesTable: core.file_objects
+      referencesColumns:
+      - workspace_id
+      - id
+  domainAccess:
+    select:
+    - role: role_review
+      columns:
+      - id
+      - workspace_id
+      - work_item_id
+      - requester_id
+      - vendor_name
+      - item_description
+      - quoted_amount
+      - quote_file_id
+      - rejection_reason
+      - status
+      - version
+      - updated_at
+      recordFilter:
+        workspace_id:
+          _eq: X-Hasura-Workspace-Id
+    - role: role_manager_review
+      columns:
+      - id
+      - workspace_id
+      - work_item_id
+      - requester_id
+      - vendor_name
+      - item_description
+      - quoted_amount
+      - quote_file_id
+      - rejection_reason
+      - status
+      - version
+      - updated_at
+      recordFilter:
+        workspace_id:
+          _eq: X-Hasura-Workspace-Id
+    insert:
+    - role: role_review
+      columns:
+      - work_item_id
+      - vendor_name
+      - item_description
+      - quoted_amount
+      - quote_file_id
+      presets:
+        workspace_id: X-Hasura-Workspace-Id
+        requester_id: X-Hasura-User-Id
+      recordFilter:
+        workspace_id:
+          _eq: X-Hasura-Workspace-Id
+    update:
+    - role: role_review
+      columns:
+      - vendor_name
+      - item_description
+      - quoted_amount
+      - quote_file_id
+      recordFilter:
+        workspace_id:
+          _eq: X-Hasura-Workspace-Id
+  stateMachine:
+    initial: OPEN
+    editableStates:
+    - OPEN
+    terminalStates:
+    - DONE
+    - DECLINED
+    - WITHDRAWN
+    commands:
+    - name: submit
+      from:
+      - OPEN
+      to: IN_REVIEW
+      allowedRoles:
+      - role_review
+    - name: approve
+      from:
+      - IN_REVIEW
+      to: DONE
+      allowedRoles:
+      - role_manager_review
+      recordFilter:
+        requester_id:
+          _neq: X-Hasura-User-Id
+    - name: reject
+      from:
+      - IN_REVIEW
+      to: DECLINED
+      allowedRoles:
+      - role_manager_review
+    - name: cancel
+      from:
+      - OPEN
+      - IN_REVIEW
+      to: WITHDRAWN
+      allowedRoles:
+      - role_review
+      - role_manager_review
+  attachments:
+  - column: quote_file_id
+    requireCleanOnCommands:
+    - submit
+    - approve
+  workflows:
+  - id: review_flow
+    file: workflows/review_flow.yaml
+    subscribedEvents:
+    - command.committed
+    effects:
+    - stepName: create_review
+      kind: create_work_item
+      whenCommands:
+      - submit
+      fields:
+        title: Review fixture request
+        description: Review the submitted request in its source application.
+        priority: MEDIUM
+  capabilities:
+  - cap-process
+  uiSchema:
+    listColumns:
+    - vendor_name
+    - item_description
+    - quoted_amount
+    - quote_file_id
+    - status
+    - version
+    - updated_at
+    formFields:
+    - name: work_item_id
+      label: Work Item
+      type: uuid
+      required: true
+    - name: vendor_name
+      label: Vendor Name
+      type: text
+      required: true
+    - name: item_description
+      label: Item Description
+      type: text
+      required: true
+    - name: quoted_amount
+      label: Quoted Amount
+      type: number
+      required: true
+    - name: quote_file_id
+      label: Supplier Quote File
+      type: file
+      required: false
+    actions:
+    - submit
+    - approve
+    - reject
+    - cancel
