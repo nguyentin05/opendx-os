@@ -22,3 +22,8 @@ Clear commit messages should name the affected part and purpose, for example
 
 Original contributions are licensed under [Apache-2.0](LICENSE). See the source
 hygiene document for format-specific headers and third-party exceptions.
+
+## Optional development tools
+
+See [Graphify setup and usage](docs/development/graphify.md) for optional
+codebase exploration with coding agents.
