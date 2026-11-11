@@ -13,16 +13,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM golang:1.24-alpine AS builder
-ENV GOTOOLCHAIN=auto
+FROM golang:1.27.3-alpine AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /out/dxos-operator ./cmd/dxos-operator
+RUN CGO_ENABLED=0 go build -trimpath -o /out/dxos-operator ./cmd/dxos-operator
 
 FROM alpine:3.21
 RUN adduser -D -u 10001 dxos
-USER dxos
 COPY --from=builder /out/dxos-operator /usr/local/bin/dxos-operator
+# Numeric user so Kubernetes can verify runAsNonRoot.
+USER 10001:10001
 ENTRYPOINT ["/usr/local/bin/dxos-operator"]

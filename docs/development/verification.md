@@ -26,6 +26,10 @@ the current [Makefile](../../Makefile), module manifests, and prerequisites firs
 | Static contracts | Root | `python3 -m unittest discover -s tests -v` | Python 3 and PyYAML; source/fixture checks, not live database authorization |
 | Operator unit tests | `operator/` | `go test ./...` | Go version/dependencies from `go.mod` |
 | Capability unit tests | `capabilities/` | `go test ./...` | Go version/dependencies from `go.mod` |
+| Operator integration | `operator/` | `make test-integration` | `TEST_DATABASE_URL` naming a disposable PostgreSQL 17 test database; Hasura is a local fake |
+| Operator CRD schema | `operator/` | `make test-envtest` | Downloads envtest binaries (kube-apiserver, etcd) into `operator/bin/` |
+| Operator controller lifecycle | `operator/` | `make test-controller` | envtest plus `TEST_DATABASE_URL`; Hasura is a fake modelling `export_metadata` |
+| Operator on a real cluster | Root | `scripts/k8s/dev-cluster.sh up` then `demo` | Docker, kubectl, kind; real PostgreSQL and Hasura in a disposable kind cluster; no Keycloak, Kestra or capabilities |
 | UI tests and build | `workspace-ui/` | `npm test` then `npm run build` | Node/npm and installed dependencies from `package.json`/lockfile |
 | Combined available suites | Root | `make test` | Runs the groups supported by the checkout; currently skips UI when `node_modules/` is missing |
 

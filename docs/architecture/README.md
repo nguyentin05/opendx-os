@@ -50,6 +50,11 @@ active state distinguishable. Runtime consumers read published configuration
 without calling the Operator for each request. Check the actual CLI before use;
 the command set is not fully implemented.
 
+On Kubernetes, `dxos-operator controller` reconciles cluster-scoped
+`DXApplication` resources with the same planner and applier as the CLI and
+reports progress in status conditions; see
+[installation](../operations/installation.md#kubernetes-operator-development-cluster).
+
 Reconcile adds missing and revokes excess configuration within managed resources
 and roles, using the active manifest set. Multiple apps sharing `core.*` require
 combined valid permissions; reconciling one app must not remove another's grants.
