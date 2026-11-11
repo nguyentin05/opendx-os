@@ -60,7 +60,9 @@ func TestRejectUnsafeRegistry(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var m map[string]any
-			json.Unmarshal(fixture(t), &m)
+			if err := json.Unmarshal(fixture(t), &m); err != nil {
+				t.Fatal(err)
+			}
 			tc.mutate(m)
 			b, _ := json.Marshal(m)
 			if _, e := Decode(b); e == nil {
@@ -88,7 +90,9 @@ func TestStrictJSONShape(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var m map[string]any
-			json.Unmarshal(fixture(t), &m)
+			if err := json.Unmarshal(fixture(t), &m); err != nil {
+				t.Fatal(err)
+			}
 			tc.mutate(m)
 			b, _ := json.Marshal(m)
 			if _, e := Decode(b); e == nil {
@@ -102,7 +106,9 @@ func TestRequesterInsertPresetRequiresSignedUser(t *testing.T) {
 	for _, value := range []string{"", "X-Hasura-Workspace-Id"} {
 		t.Run(value, func(t *testing.T) {
 			var m map[string]any
-			json.Unmarshal(fixture(t), &m)
+			if err := json.Unmarshal(fixture(t), &m); err != nil {
+				t.Fatal(err)
+			}
 			p := m["manifest_spec"].(map[string]any)["domainAccess"].(map[string]any)["insert"].([]any)[0].(map[string]any)["presets"].(map[string]any)
 			if value == "" {
 				delete(p, "requester_id")

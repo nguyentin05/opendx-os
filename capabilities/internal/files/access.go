@@ -100,7 +100,7 @@ func (s *Service) readable(ctx context.Context, id *auth.Identity, file string) 
 				}
 			}
 			e = rows.Err()
-			rows.Close()
+			_ = rows.Close()
 			if e != nil {
 				return "", "", "", ErrDenied
 			}

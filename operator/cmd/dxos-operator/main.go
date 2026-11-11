@@ -46,15 +46,15 @@ func runCLI(args []string, stdout, stderr io.Writer, applier *apply.Runner, reco
 	switch args[0] {
 	case "validate":
 		if len(args) != 2 {
-			fmt.Fprintln(stderr, "Usage: dxos-operator validate <manifest.yaml>")
+			_, _ = fmt.Fprintln(stderr, "Usage: dxos-operator validate <manifest.yaml>")
 			return 1
 		}
 		app, err := manifest.ParseFile(args[1])
 		if err != nil {
-			fmt.Fprintf(stderr, "Validation failed: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "Validation failed: %v\n", err)
 			return 1
 		}
-		fmt.Fprintf(stdout, "Valid manifest: %s (v%s)\n", app.Metadata.Name, app.Metadata.Version)
+		_, _ = fmt.Fprintf(stdout, "Valid manifest: %s (v%s)\n", app.Metadata.Name, app.Metadata.Version)
 		return 0
 
 	case "plan":
@@ -67,24 +67,24 @@ func runCLI(args []string, stdout, stderr io.Writer, applier *apply.Runner, reco
 		return runReconcileCmd(args[1:], stdout, stderr, applier, reconciler)
 
 	case "version":
-		fmt.Fprintln(stdout, "dxos-operator v0.1.0 (DX-OS Open-Core OLP 2026)")
+		_, _ = fmt.Fprintln(stdout, "dxos-operator v0.1.0 (DX-OS Open-Core OLP 2026)")
 		return 0
 
 	default:
-		fmt.Fprintf(stderr, "Unknown command: %s\n", args[0])
+		_, _ = fmt.Fprintf(stderr, "Unknown command: %s\n", args[0])
 		printUsage(stderr)
 		return 1
 	}
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprintln(w, "Usage: dxos-operator <command> [options]")
-	fmt.Fprintln(w, "Commands:")
-	fmt.Fprintln(w, "  validate <manifest.yaml>                 Strictly validate a C0 v1 manifest")
-	fmt.Fprintln(w, "  plan [-format sql|hasura] <manifest.yaml> Generate DDL or Hasura metadata plan")
-	fmt.Fprintln(w, "  apply [-workspace UUID] <manifest.yaml>   Apply a single validated manifest")
-	fmt.Fprintln(w, "  reconcile [-workspace UUID] <apps-dir>    Reconcile all application packages")
-	fmt.Fprintln(w, "  version                                  Print operator version")
+	_, _ = fmt.Fprintln(w, "Usage: dxos-operator <command> [options]")
+	_, _ = fmt.Fprintln(w, "Commands:")
+	_, _ = fmt.Fprintln(w, "  validate <manifest.yaml>                 Strictly validate a C0 v1 manifest")
+	_, _ = fmt.Fprintln(w, "  plan [-format sql|hasura] <manifest.yaml> Generate DDL or Hasura metadata plan")
+	_, _ = fmt.Fprintln(w, "  apply [-workspace UUID] <manifest.yaml>   Apply a single validated manifest")
+	_, _ = fmt.Fprintln(w, "  reconcile [-workspace UUID] <apps-dir>    Reconcile all application packages")
+	_, _ = fmt.Fprintln(w, "  version                                  Print operator version")
 }
 
 func runPlanCmd(args []string, stdout, stderr io.Writer) int {
@@ -110,13 +110,13 @@ func runPlanCmd(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	if len(posArgs) != 1 {
-		fmt.Fprintln(stderr, "Error: single manifest file path required")
+		_, _ = fmt.Fprintln(stderr, "Error: single manifest file path required")
 		return 1
 	}
 
 	app, err := manifest.ParseFile(posArgs[0])
 	if err != nil {
-		fmt.Fprintf(stderr, "Error parsing manifest: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Error parsing manifest: %v\n", err)
 		return 1
 	}
 
@@ -124,20 +124,20 @@ func runPlanCmd(args []string, stdout, stderr io.Writer) int {
 	case "sql":
 		ddl, err := planner.GenerateDDL(app)
 		if err != nil {
-			fmt.Fprintf(stderr, "Error generating DDL: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "Error generating DDL: %v\n", err)
 			return 1
 		}
-		fmt.Fprintln(stdout, ddl)
+		_, _ = fmt.Fprintln(stdout, ddl)
 	case "hasura":
 		ops, err := planner.GenerateHasuraOperations(app)
 		if err != nil {
-			fmt.Fprintf(stderr, "Error generating Hasura ops: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "Error generating Hasura ops: %v\n", err)
 			return 1
 		}
 		b, _ := json.MarshalIndent(ops, "", "  ")
-		fmt.Fprintln(stdout, string(b))
+		_, _ = fmt.Fprintln(stdout, string(b))
 	default:
-		fmt.Fprintf(stderr, "Unknown format: %s\n", *format)
+		_, _ = fmt.Fprintf(stderr, "Unknown format: %s\n", *format)
 		return 1
 	}
 	return 0
@@ -166,43 +166,43 @@ func runApplyCmd(args []string, stdout, stderr io.Writer, applier *apply.Runner)
 	fs.SetOutput(stderr)
 	ws := fs.String("workspace", defaultWorkspaceID, "Target workspace UUID")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "Usage: dxos-operator apply [-workspace UUID] <manifest.yaml>")
+		_, _ = fmt.Fprintln(stderr, "Usage: dxos-operator apply [-workspace UUID] <manifest.yaml>")
 		return 1
 	}
 
 	app, err := manifest.ParseFile(fs.Arg(0))
 	if err != nil {
-		fmt.Fprintf(stderr, "Validation failed: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Validation failed: %v\n", err)
 		return 1
 	}
 
 	if applier == nil {
 		db, envApplier, _, err := buildRunnersFromEnv()
 		if err != nil {
-			fmt.Fprintf(stderr, "Failed to initialize runner: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "Failed to initialize runner: %v\n", err)
 			return 1
 		}
 		if db != nil {
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 		}
 		applier = envApplier
 	}
 
 	live, err := applier.ReadManagedState(context.Background(), *ws)
 	if err != nil {
-		fmt.Fprintf(stderr, "Failed reading live state: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Failed reading live state: %v\n", err)
 		return 1
 	}
 	plan, err := planner.BuildApplyPlan(*app, live)
 	if err != nil {
-		fmt.Fprintf(stderr, "Failed building plan: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Failed building plan: %v\n", err)
 		return 1
 	}
 	if err := applier.Run(context.Background(), *ws, plan); err != nil {
-		fmt.Fprintf(stderr, "Apply failed: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Apply failed: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "Applied application %s (v%s) to workspace %s\n", app.Metadata.Name, app.Metadata.Version, *ws)
+	_, _ = fmt.Fprintf(stdout, "Applied application %s (v%s) to workspace %s\n", app.Metadata.Name, app.Metadata.Version, *ws)
 	return 0
 }
 
@@ -211,18 +211,18 @@ func runReconcileCmd(args []string, stdout, stderr io.Writer, applier *apply.Run
 	fs.SetOutput(stderr)
 	ws := fs.String("workspace", defaultWorkspaceID, "Target workspace UUID")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "Usage: dxos-operator reconcile [-workspace UUID] <apps-dir>")
+		_, _ = fmt.Fprintln(stderr, "Usage: dxos-operator reconcile [-workspace UUID] <apps-dir>")
 		return 1
 	}
 
 	if reconciler == nil {
 		db, _, envReconciler, err := buildRunnersFromEnv()
 		if err != nil {
-			fmt.Fprintf(stderr, "Failed to initialize runner: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "Failed to initialize runner: %v\n", err)
 			return 1
 		}
 		if db != nil {
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 		}
 		if applier != nil {
 			reconciler = reconcile.NewRunner(db, applier)
@@ -232,9 +232,9 @@ func runReconcileCmd(args []string, stdout, stderr io.Writer, applier *apply.Run
 	}
 
 	if err := reconciler.Run(context.Background(), *ws, fs.Arg(0)); err != nil {
-		fmt.Fprintf(stderr, "Reconcile failed: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Reconcile failed: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "Reconciled applications in %s for workspace %s\n", fs.Arg(0), *ws)
+	_, _ = fmt.Fprintf(stdout, "Reconciled applications in %s for workspace %s\n", fs.Arg(0), *ws)
 	return 0
 }

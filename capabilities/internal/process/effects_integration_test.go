@@ -82,10 +82,14 @@ func TestEffectCurrentGrantAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	var event string
-	db.QueryRow(`SELECT id::text FROM core.outbox_events`).Scan(&event)
+	if err := db.QueryRow(`SELECT id::text FROM core.outbox_events`).Scan(&event); err != nil {
+		t.Fatal(err)
+	}
 	id.Role = "workflow_service"
 	id.AllowedRoles = []string{id.Role}
-	e.ConfigureWorkflowService(id.UserID, id.Role)
+	if err := e.ConfigureWorkflowService(id.UserID, id.Role); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.Exec(`ALTER TABLE core.processed_workflow_steps ADD CHECK (step_name <> 'create_review')`); err != nil {
 		t.Fatal(err)
 	}
@@ -93,11 +97,15 @@ func TestEffectCurrentGrantAndRollback(t *testing.T) {
 		t.Fatal("expected receipt failure")
 	}
 	var n int
-	db.QueryRow(`SELECT count(*) FROM core.work_items`).Scan(&n)
+	if err := db.QueryRow(`SELECT count(*) FROM core.work_items`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
 	if n != 0 {
 		t.Fatal("work item escaped rollback")
 	}
-	db.Exec(`UPDATE core.capability_registry SET enabled=false`)
+	if _, err := db.Exec(`UPDATE core.capability_registry SET enabled=false`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := e.ExecuteWorkItemEffect(context.Background(), id, event, "create_review"); err == nil {
 		t.Fatal("disabled dependency")
 	}
@@ -105,21 +113,33 @@ func TestEffectCurrentGrantAndRollback(t *testing.T) {
 
 func TestEffectWrongCommandAndCurrentAuthorization(t *testing.T) {
 	e, db, id := commandFixture(t)
-	execute(e, id, "effect", 1)
+	if _, status, err := execute(e, id, "effect", 1); err != nil || status != 200 {
+		t.Fatalf("setup command: status=%d err=%v", status, err)
+	}
 	var event string
-	db.QueryRow(`SELECT id::text FROM core.outbox_events`).Scan(&event)
+	if err := db.QueryRow(`SELECT id::text FROM core.outbox_events`).Scan(&event); err != nil {
+		t.Fatal(err)
+	}
 	id.Role = "workflow_service"
 	id.AllowedRoles = []string{id.Role}
-	e.ConfigureWorkflowService(id.UserID, id.Role)
-	db.Exec(`UPDATE core.outbox_events SET payload=jsonb_set(payload,'{payload,command}','"cancel"')`)
+	if err := e.ConfigureWorkflowService(id.UserID, id.Role); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE core.outbox_events SET payload=jsonb_set(payload,'{payload,command}','"cancel"')`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := e.ExecuteWorkItemEffect(context.Background(), id, event, "create_review"); err == nil {
 		t.Fatal("wrong command")
 	}
-	db.Exec(`UPDATE core.outbox_events SET payload=jsonb_set(payload,'{payload,command}','"submit"')`)
+	if _, err := db.Exec(`UPDATE core.outbox_events SET payload=jsonb_set(payload,'{payload,command}','"submit"')`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := e.ExecuteWorkItemEffect(context.Background(), id, event, "create_review"); err != nil {
 		t.Fatal(err)
 	}
-	db.Exec(`UPDATE core.capability_registry SET enabled=false`)
+	if _, err := db.Exec(`UPDATE core.capability_registry SET enabled=false`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := e.ExecuteWorkItemEffect(context.Background(), id, event, "create_review"); err == nil {
 		t.Fatal("cached result bypassed current dependency")
 	}
@@ -148,7 +168,7 @@ func TestEffectConcurrentMixedCaseEventUUID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer blocker.Rollback()
+	defer func() { _ = blocker.Rollback() }() // Best-effort cleanup; a committed transaction is already closed.
 	if _, err = blocker.Exec(`LOCK TABLE core.work_items IN SHARE MODE`); err != nil {
 		t.Fatal(err)
 	}

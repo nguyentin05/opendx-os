@@ -96,7 +96,9 @@ func TestCommandDerivesStateAndTable(t *testing.T) {
 }
 func TestReceiptPayloadConflict(t *testing.T) {
 	e, db, id := commandFixture(t)
-	execute(e, id, "a", 1)
+	if _, status, err := execute(e, id, "a", 1); err != nil || status != 200 {
+		t.Fatalf("setup command: status=%d err=%v", status, err)
+	}
 	_, s, _ := execute(e, id, "a", 2)
 	if s != 409 {
 		t.Fatal(s)
@@ -105,14 +107,18 @@ func TestReceiptPayloadConflict(t *testing.T) {
 }
 func TestRetryRechecksCurrentPermission(t *testing.T) {
 	e, db, id := commandFixture(t)
-	execute(e, id, "a", 1)
+	if _, status, err := execute(e, id, "a", 1); err != nil || status != 200 {
+		t.Fatalf("setup command: status=%d err=%v", status, err)
+	}
 	id.Role = "role_ungranted"
 	_, s, _ := execute(e, id, "a", 1)
 	if s != 403 {
 		t.Fatal(s)
 	}
 	id.Role = "role_procurement"
-	db.Exec(`UPDATE core.capability_registry SET enabled=false`)
+	if _, err := db.Exec(`UPDATE core.capability_registry SET enabled=false`); err != nil {
+		t.Fatal(err)
+	}
 	_, s, _ = execute(e, id, "a", 1)
 	if s != 503 {
 		t.Fatal(s)
@@ -158,21 +164,27 @@ func concurrent(t *testing.T, same bool) {
 }
 func TestCommandRollbackOutboxFailure(t *testing.T) {
 	e, db, id := commandFixture(t)
-	db.Exec(`ALTER TABLE core.outbox_events ADD CHECK(false)`)
+	if _, err := db.Exec(`ALTER TABLE core.outbox_events ADD CHECK(false)`); err != nil {
+		t.Fatal(err)
+	}
 	_, s, _ := execute(e, id, "a", 1)
 	if s != 503 {
 		t.Fatal(s)
 	}
 	counts(t, db, 0)
 	var v int
-	db.QueryRow(`SELECT version FROM domain.procurement_requests`).Scan(&v)
+	if err := db.QueryRow(`SELECT version FROM domain.procurement_requests`).Scan(&v); err != nil {
+		t.Fatal(err)
+	}
 	if v != 1 {
 		t.Fatal(v)
 	}
 }
 func TestCommandRejectsSelfApproval(t *testing.T) {
 	e, db, id := commandFixture(t)
-	execute(e, id, "a", 1)
+	if _, status, err := execute(e, id, "a", 1); err != nil || status != 200 {
+		t.Fatalf("setup command: status=%d err=%v", status, err)
+	}
 	id.Role = "role_manager_procurement"
 	_, s, _ := e.Execute(context.Background(), id, "procurement", "approve", "approve", &CommandRequest{EntityID: entity, ExpectedVersion: 2, Payload: map[string]any{}})
 	if s != 403 {
@@ -185,7 +197,9 @@ func TestRetryRechecksRowPermission(t *testing.T) {
 	if _, err := db.Exec(`UPDATE core.app_registry SET manifest_spec=jsonb_set(manifest_spec,'{domainAccess,select,0,recordFilter}','{"requester_id":{"_eq":"X-Hasura-User-Id"}}')`); err != nil {
 		t.Fatal(err)
 	}
-	execute(e, id, "a", 1)
+	if _, status, err := execute(e, id, "a", 1); err != nil || status != 200 {
+		t.Fatalf("setup command: status=%d err=%v", status, err)
+	}
 	_, err := db.Exec(`UPDATE domain.procurement_requests SET requester_id='55555555-5555-4555-8555-555555555555'`)
 	if err == nil {
 		t.Fatal("unvalidated domain update accepted")
@@ -205,7 +219,9 @@ func TestRetryRechecksRowPermission(t *testing.T) {
 }
 func TestCommandUncleanAttachment(t *testing.T) {
 	e, db, id := commandFixture(t)
-	db.Exec(`UPDATE core.file_objects SET scan_status='QUARANTINED'`)
+	if _, err := db.Exec(`UPDATE core.file_objects SET scan_status='QUARANTINED'`); err != nil {
+		t.Fatal(err)
+	}
 	_, s, _ := execute(e, id, "a", 1)
 	if s != 422 {
 		t.Fatal(s)
@@ -214,7 +230,9 @@ func TestCommandUncleanAttachment(t *testing.T) {
 }
 func TestCommandTriggerRollback(t *testing.T) {
 	e, db, id := commandFixture(t)
-	db.Exec(`ALTER TABLE core.audit_logs ADD CHECK(false)`)
+	if _, err := db.Exec(`ALTER TABLE core.audit_logs ADD CHECK(false)`); err != nil {
+		t.Fatal(err)
+	}
 	_, s, _ := execute(e, id, "a", 1)
 	if s != 503 {
 		t.Fatal(s)
@@ -229,11 +247,15 @@ func TestCommandNumericFilters(t *testing.T) {
 	}{{"integer_eq", "12", "12", "_eq", 200}, {"decimal_eq", "12.00", "12", "_eq", 200}, {"decimal_neq", "12.00", "12", "_neq", 403}, {"large_eq", "9007199254740993.01", "9007199254740993.01", "_eq", 200}, {"large_neq", "9007199254740993.01", "9007199254740993.02", "_neq", 200}} {
 		t.Run(tc.name, func(t *testing.T) {
 			e, db, id := commandFixture(t)
-			db.Exec(`ALTER TABLE domain.procurement_requests DISABLE TRIGGER USER`)
+			if _, err := db.Exec(`ALTER TABLE domain.procurement_requests DISABLE TRIGGER USER`); err != nil {
+				t.Fatal(err)
+			}
 			if _, err := db.Exec(`UPDATE domain.procurement_requests SET quoted_amount=$1::numeric`, tc.amount); err != nil {
 				t.Fatal(err)
 			}
-			db.Exec(`ALTER TABLE domain.procurement_requests ENABLE TRIGGER USER`)
+			if _, err := db.Exec(`ALTER TABLE domain.procurement_requests ENABLE TRIGGER USER`); err != nil {
+				t.Fatal(err)
+			}
 			filter := `{"quoted_amount":{"` + tc.op + `":` + tc.literal + `}}`
 			if _, err := db.Exec(`UPDATE core.app_registry SET manifest_spec=jsonb_set(manifest_spec,'{stateMachine,commands,0,recordFilter}',$1::jsonb),state_machine=jsonb_set(state_machine,'{commands,0,recordFilter}',$1::jsonb)`, filter); err != nil {
 				t.Fatal(err)
@@ -262,7 +284,9 @@ func TestRetryNumericGuardDeniesCache(t *testing.T) {
 }
 func TestRetryManifestRoleRevoked(t *testing.T) {
 	e, db, id := commandFixture(t)
-	execute(e, id, "a", 1)
+	if _, status, err := execute(e, id, "a", 1); err != nil || status != 200 {
+		t.Fatalf("setup command: status=%d err=%v", status, err)
+	}
 	if _, err := db.Exec(`UPDATE core.app_registry SET manifest_spec=jsonb_set(manifest_spec,'{stateMachine,commands,0,allowedRoles}','["role_manager_procurement"]'),state_machine=jsonb_set(state_machine,'{commands,0,allowedRoles}','["role_manager_procurement"]')`); err != nil {
 		t.Fatal(err)
 	}
@@ -274,14 +298,18 @@ func TestRetryManifestRoleRevoked(t *testing.T) {
 }
 func TestCommandReceiptFailureRollback(t *testing.T) {
 	e, db, id := commandFixture(t)
-	db.Exec(`ALTER TABLE core.command_receipts ADD CHECK(false)`)
+	if _, err := db.Exec(`ALTER TABLE core.command_receipts ADD CHECK(false)`); err != nil {
+		t.Fatal(err)
+	}
 	_, s, _ := execute(e, id, "a", 1)
 	if s != 503 {
 		t.Fatal(s)
 	}
 	counts(t, db, 0)
 	var v int
-	db.QueryRow(`SELECT version FROM domain.procurement_requests`).Scan(&v)
+	if err := db.QueryRow(`SELECT version FROM domain.procurement_requests`).Scan(&v); err != nil {
+		t.Fatal(err)
+	}
 	if v != 1 {
 		t.Fatal(v)
 	}
@@ -295,7 +323,9 @@ CREATE TRIGGER audit AFTER UPDATE ON domain.procurement_requests FOR EACH ROW EX
 
 func TestRetryNumericReadFilterDeniesCache(t *testing.T) {
 	e, db, id := commandFixture(t)
-	execute(e, id, "a", 1)
+	if _, status, err := execute(e, id, "a", 1); err != nil || status != 200 {
+		t.Fatalf("setup command: status=%d err=%v", status, err)
+	}
 	if _, err := db.Exec(`UPDATE core.app_registry SET manifest_spec=jsonb_set(manifest_spec,'{domainAccess,select,0,recordFilter}','{"quoted_amount":{"_neq":12.00}}')`); err != nil {
 		t.Fatal(err)
 	}
@@ -310,10 +340,18 @@ func TestCommandUUIDLiteralCase(t *testing.T) {
 	if _, err := db.Exec(`UPDATE core.app_registry SET manifest_spec=jsonb_set(manifest_spec,'{stateMachine,commands,0,recordFilter}','{"quote_file_id":{"_eq":"aAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"}}'),state_machine=jsonb_set(state_machine,'{commands,0,recordFilter}','{"quote_file_id":{"_eq":"aAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"}}')`); err != nil {
 		t.Fatal(err)
 	}
-	db.Exec(`ALTER TABLE domain.procurement_requests DISABLE TRIGGER USER`)
-	db.Exec(`UPDATE domain.procurement_requests SET quote_file_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'`)
-	db.Exec(`ALTER TABLE domain.procurement_requests ENABLE TRIGGER USER`)
-	db.Exec(`INSERT INTO core.file_objects VALUES('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','11111111-1111-4111-8111-111111111111','procurement','CLEAN')`)
+	if _, err := db.Exec(`ALTER TABLE domain.procurement_requests DISABLE TRIGGER USER`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE domain.procurement_requests SET quote_file_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`ALTER TABLE domain.procurement_requests ENABLE TRIGGER USER`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO core.file_objects VALUES('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','11111111-1111-4111-8111-111111111111','procurement','CLEAN')`); err != nil {
+		t.Fatal(err)
+	}
 	_, s, _ := execute(e, id, "uuid", 1)
 	if s != 200 {
 		t.Fatal(s)

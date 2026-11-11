@@ -46,7 +46,7 @@ func TestPublishRetriesSameEventAfterLostAck(t *testing.T) {
 		ids = append(ids, r.Header.Get("Idempotency-Key"))
 		if len(ids) == 1 {
 			conn, _, _ := w.(http.Hijacker).Hijack()
-			conn.Close()
+			_ = conn.Close()
 			return
 		}
 		w.WriteHeader(204)
@@ -74,9 +74,13 @@ func TestPublishRetriesSameEventAfterLostAck(t *testing.T) {
 
 func TestExpiredClaimRestartAndStaleAcknowledgement(t *testing.T) {
 	db := publisherFixture(t)
-	db.Exec(`UPDATE core.outbox_events SET delivery_status='in_flight',lease_token='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',lease_until=now()-interval '1 second'`)
+	if _, err := db.Exec(`UPDATE core.outbox_events SET delivery_status='in_flight',lease_token='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',lease_until=now()-interval '1 second'`); err != nil {
+		t.Fatal(err)
+	}
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		db.Exec(`UPDATE core.outbox_events SET lease_token='cccccccc-cccc-4ccc-8ccc-cccccccccccc',lease_until=now()+interval '60 seconds'`)
+		if _, err := db.Exec(`UPDATE core.outbox_events SET lease_token='cccccccc-cccc-4ccc-8ccc-cccccccccccc',lease_until=now()+interval '60 seconds'`); err != nil {
+			t.Fatal(err)
+		}
 		w.WriteHeader(204)
 	}))
 	defer s.Close()
@@ -84,7 +88,9 @@ func TestExpiredClaimRestartAndStaleAcknowledgement(t *testing.T) {
 		t.Fatal("stale ack accepted")
 	}
 	var state string
-	db.QueryRow(`SELECT delivery_status FROM core.outbox_events`).Scan(&state)
+	if err := db.QueryRow(`SELECT delivery_status FROM core.outbox_events`).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
 	if state != "in_flight" {
 		t.Fatal(state)
 	}

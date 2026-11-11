@@ -82,7 +82,7 @@ func (s *S3Storage) request(ctx context.Context, method, key string, b []byte) (
 		return nil, fmt.Errorf("storage request failed")
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("storage request rejected")
 	}
 	return resp, nil
@@ -99,7 +99,7 @@ func (s *S3Storage) Put(ctx context.Context, key string, r io.Reader) error {
 	if e != nil {
 		return e
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	_, e = io.Copy(io.Discard, io.LimitReader(resp.Body, 65536))
 	return e
 }

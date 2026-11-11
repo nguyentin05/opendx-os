@@ -45,10 +45,12 @@ func (s *ClamAV) Scan(ctx context.Context, r io.Reader) (ScanResult, error) {
 	if e != nil {
 		return "", errors.New("scanner unavailable")
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	deadline, _ := ctx.Deadline()
-	conn.SetDeadline(deadline)
-	stop := context.AfterFunc(ctx, func() { conn.Close() })
+	if err := conn.SetDeadline(deadline); err != nil {
+		return "", errors.New("scanner deadline failed")
+	}
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	defer stop()
 	fail := func() (ScanResult, error) { return "", errors.New("scanner failed") }
 	if _, e = io.WriteString(conn, "zINSTREAM\x00"); e != nil {

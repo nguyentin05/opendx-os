@@ -53,7 +53,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	verifier, err := auth.NewVerifier(context.Background(), auth.VerifierConfig{IssuerURL: os.Getenv("OIDC_ISSUER_URL"), JWKSURL: os.Getenv("OIDC_JWKS_URL"), Audience: os.Getenv("OIDC_AUDIENCE")})
 	if err != nil {
@@ -138,7 +138,7 @@ func main() {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "service": "cap-process"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "service": "cap-process"}) // Best-effort response; the client may have disconnected.
 	})
 
 	mux.Handle("POST /api/cap/process/files/upload", fileService.AuthenticatedHandler(verifier))
@@ -152,7 +152,9 @@ func main() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		server.Shutdown(shutdown)
+		if err := server.Shutdown(shutdown); err != nil {
+			log.Print("HTTP server shutdown failed")
+		}
 	}()
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Print("HTTP server stopped unexpectedly")

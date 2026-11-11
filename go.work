@@ -1,0 +1,9 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 DX-OS Open-Core Contributors
+
+go 1.27.3
+
+use (
+	./capabilities
+	./operator
+)

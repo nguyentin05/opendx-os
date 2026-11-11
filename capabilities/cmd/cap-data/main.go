@@ -43,7 +43,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	otEngine := data.NewOTEngine(db)
 	lakehouseEngine := data.NewLakehouseEngine(db)
@@ -52,7 +52,7 @@ func main() {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "service": "cap-data"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "service": "cap-data"}) // Best-effort response; the client may have disconnected.
 	})
 
 	mux.HandleFunc("POST /api/cap/data/ot/events", requireIdentity(func(w http.ResponseWriter, r *http.Request) {
@@ -69,7 +69,7 @@ func main() {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp) // Best-effort response; the client may have disconnected.
 	}))
 
 	mux.HandleFunc("POST /api/cap/data/lakehouse/export", requireIdentity(func(w http.ResponseWriter, r *http.Request) {
@@ -86,7 +86,7 @@ func main() {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"batch_id": batchID, "status": "COMPLETED"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"batch_id": batchID, "status": "COMPLETED"}) // Best-effort response; the client may have disconnected.
 	}))
 
 	log.Printf("[cap-data] Listening on port %s", port)

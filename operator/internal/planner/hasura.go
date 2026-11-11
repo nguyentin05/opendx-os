@@ -17,6 +17,7 @@ package planner
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/opendx-os/opendx-os/operator/internal/manifest"
@@ -71,8 +72,8 @@ func GenerateHasuraOperations(app *manifest.DXApplication) ([]HasuraMetadataPayl
 				"table":  domainTableRef,
 				"role":   sel.Role,
 				"permission": map[string]any{
-					"columns":           sel.Columns,
-					"filter":            conjoinWorkspaceFilter(sel.RecordFilter),
+					"columns":            sel.Columns,
+					"filter":             conjoinWorkspaceFilter(sel.RecordFilter),
 					"allow_aggregations": false,
 				},
 			},
@@ -85,9 +86,7 @@ func GenerateHasuraOperations(app *manifest.DXApplication) ([]HasuraMetadataPayl
 			"workspace_id": "X-Hasura-Workspace-Id",
 			"status":       app.Spec.StateMachine.Initial,
 		}
-		for k, v := range ins.Presets {
-			presets[k] = v
-		}
+		maps.Copy(presets, ins.Presets)
 		checkFilter := conjoinFilters(
 			conjoinWorkspaceFilter(ins.RecordFilter),
 			map[string]any{"status": map[string]any{"_eq": app.Spec.StateMachine.Initial}},

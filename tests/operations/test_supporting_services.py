@@ -3,12 +3,12 @@
 """Executable probe semantics; controlled servers are not live acceptance."""
 import http.server
 import os
-from pathlib import Path
 import socket
 import socketserver
 import subprocess
 import threading
 import unittest
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -39,7 +39,7 @@ class SupportingServices(unittest.TestCase):
                 url = 'http://127.0.0.1:' + str(port)
             env = {**os.environ, 'S3_ENDPOINT': url, 'CLAMAV_ADDRESS': '127.0.0.1:' + str(clam.server_address[1]), 'KESTRA_URL': url + '/kestra'}
             try:
-                return subprocess.run(['sh', 'scripts/test-supporting-services.sh'], cwd=ROOT, env=env, capture_output=True, text=True, timeout=12)
+                return subprocess.run(['sh', 'scripts/test-supporting-services.sh'], cwd=ROOT, env=env, capture_output=True, text=True, timeout=12, check=False)
             finally:
                 web.shutdown(); clam.shutdown()
 

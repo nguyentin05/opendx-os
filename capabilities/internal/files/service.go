@@ -83,7 +83,7 @@ func (s *Service) verified(ctx context.Context, key, hash string) ([]byte, error
 	if e != nil {
 		return nil, e
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	b, e := io.ReadAll(io.LimitReader(r, MaxSize+1))
 	if e != nil || len(b) > MaxSize || digest(b) != hash {
 		return nil, ErrContent
@@ -133,13 +133,13 @@ RETURNING f.id::text,f.object_key,f.sha256_hash,
 	for rows.Next() {
 		var f item
 		if e = rows.Scan(&f.id, &f.key, &f.hash, &f.snapshot); e != nil {
-			rows.Close()
+			_ = rows.Close()
 			return e
 		}
 		pending = append(pending, f)
 	}
 	e = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 	if e != nil {
 		return e
 	}

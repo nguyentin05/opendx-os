@@ -40,7 +40,7 @@ func (r *Runner) ReadManagedState(ctx context.Context, workspaceID string) (plan
 	if err != nil {
 		return planner.ManagedState{}, fmt.Errorf("query managed state: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var state planner.ManagedState
 	for rows.Next() {

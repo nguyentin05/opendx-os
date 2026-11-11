@@ -51,18 +51,18 @@ func NewDatabase(t *testing.T) *sql.DB {
 		t.Fatal(err)
 	}
 	if err := admin.Ping(); err != nil {
-		admin.Close()
+		_ = admin.Close()
 		t.Fatal(err)
 	}
 
 	var b [12]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		admin.Close()
+		_ = admin.Close()
 		t.Fatal(err)
 	}
 	dbName := "op_test_" + hex.EncodeToString(b[:])
 	if _, err := admin.Exec(`CREATE DATABASE ` + dbName); err != nil {
-		admin.Close()
+		_ = admin.Close()
 		t.Fatal(err)
 	}
 
@@ -70,13 +70,13 @@ func NewDatabase(t *testing.T) *sql.DB {
 	db, err := sql.Open("postgres", u.String())
 	if err != nil {
 		_, _ = admin.Exec(`DROP DATABASE ` + dbName)
-		admin.Close()
+		_ = admin.Close()
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		db.Close()
+		_ = db.Close()
 		_, _ = admin.Exec(`DROP DATABASE ` + dbName + ` WITH (FORCE)`)
-		admin.Close()
+		_ = admin.Close()
 	})
 
 	_, file, _, _ := runtime.Caller(0)

@@ -62,7 +62,7 @@ func TestRealSeaweedFSClamAV(t *testing.T) {
 		t.Fatal(e)
 	}
 	b, e := io.ReadAll(r)
-	r.Close()
+	_ = r.Close()
 	if e != nil || string(b) != clean {
 		t.Fatalf("storage bytes mismatch: %v", e)
 	}
@@ -94,7 +94,7 @@ func TestRealSeaweedFSClamAV(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	b, e = io.ReadAll(r)
 	if e != nil || string(b) != clean {
 		t.Fatalf("persisted bytes mismatch: %v", e)

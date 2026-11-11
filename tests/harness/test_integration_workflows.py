@@ -5,11 +5,11 @@ import base64
 import contextlib
 import io
 import json
-from pathlib import Path
 import tempfile
 import time
-from types import SimpleNamespace
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from scripts.integration import workflows
@@ -80,10 +80,10 @@ class WorkflowDeploymentTests(unittest.TestCase):
                 'KESTRA_ROUTES_FILE': '/app/config/workflow-routes.json'})
             for state in ({'Running': False, 'Paused': False}, {'Running': True, 'Paused': True}):
                 container = {'State': state, 'Config': {'Env': []}}
-                def run(command):
+                def run(command, container=container):
                     return json.dumps([container, container]) if 'inspect' in command else 'container'
                 with self.subTest(state=state), patch.object(workflows, 'ROOT', root), \
                      patch.object(workflows, 'declarations', return_value=[]), \
-                     patch.object(workflows, 'run', side_effect=run):
-                    with self.assertRaisesRegex(workflows.Refused, 'running.*unpaused'):
-                        workflows.verify_ready(live)
+                     patch.object(workflows, 'run', side_effect=run), \
+                     self.assertRaisesRegex(workflows.Refused, 'running.*unpaused'):
+                    workflows.verify_ready(live)

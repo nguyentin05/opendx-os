@@ -57,7 +57,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	aiEngine := ai.NewAIEngine(db, appsDir)
 
@@ -65,7 +65,7 @@ func main() {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "service": "cap-ai"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "service": "cap-ai"}) // Best-effort response; the client may have disconnected.
 	})
 
 	mux.HandleFunc("POST /api/cap/ai/extract", func(w http.ResponseWriter, r *http.Request) {
@@ -85,12 +85,12 @@ func main() {
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(code)
-			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()}) // Best-effort response; the client may have disconnected.
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(res)
+		_ = json.NewEncoder(w).Encode(res) // Best-effort response; the client may have disconnected.
 	})
 
 	mux.HandleFunc("POST /api/cap/ai/rag", func(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +107,7 @@ func main() {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp) // Best-effort response; the client may have disconnected.
 	})
 
 	log.Printf("[cap-ai] Listening on port %s", port)
