@@ -1,0 +1,606 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: dxapplications.dxos.io
+spec:
+  group: dxos.io
+  names:
+    kind: DXApplication
+    listKind: DXApplicationList
+    plural: dxapplications
+    shortNames:
+    - dxapp
+    singular: dxapplication
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.version
+      name: Version
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          DXApplication is a cluster-scoped application definition. One resource owns an
+          application's global tables, triggers, Hasura metadata and workflows, and
+          publishes them to the listed workspaces.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              DXApplicationSpec mirrors the DXApplication manifest contract
+              (docs/contracts/data-contracts.md section 7) plus the publication targets.
+              JSON field names are identical to the manifest so that both forms convert losslessly.
+            properties:
+              attachments:
+                description: Attachments binds file columns to commands that require
+                  a CLEAN scan.
+                items:
+                  description: Attachment binds a file column to the commands that
+                    require a CLEAN file.
+                  properties:
+                    column:
+                      pattern: ^[a-z][a-z0-9_]*$
+                      type: string
+                    requireCleanOnCommands:
+                      items:
+                        type: string
+                      minItems: 1
+                      type: array
+                  required:
+                  - column
+                  - requireCleanOnCommands
+                  type: object
+                type: array
+              capabilities:
+                description: Capabilities lists the Tier 2 capabilities the application
+                  depends on.
+                items:
+                  pattern: ^cap-[a-z]+$
+                  type: string
+                minItems: 1
+                type: array
+              displayName:
+                description: DisplayName is shown by the App Shell.
+                minLength: 1
+                type: string
+              domainAccess:
+                description: DomainAccess declares per-role select/insert/update rules
+                  on the domain table.
+                properties:
+                  insert:
+                    items:
+                      description: AccessRule allows one role a set of columns, optionally
+                        filtered by record.
+                      properties:
+                        columns:
+                          items:
+                            type: string
+                          minItems: 1
+                          type: array
+                        presets:
+                          additionalProperties:
+                            type: string
+                          description: Presets are server-side column presets from
+                            session variables (insert only).
+                          type: object
+                        recordFilter:
+                          description: RecordFilter is a Hasura boolean expression
+                            over declared columns.
+                          x-kubernetes-preserve-unknown-fields: true
+                        role:
+                          pattern: ^[a-z][a-z0-9_]*$
+                          type: string
+                      required:
+                      - columns
+                      - role
+                      type: object
+                    minItems: 1
+                    type: array
+                  select:
+                    items:
+                      description: AccessRule allows one role a set of columns, optionally
+                        filtered by record.
+                      properties:
+                        columns:
+                          items:
+                            type: string
+                          minItems: 1
+                          type: array
+                        presets:
+                          additionalProperties:
+                            type: string
+                          description: Presets are server-side column presets from
+                            session variables (insert only).
+                          type: object
+                        recordFilter:
+                          description: RecordFilter is a Hasura boolean expression
+                            over declared columns.
+                          x-kubernetes-preserve-unknown-fields: true
+                        role:
+                          pattern: ^[a-z][a-z0-9_]*$
+                          type: string
+                      required:
+                      - columns
+                      - role
+                      type: object
+                    minItems: 1
+                    type: array
+                  update:
+                    items:
+                      description: AccessRule allows one role a set of columns, optionally
+                        filtered by record.
+                      properties:
+                        columns:
+                          items:
+                            type: string
+                          minItems: 1
+                          type: array
+                        presets:
+                          additionalProperties:
+                            type: string
+                          description: Presets are server-side column presets from
+                            session variables (insert only).
+                          type: object
+                        recordFilter:
+                          description: RecordFilter is a Hasura boolean expression
+                            over declared columns.
+                          x-kubernetes-preserve-unknown-fields: true
+                        role:
+                          pattern: ^[a-z][a-z0-9_]*$
+                          type: string
+                      required:
+                      - columns
+                      - role
+                      type: object
+                    minItems: 1
+                    type: array
+                required:
+                - insert
+                - select
+                - update
+                type: object
+              domainTable:
+                description: DomainTable declares the isolated business table generated
+                  by the Operator.
+                properties:
+                  columns:
+                    items:
+                      description: Column is a business column; system columns are
+                        managed by the Operator.
+                      properties:
+                        check:
+                          description: Check is a SQL CHECK expression from the validator's
+                            allowlist.
+                          type: string
+                        name:
+                          pattern: ^[a-z][a-z0-9_]*$
+                          type: string
+                        nullable:
+                          description: Nullable is required so that additive upgrades
+                            are explicit.
+                          type: boolean
+                        type:
+                          enum:
+                          - uuid
+                          - text
+                          - date
+                          - numeric(14,2)
+                          - numeric(4,2)
+                          type: string
+                      required:
+                      - name
+                      - nullable
+                      - type
+                      type: object
+                    minItems: 1
+                    type: array
+                  compositeForeignKeys:
+                    items:
+                      description: ForeignKey is a same-workspace composite foreign
+                        key.
+                      properties:
+                        columns:
+                          items:
+                            type: string
+                          maxItems: 2
+                          minItems: 2
+                          type: array
+                        referencesColumns:
+                          items:
+                            type: string
+                          maxItems: 2
+                          minItems: 2
+                          type: array
+                        referencesTable:
+                          pattern: ^core\.[a-z][a-z0-9_]*$
+                          type: string
+                      required:
+                      - columns
+                      - referencesColumns
+                      - referencesTable
+                      type: object
+                    minItems: 1
+                    type: array
+                  name:
+                    pattern: ^domain\.[a-z][a-z0-9_]*$
+                    type: string
+                required:
+                - columns
+                - compositeForeignKeys
+                - name
+                type: object
+              role:
+                description: Role is the application's primary business role.
+                pattern: ^[a-z][a-z0-9_]*$
+                type: string
+              sharedAccess:
+                description: SharedAccess declares the core.* tables, columns and
+                  roles the application reads.
+                items:
+                  description: SharedAccess grants read access to a core table.
+                  properties:
+                    columns:
+                      items:
+                        pattern: ^[a-z][a-z0-9_]*$
+                        type: string
+                      minItems: 1
+                      type: array
+                    roles:
+                      items:
+                        pattern: ^[a-z][a-z0-9_]*$
+                        type: string
+                      minItems: 1
+                      type: array
+                    table:
+                      pattern: ^core\.[a-z][a-z0-9_]*$
+                      type: string
+                  required:
+                  - columns
+                  - roles
+                  - table
+                  type: object
+                minItems: 1
+                type: array
+              stateMachine:
+                description: StateMachine declares states and the commands that move
+                  between them.
+                properties:
+                  commands:
+                    items:
+                      description: Command is a role-guarded state transition executed
+                        by cap-process.
+                      properties:
+                        allowedRoles:
+                          items:
+                            type: string
+                          minItems: 1
+                          type: array
+                        from:
+                          items:
+                            type: string
+                          minItems: 1
+                          type: array
+                        name:
+                          pattern: ^[a-z][a-z0-9_]*$
+                          type: string
+                        recordFilter:
+                          x-kubernetes-preserve-unknown-fields: true
+                        to:
+                          pattern: ^[A-Za-z][A-Za-z0-9_]*$
+                          type: string
+                      required:
+                      - allowedRoles
+                      - from
+                      - name
+                      - to
+                      type: object
+                    minItems: 1
+                    type: array
+                  editableStates:
+                    items:
+                      type: string
+                    minItems: 1
+                    type: array
+                  initial:
+                    pattern: ^[A-Za-z][A-Za-z0-9_]*$
+                    type: string
+                  terminalStates:
+                    items:
+                      type: string
+                    minItems: 1
+                    type: array
+                required:
+                - commands
+                - editableStates
+                - initial
+                - terminalStates
+                type: object
+              uiSchema:
+                description: UISchema configures the schema-driven App Shell.
+                properties:
+                  actions:
+                    items:
+                      type: string
+                    minItems: 1
+                    type: array
+                  formFields:
+                    items:
+                      description: FormField is one input of the generated form.
+                      properties:
+                        label:
+                          minLength: 1
+                          type: string
+                        name:
+                          pattern: ^[a-z][a-z0-9_]*$
+                          type: string
+                        required:
+                          type: boolean
+                        type:
+                          enum:
+                          - uuid
+                          - text
+                          - number
+                          - file
+                          - date
+                          type: string
+                      required:
+                      - label
+                      - name
+                      - required
+                      - type
+                      type: object
+                    minItems: 1
+                    type: array
+                  listColumns:
+                    items:
+                      type: string
+                    minItems: 1
+                    type: array
+                required:
+                - actions
+                - formFields
+                - listColumns
+                type: object
+              version:
+                description: Version of the application package. Every workspace runs
+                  this version.
+                minLength: 1
+                type: string
+              workflows:
+                description: Workflows declares the automation flows and their business
+                  effects.
+                items:
+                  description: |-
+                    Workflow is an automation flow. The definition is inlined because the
+                    controller cannot read package files from inside the cluster.
+                  properties:
+                    definition:
+                      description: Definition is the workflow engine YAML (Kestra
+                        flow).
+                      minLength: 1
+                      type: string
+                    effects:
+                      items:
+                        description: Effect is a deduplicated business effect executed
+                          through cap-process.
+                        properties:
+                          fields:
+                            description: EffectFields are the literal work item fields
+                              owned by the manifest.
+                            properties:
+                              assignedEmployeeId:
+                                pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+                                type: string
+                              description:
+                                minLength: 1
+                                type: string
+                              priority:
+                                enum:
+                                - LOW
+                                - MEDIUM
+                                - HIGH
+                                - CRITICAL
+                                type: string
+                              title:
+                                minLength: 1
+                                type: string
+                            required:
+                            - description
+                            - priority
+                            - title
+                            type: object
+                          kind:
+                            enum:
+                            - create_work_item
+                            type: string
+                          stepName:
+                            pattern: ^[a-z][a-z0-9_]*$
+                            type: string
+                          whenCommands:
+                            items:
+                              type: string
+                            minItems: 1
+                            type: array
+                        required:
+                        - fields
+                        - kind
+                        - stepName
+                        - whenCommands
+                        type: object
+                      minItems: 1
+                      type: array
+                    id:
+                      pattern: ^[a-z][a-z0-9_]*$
+                      type: string
+                    subscribedEvents:
+                      items:
+                        type: string
+                      minItems: 1
+                      type: array
+                  required:
+                  - definition
+                  - effects
+                  - id
+                  - subscribedEvents
+                  type: object
+                type: array
+              workspaces:
+                description: Workspaces lists the workspace IDs where the application
+                  is published.
+                items:
+                  pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+                  type: string
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: set
+            required:
+            - capabilities
+            - displayName
+            - domainAccess
+            - domainTable
+            - role
+            - sharedAccess
+            - stateMachine
+            - uiSchema
+            - version
+            - workspaces
+            type: object
+          status:
+            description: DXApplicationStatus is the observed state (ADR 0004).
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                format: int64
+                type: integer
+              workspaces:
+                items:
+                  description: WorkspacePublication reports the registry state of
+                    one workspace.
+                  properties:
+                    id:
+                      pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+                      type: string
+                    message:
+                      type: string
+                    published:
+                      type: boolean
+                    version:
+                      type: string
+                  required:
+                  - id
+                  - published
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - id
+                x-kubernetes-list-type: map
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

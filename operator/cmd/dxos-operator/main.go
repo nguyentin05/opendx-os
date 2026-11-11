@@ -26,6 +26,7 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/operator/internal/apply"
+	"github.com/opendx-os/opendx-os/operator/internal/manager"
 	"github.com/opendx-os/opendx-os/operator/internal/manifest"
 	"github.com/opendx-os/opendx-os/operator/internal/planner"
 	"github.com/opendx-os/opendx-os/operator/internal/reconcile"
@@ -66,6 +67,9 @@ func runCLI(args []string, stdout, stderr io.Writer, applier *apply.Runner, reco
 	case "reconcile":
 		return runReconcileCmd(args[1:], stdout, stderr, applier, reconciler)
 
+	case "controller":
+		return manager.Run(args[1:], stdout, stderr)
+
 	case "version":
 		_, _ = fmt.Fprintln(stdout, "dxos-operator v0.1.0 (DX-OS Open-Core OLP 2026)")
 		return 0
@@ -84,6 +88,7 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  plan [-format sql|hasura] <manifest.yaml> Generate DDL or Hasura metadata plan")
 	_, _ = fmt.Fprintln(w, "  apply [-workspace UUID] <manifest.yaml>   Apply a single validated manifest")
 	_, _ = fmt.Fprintln(w, "  reconcile [-workspace UUID] <apps-dir>    Reconcile all application packages")
+	_, _ = fmt.Fprintln(w, "  controller [flags]                       Run the Kubernetes DXApplication controller")
 	_, _ = fmt.Fprintln(w, "  version                                  Print operator version")
 }
 

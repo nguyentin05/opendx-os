@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Operator: reconciling or upgrading an application in one workspace no longer revokes Hasura permissions that another workspace still uses. Global definitions are tracked in the new `core.app_definitions` table (`platform/postgres/init/07_app_definitions.sql`), separately from per-workspace publication in `core.app_registry`.
 
 ### Added
+- Operator: cluster-scoped `DXApplication` CRD (`dxos.io/v1alpha1`) with generated schema validation, status subresource and printer columns; `dxos-operator controller` runs a controller-runtime manager (leader election, health probes); `operator/config/` kustomize bases for CRD, RBAC and the manager Deployment; `make -C operator manifests generate test-envtest` ([ADR 0004](docs/adr/0004-kubernetes-crd-operator.md)).
 - Architectural rules, data contracts, security acceptance matrix (`S01`–`S08`), and FOSS hygiene rules under `.agents/` and `AGENTS.md`.
 - Three-tier composable architecture specification separating Tier 1 Headless PaaS (`platform/`, `operator/`), Tier 2 H-P-D-I capabilities and dynamic UI shell (`capabilities/`, `workspace-ui/`), and Tier 3 declarative domain packages (`apps/`).
 - Foundational open-source distribution metadata (`LICENSE`, `LICENSES/LICENSE`, `NOTICE`, `COPYRIGHT.txt`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `.editorconfig`, `.gitattributes`, `.gitignore`, and root `Makefile`).
