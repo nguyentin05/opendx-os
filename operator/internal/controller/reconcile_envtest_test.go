@@ -20,13 +20,9 @@ package controller
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
-	"fmt"
-	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -42,41 +38,6 @@ import (
 	"github.com/opendx-os/opendx-os/operator/internal/crdconv"
 	"github.com/opendx-os/opendx-os/operator/internal/testutil"
 )
-
-type fakeHasura struct {
-	mu    sync.Mutex
-	perms map[string]bool
-}
-
-func (f *fakeHasura) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Type string `json:"type"`
-		Args struct {
-			Table struct{ Schema, Name string } `json:"table"`
-			Role  string                        `json:"role"`
-		} `json:"args"`
-	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
-	key := func(op string) string {
-		return fmt.Sprintf("%s:%s.%s:%s", op, req.Args.Table.Schema, req.Args.Table.Name, req.Args.Role)
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if strings.HasPrefix(req.Type, "pg_create_") && strings.HasSuffix(req.Type, "_permission") {
-		f.perms[key(strings.TrimSuffix(strings.TrimPrefix(req.Type, "pg_create_"), "_permission"))] = true
-	}
-	if strings.HasPrefix(req.Type, "pg_drop_") && strings.HasSuffix(req.Type, "_permission") {
-		delete(f.perms, key(strings.TrimSuffix(strings.TrimPrefix(req.Type, "pg_drop_"), "_permission")))
-	}
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"version":3,"sources":[]}`))
-}
-
-func (f *fakeHasura) has(key string) bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.perms[key]
-}
 
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
@@ -113,7 +74,7 @@ func TestReconcileLifecycle(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO core.workspaces (id, code, name) VALUES ($1, 'ws-a', 'A'), ($2, 'ws-b', 'B')`, wsA, wsB); err != nil {
 		t.Fatal(err)
 	}
-	hasura := &fakeHasura{perms: map[string]bool{}}
+	hasura := testutil.NewFakeHasura()
 	srv := httptest.NewServer(hasura)
 	defer srv.Close()
 
@@ -129,7 +90,8 @@ func TestReconcileLifecycle(t *testing.T) {
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		Applier:         apply.NewRunner(db, apply.Config{HasuraURL: srv.URL}, srv.Client()),
-		RequeueInterval: time.Hour,
+		// Short period so the test observes drift repair and the absence of churn.
+		RequeueInterval: 300 * time.Millisecond,
 	}
 	if err := rec.SetupWithManager(mgr); err != nil {
 		t.Fatal(err)
@@ -169,12 +131,23 @@ func TestReconcileLifecycle(t *testing.T) {
 	if n := count(t, db, `SELECT count(*) FROM core.app_definitions WHERE app_id = 'procurement'`); n != 1 {
 		t.Fatalf("definitions = %d, want 1", n)
 	}
-	if !hasura.has(insertPerm) {
+	if !hasura.Has(insertPerm) {
 		t.Fatal("Hasura permission not created")
 	}
 	if got := get(cr.Name); len(got.Status.Workspaces) != 1 || got.Status.Workspaces[0].ID != wsA || !got.Status.Workspaces[0].Published {
 		t.Fatalf("status.workspaces = %+v", got.Status.Workspaces)
 	}
+
+	// 1a. In sync: several requeues later no metadata was rewritten.
+	writes := hasura.Writes()
+	time.Sleep(1200 * time.Millisecond)
+	if after := hasura.Writes(); after != writes {
+		t.Fatalf("in-sync requeues rewrote Hasura metadata: %d -> %d writes", writes, after)
+	}
+
+	// 1b. Manual drift: a permission removed out of band is restored by requeue.
+	hasura.Drop(insertPerm)
+	waitFor(t, "drift repaired", func() bool { return hasura.Has(insertPerm) })
 
 	// 2. Add workspace B: republished without touching A.
 	latest := get(cr.Name)
@@ -256,7 +229,7 @@ func TestReconcileLifecycle(t *testing.T) {
 	if n := count(t, db, `SELECT count(*) FROM core.app_definitions WHERE app_id = 'procurement'`); n != 0 {
 		t.Fatalf("definition after delete = %d", n)
 	}
-	if hasura.has(insertPerm) {
+	if hasura.Has(insertPerm) {
 		t.Fatal("Hasura permission must be revoked on delete")
 	}
 	if n := count(t, db, `SELECT count(*) FROM information_schema.tables WHERE table_schema = 'domain' AND table_name = 'procurement_requests'`); n != 1 {

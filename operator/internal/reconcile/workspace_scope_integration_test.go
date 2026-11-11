@@ -19,54 +19,15 @@ package reconcile
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
-	"sync"
 	"testing"
 
 	"github.com/opendx-os/opendx-os/operator/internal/apply"
 	"github.com/opendx-os/opendx-os/operator/internal/testutil"
 )
-
-// fakeHasura keeps the set of permissions created through the metadata API.
-type fakeHasura struct {
-	mu    sync.Mutex
-	perms map[string]bool
-}
-
-func (f *fakeHasura) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Type string `json:"type"`
-		Args struct {
-			Table struct{ Schema, Name string } `json:"table"`
-			Role  string                        `json:"role"`
-		} `json:"args"`
-	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if strings.HasPrefix(req.Type, "pg_create_") && strings.HasSuffix(req.Type, "_permission") {
-		op := strings.TrimSuffix(strings.TrimPrefix(req.Type, "pg_create_"), "_permission")
-		f.perms[fmt.Sprintf("%s:%s.%s:%s", op, req.Args.Table.Schema, req.Args.Table.Name, req.Args.Role)] = true
-	}
-	if strings.HasPrefix(req.Type, "pg_drop_") && strings.HasSuffix(req.Type, "_permission") {
-		op := strings.TrimSuffix(strings.TrimPrefix(req.Type, "pg_drop_"), "_permission")
-		delete(f.perms, fmt.Sprintf("%s:%s.%s:%s", op, req.Args.Table.Schema, req.Args.Table.Name, req.Args.Role))
-	}
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"version":3,"sources":[]}`))
-}
-
-func (f *fakeHasura) has(key string) bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.perms[key]
-}
 
 func copyAppPackage(t *testing.T, name, dst string) {
 	t.Helper()
@@ -99,7 +60,7 @@ func TestReconcileOneWorkspaceKeepsOtherWorkspaceGrantsIntegration(t *testing.T)
 		t.Fatal(err)
 	}
 
-	hasura := &fakeHasura{perms: map[string]bool{}}
+	hasura := testutil.NewFakeHasura()
 	srv := httptest.NewServer(hasura)
 	defer srv.Close()
 	applier := apply.NewRunner(db, apply.Config{HasuraURL: srv.URL}, srv.Client())
@@ -128,7 +89,7 @@ func TestReconcileOneWorkspaceKeepsOtherWorkspaceGrantsIntegration(t *testing.T)
 		"update:domain.procurement_requests:role_procurement",
 		"select:core.employees:role_procurement",
 	} {
-		if !hasura.has(key) {
+		if !hasura.Has(key) {
 			t.Errorf("permission %s used by workspace B was revoked", key)
 		}
 	}
@@ -160,7 +121,7 @@ func TestReconcileOneWorkspaceKeepsOtherWorkspaceGrantsIntegration(t *testing.T)
 	if err := rec.Run(ctx, wsB, other); err != nil {
 		t.Fatalf("reconcile B without procurement: %v", err)
 	}
-	if hasura.has("insert:domain.procurement_requests:role_procurement") {
+	if hasura.Has("insert:domain.procurement_requests:role_procurement") {
 		t.Error("grant of an application no workspace publishes must be revoked")
 	}
 	if err := db.QueryRow(`SELECT count(*) FROM core.app_definitions WHERE app_id = 'procurement'`).Scan(&defs); err != nil || defs != 0 {

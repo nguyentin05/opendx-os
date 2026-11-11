@@ -130,12 +130,6 @@ func (r *DXApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	if inSync(desired, live, rows, app.Spec.Workspaces) {
-		return ctrl.Result{RequeueAfter: r.RequeueInterval}, r.patchStatus(ctx, &app, func(a *dxosv1alpha1.DXApplication) {
-			markReady(a, desired.Metadata.Version)
-		})
-	}
-
 	definitions, err := r.desiredDefinitions(ctx, &app, desired, live)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -148,6 +142,21 @@ func (r *DXApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			setCondition(a, dxosv1alpha1.ConditionValid, metav1.ConditionFalse, ReasonPlanConflict, err.Error())
 			setCondition(a, dxosv1alpha1.ConditionReady, metav1.ConditionFalse, ReasonNotReady, "plan conflicts with another application")
 		})
+	}
+
+	// When the database already matches, only Hasura-side drift (for example a
+	// permission removed by hand) requires a write; otherwise nothing is touched.
+	if inSync(desired, live, rows, app.Spec.Workspaces) {
+		drift, err := r.Applier.MetadataDrift(ctx, plan)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if len(drift) == 0 {
+			return ctrl.Result{RequeueAfter: r.RequeueInterval}, r.patchStatus(ctx, &app, func(a *dxosv1alpha1.DXApplication) {
+				markReady(a, desired.Metadata.Version)
+			})
+		}
+		log.Info("repairing Hasura metadata drift", "differences", drift)
 	}
 
 	pub := apply.Publication{Upsert: map[string][]string{}, Remove: map[string][]string{}}
