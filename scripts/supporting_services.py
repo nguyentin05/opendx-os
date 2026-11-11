@@ -4,10 +4,10 @@
 import os
 import socket
 import sys
+import xml.etree.ElementTree as ET
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
-import xml.etree.ElementTree as ET
 
 
 class NoRedirect(HTTPRedirectHandler):

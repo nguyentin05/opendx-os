@@ -28,7 +28,7 @@ import (
 func fileError(w http.ResponseWriter, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": http.StatusText(status), "message": http.StatusText(status)}})
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": http.StatusText(status), "message": http.StatusText(status)}}) // Best-effort response; the client may have disconnected.
 }
 func (s *Service) AuthenticatedHandler(v auth.Verifier) http.Handler {
 	mux := http.NewServeMux()
@@ -62,7 +62,7 @@ func (s *Service) uploadHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		field := p.FormName()
 		if seen[field] || field != "app_id" && field != "file" {
-			p.Close()
+			_ = p.Close()
 			fileError(w, 400)
 			return
 		}
@@ -70,7 +70,7 @@ func (s *Service) uploadHTTP(w http.ResponseWriter, r *http.Request) {
 		if field == "app_id" {
 			b, e := io.ReadAll(io.LimitReader(p, 257))
 			if e != nil || len(b) > 256 || p.FileName() != "" {
-				p.Close()
+				_ = p.Close()
 				fileError(w, 400)
 				return
 			}
@@ -79,13 +79,13 @@ func (s *Service) uploadHTTP(w http.ResponseWriter, r *http.Request) {
 			var e error
 			content, _, e = readContent(p)
 			if e != nil {
-				p.Close()
+				_ = p.Close()
 				fileError(w, 400)
 				return
 			}
 			name = p.FileName()
 		}
-		p.Close()
+		_ = p.Close()
 	}
 	if !seen["file"] || !seen["app_id"] {
 		fileError(w, 400)
@@ -103,7 +103,7 @@ func (s *Service) uploadHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(f)
+	_ = json.NewEncoder(w).Encode(f) // Best-effort response; the client may have disconnected.
 }
 func (s *Service) downloadHTTP(w http.ResponseWriter, r *http.Request) {
 	id, e := auth.ExtractIdentity(r)
@@ -122,10 +122,10 @@ func (s *Service) downloadHTTP(w http.ResponseWriter, r *http.Request) {
 		fileError(w, status)
 		return
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", "attachment")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-store")
-	io.Copy(w, stream)
+	_, _ = io.Copy(w, stream) // The response may already be partially written.
 }

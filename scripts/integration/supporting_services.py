@@ -6,7 +6,14 @@ import json
 import os
 import subprocess
 
-from scripts.integration.environment import compose, guard, private_config, ROOT, run, verify_target
+from scripts.integration.environment import (
+    ROOT,
+    compose,
+    guard,
+    private_config,
+    run,
+    verify_target,
+)
 
 
 def service_address(service, port):
@@ -32,7 +39,7 @@ def main():
         command, cwd = ['sh', 'scripts/test-supporting-services.sh'], ROOT
     else:
         command, cwd = ['go', 'test', '-tags=serviceintegration', './internal/files', '-run', 'TestRealSeaweedFSClamAV', '-count=1', '-v'], ROOT / 'capabilities'
-    raise SystemExit(subprocess.run(command, cwd=cwd, env=environment).returncode)
+    raise SystemExit(subprocess.run(command, cwd=cwd, env=environment, check=False).returncode)
 
 
 if __name__ == '__main__':

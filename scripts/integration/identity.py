@@ -4,12 +4,12 @@
 import argparse
 import json
 import os
-from pathlib import Path
 import secrets
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PRIVATE = ROOT / 'build/integration'

@@ -9,6 +9,7 @@ import pathlib
 import subprocess
 import sys
 import unittest
+
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent

@@ -58,7 +58,7 @@ func (e *OTEngine) IngestTelemetry(ctx context.Context, req *OTIngestionRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // Best-effort cleanup; a committed transaction is already closed.
 
 	var eventID string
 	err = tx.QueryRowContext(ctx,

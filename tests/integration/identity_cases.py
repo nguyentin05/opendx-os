@@ -3,10 +3,10 @@
 """Live identity checks. Missing infrastructure is an error, never a skip."""
 import base64
 import json
-from pathlib import Path
 import subprocess
 import unittest
 import urllib.request
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -65,13 +65,13 @@ GRANT SELECT ON domain.identity_boundary TO dxos_reader;""")
 
     @classmethod
     def metadata(cls, kind, args):
-        status, body = cls.http(cls.hasura+'/v1/metadata',{'type':kind,'args':args},{'X-Hasura-Admin-Secret':cls.config['HASURA_ADMIN_SECRET']})
+        status, _body = cls.http(cls.hasura+'/v1/metadata',{'type':kind,'args':args},{'X-Hasura-Admin-Secret':cls.config['HASURA_ADMIN_SECRET']})
         if status != 200:
             raise RuntimeError('identity fixture metadata operation failed: '+kind)
 
     @classmethod
     def db(cls, sql, role='integration_bootstrap', success=True):
-        result = subprocess.run(cls.compose('exec','-T','postgres','psql','-v','ON_ERROR_STOP=1','-U',role,'-d','opendx_integration','-At'),input=sql,capture_output=True,text=True)
+        result = subprocess.run(cls.compose('exec','-T','postgres','psql','-v','ON_ERROR_STOP=1','-U',role,'-d','opendx_integration','-At'),input=sql,capture_output=True,text=True, check=False)
         if success and result.returncode:
             raise RuntimeError('database fixture/check failed: '+result.stderr)
         if not success and result.returncode == 0:
@@ -114,7 +114,7 @@ GRANT SELECT ON domain.identity_boundary TO dxos_reader;""")
         self.denied(token=self.token(),selected='role_operator')
 
     def test_renewed_token_works(self):
-        result = subprocess.run(['python3','scripts/integration/identity.py','tokens'],cwd=ROOT,capture_output=True,text=True)
+        result = subprocess.run(['python3','scripts/integration/identity.py','tokens'],cwd=ROOT,capture_output=True,text=True, check=False)
         self.assertEqual(result.returncode,0)
         status, body = self.http(self.gateway+'/v1/graphql',{'query':'query { domain_identity_boundary { label } }'},{'Authorization':'Bearer '+self.token(),'X-Hasura-Role':'role_procurement'})
         self.assertEqual(status,200)
@@ -122,6 +122,7 @@ GRANT SELECT ON domain.identity_boundary TO dxos_reader;""")
 
     def test_expired_token_rejected(self):
         import time
+
         from scripts.integration.identity import request
         admin = request(self.keycloak+'/realms/master/protocol/openid-connect/token',{'grant_type':'password','client_id':'admin-cli','username':self.config.get('KEYCLOAK_ADMIN','admin'),'password':self.config['KEYCLOAK_ADMIN_PASSWORD']},form=True)['access_token']
         realm_url = self.keycloak+'/admin/realms/dxos'
@@ -140,7 +141,7 @@ GRANT SELECT ON domain.identity_boundary TO dxos_reader;""")
             status,doc = self.http(base+'/realms/dxos/protocol/openid-connect/certs')
             self.assertEqual(status,200)
             self.assertTrue(doc['keys'])
-        result = subprocess.run(self.compose('exec','-T','cap-process','wget','-qO-','http://keycloak:8085/realms/dxos/protocol/openid-connect/certs'),capture_output=True,text=True)
+        result = subprocess.run(self.compose('exec','-T','cap-process','wget','-qO-','http://keycloak:8085/realms/dxos/protocol/openid-connect/certs'),capture_output=True,text=True, check=False)
         self.assertEqual(result.returncode,0)
         self.assertTrue(json.loads(result.stdout)['keys'])
 

@@ -77,7 +77,7 @@ func (e *Engine) Execute(ctx context.Context, id *auth.Identity, app, command, k
 	if err != nil {
 		return fail(503)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // Best-effort cleanup; a committed transaction is already closed.
 	scope, _ := json.Marshal([]string{id.WorkspaceID, id.UserID, app, request.EntityID, command, key})
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, string(scope)); err != nil {
 		return fail(503)

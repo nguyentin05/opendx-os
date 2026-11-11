@@ -2,17 +2,18 @@
 # Copyright 2026 DX-OS Open-Core Contributors
 """Actual package publication and authenticated Hasura CRUD; no fixture substitution."""
 import json
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import threading
-from urllib.request import Request, urlopen
-from urllib.error import HTTPError
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
 import uuid
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
+
 from tests.integration import identity_cases
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,16 +33,16 @@ class RegistryCrudCases(unittest.TestCase):
         cls.operator(['validate','../apps/procurement/manifest.yaml'])
         cls.operator(['validate','../apps/process-fixture/manifest.yaml'])
         for name,ws in cls.actors['workspaces'].items():
-            cls.sql("INSERT INTO core.workspaces(id,code,name) VALUES('%s','integration-%s','Integration %s') ON CONFLICT(id) DO NOTHING" % (ws,name,name),'bootstrap')
+            cls.sql(f"INSERT INTO core.workspaces(id,code,name) VALUES('{ws}','integration-{name}','Integration {name}') ON CONFLICT(id) DO NOTHING",'bootstrap')
         for name,a in cls.actors['actors'].items():
-            cls.sql("INSERT INTO core.employees(id,workspace_id,full_name,email,department) VALUES('%s','%s','%s','%s@integration.invalid','Integration') ON CONFLICT(id) DO NOTHING" % (a['employee_id'],a['workspace_id'],name,name),'bootstrap')
+            cls.sql("INSERT INTO core.employees(id,workspace_id,full_name,email,department) VALUES('{}','{}','{}','{}@integration.invalid','Integration') ON CONFLICT(id) DO NOTHING".format(a['employee_id'],a['workspace_id'],name,name),'bootstrap')
         for ws in cls.actors['workspaces'].values():
             for package in ('procurement','process-fixture'):
                 cls.operator(['apply','-workspace',ws,'../apps/'+package+'/manifest.yaml'])
 
     @classmethod
     def operator(cls,args,success=True,env=None):
-        result = subprocess.run(['go','run','./cmd/dxos-operator',*args],cwd=ROOT/'operator',env=env or cls.env,capture_output=True,text=True)
+        result = subprocess.run(['go','run','./cmd/dxos-operator',*args],cwd=ROOT/'operator',env=env or cls.env,capture_output=True,text=True, check=False)
         if success and result.returncode:
             raise AssertionError('Operator failed: '+result.stderr)
         if not success and result.returncode == 0:
@@ -50,7 +51,7 @@ class RegistryCrudCases(unittest.TestCase):
 
     @classmethod
     def sql(cls,sql,role='assertion'):
-        result = subprocess.run(['psql',cls.connections[role],'-XAt','-v','ON_ERROR_STOP=1'],input=sql,capture_output=True,text=True)
+        result = subprocess.run(['psql',cls.connections[role],'-XAt','-v','ON_ERROR_STOP=1'],input=sql,capture_output=True,text=True, check=False)
         if result.returncode:
             raise AssertionError('Database check failed: '+result.stderr)
         return result.stdout.strip()
@@ -62,7 +63,7 @@ class RegistryCrudCases(unittest.TestCase):
     def work_item(self,workspace=None):
         workspace = workspace or self.actors['workspaces']['alpha']
         work = str(uuid.uuid4())
-        self.sql("INSERT INTO core.work_items(id,workspace_id,title,priority) VALUES('%s','%s','CRUD fixture','MEDIUM')" % (work,workspace),'bootstrap')
+        self.sql(f"INSERT INTO core.work_items(id,workspace_id,title,priority) VALUES('{work}','{workspace}','CRUD fixture','MEDIUM')",'bootstrap')
         return work
 
     def create(self,table='procurement_requests',role='role_procurement',actor='requester',**extra):
@@ -71,7 +72,7 @@ class RegistryCrudCases(unittest.TestCase):
 
     def test_packages_publish_backend_readable_snapshots(self):
         for ws in self.actors['workspaces'].values():
-            self.assertEqual(self.sql("SELECT count(*) FROM core.app_registry WHERE workspace_id='%s' AND status='Ready'" % ws),'2')
+            self.assertEqual(self.sql(f"SELECT count(*) FROM core.app_registry WHERE workspace_id='{ws}' AND status='Ready'"),'2')
         # A real backend command resolves and strictly decodes the actual snapshot before entity lookup.
         for app,role in [('procurement','role_procurement'),('process_fixture','role_review')]:
             status,body = self.http(self.gateway+'/api/cap/process/commands/'+app+'/submit',{'entity_id':str(uuid.uuid4()),'expected_version':1,'payload':{}},{'Authorization':'Bearer '+self.tokens['TEST_REQUESTER_TOKEN'],'X-Hasura-Role':role,'Idempotency-Key':str(uuid.uuid4())})
@@ -126,7 +127,7 @@ class RegistryCrudCases(unittest.TestCase):
             server.shutdown(); server.server_close(); thread.join()
         self.assertIn('pg_drop_insert_permission',calls)
         self.assertIn('replace_metadata',calls)
-        self.assertEqual(self.sql("SELECT status FROM core.app_deployments WHERE workspace_id='%s' AND app_id='procurement' ORDER BY started_at DESC LIMIT 1" % self.actors['workspaces']['alpha']),'Failed')
+        self.assertEqual(self.sql("SELECT status FROM core.app_deployments WHERE workspace_id='{}' AND app_id='procurement' ORDER BY started_at DESC LIMIT 1".format(self.actors['workspaces']['alpha'])),'Failed')
         self.assertEqual(self.sql("SELECT manifest_spec::text FROM core.app_registry WHERE app_id='procurement' ORDER BY workspace_id"),before)
         self.assertNotIn('errors',self.create())
 

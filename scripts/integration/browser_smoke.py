@@ -1,9 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 DX-OS Open-Core Contributors
 """Actual Chromium HTTP smoke; only sanitized status/error data reaches stdout."""
-import json, subprocess, threading, tempfile, os
+import json
+import subprocess
+import tempfile
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
+
 root=Path(__file__).resolve().parents[2]
 config=dict(x.split('=',1) for x in (root/'.env.integration').read_text().splitlines() if x and not x.startswith('#'))
 tokens=json.loads((root/'build/integration/tokens.json').read_text())

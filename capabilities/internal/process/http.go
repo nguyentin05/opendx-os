@@ -96,7 +96,7 @@ func uniqueJSON(d *json.Decoder) error {
 func WriteError(w http.ResponseWriter, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": http.StatusText(status), "message": http.StatusText(status)}})
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": http.StatusText(status), "message": http.StatusText(status)}}) // Best-effort response; the client may have disconnected.
 }
 func (e *Engine) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +116,7 @@ func (e *Engine) Handler() http.Handler {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp) // Best-effort response; the client may have disconnected.
 	})
 }
 
@@ -188,6 +188,6 @@ func (e *Engine) AuthenticatedEffectHandler(v auth.Verifier) http.Handler {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"work_item_id": result})
+		_ = json.NewEncoder(w).Encode(map[string]string{"work_item_id": result}) // Best-effort response; the client may have disconnected.
 	}))
 }

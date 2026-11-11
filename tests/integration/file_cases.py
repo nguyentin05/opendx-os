@@ -6,14 +6,14 @@ import hashlib
 import ipaddress
 import itertools
 import json
-from pathlib import Path
 import socket
 import subprocess
 import time
 import unittest
+import uuid
+from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
-import uuid
 
 from scripts.integration.environment import compose, run
 from scripts.integration.seed import LiveSeed, private_json
@@ -31,7 +31,7 @@ def restore_services(*actions):
     for action in actions:
         try:
             action()
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - finish every restoration before reporting failures
             failures.append(type(error).__name__)
     if failures:
         raise RuntimeError('service restoration failed: ' + ', '.join(failures))
@@ -50,7 +50,7 @@ class FileCases(unittest.TestCase):
 
     @classmethod
     def record(cls, action, state=None):
-        cls.evidence.append({'time': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'action': action, 'state': state})
+        cls.evidence.append({'time': datetime.datetime.now(datetime.UTC).isoformat(), 'action': action, 'state': state})
         private_json(ROOT / 'build/integration/file-recovery.json', cls.evidence)
 
     def wait(self, predicate, seconds=100):
@@ -63,7 +63,7 @@ class FileCases(unittest.TestCase):
             if value:
                 return value
             time.sleep(.5)
-        self.fail('bounded live file deadline exceeded (%ss)' % seconds)
+        self.fail(f'bounded live file deadline exceeded ({seconds}s)')
 
     def address(self, service, port):
         container = json.loads(run(['docker', 'inspect', run(compose('ps', '-q', service)).strip()]))[0]
@@ -82,7 +82,7 @@ class FileCases(unittest.TestCase):
         self.wait(self.scanner_ready, 120)
 
     def row(self, file):
-        return json.loads(self.live.sql("SELECT to_jsonb(f) FROM core.file_objects f WHERE id='%s'" % str(uuid.UUID(file))))
+        return json.loads(self.live.sql(f"SELECT to_jsonb(f) FROM core.file_objects f WHERE id='{uuid.UUID(file)!s}'"))
 
     def wait_status(self, file, status):
         return self.wait(lambda: (r if (r := self.row(file))['scan_status'] == status else None))
@@ -112,13 +112,13 @@ class FileCases(unittest.TestCase):
     def assert_blocked_submit(self, file):
         case = self.live.create(file_id=file)
         entity = case['entity_id']
-        snapshot = self.live.sql("SELECT to_jsonb(d) FROM domain.procurement_requests d WHERE id='%s'" % entity)
-        count_sql = "SELECT json_build_array((SELECT count(*) FROM core.audit_logs WHERE entity_id='%s'),(SELECT count(*) FROM core.outbox_events WHERE entity_id='%s'),(SELECT count(*) FROM core.command_receipts WHERE entity_id='%s'))" % (entity, entity, entity)
+        snapshot = self.live.sql(f"SELECT to_jsonb(d) FROM domain.procurement_requests d WHERE id='{entity}'")
+        count_sql = f"SELECT json_build_array((SELECT count(*) FROM core.audit_logs WHERE entity_id='{entity}'),(SELECT count(*) FROM core.outbox_events WHERE entity_id='{entity}'),(SELECT count(*) FROM core.command_receipts WHERE entity_id='{entity}'))"
         before = self.live.sql(count_sql)
         status, _ = self.live.client().command('procurement', 'submit', {'entity_id': entity, 'expected_version': case['expected_version'], 'payload': {}}, str(uuid.uuid4()))
         self.assertEqual(status, 422)
         self.assertEqual(self.live.sql(count_sql), before)
-        self.assertEqual(self.live.sql("SELECT to_jsonb(d) FROM domain.procurement_requests d WHERE id='%s'" % entity), snapshot)
+        self.assertEqual(self.live.sql(f"SELECT to_jsonb(d) FROM domain.procurement_requests d WHERE id='{entity}'"), snapshot)
 
     def test_quarantine_blocks_download_and_submit(self):
         try:
@@ -175,7 +175,7 @@ class FileCases(unittest.TestCase):
             run(compose('stop', '--timeout', '5', 'clamav'))
             file = self.upload()
             for role in ('caller', 'hasura'):
-                result = subprocess.run(['psql', self.live.connections[role], '-XAt', '-v', 'ON_ERROR_STOP=1', '-c', "UPDATE core.file_objects SET scan_status='CLEAN' WHERE id='%s'" % file], capture_output=True, text=True)
+                result = subprocess.run(['psql', self.live.connections[role], '-XAt', '-v', 'ON_ERROR_STOP=1', '-c', f"UPDATE core.file_objects SET scan_status='CLEAN' WHERE id='{file}'"], capture_output=True, text=True, check=False)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn('permission denied', result.stderr)
             status, body = self.live.client().post(self.live.gateway + '/v1/graphql', {'query': 'mutation{update_core_file_objects(where:{id:{_eq:"' + file + '"}},_set:{scan_status:"CLEAN"}){affected_rows}}'})
@@ -192,7 +192,7 @@ class FileCases(unittest.TestCase):
         original_row = self.wait_status(original, 'CLEAN')
         # Trusted runtime can update scan columns, but cannot rewrite immutable identity.
         for field, value in [('sha256_hash', 'bad'), ('object_key', 'changed'), ('app_id', 'process_fixture'), ('file_name', 'changed.pdf')]:
-            result = subprocess.run(['psql', self.live.connections['process'], '-XAt', '-v', 'ON_ERROR_STOP=1', '-c', "UPDATE core.file_objects SET %s='%s' WHERE id='%s'" % (field, value, original)], capture_output=True, text=True)
+            result = subprocess.run(['psql', self.live.connections['process'], '-XAt', '-v', 'ON_ERROR_STOP=1', '-c', f"UPDATE core.file_objects SET {field}='{value}' WHERE id='{original}'"], capture_output=True, text=True, check=False)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('permission denied', result.stderr)
         for method in ('PUT', 'PATCH'):

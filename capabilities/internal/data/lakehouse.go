@@ -52,7 +52,7 @@ func (e *LakehouseEngine) ReconcileExportBatch(ctx context.Context, req *ExportB
 	if err != nil {
 		return "", fmt.Errorf("failed to begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // Best-effort cleanup; a committed transaction is already closed.
 
 	// 1. Check or upsert export batch
 	var batchID string
@@ -106,7 +106,7 @@ func (e *LakehouseEngine) LineageTraceback(ctx context.Context, workspaceID, bat
 	if err != nil {
 		return nil, fmt.Errorf("failed to query lineage traceback: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var records []LakehouseRecord
 	for rows.Next() {

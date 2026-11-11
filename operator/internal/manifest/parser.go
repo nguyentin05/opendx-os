@@ -77,6 +77,6 @@ func ParseFile(path string) (*DXApplication, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open manifest file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return Parse(f)
 }

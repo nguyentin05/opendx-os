@@ -4,11 +4,10 @@
 import datetime
 import json
 import os
-from pathlib import Path
-import subprocess
 import time
 import unittest
 import uuid
+from pathlib import Path
 
 from scripts.integration.environment import compose, run
 from scripts.integration.seed import LiveSeed
@@ -30,11 +29,11 @@ class WorkflowCases(unittest.TestCase):
         case = self.live.create(app, file_id=self.files['clean_' + app])
         if submit:
             case = self.live.submit(case)
-            case['event_id'] = self.live.sql("SELECT id FROM core.outbox_events WHERE entity_id='%s' AND event_type='command.committed'" % str(uuid.UUID(case['entity_id'])))
+            case['event_id'] = self.live.sql("SELECT id FROM core.outbox_events WHERE entity_id='{}' AND event_type='command.committed'".format(str(uuid.UUID(case['entity_id']))))
         return case
 
     def state(self, event):
-        return json.loads(self.live.sql("SELECT json_build_object('id',id,'payload',payload,'delivery_status',delivery_status,'attempt_count',attempt_count,'lease_until',lease_until) FROM core.outbox_events WHERE id='%s'" % str(uuid.UUID(event))))
+        return json.loads(self.live.sql(f"SELECT json_build_object('id',id,'payload',payload,'delivery_status',delivery_status,'attempt_count',attempt_count,'lease_until',lease_until) FROM core.outbox_events WHERE id='{uuid.UUID(event)!s}'"))
 
     def wait(self, predicate, seconds=75):
         deadline = time.monotonic() + seconds
@@ -43,10 +42,10 @@ class WorkflowCases(unittest.TestCase):
             if result:
                 return result
             time.sleep(.3)
-        self.fail('bounded live workflow deadline exceeded (%ss)' % seconds)
+        self.fail(f'bounded live workflow deadline exceeded ({seconds}s)')
 
     def effect(self, case):
-        raw = self.live.sql("SELECT json_build_object('count',count(*),'rows',json_agg(json_build_object('id',w.id,'workspace',w.workspace_id,'title',w.title,'description',w.description,'priority',w.priority,'assigned',w.assigned_employee_id,'result',s.result,'outcome',s.outcome))) FROM core.processed_workflow_steps s JOIN core.work_items w ON w.id=s.work_item_id AND w.workspace_id=s.workspace_id WHERE event_id='%s' AND step_name='create_review'" % str(uuid.UUID(case['event_id'])))
+        raw = self.live.sql("SELECT json_build_object('count',count(*),'rows',json_agg(json_build_object('id',w.id,'workspace',w.workspace_id,'title',w.title,'description',w.description,'priority',w.priority,'assigned',w.assigned_employee_id,'result',s.result,'outcome',s.outcome))) FROM core.processed_workflow_steps s JOIN core.work_items w ON w.id=s.work_item_id AND w.workspace_id=s.workspace_id WHERE event_id='{}' AND step_name='create_review'".format(str(uuid.UUID(case['event_id']))))
         value = json.loads(raw)
         return value['rows'][0] if value['count'] == 1 else None
 
@@ -70,10 +69,10 @@ class WorkflowCases(unittest.TestCase):
             with self.subTest(app=app):
                 case = self.fresh(app)
                 self.assert_effect(case)
-                self.wait(lambda: self.state(case['event_id'])['delivery_status'] == 'delivered')
+                self.wait(lambda case=case: self.state(case['event_id'])['delivery_status'] == 'delivered')
                 # Deployment helper queries actual Kestra execution state and event identity.
                 from scripts.integration.workflows import executions_for
-                executions = self.wait(lambda: [e for e in executions_for(self.live, case) if e['state']['current'] == 'SUCCESS'])
+                executions = self.wait(lambda case=case: [e for e in executions_for(self.live, case) if e['state']['current'] == 'SUCCESS'])
                 self.assertTrue(any(e['state']['current'] == 'SUCCESS' for e in executions))
 
     def test_duplicate_delivery_one_effect(self):
@@ -107,6 +106,7 @@ class WorkflowCases(unittest.TestCase):
         self.assertNotEqual(previous, self.live.tokens['TEST_WORKFLOW_TOKEN'])
         deploy(self.live, reload=True)
         import base64
+
         from scripts.integration.workflows import verify_ready
         verify_ready(self.live)
         container = json.loads(run(['docker', 'inspect', run(compose('ps', '-q', 'kestra')).strip()]))[0]
@@ -129,7 +129,7 @@ class WorkflowCases(unittest.TestCase):
             # The configured alpha principal must not act on a beta source event.
             beta_file = self.live.upload(actor='beta_requester')
             beta = self.live.submit(self.live.create(actor='beta_requester', file_id=beta_file), actor='beta_requester')
-            beta['event_id'] = self.live.sql("SELECT id FROM core.outbox_events WHERE entity_id='%s'" % beta['entity_id'])
+            beta['event_id'] = self.live.sql("SELECT id FROM core.outbox_events WHERE entity_id='{}'".format(beta['entity_id']))
             beta_before = self.live.sql('SELECT count(*) FROM core.work_items')
             status, _ = self.effect_call(beta, self.live.tokens['TEST_WORKFLOW_TOKEN'])
             self.assertEqual(status, 403)
@@ -142,7 +142,7 @@ class WorkflowCases(unittest.TestCase):
     def test_publisher_restart_preserves_event_identity(self):
         evidence = []
         def record(action, state=None):
-            evidence.append({'time': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'action': action, 'state': state})
+            evidence.append({'time': datetime.datetime.now(datetime.UTC).isoformat(), 'action': action, 'state': state})
             from scripts.integration.seed import private_json
             private_json(ROOT / 'build/integration/workflow-recovery.json', evidence)
         run(compose('pause', 'kestra'))

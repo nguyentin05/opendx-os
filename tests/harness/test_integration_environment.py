@@ -2,8 +2,8 @@
 # Copyright 2026 DX-OS Open-Core Contributors
 """Disposable-stack guards; removing a guard must permit an observed mutation."""
 import importlib.util
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -30,8 +30,8 @@ class EnvironmentTests(unittest.TestCase):
         env = load('environment')
         for override in ({'COMPOSE_PROJECT_NAME': 'production'}, {'POSTGRES_DB': 'dxos_db'}):
             calls = []
-            values = dict(TEST_DISPOSABLE_DATABASE='yes', TEST_ALLOW_RESET='opendx-integration',
-                          POSTGRES_DB='opendx_integration', COMPOSE_PROJECT_NAME='opendx-integration')
+            values = {'TEST_DISPOSABLE_DATABASE': 'yes', 'TEST_ALLOW_RESET': 'opendx-integration',
+                          'POSTGRES_DB': 'opendx_integration', 'COMPOSE_PROJECT_NAME': 'opendx-integration'}
             values.update(override)
             with self.assertRaises(env.Refused):
                 env.operate('reset', values, calls.append)
@@ -39,8 +39,8 @@ class EnvironmentTests(unittest.TestCase):
 
     def test_inspect_redacts_credentials(self):
         env = load('environment')
-        values = dict(TEST_DISPOSABLE_DATABASE='yes', POSTGRES_DB='opendx_integration',
-                      POSTGRES_PASSWORD='must-never-print', DATABASE_URL='postgres://a:secret@host/db')
+        values = {'TEST_DISPOSABLE_DATABASE': 'yes', 'POSTGRES_DB': 'opendx_integration',
+                      'POSTGRES_PASSWORD': 'must-never-print', 'DATABASE_URL': 'postgres://a:secret@host/db'}
         result = env.operate('inspect', values, lambda command: '')
         self.assertNotIn('must-never-print', str(result))
         self.assertNotIn('secret', str(result))

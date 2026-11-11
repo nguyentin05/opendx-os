@@ -56,17 +56,25 @@ func TestStoreActiveWorkspaceAndDependencies(t *testing.T) {
 		t.Fatal("cross-workspace app returned")
 	}
 	for _, status := range []string{"Pending", "Applying", "Failed"} {
-		db.Exec(`UPDATE core.app_registry SET status=$1`, status)
+		if _, err := db.Exec(`UPDATE core.app_registry SET status=$1`, status); err != nil {
+			t.Fatal(err)
+		}
 		if _, e := store.Load(ctx, a.WorkspaceID, a.AppID); e == nil {
 			t.Fatalf("%s app returned", status)
 		}
 	}
-	db.Exec(`UPDATE core.app_registry SET status='Ready'`)
-	db.Exec(`UPDATE core.capability_registry SET enabled=false`)
+	if _, err := db.Exec(`UPDATE core.app_registry SET status='Ready'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE core.capability_registry SET enabled=false`); err != nil {
+		t.Fatal(err)
+	}
 	if _, e := store.Load(ctx, a.WorkspaceID, a.AppID); e == nil {
 		t.Fatal("disabled dependency accepted")
 	}
-	db.Exec(`DELETE FROM core.capability_registry`)
+	if _, err := db.Exec(`DELETE FROM core.capability_registry`); err != nil {
+		t.Fatal(err)
+	}
 	if _, e := store.Load(ctx, a.WorkspaceID, a.AppID); e == nil {
 		t.Fatal("missing dependency accepted")
 	}

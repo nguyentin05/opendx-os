@@ -41,7 +41,7 @@ func TestS3AuthenticatedPutGet(t *testing.T) {
 		if r.Method == "PUT" {
 			saved, _ = io.ReadAll(r.Body)
 		} else {
-			w.Write(saved)
+			_, _ = w.Write(saved)
 		}
 	}))
 	defer srv.Close()
@@ -56,7 +56,7 @@ func TestS3AuthenticatedPutGet(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	b, _ := io.ReadAll(r)
 	if string(b) != "hello" {
 		t.Fatal(string(b))
@@ -67,7 +67,7 @@ func TestClamAVInstream(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	done := make(chan error, 1)
 	go func() {
 		c, e := ln.Accept()
@@ -75,7 +75,7 @@ func TestClamAVInstream(t *testing.T) {
 			done <- e
 			return
 		}
-		defer c.Close()
+		defer func() { _ = c.Close() }()
 		cmd := make([]byte, 10)
 		_, e = io.ReadFull(c, cmd)
 		if e != nil || string(cmd) != "zINSTREAM\x00" {

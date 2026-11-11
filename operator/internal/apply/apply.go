@@ -133,7 +133,7 @@ func (r *Runner) Run(ctx context.Context, workspaceID string, plan planner.Plan)
 			}
 			return markFailed(err)
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }() // Best-effort cleanup; a committed transaction is already closed.
 
 		if err := publishRegistrySnapshot(ctx, tx, workspaceID, plan.Apps, plan.RemovedApps); err != nil {
 			if r.cfg.HasuraURL != "" {
@@ -247,7 +247,7 @@ func (r *Runner) postMetadata(ctx context.Context, op planner.HasuraMetadataPayl
 	if ignoreBenign && (strings.Contains(text, "not-exists") || strings.Contains(text, "does not exist") || strings.Contains(text, "not_found")) {
 		return nil
 	}
-	return fmt.Errorf("Hasura %s failed (HTTP %d): %s", op.Type, status, text)
+	return fmt.Errorf("hasura %s failed (HTTP %d): %s", op.Type, status, text)
 }
 
 func (r *Runner) rawHasuraRequest(ctx context.Context, payload any) ([]byte, int, error) {
@@ -268,7 +268,7 @@ func (r *Runner) rawHasuraRequest(ctx context.Context, payload any) ([]byte, int
 	if err != nil {
 		return nil, 0, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBytes, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	return respBytes, resp.StatusCode, err
 }

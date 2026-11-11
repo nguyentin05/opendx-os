@@ -36,7 +36,7 @@ func GenerateDDL(app *manifest.DXApplication) (string, error) {
 
 	sb.WriteString("-- Auto-generated DDL by dxos-operator. DO NOT EDIT DIRECTLY.\n")
 	sb.WriteString("CREATE SCHEMA IF NOT EXISTS domain;\n\n")
-	sb.WriteString(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n", quoteTable(tbl.Name)))
+	fmt.Fprintf(&sb, "CREATE TABLE IF NOT EXISTS %s (\n", quoteTable(tbl.Name))
 
 	colDefs := []string{
 		`    "id" uuid PRIMARY KEY DEFAULT gen_random_uuid()`,
@@ -74,34 +74,28 @@ func GenerateDDL(app *manifest.DXApplication) (string, error) {
 	sb.WriteString(strings.Join(colDefs, ",\n"))
 	sb.WriteString("\n);\n\n")
 
-	sb.WriteString(fmt.Sprintf(
-		"CREATE INDEX IF NOT EXISTS %s ON %s (\"workspace_id\");\n\n",
+	fmt.Fprintf(&sb, "CREATE INDEX IF NOT EXISTS %s ON %s (\"workspace_id\");\n\n",
 		quoteIdent("idx_"+safeTbl+"_workspace_id"),
-		quoteTable(tbl.Name),
-	))
+		quoteTable(tbl.Name))
 
 	bumpTrig := "trg_bump_version_" + safeTbl
-	sb.WriteString(fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s;\n", quoteIdent(bumpTrig), quoteTable(tbl.Name)))
-	sb.WriteString(fmt.Sprintf(
-		"CREATE TRIGGER %s\nBEFORE UPDATE ON %s\nFOR EACH ROW EXECUTE FUNCTION core.bump_domain_record_version();\n\n",
+	fmt.Fprintf(&sb, "DROP TRIGGER IF EXISTS %s ON %s;\n", quoteIdent(bumpTrig), quoteTable(tbl.Name))
+	fmt.Fprintf(&sb, "CREATE TRIGGER %s\nBEFORE UPDATE ON %s\nFOR EACH ROW EXECUTE FUNCTION core.bump_domain_record_version();\n\n",
 		quoteIdent(bumpTrig),
-		quoteTable(tbl.Name),
-	))
+		quoteTable(tbl.Name))
 
 	auditTrig := "trg_audit_update_" + safeTbl
-	sb.WriteString(fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s;\n", quoteIdent(auditTrig), quoteTable(tbl.Name)))
-	sb.WriteString(fmt.Sprintf(
-		"CREATE TRIGGER %s\nAFTER UPDATE ON %s\nFOR EACH ROW EXECUTE FUNCTION core.record_domain_update_audit();\n",
+	fmt.Fprintf(&sb, "DROP TRIGGER IF EXISTS %s ON %s;\n", quoteIdent(auditTrig), quoteTable(tbl.Name))
+	fmt.Fprintf(&sb, "CREATE TRIGGER %s\nAFTER UPDATE ON %s\nFOR EACH ROW EXECUTE FUNCTION core.record_domain_update_audit();\n",
 		quoteIdent(auditTrig),
-		quoteTable(tbl.Name),
-	))
+		quoteTable(tbl.Name))
 
 	// Roles are provisioned by platform initialization. Do not grant to ordinary
 	// callers; Hasura enforces the manifest field and row permissions.
-	sb.WriteString(fmt.Sprintf("GRANT SELECT, INSERT, UPDATE ON %s TO dxos_hasura, dxos_process;\n", quoteTable(tbl.Name)))
-	sb.WriteString(fmt.Sprintf("GRANT SELECT ON %s TO dxos_reader;\n", quoteTable(tbl.Name)))
+	fmt.Fprintf(&sb, "GRANT SELECT, INSERT, UPDATE ON %s TO dxos_hasura, dxos_process;\n", quoteTable(tbl.Name))
+	fmt.Fprintf(&sb, "GRANT SELECT ON %s TO dxos_reader;\n", quoteTable(tbl.Name))
 	for _, shared := range app.Spec.SharedAccess {
-		sb.WriteString(fmt.Sprintf("GRANT SELECT ON %s TO dxos_hasura;\n", quoteTable(shared.Table)))
+		fmt.Fprintf(&sb, "GRANT SELECT ON %s TO dxos_hasura;\n", quoteTable(shared.Table))
 	}
 	return sb.String(), nil
 }

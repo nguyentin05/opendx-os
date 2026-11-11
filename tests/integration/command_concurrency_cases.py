@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 DX-OS Open-Core Contributors
 """Live transactional command checks against the frozen manual phase."""
-from concurrent.futures import ThreadPoolExecutor
 import json
 import threading
 import unittest
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+
 from tests.integration import acceptance_cases
 from tests.integration.helpers import Client, GraphQLError, domain_snapshot, required
 

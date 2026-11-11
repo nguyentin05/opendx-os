@@ -7,18 +7,23 @@ import hashlib
 import hmac
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import time
-from urllib.error import HTTPError
-from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
 import uuid
+from pathlib import Path
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from scripts.integration.environment import compose, guard, private_config, run, verify_target
+from scripts.integration.environment import (
+    compose,
+    guard,
+    private_config,
+    run,
+    verify_target,
+)
 from tests.integration.helpers import Client
 
 
@@ -59,13 +64,13 @@ class LiveSeed:
         self.gateway = 'http://localhost:' + self.config.get('APISIX_GATEWAY_PORT', '19080')
         os.environ['TEST_PROCESS_URL'] = self.gateway
         os.environ['TEST_GRAPHQL_URL'] = self.gateway + '/v1/graphql'
-        result = subprocess.run([sys.executable, 'scripts/integration/identity.py', 'tokens'], cwd=ROOT, capture_output=True, text=True)
+        result = subprocess.run([sys.executable, 'scripts/integration/identity.py', 'tokens'], cwd=ROOT, capture_output=True, text=True, check=False)
         if result.returncode:
             raise Refused('fixture token renewal failed; credentials withheld')
         self.tokens = json.loads((ROOT / 'build/integration/tokens.json').read_text())
 
     def sql(self, query, role='assertion'):
-        result = subprocess.run(['psql', self.connections[role], '-XAt', '-v', 'ON_ERROR_STOP=1'], input=query, capture_output=True, text=True)
+        result = subprocess.run(['psql', self.connections[role], '-XAt', '-v', 'ON_ERROR_STOP=1'], input=query, capture_output=True, text=True, check=False)
         if result.returncode:
             raise Refused('seed database operation failed; credentials withheld')
         return result.stdout.strip()
@@ -73,7 +78,7 @@ class LiveSeed:
     def ready_apps(self):
         # Every workspace must have both actual published packages with enabled dependencies.
         for workspace in self.fixture['workspaces'].values():
-            apps = self.sql("SELECT app_id FROM core.app_registry a WHERE workspace_id='%s' AND status='Ready' AND NOT EXISTS (SELECT 1 FROM unnest(a.dependent_capabilities) d(cap_id) LEFT JOIN core.capability_registry c USING(cap_id) WHERE c.enabled IS DISTINCT FROM true) ORDER BY app_id" % workspace).splitlines()
+            apps = self.sql(f"SELECT app_id FROM core.app_registry a WHERE workspace_id='{workspace}' AND status='Ready' AND NOT EXISTS (SELECT 1 FROM unnest(a.dependent_capabilities) d(cap_id) LEFT JOIN core.capability_registry c USING(cap_id) WHERE c.enabled IS DISTINCT FROM true) ORDER BY app_id").splitlines()
             if not {'procurement', 'process_fixture'}.issubset(apps):
                 raise Refused('publish both actual packages in both fixture workspaces before seeding')
         return apps
@@ -85,9 +90,9 @@ class LiveSeed:
     def foundation(self):
         # Shared master data is provisioned by bootstrap, never by business callers.
         for name, workspace in self.fixture['workspaces'].items():
-            self.sql("INSERT INTO core.workspaces(id,code,name) VALUES('%s','integration-%s','Integration %s') ON CONFLICT(id) DO NOTHING" % (workspace, name, name), 'bootstrap')
+            self.sql(f"INSERT INTO core.workspaces(id,code,name) VALUES('{workspace}','integration-{name}','Integration {name}') ON CONFLICT(id) DO NOTHING", 'bootstrap')
         for name, actor in self.fixture['actors'].items():
-            self.sql("INSERT INTO core.employees(id,workspace_id,full_name,email,department) VALUES('%s','%s','%s','%s@integration.invalid','Integration') ON CONFLICT(id) DO NOTHING" % (actor['employee_id'], actor['workspace_id'], name, name), 'bootstrap')
+            self.sql("INSERT INTO core.employees(id,workspace_id,full_name,email,department) VALUES('{}','{}','{}','{}@integration.invalid','Integration') ON CONFLICT(id) DO NOTHING".format(actor['employee_id'], actor['workspace_id'], name, name), 'bootstrap')
 
     def pause_effects(self):
         run(compose('stop', '--timeout', '30', 'kestra'))
@@ -112,7 +117,7 @@ class LiveSeed:
             raise Refused('invalid disposable S3 bucket')
         path = '/' + bucket
         for method in ('HEAD', 'PUT'):
-            stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+            stamp = datetime.datetime.now(datetime.UTC).strftime('%Y%m%dT%H%M%SZ')
             date = stamp[:8]
             digest = hashlib.sha256(b'').hexdigest()
             signed = 'host;x-amz-content-sha256;x-amz-date'
@@ -152,7 +157,7 @@ class LiveSeed:
         if clean:
             deadline = time.monotonic() + 75
             while time.monotonic() < deadline:
-                status = self.sql("SELECT scan_status FROM core.file_objects WHERE id='%s'" % file_id)
+                status = self.sql(f"SELECT scan_status FROM core.file_objects WHERE id='{file_id}'")
                 if status == 'CLEAN':
                     return file_id
                 if status == 'INFECTED':
@@ -165,7 +170,7 @@ class LiveSeed:
         table, role = ('procurement_requests', 'role_procurement') if app == 'procurement' else ('review_requests', 'role_review')
         workspace = self.fixture['actors'][actor]['workspace_id']
         work = str(uuid.uuid4())
-        self.sql("INSERT INTO core.work_items(id,workspace_id,title,priority) VALUES('%s','%s','Phase seed work item','MEDIUM')" % (work, workspace), 'bootstrap')
+        self.sql(f"INSERT INTO core.work_items(id,workspace_id,title,priority) VALUES('{work}','{workspace}','Phase seed work item','MEDIUM')", 'bootstrap')
         values = {'work_item_id': work, 'vendor_name': 'Integration vendor', 'item_description': 'Phase seed request', 'quoted_amount': 42, 'quote_file_id': file_id}
         query = 'mutation($object:domain_' + table + '_insert_input!){insert_domain_' + table + '_one(object:$object){id status version}}'
         row = self.client(actor, role).graphql(query, {'object': values})['insert_domain_' + table + '_one']
@@ -202,7 +207,7 @@ class LiveSeed:
             if run(compose('ps', '--status', 'running', '-q', 'clamav')).strip():
                 raise Refused('scanner could not be stopped for the quarantine fixture')
             quarantine = self.upload(clean=False)
-            if self.sql("SELECT scan_status FROM core.file_objects WHERE id='%s'" % quarantine) != 'QUARANTINED':
+            if self.sql(f"SELECT scan_status FROM core.file_objects WHERE id='{quarantine}'") != 'QUARANTINED':
                 raise Refused('quarantine fixture was not observed QUARANTINED')
             cases['quarantined'] = self.create(file_id=quarantine)
         else:

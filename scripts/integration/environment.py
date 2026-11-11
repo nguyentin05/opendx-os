@@ -4,9 +4,9 @@
 import argparse
 import json
 import os
-from pathlib import Path
 import secrets
 import subprocess
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PROJECT = 'opendx-integration'
@@ -109,10 +109,10 @@ def private_config():
         if not s3.exists():
             write_s3_config(s3, values)
         return
-    values = dict(POSTGRES_DB=DATABASE, POSTGRES_USER='integration_bootstrap', COMPOSE_PROJECT_NAME=PROJECT,
-                  POSTGRES_PORT='15432', HASURA_PORT='18080', KEYCLOAK_PORT='18085', KESTRA_PORT='18082',
-                  CAP_PROCESS_PORT='18091', APISIX_GATEWAY_PORT='19080', WORKSPACE_UI_PORT='15173',
-                  OIDC_ISSUER_URL='http://localhost:18085/realms/dxos')
+    values = {'POSTGRES_DB': DATABASE, 'POSTGRES_USER': 'integration_bootstrap', 'COMPOSE_PROJECT_NAME': PROJECT,
+                  'POSTGRES_PORT': '15432', 'HASURA_PORT': '18080', 'KEYCLOAK_PORT': '18085', 'KESTRA_PORT': '18082',
+                  'CAP_PROCESS_PORT': '18091', 'APISIX_GATEWAY_PORT': '19080', 'WORKSPACE_UI_PORT': '15173',
+                  'OIDC_ISSUER_URL': 'http://localhost:18085/realms/dxos'}
     for key in ('POSTGRES_PASSWORD', 'HASURA_ADMIN_SECRET', 'KEYCLOAK_ADMIN_PASSWORD', 'KESTRA_PASSWORD',
                 'INTEGRATION_RUNTIME_PASSWORD', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'):
         values[key] = secrets.token_hex(24)

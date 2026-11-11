@@ -2,9 +2,11 @@
 # Copyright 2026 DX-OS Open-Core Contributors
 """Sample consistency only; B schema/semantic validator is a separate prerequisite."""
 import json
-from pathlib import Path
 import unittest
+from pathlib import Path
+
 import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 
 

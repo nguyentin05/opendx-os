@@ -105,7 +105,7 @@ func (p *Publisher) PublishPending(ctx context.Context, limit int) error {
 				resp, e := p.client.Do(req)
 				if e == nil {
 					readSize, readErr := io.Copy(io.Discard, io.LimitReader(resp.Body, 65537))
-					resp.Body.Close()
+					_ = resp.Body.Close()
 					if resp.StatusCode >= 200 && resp.StatusCode < 300 && readErr == nil && readSize <= 65536 {
 						sendErr = nil
 					}

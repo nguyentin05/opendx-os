@@ -4,7 +4,8 @@
 import json
 import unittest
 import uuid
-from tests.integration.helpers import Client, required, db_scalar, domain_snapshot
+
+from tests.integration.helpers import Client, db_scalar, domain_snapshot, required
 
 
 class BackendAcceptance(unittest.TestCase):
@@ -36,7 +37,7 @@ class BackendAcceptance(unittest.TestCase):
 
     def counts(self, body):
         entity = str(uuid.UUID(body['entity_id']))
-        return db_scalar("SELECT json_build_array((SELECT count(*) FROM core.outbox_events WHERE entity_id='%s'), (SELECT count(*) FROM core.audit_logs WHERE entity_id='%s'))" % (entity, entity))
+        return db_scalar(f"SELECT json_build_array((SELECT count(*) FROM core.outbox_events WHERE entity_id='{entity}'), (SELECT count(*) FROM core.audit_logs WHERE entity_id='{entity}'))")
 
     def protected(self, body):
         return domain_snapshot(body['entity_id'], self.workspace), self.counts(body)
@@ -71,20 +72,20 @@ class BackendAcceptance(unittest.TestCase):
         self.assertEqual(self.requester.command('procurement', 'submit', changed, key)[0], 409)
         self.assertEqual(denied_before, self.protected(body))
         self.assertEqual(json.loads(self.counts(body)), [x + 1 for x in before])
-        event = db_scalar("SELECT id FROM core.outbox_events WHERE app_id='procurement' AND entity_id='%s' AND entity_version=%d" % (body['entity_id'], first[1]['version']))
+        event = db_scalar(f"SELECT id FROM core.outbox_events WHERE app_id='procurement' AND entity_id='{body['entity_id']}' AND entity_version={first[1]['version']}")
         event = str(uuid.UUID(event))
         effect = {'event_id': event, 'step_name': 'create_review'}
         url = self.workflow.process_url + '/api/cap/process/effects/work-item'
-        work_count_sql = "SELECT count(*) FROM core.work_items WHERE workspace_id='%s'" % self.workspace
+        work_count_sql = f"SELECT count(*) FROM core.work_items WHERE workspace_id='{self.workspace}'"
         work_count_before = int(db_scalar(work_count_sql))
         first_effect = self.workflow.post(url, effect)
         self.assertEqual(first_effect[0], 200)
         self.assertEqual(int(db_scalar(work_count_sql)), work_count_before + 1)
         self.assertEqual(first_effect, self.workflow.post(url, effect))
         self.assertEqual(int(db_scalar(work_count_sql)), work_count_before + 1)
-        self.assertEqual(db_scalar("SELECT count(*) FROM core.processed_workflow_steps WHERE event_id='%s' AND step_name='create_review'" % event), '1')
+        self.assertEqual(db_scalar(f"SELECT count(*) FROM core.processed_workflow_steps WHERE event_id='{event}' AND step_name='create_review'"), '1')
         work_item = str(uuid.UUID(first_effect[1]['work_item_id']))
-        item = json.loads(db_scalar("SELECT json_build_object('workspace_id',workspace_id,'title',title,'description',description,'priority',priority,'assigned_employee_id',assigned_employee_id) FROM core.work_items WHERE id='%s'" % work_item))
+        item = json.loads(db_scalar(f"SELECT json_build_object('workspace_id',workspace_id,'title',title,'description',description,'priority',priority,'assigned_employee_id',assigned_employee_id) FROM core.work_items WHERE id='{work_item}'"))
         self.assertEqual(item, {'workspace_id': self.workspace, 'title': 'Review procurement request',
             'description': 'Review the submitted request in its source application.',
             'priority': 'MEDIUM', 'assigned_employee_id': None})

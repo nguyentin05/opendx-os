@@ -81,7 +81,7 @@ func (v *jwtVerifier) refresh(ctx context.Context) error {
 	if e != nil {
 		return e
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode != 200 {
 		return fmt.Errorf("JWKS status %d", res.StatusCode)
 	}

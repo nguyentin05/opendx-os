@@ -7,14 +7,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from unittest import TestCase
 from unittest.mock import patch
-from tests.integration.helpers import Client, PrerequisiteError, GraphQLError
+
+from tests.integration.helpers import Client, GraphQLError, PrerequisiteError
 
 
 class Transport(TestCase):
     def test_required_configuration(self):
-        with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaisesRegex(PrerequisiteError, 'TEST_PROCESS_URL'):
-                Client('signed-token', 'role_procurement')
+        with patch.dict(os.environ, {}, clear=True), self.assertRaisesRegex(PrerequisiteError, 'TEST_PROCESS_URL'):
+            Client('signed-token', 'role_procurement')
 
     def test_headers_retries_and_errors(self):
         seen = []
@@ -67,9 +67,8 @@ class DatabaseSnapshots(TestCase):
 
     def test_snapshot_rejects_missing_row_or_invalid_identifier(self):
         from tests.integration.helpers import domain_snapshot
-        with patch('tests.integration.helpers.db_scalar', return_value=''):
-            with self.assertRaisesRegex(PrerequisiteError, 'domain row'):
-                domain_snapshot('33333333-3333-4333-8333-333333333333',
+        with patch('tests.integration.helpers.db_scalar', return_value=''), self.assertRaisesRegex(PrerequisiteError, 'domain row'):
+            domain_snapshot('33333333-3333-4333-8333-333333333333',
                     '11111111-1111-4111-8111-111111111111')
         with patch('tests.integration.helpers.db_scalar') as scalar:
             with self.assertRaises(ValueError):

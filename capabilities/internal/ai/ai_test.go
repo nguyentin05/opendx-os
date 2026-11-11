@@ -27,7 +27,7 @@ func TestQueryPolicyRAG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	maintDir := filepath.Join(tmpDir, "maintenance", "knowledge")
 	if err := os.MkdirAll(maintDir, 0755); err != nil {

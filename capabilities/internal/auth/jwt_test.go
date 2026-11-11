@@ -53,7 +53,7 @@ func TestVerifiedJWTAndMiddleware(t *testing.T) {
 	other, _ := rsa.GenerateKey(rand.Reader, 2048)
 	kid := "one"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"keys": []any{map[string]string{"kty": "RSA", "alg": "RS256", "use": "sig", "kid": kid, "n": base64.RawURLEncoding.EncodeToString(k.N.Bytes()), "e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(k.E)).Bytes())}}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{map[string]string{"kty": "RSA", "alg": "RS256", "use": "sig", "kid": kid, "n": base64.RawURLEncoding.EncodeToString(k.N.Bytes()), "e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(k.E)).Bytes())}}}) // Best-effort response; the client may have disconnected.
 	}))
 	defer srv.Close()
 	v, e := NewVerifier(context.Background(), VerifierConfig{IssuerURL: "https://issuer.test", Audience: "runtime", JWKSURL: srv.URL})
@@ -121,8 +121,8 @@ func TestVerifiedJWTAndMiddleware(t *testing.T) {
 func TestRejectOversizedJWKS(t *testing.T) {
 	k, _ := rsa.GenerateKey(rand.Reader, 2048)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"keys": []any{map[string]string{"kty": "RSA", "kid": "one", "n": base64.RawURLEncoding.EncodeToString(k.N.Bytes()), "e": "AQAB"}}})
-		w.Write(make([]byte, 1<<20))
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{map[string]string{"kty": "RSA", "kid": "one", "n": base64.RawURLEncoding.EncodeToString(k.N.Bytes()), "e": "AQAB"}}}) // Best-effort response; the client may have disconnected.
+		_, _ = w.Write(make([]byte, 1<<20))
 	}))
 	defer srv.Close()
 	if _, err := NewVerifier(context.Background(), VerifierConfig{IssuerURL: "https://issuer.test", Audience: "runtime", JWKSURL: srv.URL}); err == nil {
@@ -147,7 +147,7 @@ func TestKnownSigningKeysExpireAndRefresh(t *testing.T) {
 				if !removed {
 					keys = append(keys, map[string]string{"kty": "RSA", "kid": "one", "alg": "RS256", "n": base64.RawURLEncoding.EncodeToString(active.N.Bytes()), "e": "AQAB"})
 				}
-				json.NewEncoder(w).Encode(map[string]any{"keys": keys})
+				_ = json.NewEncoder(w).Encode(map[string]any{"keys": keys}) // Best-effort response; the client may have disconnected.
 			}))
 			defer srv.Close()
 			verifier, err := NewVerifier(context.Background(), VerifierConfig{IssuerURL: "https://issuer.test", Audience: "runtime", JWKSURL: srv.URL})

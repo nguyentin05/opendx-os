@@ -81,7 +81,7 @@ def domain_snapshot(entity_id, workspace_id):
     """Read the complete protected procurement row, including state/version/values."""
     import uuid
     entity, workspace = str(uuid.UUID(entity_id)), str(uuid.UUID(workspace_id))
-    raw = db_scalar("SELECT to_jsonb(d) FROM domain.procurement_requests d WHERE id='%s' AND workspace_id='%s'" % (entity, workspace))
+    raw = db_scalar(f"SELECT to_jsonb(d) FROM domain.procurement_requests d WHERE id='{entity}' AND workspace_id='{workspace}'")
     if not raw:
         raise PrerequisiteError('Required disposable domain row is missing')
     return json.loads(raw)

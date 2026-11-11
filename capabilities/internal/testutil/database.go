@@ -46,32 +46,34 @@ func Database(t *testing.T) *sql.DB {
 		t.Fatal(e)
 	}
 	if e = admin.Ping(); e != nil {
-		admin.Close()
+		_ = admin.Close()
 		t.Fatal(e)
 	}
 	var b [12]byte
 	if _, e = rand.Read(b[:]); e != nil {
-		admin.Close()
+		_ = admin.Close()
 		t.Fatal(e)
 	}
 	name := "a1_test_" + hex.EncodeToString(b[:])
 	if _, e = admin.Exec(`CREATE DATABASE ` + name); e != nil {
-		admin.Close()
+		_ = admin.Close()
 		t.Fatal(e)
 	}
 	u.Path = "/" + name
 	db, e := sql.Open("postgres", u.String())
 	if e != nil {
-		admin.Exec(`DROP DATABASE ` + name)
-		admin.Close()
+		if _, err := admin.Exec(`DROP DATABASE ` + name); err != nil {
+			t.Errorf("cleanup database: %v", err)
+		}
+		_ = admin.Close()
 		t.Fatal(e)
 	}
 	t.Cleanup(func() {
-		db.Close()
+		_ = db.Close()
 		if _, e := admin.Exec(`DROP DATABASE ` + name + ` WITH (FORCE)`); e != nil {
 			t.Errorf("cleanup database: %v", e)
 		}
-		admin.Close()
+		_ = admin.Close()
 	})
 	if e = db.Ping(); e != nil {
 		t.Fatal(e)

@@ -22,9 +22,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
-	"strings"
 )
 
 var ErrEffectDenied = errors.New("workflow effect denied")
@@ -47,7 +48,7 @@ func (e *Engine) ExecuteWorkItemEffect(ctx context.Context, actor *auth.Identity
 	if err != nil {
 		return "", err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // Best-effort cleanup; a committed transaction is already closed.
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, eventID+":"+stepName); err != nil {
 		return "", err
 	}

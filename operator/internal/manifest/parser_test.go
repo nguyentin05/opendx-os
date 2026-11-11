@@ -60,8 +60,12 @@ func TestParseValidManifest(t *testing.T) {
 		t.Fatalf("marshal app.Spec: %v", err)
 	}
 	var want, got any
-	json.Unmarshal(reg.ManifestSpec, &want)
-	json.Unmarshal(specBytes, &got)
+	if err := json.Unmarshal(reg.ManifestSpec, &want); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(specBytes, &got); err != nil {
+		t.Fatal(err)
+	}
 	bWant, _ := json.Marshal(want)
 	bGot, _ := json.Marshal(got)
 	if !bytes.Equal(bWant, bGot) {

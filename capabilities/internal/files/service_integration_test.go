@@ -65,7 +65,9 @@ type controlledScanner struct {
 }
 
 func (s *controlledScanner) Scan(_ context.Context, r io.Reader) (ScanResult, error) {
-	io.Copy(io.Discard, r)
+	if _, err := io.Copy(io.Discard, r); err != nil {
+		return "", err
+	}
 	if s.before != nil {
 		s.before()
 	}
@@ -215,7 +217,7 @@ func TestDownloadNeedsCleanReadableFile(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	b, _ := io.ReadAll(r)
 	if string(b) != "%PDF-1.7\nimmutable" {
 		t.Fatal(string(b))
@@ -275,7 +277,7 @@ func TestAttachedReadableAccess(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	r.Close()
+	_ = r.Close()
 	if _, e = db.Exec(`UPDATE core.app_registry SET manifest_spec=jsonb_set(manifest_spec,'{domainAccess,select,0,recordFilter}', '{"requester_id":{"_eq":"X-Hasura-User-Id"}}'::jsonb)`); e != nil {
 		t.Fatal(e)
 	}
@@ -293,7 +295,9 @@ func TestUploadSizeBoundaryAndMIME(t *testing.T) {
 		}
 	}
 	var n int
-	db.QueryRow(`SELECT count(*) FROM core.file_objects`).Scan(&n)
+	if err := db.QueryRow(`SELECT count(*) FROM core.file_objects`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
 	if n != 3 {
 		t.Fatal(n)
 	}

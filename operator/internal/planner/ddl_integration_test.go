@@ -67,7 +67,7 @@ func TestDDLIntegrationVersionBumpAndAuditTrigger(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // Best-effort cleanup; a committed transaction is already closed.
 
 	if _, err := tx.Exec(`SELECT set_config('dxos.actor_id', $1, true), set_config('dxos.action', 'UPDATE', true)`, empID); err != nil {
 		t.Fatal(err)

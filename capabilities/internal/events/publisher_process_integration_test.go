@@ -41,7 +41,7 @@ func TestPublisherProcessHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if err := NewPublisher(db, nil, os.Getenv("OPENDX_PUBLISHER_ENDPOINT")).PublishPending(ctx, 1); err != nil {
@@ -100,7 +100,12 @@ func TestPublisherRecoversAfterProcessCrash(t *testing.T) {
 		}
 		done := make(chan error, 1)
 		go func() { done <- cmd.Wait(); close(done) }()
-		t.Cleanup(func() { _ = cmd.Process.Kill(); <-done })
+		t.Cleanup(func() {
+			_ = cmd.Process.Kill()
+			// Wait for reaping; killing the helper is expected to produce an exit error.
+			for range done {
+			}
+		})
 		return cmd, done, output
 	}
 	receive := func() delivery {

@@ -4,7 +4,8 @@
 import json
 import unittest
 import uuid
-from tests.integration.helpers import Client, required, db_scalar, domain_snapshot
+
+from tests.integration.helpers import Client, db_scalar, domain_snapshot, required
 
 
 class RuntimeIndependence(unittest.TestCase):
@@ -16,9 +17,9 @@ class RuntimeIndependence(unittest.TestCase):
         procurement = str(uuid.UUID(case['procurement_entity_id']))
         workspace = str(uuid.UUID(required('TEST_WORKSPACE_ID')))
         before = domain_snapshot(procurement, workspace)
-        counts_query = "SELECT json_build_array((SELECT count(*) FROM core.audit_logs WHERE entity_id='%s'),(SELECT count(*) FROM core.outbox_events WHERE entity_id='%s'))" % (procurement, procurement)
+        counts_query = f"SELECT json_build_array((SELECT count(*) FROM core.audit_logs WHERE entity_id='{procurement}'),(SELECT count(*) FROM core.outbox_events WHERE entity_id='{procurement}'))"
         counts_before = db_scalar(counts_query)
-        fixture_before = json.loads(db_scalar("SELECT to_jsonb(d) FROM domain.review_requests d WHERE id='%s' AND workspace_id='%s'" % (fixture, workspace)))
+        fixture_before = json.loads(db_scalar(f"SELECT to_jsonb(d) FROM domain.review_requests d WHERE id='{fixture}' AND workspace_id='{workspace}'"))
         status, result = client.command('process_fixture', 'submit',
             {'entity_id': fixture, 'expected_version': case['expected_version'], 'payload': {}}, str(uuid.uuid4()))
         self.assertEqual(status, 200)
@@ -26,7 +27,7 @@ class RuntimeIndependence(unittest.TestCase):
         self.assertEqual(result['version'], case['expected_version'] + 1)
         self.assertEqual(domain_snapshot(procurement, workspace), before)
         self.assertEqual(db_scalar(counts_query), counts_before)
-        fixture_after = json.loads(db_scalar("SELECT to_jsonb(d) FROM domain.review_requests d WHERE id='%s' AND workspace_id='%s'" % (fixture, workspace)))
+        fixture_after = json.loads(db_scalar(f"SELECT to_jsonb(d) FROM domain.review_requests d WHERE id='{fixture}' AND workspace_id='{workspace}'"))
         self.assertEqual((fixture_after['status'], fixture_after['version']), ('IN_REVIEW', fixture_before['version'] + 1))
         # Also exercise both apps sharing the same work item and requester.
         fields = {k: fixture_before[k] for k in ('vendor_name', 'item_description', 'quoted_amount', 'quote_file_id')}
@@ -40,5 +41,5 @@ class RuntimeIndependence(unittest.TestCase):
         self.assertEqual(shared_result['version'], shared['version'] + 1)
         self.assertEqual(domain_snapshot(procurement, workspace), before)
         self.assertEqual(db_scalar(counts_query), counts_before)
-        count = db_scalar("SELECT count(*) FROM core.outbox_events WHERE app_id='process_fixture' AND entity_id='%s' AND entity_version=%d" % (fixture, result['version']))
+        count = db_scalar(f"SELECT count(*) FROM core.outbox_events WHERE app_id='process_fixture' AND entity_id='{fixture}' AND entity_version={result['version']}")
         self.assertEqual(count, '1')
