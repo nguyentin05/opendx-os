@@ -99,9 +99,20 @@ func DiffSchema(live []LiveColumn, app *manifest.DXApplication) (SchemaDiff, err
 		}
 	}
 	if len(problems) > 0 {
-		return SchemaDiff{}, fmt.Errorf("schema of %s cannot be converged without data migration: %s", table, strings.Join(problems, "; "))
+		return SchemaDiff{}, &SchemaError{Table: table, Problems: problems}
 	}
 	return diff, nil
+}
+
+// SchemaError reports live-table differences that cannot be converged without a
+// data migration. Callers distinguish it from transient failures with errors.As.
+type SchemaError struct {
+	Table    string
+	Problems []string
+}
+
+func (e *SchemaError) Error() string {
+	return fmt.Sprintf("schema of %s cannot be converged without data migration: %s", e.Table, strings.Join(e.Problems, "; "))
 }
 
 // DDL renders the additive statements for the table. Column types and names were

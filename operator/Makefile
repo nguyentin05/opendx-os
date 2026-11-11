@@ -33,7 +33,7 @@ ENVTEST_VERSION ?= v0.25.0
 # Kubernetes minor used by envtest; matches k8s.io/api in go.mod.
 ENVTEST_K8S_VERSION ?= 1.37
 
-.PHONY: all help build run test test-integration test-envtest manifests generate samples fmt vet \
+.PHONY: all help build run test test-integration test-envtest test-controller manifests generate samples fmt vet \
 	docker-build install uninstall deploy undeploy build-installer controller-gen kustomize envtest
 
 all: build
@@ -62,7 +62,7 @@ fmt: ## Run go fmt.
 vet: ## Run go vet, including build-tagged suites.
 	go vet ./...
 	go vet -tags=integration ./...
-	go vet -tags=envtest ./...
+	go vet -tags=envtest,integration ./...
 
 test: ## Run unit tests (no external services).
 	go test ./... -count=1
@@ -71,9 +71,14 @@ test-integration: ## Run PostgreSQL integration tests; requires TEST_DATABASE_UR
 	@test -n "$$TEST_DATABASE_URL" || { echo "TEST_DATABASE_URL is required"; exit 1; }
 	go test -race -tags=integration ./... -count=1
 
-test-envtest: envtest ## Run controller tests against an envtest API server.
+test-envtest: envtest ## Run CRD schema tests against an envtest API server (no database).
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" \
 		go test -tags=envtest ./internal/controller/... -count=1
+
+test-controller: envtest ## Run reconcile tests (envtest + PostgreSQL); requires TEST_DATABASE_URL.
+	@test -n "$$TEST_DATABASE_URL" || { echo "TEST_DATABASE_URL is required"; exit 1; }
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" \
+		go test -race -tags=envtest,integration ./internal/controller/... -count=1
 
 ##@ Build
 

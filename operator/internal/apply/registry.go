@@ -71,25 +71,49 @@ func (r *Runner) ReadManagedState(ctx context.Context) (planner.ManagedState, er
 	return state, rows.Err()
 }
 
+// RegistryRow is one per-workspace publication from core.app_registry.
+type RegistryRow struct {
+	AppID       string
+	WorkspaceID string
+	Version     string
+	Status      string
+	Spec        json.RawMessage
+}
+
+// ReadRegistry returns every publication ordered by application and workspace.
+func (r *Runner) ReadRegistry(ctx context.Context) ([]RegistryRow, error) {
+	if r.db == nil {
+		return nil, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT app_id, workspace_id::text, version, status, manifest_spec FROM core.app_registry ORDER BY app_id, workspace_id`)
+	if err != nil {
+		return nil, fmt.Errorf("query registry: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []RegistryRow
+	for rows.Next() {
+		var row RegistryRow
+		var spec []byte
+		if err := rows.Scan(&row.AppID, &row.WorkspaceID, &row.Version, &row.Status, &spec); err != nil {
+			return nil, err
+		}
+		row.Spec = json.RawMessage(spec)
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
 // ReadPublications maps each application name to the workspaces where it is published.
 func (r *Runner) ReadPublications(ctx context.Context) (map[string][]string, error) {
 	published := map[string][]string{}
-	if r.db == nil {
-		return published, nil
-	}
-	rows, err := r.db.QueryContext(ctx, `SELECT app_id, workspace_id::text FROM core.app_registry ORDER BY app_id, workspace_id`)
+	rows, err := r.ReadRegistry(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("query publications: %w", err)
+		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		var appID, workspaceID string
-		if err := rows.Scan(&appID, &workspaceID); err != nil {
-			return nil, err
-		}
-		published[appID] = append(published[appID], workspaceID)
+	for _, row := range rows {
+		published[row.AppID] = append(published[row.AppID], row.WorkspaceID)
 	}
-	return published, rows.Err()
+	return published, nil
 }
 
 func publishSnapshot(ctx context.Context, tx *sql.Tx, plan planner.Plan, pub Publication) error {
