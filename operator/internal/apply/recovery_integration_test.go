@@ -64,7 +64,7 @@ func TestApplyPreservesPriorActiveVersionOnFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := runner.Run(context.Background(), wsID, planV1); err != nil {
+	if err := runner.Run(context.Background(), planV1, PublishTo(wsID, planV1)); err != nil {
 		t.Fatalf("initial apply failed: %v", err)
 	}
 
@@ -76,7 +76,7 @@ func TestApplyPreservesPriorActiveVersionOnFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := runner.Run(context.Background(), wsID, planV2); err == nil {
+	if err := runner.Run(context.Background(), planV2, PublishTo(wsID, planV2)); err == nil {
 		t.Fatal("expected v0.2.0 apply to fail")
 	}
 

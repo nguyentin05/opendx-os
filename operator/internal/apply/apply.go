@@ -55,26 +55,74 @@ func NewRunner(db *sql.DB, cfg Config, client *http.Client) *Runner {
 	}
 }
 
+// Publication lists per-workspace registry changes applied after the global phase.
+// Keys are workspace IDs; values are application names.
+type Publication struct {
+	Upsert map[string][]string
+	Remove map[string][]string
+}
+
+// PublishTo publishes every application of plan to a single workspace.
+func PublishTo(workspaceID string, plan planner.Plan) Publication {
+	names := make([]string, 0, len(plan.Apps))
+	for _, app := range plan.Apps {
+		names = append(names, app.Metadata.Name)
+	}
+	return Publication{Upsert: map[string][]string{workspaceID: names}}
+}
+
+func (p Publication) validate(plan planner.Plan) error {
+	defined := make(map[string]bool, len(plan.Apps))
+	for _, app := range plan.Apps {
+		defined[app.Metadata.Name] = true
+	}
+	for _, changes := range []map[string][]string{p.Upsert, p.Remove} {
+		for ws := range changes {
+			if strings.TrimSpace(ws) == "" {
+				return errors.New("workspaceID is required")
+			}
+		}
+	}
+	for ws, apps := range p.Upsert {
+		for _, name := range apps {
+			if !defined[name] {
+				return fmt.Errorf("cannot publish %s to workspace %s: not in the desired definition set", name, ws)
+			}
+		}
+	}
+	return nil
+}
+
 // Run executes a compiled Plan safely, preserving the prior active snapshot on failure.
-func (r *Runner) Run(ctx context.Context, workspaceID string, plan planner.Plan) error {
-	if strings.TrimSpace(workspaceID) == "" {
-		return errors.New("workspaceID is required")
+//
+// The global phase (DDL, Hasura metadata, core.app_definitions) applies to every
+// workspace. The publication phase then updates core.app_registry only for the
+// workspaces named in pub, in the same transaction as the definitions.
+func (r *Runner) Run(ctx context.Context, plan planner.Plan, pub Publication) error {
+	if err := pub.validate(plan); err != nil {
+		return err
+	}
+	versions := make(map[string]string, len(plan.Apps))
+	for _, app := range plan.Apps {
+		versions[app.Metadata.Name] = app.Metadata.Version
 	}
 
-	attemptIDs := make(map[string]string, len(plan.Apps))
+	var attemptIDs []string
 	if r.db != nil {
-		for _, app := range plan.Apps {
-			var attemptID string
-			err := r.db.QueryRowContext(
-				ctx,
-				`INSERT INTO core.app_deployments (workspace_id, app_id, version, status)
-				 VALUES ($1, $2, $3, 'Applying') RETURNING id::text`,
-				workspaceID, app.Metadata.Name, app.Metadata.Version,
-			).Scan(&attemptID)
-			if err != nil {
-				return fmt.Errorf("record deployment attempt for %s: %w", app.Metadata.Name, err)
+		for _, ws := range sortedKeys(pub.Upsert) {
+			for _, name := range pub.Upsert[ws] {
+				var attemptID string
+				err := r.db.QueryRowContext(
+					ctx,
+					`INSERT INTO core.app_deployments (workspace_id, app_id, version, status)
+					 VALUES ($1, $2, $3, 'Applying') RETURNING id::text`,
+					ws, name, versions[name],
+				).Scan(&attemptID)
+				if err != nil {
+					return fmt.Errorf("record deployment attempt for %s in workspace %s: %w", name, ws, err)
+				}
+				attemptIDs = append(attemptIDs, attemptID)
 			}
-			attemptIDs[app.Metadata.Name] = attemptID
 		}
 	}
 
@@ -135,7 +183,7 @@ func (r *Runner) Run(ctx context.Context, workspaceID string, plan planner.Plan)
 		}
 		defer func() { _ = tx.Rollback() }() // Best-effort cleanup; a committed transaction is already closed.
 
-		if err := publishRegistrySnapshot(ctx, tx, workspaceID, plan.Apps, plan.RemovedApps); err != nil {
+		if err := publishSnapshot(ctx, tx, plan, pub); err != nil {
 			if r.cfg.HasuraURL != "" {
 				_ = r.restoreHasuraMetadata(ctx, snapshot)
 			}

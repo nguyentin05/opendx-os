@@ -27,6 +27,7 @@ psql -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" -f "$ROOT_DIR/platform/postgres/ini
 psql -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" -f "$ROOT_DIR/platform/postgres/init/02_capability_registry.sql"
 psql -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" -f "$ROOT_DIR/platform/postgres/init/03_app_registry.sql"
 psql -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" -f "$ROOT_DIR/platform/postgres/init/05_operator_deployments.sql"
+psql -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" -f "$ROOT_DIR/platform/postgres/init/07_app_definitions.sql"
 psql -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" -f "$ROOT_DIR/platform/postgres/capabilities/cap_process.sql"
 psql -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" -f "$ROOT_DIR/platform/postgres/tests/core_contract.sql"
 

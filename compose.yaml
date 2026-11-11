@@ -34,6 +34,7 @@ services:
       - ./platform/postgres/init/04_capabilities.sh:/docker-entrypoint-initdb.d/04_capabilities.sh:ro
       - ./platform/postgres/init/05_operator_deployments.sql:/docker-entrypoint-initdb.d/05_operator_deployments.sql:ro
       - ./platform/postgres/init/06_runtime_roles.sql:/docker-entrypoint-initdb.d/06_runtime_roles.sql:ro
+      - ./platform/postgres/init/07_app_definitions.sql:/docker-entrypoint-initdb.d/07_app_definitions.sql:ro
       - ./platform/postgres/capabilities:/docker-entrypoint-initdb.d/capabilities:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dxos_admin} -d ${POSTGRES_DB:-dxos_db}"]

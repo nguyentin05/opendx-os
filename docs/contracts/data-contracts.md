@@ -27,6 +27,7 @@ The field inventory below uses logical names. Entity IDs use UUID; audit IDs use
 | `core.audit_logs` | `id`, `workspace_id`, `actor_id`, `action`, `entity_type`, `entity_id`, `entity_version`, `payload`, `prev_hash`, `row_hash`, `created_at` |
 | `core.outbox_events` | Durable event identity, workspace, event type, payload, and dispatch status; producer transaction and retry-safe delivery |
 | `core.app_registry` | Published app configuration by `(workspace_id, app_id)`: display name, role/permissions, domain tables, UI schema, state machine, dependent capabilities, and deployment status |
+| `core.app_definitions` | Active global application definition by `app_id`: display name, version, validated spec. Domain tables and Hasura metadata are shared by all workspaces, so the Operator plans them from this table; every workspace publishing an app runs this version ([ADR 0004](../adr/0004-kubernetes-crd-operator.md)) |
 | `core.capability_registry` | Shared capability inventory: `cap_id`, `category_hpdi`, `base_route`, `enabled`; permission to use a capability is still evaluated per caller and app |
 
 The registry/audit/export tables are written by the control plane or the assigned service. User roles may read only the parts they are granted. `core.work_items` keeps the shared work identity; business state lives in each domain table.

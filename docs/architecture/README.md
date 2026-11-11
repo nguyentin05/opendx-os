@@ -54,6 +54,12 @@ Reconcile adds missing and revokes excess configuration within managed resources
 and roles, using the active manifest set. Multiple apps sharing `core.*` require
 combined valid permissions; reconciling one app must not remove another's grants.
 
+Global resources (domain tables, triggers, Hasura metadata) are planned from the
+active definitions in `core.app_definitions`, never from one workspace's
+registry. Unpublishing an app from one workspace keeps its grants while another
+workspace still publishes it; an upgraded definition is republished in every
+workspace that uses it.
+
 Each capability provides health and registry metadata. Disabled or unavailable
 capabilities make dependent features unavailable with a reason, while independent
 features continue working. The backend also checks availability and permissions.
@@ -68,6 +74,8 @@ The [ADRs below](#2-architecture-decision-records-adrs) record accepted decision
 and rationale; this document and the [data contract](../contracts/data-contracts.md)
 describe their current application. ADR 0002 refines domain-attribute ownership;
 ADR 0003 refines optional capability storage while retaining the three tiers.
+ADR 0004 (proposed) separates global definitions from per-workspace publication
+and introduces the `DXApplication` CRD controller.
 
 For a proposed change, identify relevant accepted decisions and affected contracts,
 producers, consumers, examples, and data migrations. Record a replacement decision
@@ -139,6 +147,7 @@ flowchart TB
 - [ADR 0001: Three-Tier Composable Architecture with Shared Core and Isolated Domain Tables](../adr/0001-three-tier-composable-architecture.md)
 - [ADR 0002: Core Schema Purity and Semantic Cross-App Data Synchronization](../adr/0002-semantic-schema-governance-and-cross-app-data-sync.md)
 - [ADR 0003: Separation of Core Kernel Schema and Pluggable Capability Data Schemas (cap-data)](../adr/0003-modular-capability-schema-separation-for-iot-data.md)
+- [ADR 0004: Kubernetes CRD Operator with a Cluster-Scoped Application Definition](../adr/0004-kubernetes-crd-operator.md) (proposed)
 
 ---
 

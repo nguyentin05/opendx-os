@@ -21,24 +21,28 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strings"
+	"sort"
 
+	"github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/operator/internal/manifest"
 	"github.com/opendx-os/opendx-os/operator/internal/planner"
 )
 
-// ReadManagedState loads all currently active Ready applications for a workspace from core.app_registry.
-func (r *Runner) ReadManagedState(ctx context.Context, workspaceID string) (planner.ManagedState, error) {
+// publicationLockKey serializes operator publications across every workspace,
+// because definitions are global and one apply may republish several workspaces.
+const publicationLockKey = "dxos.operator.publication"
+
+// ReadManagedState loads the active global application definitions.
+func (r *Runner) ReadManagedState(ctx context.Context) (planner.ManagedState, error) {
 	if r.db == nil {
 		return planner.ManagedState{}, nil
 	}
 	rows, err := r.db.QueryContext(
 		ctx,
-		`SELECT app_id, display_name, version, manifest_spec FROM core.app_registry WHERE workspace_id = $1 AND status = 'Ready' ORDER BY app_id`,
-		workspaceID,
+		`SELECT app_id, display_name, version, spec FROM core.app_definitions ORDER BY app_id`,
 	)
 	if err != nil {
-		return planner.ManagedState{}, fmt.Errorf("query managed state: %w", err)
+		return planner.ManagedState{}, fmt.Errorf("query managed definitions: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -67,64 +71,137 @@ func (r *Runner) ReadManagedState(ctx context.Context, workspaceID string) (plan
 	return state, rows.Err()
 }
 
-func publishRegistrySnapshot(ctx context.Context, tx *sql.Tx, workspaceID string, apps []manifest.DXApplication, removed []string) error {
-	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1::text))`, workspaceID); err != nil {
+// ReadPublications maps each application name to the workspaces where it is published.
+func (r *Runner) ReadPublications(ctx context.Context) (map[string][]string, error) {
+	published := map[string][]string{}
+	if r.db == nil {
+		return published, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT app_id, workspace_id::text FROM core.app_registry ORDER BY app_id, workspace_id`)
+	if err != nil {
+		return nil, fmt.Errorf("query publications: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var appID, workspaceID string
+		if err := rows.Scan(&appID, &workspaceID); err != nil {
+			return nil, err
+		}
+		published[appID] = append(published[appID], workspaceID)
+	}
+	return published, rows.Err()
+}
+
+func publishSnapshot(ctx context.Context, tx *sql.Tx, plan planner.Plan, pub Publication) error {
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1::text))`, publicationLockKey); err != nil {
 		return err
 	}
 
-	for _, rem := range removed {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM core.app_registry WHERE workspace_id = $1 AND app_id = $2`, workspaceID, rem); err != nil {
-			return fmt.Errorf("remove uninstalled app %s: %w", rem, err)
-		}
-	}
-
-	for _, app := range apps {
+	byName := make(map[string]manifest.DXApplication, len(plan.Apps))
+	for _, app := range plan.Apps {
+		byName[app.Metadata.Name] = app
 		specBytes, err := json.Marshal(app.Spec)
 		if err != nil {
 			return err
 		}
-		uiBytes, err := json.Marshal(app.Spec.UISchema)
-		if err != nil {
-			return err
-		}
-		smBytes, err := json.Marshal(app.Spec.StateMachine)
-		if err != nil {
-			return err
-		}
-		capArray := "{" + strings.Join(app.Spec.Capabilities, ",") + "}"
-
-		_, err = tx.ExecContext(
+		if _, err := tx.ExecContext(
 			ctx,
-			`INSERT INTO core.app_registry (
-				workspace_id, app_id, display_name, version, role_name, domain_table,
-				manifest_spec, ui_schema, state_machine, dependent_capabilities, status, last_error, updated_at
-			) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10::text[], 'Ready', NULL, now())
-			ON CONFLICT (workspace_id, app_id) DO UPDATE SET
+			`INSERT INTO core.app_definitions (app_id, display_name, version, spec, updated_at)
+			 VALUES ($1, $2, $3, $4::jsonb, now())
+			 ON CONFLICT (app_id) DO UPDATE SET
 				display_name = EXCLUDED.display_name,
 				version = EXCLUDED.version,
-				role_name = EXCLUDED.role_name,
-				domain_table = EXCLUDED.domain_table,
-				manifest_spec = EXCLUDED.manifest_spec,
-				ui_schema = EXCLUDED.ui_schema,
-				state_machine = EXCLUDED.state_machine,
-				dependent_capabilities = EXCLUDED.dependent_capabilities,
-				status = 'Ready',
-				last_error = NULL,
+				spec = EXCLUDED.spec,
 				updated_at = now()`,
-			workspaceID,
-			app.Metadata.Name,
-			app.Metadata.DisplayName,
-			app.Metadata.Version,
-			app.Spec.Role,
-			app.Spec.DomainTable.Name,
-			string(specBytes),
-			string(uiBytes),
-			string(smBytes),
-			capArray,
-		)
-		if err != nil {
-			return fmt.Errorf("publish Ready snapshot for %s: %w", app.Metadata.Name, err)
+			app.Metadata.Name, app.Metadata.DisplayName, app.Metadata.Version, string(specBytes),
+		); err != nil {
+			return fmt.Errorf("record definition for %s: %w", app.Metadata.Name, err)
+		}
+	}
+
+	// A removed definition no longer has a table contract or permissions, so it is
+	// unpublished from every workspace, not only the ones named in pub.
+	for _, name := range plan.RemovedApps {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM core.app_registry WHERE app_id = $1`, name); err != nil {
+			return fmt.Errorf("unpublish removed app %s: %w", name, err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM core.app_definitions WHERE app_id = $1`, name); err != nil {
+			return fmt.Errorf("remove definition %s: %w", name, err)
+		}
+	}
+
+	for _, ws := range sortedKeys(pub.Remove) {
+		for _, name := range pub.Remove[ws] {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM core.app_registry WHERE workspace_id = $1 AND app_id = $2`, ws, name); err != nil {
+				return fmt.Errorf("unpublish %s from workspace %s: %w", name, ws, err)
+			}
+		}
+	}
+
+	for _, ws := range sortedKeys(pub.Upsert) {
+		for _, name := range pub.Upsert[ws] {
+			if err := publishApp(ctx, tx, ws, byName[name]); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+func publishApp(ctx context.Context, tx *sql.Tx, workspaceID string, app manifest.DXApplication) error {
+	specBytes, err := json.Marshal(app.Spec)
+	if err != nil {
+		return err
+	}
+	uiBytes, err := json.Marshal(app.Spec.UISchema)
+	if err != nil {
+		return err
+	}
+	smBytes, err := json.Marshal(app.Spec.StateMachine)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.ExecContext(
+		ctx,
+		`INSERT INTO core.app_registry (
+			workspace_id, app_id, display_name, version, role_name, domain_table,
+			manifest_spec, ui_schema, state_machine, dependent_capabilities, status, last_error, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10::text[], 'Ready', NULL, now())
+		ON CONFLICT (workspace_id, app_id) DO UPDATE SET
+			display_name = EXCLUDED.display_name,
+			version = EXCLUDED.version,
+			role_name = EXCLUDED.role_name,
+			domain_table = EXCLUDED.domain_table,
+			manifest_spec = EXCLUDED.manifest_spec,
+			ui_schema = EXCLUDED.ui_schema,
+			state_machine = EXCLUDED.state_machine,
+			dependent_capabilities = EXCLUDED.dependent_capabilities,
+			status = 'Ready',
+			last_error = NULL,
+			updated_at = now()`,
+		workspaceID,
+		app.Metadata.Name,
+		app.Metadata.DisplayName,
+		app.Metadata.Version,
+		app.Spec.Role,
+		app.Spec.DomainTable.Name,
+		string(specBytes),
+		string(uiBytes),
+		string(smBytes),
+		pq.Array(app.Spec.Capabilities),
+	)
+	if err != nil {
+		return fmt.Errorf("publish Ready snapshot for %s in workspace %s: %w", app.Metadata.Name, workspaceID, err)
+	}
+	return nil
+}
+
+func sortedKeys(m map[string][]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

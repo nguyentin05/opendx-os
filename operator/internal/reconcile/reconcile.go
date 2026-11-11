@@ -75,15 +75,22 @@ func (r *Runner) Run(ctx context.Context, workspaceID, appsDir string) error {
 		apps = append(apps, *app)
 	}
 
-	live, err := r.applier.ReadManagedState(ctx, workspaceID)
+	live, err := r.applier.ReadManagedState(ctx)
+	if err != nil {
+		return err
+	}
+	published, err := r.applier.ReadPublications(ctx)
 	if err != nil {
 		return err
 	}
 
-	plan, err := planner.BuildPlan(apps, live)
+	// The directory is the exact application set of this workspace. Global
+	// definitions still used by other workspaces are kept with their grants.
+	scope := planner.ScopeWorkspace(live, published, workspaceID, apps, true)
+	plan, err := planner.BuildPlan(scope.Desired, live)
 	if err != nil {
 		return err
 	}
 
-	return r.applier.Run(ctx, workspaceID, plan)
+	return r.applier.Run(ctx, plan, apply.Publication{Upsert: scope.Upsert, Remove: scope.Remove})
 }

@@ -188,17 +188,24 @@ func runApplyCmd(args []string, stdout, stderr io.Writer, applier *apply.Runner)
 		applier = envApplier
 	}
 
-	live, err := applier.ReadManagedState(context.Background(), *ws)
+	ctx := context.Background()
+	live, err := applier.ReadManagedState(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "Failed reading live state: %v\n", err)
 		return 1
 	}
-	plan, err := planner.BuildApplyPlan(*app, live)
+	published, err := applier.ReadPublications(ctx)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "Failed reading publications: %v\n", err)
+		return 1
+	}
+	scope := planner.ScopeWorkspace(live, published, *ws, []manifest.DXApplication{*app}, false)
+	plan, err := planner.BuildPlan(scope.Desired, live)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "Failed building plan: %v\n", err)
 		return 1
 	}
-	if err := applier.Run(context.Background(), *ws, plan); err != nil {
+	if err := applier.Run(ctx, plan, apply.Publication{Upsert: scope.Upsert, Remove: scope.Remove}); err != nil {
 		_, _ = fmt.Fprintf(stderr, "Apply failed: %v\n", err)
 		return 1
 	}
