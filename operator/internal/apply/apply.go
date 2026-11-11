@@ -139,6 +139,24 @@ func (r *Runner) Run(ctx context.Context, plan planner.Plan, pub Publication) er
 		return cause
 	}
 
+	// 0. Converge or refuse schema changes before touching anything. A blocking
+	// difference leaves DDL, Hasura metadata and the registry untouched.
+	alterDDL := make(map[string]string, len(plan.Apps))
+	if r.db != nil {
+		for i := range plan.Apps {
+			app := &plan.Apps[i]
+			live, err := r.liveColumns(ctx, app.Spec.DomainTable.Name)
+			if err != nil {
+				return markFailed(err)
+			}
+			diff, err := planner.DiffSchema(live, app)
+			if err != nil {
+				return markFailed(err)
+			}
+			alterDDL[app.Metadata.Name] = diff.DDL(app.Spec.DomainTable.Name)
+		}
+	}
+
 	// 1. Snapshot Hasura metadata before applying changes so we can roll back on failure
 	var snapshot json.RawMessage
 	if r.cfg.HasuraURL != "" {
@@ -155,6 +173,11 @@ func (r *Runner) Run(ctx context.Context, plan planner.Plan, pub Publication) er
 			ddl := plan.DDLs[app.Metadata.Name]
 			if _, err := r.db.ExecContext(ctx, ddl); err != nil {
 				return markFailed(fmt.Errorf("execute DDL for %s: %w", app.Metadata.Name, err))
+			}
+			if alter := alterDDL[app.Metadata.Name]; alter != "" {
+				if _, err := r.db.ExecContext(ctx, alter); err != nil {
+					return markFailed(fmt.Errorf("add columns for %s: %w", app.Metadata.Name, err))
+				}
 			}
 		}
 	}

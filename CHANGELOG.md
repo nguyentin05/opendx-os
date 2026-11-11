@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Operator: an upgraded manifest no longer publishes `Ready` while the live table differs. Adding a nullable column is converged with `ALTER TABLE`; any other column change is refused before Hasura or the registry is touched, and the deployment attempt records the reason.
 - Operator: reconciling or upgrading an application in one workspace no longer revokes Hasura permissions that another workspace still uses. Global definitions are tracked in the new `core.app_definitions` table (`platform/postgres/init/07_app_definitions.sql`), separately from per-workspace publication in `core.app_registry`.
 
 ### Added

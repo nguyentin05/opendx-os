@@ -60,6 +60,12 @@ registry. Unpublishing an app from one workspace keeps its grants while another
 workspace still publishes it; an upgraded definition is republished in every
 workspace that uses it.
 
+Before applying, the Operator compares each live domain table with its manifest.
+Adding a nullable column is converged automatically; a type or nullability
+change, a new required column, or an undeclared live column blocks publication
+with a structured error while the previous version keeps serving. CHECK
+constraints are not compared yet.
+
 Each capability provides health and registry metadata. Disabled or unavailable
 capabilities make dependent features unavailable with a reason, while independent
 features continue working. The backend also checks availability and permissions.
