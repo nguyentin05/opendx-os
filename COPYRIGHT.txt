@@ -37,6 +37,7 @@ Comment:
   k8s.io/apimachinery v0.37.0                 Apache-2.0  https://github.com/kubernetes/apimachinery
   k8s.io/client-go v0.37.0                    Apache-2.0  https://github.com/kubernetes/client-go
   sigs.k8s.io/controller-runtime v0.25.0      Apache-2.0  https://github.com/kubernetes-sigs/controller-runtime
+  sigs.k8s.io/yaml v1.6.0                     MIT (embedded goyaml forks: Apache-2.0 and BSD-3-Clause)  https://github.com/kubernetes-sigs/yaml
  .
  Build-time tools (not linked into shipped binaries): controller-gen v0.22.0,
  kustomize v5.8.1, setup-envtest v0.25.0 (all Apache-2.0, kubernetes-sigs).

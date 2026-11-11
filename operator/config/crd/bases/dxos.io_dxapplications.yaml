@@ -473,6 +473,12 @@ spec:
                         type: object
                       minItems: 1
                       type: array
+                    file:
+                      description: |-
+                        File is the package-relative path the definition was read from. It is
+                        informational and preserved so that a resource converts back to its package.
+                      pattern: ^workflows/[a-z][a-z0-9_]*\.yaml$
+                      type: string
                     id:
                       pattern: ^[a-z][a-z0-9_]*$
                       type: string

@@ -203,6 +203,11 @@ type Attachment struct {
 type Workflow struct {
 	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9_]*$`
 	ID string `json:"id"`
+	// File is the package-relative path the definition was read from. It is
+	// informational and preserved so that a resource converts back to its package.
+	// +optional
+	// +kubebuilder:validation:Pattern=`^workflows/[a-z][a-z0-9_]*\.yaml$`
+	File string `json:"file,omitempty"`
 	// Definition is the workflow engine YAML (Kestra flow).
 	// +kubebuilder:validation:MinLength=1
 	Definition string `json:"definition"`

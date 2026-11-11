@@ -23,9 +23,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	_ "github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/operator/internal/apply"
+	"github.com/opendx-os/opendx-os/operator/internal/crdconv"
 	"github.com/opendx-os/opendx-os/operator/internal/manager"
 	"github.com/opendx-os/opendx-os/operator/internal/manifest"
 	"github.com/opendx-os/opendx-os/operator/internal/planner"
@@ -67,6 +69,9 @@ func runCLI(args []string, stdout, stderr io.Writer, applier *apply.Runner, reco
 	case "reconcile":
 		return runReconcileCmd(args[1:], stdout, stderr, applier, reconciler)
 
+	case "export-crd":
+		return runExportCRDCmd(args[1:], stdout, stderr)
+
 	case "controller":
 		return manager.Run(args[1:], stdout, stderr)
 
@@ -88,6 +93,7 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  plan [-format sql|hasura] <manifest.yaml> Generate DDL or Hasura metadata plan")
 	_, _ = fmt.Fprintln(w, "  apply [-workspace UUID] <manifest.yaml>   Apply a single validated manifest")
 	_, _ = fmt.Fprintln(w, "  reconcile [-workspace UUID] <apps-dir>    Reconcile all application packages")
+	_, _ = fmt.Fprintln(w, "  export-crd [-workspace UUID[,UUID]] <app-dir> Print a DXApplication resource for an app package")
 	_, _ = fmt.Fprintln(w, "  controller [flags]                       Run the Kubernetes DXApplication controller")
 	_, _ = fmt.Fprintln(w, "  version                                  Print operator version")
 }
@@ -145,6 +151,28 @@ func runPlanCmd(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "Unknown format: %s\n", *format)
 		return 1
 	}
+	return 0
+}
+
+func runExportCRDCmd(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("export-crd", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	ws := fs.String("workspace", defaultWorkspaceID, "Comma-separated workspace UUIDs the application is published to")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 1 {
+		_, _ = fmt.Fprintln(stderr, "Usage: dxos-operator export-crd [-workspace UUID[,UUID]] <app-dir>")
+		return 1
+	}
+	app, err := crdconv.FromPackage(fs.Arg(0), strings.Split(*ws, ","))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "Export failed: %v\n", err)
+		return 1
+	}
+	out, err := crdconv.MarshalYAML(app)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "Export failed: %v\n", err)
+		return 1
+	}
+	_, _ = stdout.Write(out)
 	return 0
 }
 

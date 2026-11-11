@@ -33,7 +33,7 @@ ENVTEST_VERSION ?= v0.25.0
 # Kubernetes minor used by envtest; matches k8s.io/api in go.mod.
 ENVTEST_K8S_VERSION ?= 1.37
 
-.PHONY: all help build run test test-integration test-envtest manifests generate fmt vet \
+.PHONY: all help build run test test-integration test-envtest manifests generate samples fmt vet \
 	docker-build install uninstall deploy undeploy build-installer controller-gen kustomize envtest
 
 all: build
@@ -49,6 +49,12 @@ manifests: controller-gen ## Generate the CRD and the manager ClusterRole into c
 
 generate: controller-gen ## Generate DeepCopy methods for API types.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+
+SAMPLE_WORKSPACE ?= 11111111-1111-4111-8111-111111111111
+samples: ## Export config/samples from the supported application packages.
+	go run ./cmd/dxos-operator export-crd -workspace $(SAMPLE_WORKSPACE) ../apps/procurement > config/samples/dxos_v1alpha1_procurement.yaml
+	go run ./cmd/dxos-operator export-crd -workspace $(SAMPLE_WORKSPACE) ../apps/process-fixture > config/samples/dxos_v1alpha1_process_fixture.yaml
+	hack/add-spdx-headers.sh config/samples
 
 fmt: ## Run go fmt.
 	go fmt ./...
