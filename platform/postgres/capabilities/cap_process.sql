@@ -13,14 +13,16 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
--- Tier 2 Pluggable Capability Schema: cap-process ([P])
--- Manages: OCC State Machine Transitions, Command Gatekeeping, Quarantine Scan Pipeline
+-- Tier 2 capability: cap-process ([P])
+-- Commands on domain records (state transitions with optimistic concurrency),
+-- command idempotency and workflow step idempotency.
 
--- 1. Command Idempotency Receipts (S03)
-CREATE TABLE IF NOT EXISTS core.command_receipts (
-    workspace_id UUID NOT NULL REFERENCES core.workspaces(id),
-    actor_id TEXT NOT NULL CHECK (length(trim(actor_id)) > 0),
-    app_id TEXT NOT NULL CHECK (length(trim(app_id)) > 0),
+CREATE SCHEMA IF NOT EXISTS cap_process;
+
+-- 1. Command idempotency receipts (S03)
+CREATE TABLE IF NOT EXISTS cap_process.command_receipts (
+    actor_id UUID NOT NULL REFERENCES core.users(id),
+    app_id TEXT NOT NULL REFERENCES core.apps(app_id),
     entity_id UUID NOT NULL,
     command TEXT NOT NULL CHECK (length(trim(command)) > 0),
     idempotency_key TEXT NOT NULL CHECK (length(trim(idempotency_key)) > 0),
@@ -28,24 +30,22 @@ CREATE TABLE IF NOT EXISTS core.command_receipts (
     response_status INTEGER NOT NULL,
     response_body JSONB NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (workspace_id, actor_id, app_id, entity_id, command, idempotency_key)
+    PRIMARY KEY (actor_id, app_id, entity_id, command, idempotency_key)
 );
 
--- 2. Workflow Step Idempotency Tracking (S03)
-CREATE TABLE IF NOT EXISTS core.processed_workflow_steps (
-    event_id UUID NOT NULL,
+-- 2. Workflow step idempotency (S03). result holds what the step produced,
+-- such as the id of a work item it created.
+CREATE TABLE IF NOT EXISTS cap_process.processed_workflow_steps (
+    event_id UUID NOT NULL REFERENCES core.outbox_events(id),
     step_name TEXT NOT NULL CHECK (length(trim(step_name)) > 0),
-    workspace_id UUID NOT NULL,
-    work_item_id UUID NOT NULL,
+    app_id TEXT NOT NULL REFERENCES core.apps(app_id),
     result JSONB NOT NULL,
     outcome TEXT NOT NULL CHECK (length(trim(outcome)) > 0),
     processed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (event_id, step_name),
-    FOREIGN KEY (workspace_id, event_id) REFERENCES core.outbox_events(workspace_id, id),
-    FOREIGN KEY (workspace_id, work_item_id) REFERENCES core.work_items(workspace_id, id)
+    PRIMARY KEY (event_id, step_name)
 );
 
--- 3. Register cap-process in capability registry
-INSERT INTO core.capability_registry (cap_id, display_name, category_hpdi, base_route, enabled)
+-- 3. Register cap-process
+INSERT INTO core.capabilities (cap_id, display_name, category_hpdi, base_route, enabled)
 VALUES ('cap-process', 'Process Orchestration & OCC Transitions', 'P', '/api/cap/process', true)
 ON CONFLICT (cap_id) DO UPDATE SET enabled = true, updated_at = now();
