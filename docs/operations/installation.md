@@ -45,3 +45,39 @@ registry discovery and beta automatic-workflow readiness remain open.
    DATABASE_URL=postgres://dxos_admin:dxos_secret@localhost:5432/dxos_db?sslmode=disable \
    ./bin/dxos-operator apply contracts/fixtures/procurement.yaml
    ```
+
+## Kubernetes Operator (development cluster)
+
+The operator also runs as a Kubernetes controller for the cluster-scoped
+`DXApplication` resource ([ADR 0004](../adr/0004-kubernetes-crd-operator.md)).
+The CLI above keeps working without a cluster.
+
+1. Create a disposable kind cluster with PostgreSQL, Hasura and the operator:
+   ```bash
+   GOBIN=$PWD/operator/bin go install sigs.k8s.io/kind@v0.33.0
+   make -C operator kustomize
+   scripts/k8s/dev-cluster.sh up
+   ```
+   Credentials are generated into Secrets (`dxos-platform-credentials`,
+   `dxos-operator-config`); data lives in an `emptyDir` and is lost with the pod.
+2. Publish an application package as a resource and wait until it is ready:
+   ```bash
+   go -C operator run ./cmd/dxos-operator export-crd \
+     -workspace 11111111-1111-4111-8111-111111111111 ../apps/procurement \
+     | kubectl --context kind-dxos-dev apply -f -
+   kubectl --context kind-dxos-dev wait dxapplication/procurement --for=condition=Ready
+   kubectl --context kind-dxos-dev get dxapplications
+   ```
+   The workspace row must exist in `core.workspaces`; `scripts/k8s/dev-cluster.sh demo`
+   seeds it, applies the package and demonstrates drift repair.
+3. Status conditions: `Valid`, `SchemaInSync`, `PermissionsInSync`, `Published`,
+   `Ready`, plus `status.workspaces`. A blocked schema change keeps the previous
+   version serving. Deleting the resource revokes its grants and registry rows but
+   keeps the domain table and data.
+4. Remove the cluster with `scripts/k8s/dev-cluster.sh down`.
+
+For another cluster, create the `dxos-operator-config` Secret (keys `DATABASE_URL`,
+`HASURA_URL`, `HASURA_ADMIN_SECRET`) in `dxos-operator-system`, then run
+`make -C operator docker-build deploy IMG=<registry>/dxos-operator:<tag>`. The
+operator needs an operator-privileged database connection; never reuse runtime
+service credentials.

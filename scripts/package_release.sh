@@ -35,6 +35,7 @@ tar -C "${REPO_ROOT}" \
     --exclude="docs/superpowers" \
     --exclude="dist" \
     --exclude="build" \
+    --exclude="bin" \
     --exclude="coverage" \
     --exclude="node_modules" \
     --exclude="vendor" \

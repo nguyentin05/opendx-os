@@ -71,7 +71,7 @@ func TestApplyRestoresMetadataSnapshotOnFailure(t *testing.T) {
 	runner := NewRunner(nil, Config{HasuraURL: srv.URL, HasuraAdminSecret: "test-secret"}, srv.Client())
 	plan := loadTestPlan(t)
 
-	err := runner.Run(context.Background(), "11111111-1111-4111-8111-111111111111", plan)
+	err := runner.Run(context.Background(), plan, PublishTo("11111111-1111-4111-8111-111111111111", plan))
 	if err == nil {
 		t.Fatal("expected error when metadata operation fails")
 	}

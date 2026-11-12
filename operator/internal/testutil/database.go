@@ -86,6 +86,7 @@ func NewDatabase(t *testing.T) *sql.DB {
 		filepath.Join(repoRoot, "platform", "postgres", "init", "02_capability_registry.sql"),
 		filepath.Join(repoRoot, "platform", "postgres", "init", "03_app_registry.sql"),
 		filepath.Join(repoRoot, "platform", "postgres", "init", "05_operator_deployments.sql"),
+		filepath.Join(repoRoot, "platform", "postgres", "init", "07_app_definitions.sql"),
 		filepath.Join(repoRoot, "platform", "postgres", "capabilities", "cap_process.sql"),
 	}
 	for _, f := range initFiles {

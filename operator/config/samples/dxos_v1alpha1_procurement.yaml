@@ -1,0 +1,283 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+apiVersion: dxos.io/v1alpha1
+kind: DXApplication
+metadata:
+  name: procurement
+spec:
+  attachments:
+  - column: quote_file_id
+    requireCleanOnCommands:
+    - submit
+    - approve
+  capabilities:
+  - cap-process
+  displayName: Material Procurement
+  domainAccess:
+    insert:
+    - columns:
+      - work_item_id
+      - vendor_name
+      - item_description
+      - quoted_amount
+      - quote_file_id
+      presets:
+        requester_id: X-Hasura-User-Id
+        workspace_id: X-Hasura-Workspace-Id
+      recordFilter:
+        workspace_id:
+          _eq: X-Hasura-Workspace-Id
+      role: role_procurement
+    select:
+    - columns:
+      - id
+      - workspace_id
+      - work_item_id
+      - requester_id
+      - vendor_name
+      - item_description
+      - quoted_amount
+      - quote_file_id
+      - rejection_reason
+      - status
+      - version
+      - updated_at
+      recordFilter:
+        workspace_id:
+          _eq: X-Hasura-Workspace-Id
+      role: role_procurement
+    - columns:
+      - id
+      - workspace_id
+      - work_item_id
+      - requester_id
+      - vendor_name
+      - item_description
+      - quoted_amount
+      - quote_file_id
+      - rejection_reason
+      - status
+      - version
+      - updated_at
+      recordFilter:
+        workspace_id:
+          _eq: X-Hasura-Workspace-Id
+      role: role_manager_procurement
+    update:
+    - columns:
+      - vendor_name
+      - item_description
+      - quoted_amount
+      - quote_file_id
+      recordFilter:
+        workspace_id:
+          _eq: X-Hasura-Workspace-Id
+      role: role_procurement
+  domainTable:
+    columns:
+    - name: requester_id
+      nullable: false
+      type: uuid
+    - check: length(trim(vendor_name)) > 0
+      name: vendor_name
+      nullable: false
+      type: text
+    - check: length(trim(item_description)) > 0
+      name: item_description
+      nullable: false
+      type: text
+    - check: quoted_amount > 0
+      name: quoted_amount
+      nullable: false
+      type: numeric(14,2)
+    - name: quote_file_id
+      nullable: true
+      type: uuid
+    - name: rejection_reason
+      nullable: true
+      type: text
+    compositeForeignKeys:
+    - columns:
+      - workspace_id
+      - work_item_id
+      referencesColumns:
+      - workspace_id
+      - id
+      referencesTable: core.work_items
+    - columns:
+      - workspace_id
+      - requester_id
+      referencesColumns:
+      - workspace_id
+      - id
+      referencesTable: core.employees
+    - columns:
+      - workspace_id
+      - quote_file_id
+      referencesColumns:
+      - workspace_id
+      - id
+      referencesTable: core.file_objects
+    name: domain.procurement_requests
+  role: role_procurement
+  sharedAccess:
+  - columns:
+    - id
+    - workspace_id
+    - full_name
+    - email
+    - department
+    roles:
+    - role_procurement
+    - role_manager_procurement
+    table: core.employees
+  - columns:
+    - id
+    - workspace_id
+    - title
+    - description
+    - priority
+    - created_at
+    roles:
+    - role_procurement
+    - role_manager_procurement
+    table: core.work_items
+  - columns:
+    - id
+    - workspace_id
+    - file_name
+    - scan_status
+    - sha256_hash
+    - scanned_at
+    roles:
+    - role_procurement
+    - role_manager_procurement
+    table: core.file_objects
+  stateMachine:
+    commands:
+    - allowedRoles:
+      - role_procurement
+      from:
+      - DRAFT
+      name: submit
+      to: SUBMITTED
+    - allowedRoles:
+      - role_manager_procurement
+      from:
+      - SUBMITTED
+      name: approve
+      recordFilter:
+        requester_id:
+          _neq: X-Hasura-User-Id
+      to: APPROVED
+    - allowedRoles:
+      - role_manager_procurement
+      from:
+      - SUBMITTED
+      name: reject
+      to: REJECTED
+    - allowedRoles:
+      - role_procurement
+      - role_manager_procurement
+      from:
+      - DRAFT
+      - SUBMITTED
+      name: cancel
+      to: CANCELLED
+    editableStates:
+    - DRAFT
+    initial: DRAFT
+    terminalStates:
+    - APPROVED
+    - REJECTED
+    - CANCELLED
+  uiSchema:
+    actions:
+    - submit
+    - approve
+    - reject
+    - cancel
+    formFields:
+    - label: Work Item
+      name: work_item_id
+      required: true
+      type: uuid
+    - label: Vendor Name
+      name: vendor_name
+      required: true
+      type: text
+    - label: Item Description
+      name: item_description
+      required: true
+      type: text
+    - label: Quoted Amount
+      name: quoted_amount
+      required: true
+      type: number
+    - label: Supplier Quote File
+      name: quote_file_id
+      required: false
+      type: file
+    listColumns:
+    - vendor_name
+    - item_description
+    - quoted_amount
+    - quote_file_id
+    - status
+    - version
+    - updated_at
+  version: 0.1.0
+  workflows:
+  - definition: |
+      # SPDX-License-Identifier: Apache-2.0
+      # Copyright 2026 DX-OS Open-Core Contributors
+      # Import and verify against the deployed Kestra plugin version before enabling.
+      id: procurement_approval_flow
+      namespace: dxos.apps.procurement
+      triggers:
+        - id: command_webhook
+          type: io.kestra.plugin.core.trigger.Webhook
+          key: "{{ secret('DXOS_WEBHOOK_KEY') }}"
+      tasks:
+        - id: submit_only
+          type: io.kestra.plugin.core.flow.If
+          condition: "{{ trigger.body.app_id == 'procurement' and trigger.body.payload.command == 'submit' }}"
+          then:
+            - id: create_review
+              type: io.kestra.plugin.core.http.Request
+              uri: "{{ secret('DXOS_PROCESS_URL') }}/api/cap/process/effects/work-item"
+              method: POST
+              contentType: application/json
+              headers:
+                Authorization: "Bearer {{ secret('DXOS_WORKFLOW_TOKEN') }}"
+                X-Hasura-Role: role_workflow
+                Idempotency-Key: "{{ trigger.body.event_id }}:create_review"
+              body: |
+                {"event_id":"{{ trigger.body.event_id }}","step_name":"create_review"}
+    effects:
+    - fields:
+        description: Review the submitted request in its source application.
+        priority: MEDIUM
+        title: Review procurement request
+      kind: create_work_item
+      stepName: create_review
+      whenCommands:
+      - submit
+    file: workflows/procurement_flow.yaml
+    id: procurement_approval_flow
+    subscribedEvents:
+    - command.committed
+  workspaces:
+  - 11111111-1111-4111-8111-111111111111
