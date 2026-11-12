@@ -5,6 +5,7 @@
 
 # Private local planning
 /docs/superpowers/
+.scratch/
 
 # Build & release artifacts
 bin/
