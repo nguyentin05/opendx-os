@@ -122,7 +122,14 @@ func GenerateDDL(app *manifest.DXApplication) (string, error) {
 	// callers; Hasura enforces the manifest field and row permissions.
 	fmt.Fprintf(&sb, "GRANT SELECT, INSERT, UPDATE ON %s TO dxos_hasura, dxos_process;\n", table)
 	fmt.Fprintf(&sb, "GRANT SELECT ON %s TO dxos_reader;\n", table)
+	// Hasura reads the shared tables the app uses; capability schemas are not
+	// otherwise open to it, so it needs USAGE on each schema too.
+	schemas := map[string]bool{}
 	for _, shared := range SharedTablesRead(app) {
+		if schema := ParseTableRef(shared).Schema; !schemas[schema] {
+			schemas[schema] = true
+			fmt.Fprintf(&sb, "GRANT USAGE ON SCHEMA %s TO dxos_hasura;\n", quoteIdent(schema))
+		}
 		fmt.Fprintf(&sb, "GRANT SELECT ON %s TO dxos_hasura;\n", quoteTable(shared))
 	}
 	return sb.String(), nil

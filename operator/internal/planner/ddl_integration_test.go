@@ -194,3 +194,17 @@ func TestDDLIntegrationIsIdempotentAndScopesByCapability(t *testing.T) {
 		t.Fatalf("insert into an application without cap-hr: %v", err)
 	}
 }
+
+// Hasura evaluates a department scope by joining cap_hr.staff, so the DDL of a
+// department-scoped app must let dxos_hasura reach that schema and table.
+func TestDDLIntegrationLetsHasuraReadDepartmentTables(t *testing.T) {
+	db := testutil.NewDatabase(t)
+	installDomainTable(t, db, loadFixtureApp(t))
+	err := inTx(t, db, "dxos_hasura", nobody, "", func(tx *sql.Tx) error {
+		_, err := tx.Exec(`SELECT 1 FROM cap_hr.staff s JOIN cap_hr.org_units o ON o.id = s.org_unit_id LIMIT 1`)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("dxos_hasura must read the department tables: %v", err)
+	}
+}

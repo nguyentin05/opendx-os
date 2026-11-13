@@ -112,7 +112,8 @@ func NewDatabase(t *testing.T) *sql.DB {
 }
 
 const runtimeGrants = `
-GRANT USAGE ON SCHEMA core, domain, cap_hr, cap_work, cap_process, cap_data TO dxos_process, dxos_hasura, dxos_reader;
+GRANT USAGE ON SCHEMA core, domain TO dxos_process, dxos_hasura, dxos_reader;
+GRANT USAGE ON SCHEMA cap_hr, cap_work, cap_process, cap_data TO dxos_process, dxos_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA core, cap_hr, cap_work, cap_process, cap_data TO dxos_process, dxos_reader;
 GRANT INSERT, UPDATE ON ALL TABLES IN SCHEMA cap_work, cap_process TO dxos_process;
 GRANT INSERT, UPDATE ON core.outbox_events TO dxos_process;
