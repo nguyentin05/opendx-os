@@ -61,3 +61,25 @@ The shared data contract now states the one-organization kernel/capability owner
 ## RAG P1 scope correction
 
 The user approved RAG-local auth/source isolation, with platform-wide Hasura/CRUD/subscription conversion deferred. See [platform follow-up](platform-db-authorization-followup.md). P1-A foundation and P1-B source isolation are separate deliverables; do not treat membership primitives or unavailable legacy routes as a completed file lifecycle or a shipped personal library.
+
+## P1-A implementation handoff — 2026-11-13
+
+P1-A now adds subject-only verification alongside the unchanged legacy role/workspace contract, a cap-ai-local current-DB membership resolver and testable HTTP wiring. Legacy `/rag` is unavailable without filesystem lookup; `/extract` is authenticated but unavailable while real extraction/source policy is absent. No successful RAG/OCR feature is claimed. Startup requires explicit DB/OIDC configuration, bounds its DB ping to three seconds, and no longer uses a fallback DSN.
+
+Validation: capabilities unit suite passed; PostgreSQL 17 membership lifecycle/outage/bounded-query integration passed. Race/static/final-review results are recorded in the execution evidence below after completion. The DB fixture uses only disposable identity/role tables and does not prove production runtime grants. No DDL, Hasura conversion, source-store access, migration, provider call or deployment was performed.
+
+### P1-B entry and release gates
+
+P1-B must align the original File Service/scanner and narrow registry adapters from core.file_objects/workspace to core.files/app under ADR 0005, with explicit current app authorization and generic owner/source policy. Preserve immutable file identity, owner/hash/scan metadata and bound upload/scan processing; no broad compatibility aliases, app-name branches or privilege escalation. Scope app/record READ as well as owner-only personal access.
+
+Inventory and test alternate routes before release: process File API originals, direct Hasura selects/relationships/views/functions, object/storage credentials or URLs, and later derived asset/citation routes. A personal source must be unreadable by B/admin via every available route. Where an alternate path is not ready, narrowly revoke/disable it or block release; do not expand this increment into whole-platform subscription migration. Real ClamAV/storage, least-privilege production roles and these direct-source denials are NOT_RUN in P1-A. P2/P3 document lifecycle and P5 parsing/retrieval remain future work.
+
+### P1-A verification evidence
+
+Code commits: 4d7b31d (subject), 42cdf8f (membership), f892a7d (HTTP boundary). Checks run from capabilities/: `go test ./... -count=1` PASS; `go test -race ./internal/auth ./internal/ai/access ./cmd/cap-ai -count=1` PASS; `go test -race -tags=integration ./internal/ai/access -count=1 -v` PASS with a disposable PostgreSQL 17 container and isolated test databases. Integration cases cover current grant/revoke, disabled/unknown user, expired/cancelled subject, no cached allow after DB close and a bounded query blocked by a table lock.
+
+Root hygiene in the user's checkout still reports four pre-existing `.scratch` input-header errors. A clean detached verification worktree at f892a7d has no such inputs: `make check-hygiene` PASS. This distinction preserves the original inputs rather than silently excluding failing checks. Static suite result and independent review are appended below after final completion.
+
+Final clean-worktree static verification: `python3 -m unittest discover -s tests -v` PASS, 40/40 at f892a7d. Fresh independent review found no Critical/Important issues. Evidence documentation is now populated; one nonblocking regression-test gap is deferred: cancellation/expiry during membership resolution is guarded in production code but lacks a dedicated mid-resolution test (already-cancelled/expired cases are covered).
+
+Reviewer exclusions remain explicit: deployed gateway containment, production primary routing/grants, original File/Hasura/object isolation and real OCR/RAG were not qualified. The reviewer inspected code and supplied evidence; executed test results above come from this implementation session, not independent reviewer reproduction. P1-A is complete as an authentication/unavailability foundation; full P1 and private-library release remain blocked on P1-B/source qualification. No push, PR or deployment was performed for P1-A.
