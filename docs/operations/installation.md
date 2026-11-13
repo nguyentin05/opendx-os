@@ -59,8 +59,11 @@ registry discovery and beta automatic-workflow readiness remain open.
    For a demo organization, run `scripts/seed-demo.py seed`. It creates three
    departments and six Keycloak accounts (password `DEMO_PASSWORD`, default
    `Demo@2026`) with procurement, maintenance and timesheet roles, and is safe to
-   re-run. `scripts/seed-demo.py scopes` then files sample purchase requests and
-   prints what each person sees through the gateway. Use it on local stacks only.
+   re-run. `scripts/seed-demo.py scopes` then files sample purchase requests (each
+   with a quote uploaded to cap-process and scanned by ClamAV) and prints what each
+   person sees through the gateway; `scripts/seed-demo.py flow` takes one request
+   through submit, department approval and budget approval with cap-process
+   commands, including the refusals on the way. Use them on local stacks only.
 
 4. The `operator` service installs exactly the application packages in
    `OPERATOR_APPS_DIR` (default `./apps`, mounted read-only), checking every

@@ -17,6 +17,7 @@ package planner
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -183,5 +184,31 @@ func TestDDLGrantsDeclaredDomainToRestrictedRuntimeRoles(t *testing.T) {
 		if !strings.Contains(ddl, grant) {
 			t.Errorf("missing restricted runtime grant: %s", grant)
 		}
+	}
+}
+
+// contracts/fixtures/procurement-ddl.sql is the DDL capability tests install;
+// it must stay what the operator generates.
+func TestProcurementDDLFixtureIsCurrent(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "fixtures", "procurement-ddl.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body []string
+	header := true
+	for _, line := range strings.SplitAfter(string(raw), "\n") {
+		if header && strings.HasPrefix(line, "-- ") && !strings.HasPrefix(line, "-- Auto-generated") {
+			continue
+		}
+		header = false
+		body = append(body, line)
+	}
+	app := loadApp(t, "procurement")
+	want, err := GenerateDDL(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(body, "") != want+"\n" && strings.Join(body, "") != want {
+		t.Fatal("contracts/fixtures/procurement-ddl.sql is stale; regenerate it with:\n  go -C operator run ./cmd/dxos-operator plan -format sql ../apps/procurement/manifest.yaml")
 	}
 }

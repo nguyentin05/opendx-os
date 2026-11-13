@@ -1,105 +1,87 @@
-# Proposed C0 backend contracts
+# Backend contracts
 
-Status: **PROPOSED handoff**, pending B review and joint consumer approval. These
-artifacts do not mark C0/G3 frozen, validate the existing Operator, or prove real
-identity, SQL, Hasura, Kestra, storage, scanner or S01–S08 behavior. Existing apps
-and runtime scaffolds are not migrated by this handoff. UI implementation is deferred.
+Machine-readable contracts between the operator, the capability services, the
+UI and workflows. The rationale is in [data contracts](../docs/contracts/data-contracts.md);
+identity and authorization follow
+[ADR 0007](../docs/adr/0007-keycloak-authenticates-platform-authorizes.md).
 
-The rationale remains in [data contracts](../docs/contracts/data-contracts.md).
-`runtime-v1.openapi.yaml` defines the process HTTP boundary;
-`events-v1.schema.json` defines the process event envelope;
-`manifest-v1.schema.json` is the structural schema of the application manifest,
-derived from the `DXApplication` CRD; the operator's validator enforces the
-semantic rules ([data contracts, section 7](../docs/contracts/data-contracts.md#7-dxapplication-manifest-contract)).
-`fixtures/procurement.yaml` equals `apps/procurement/manifest.yaml`, and
-`fixtures/app-ready.json` is its `core.apps` row (status `Ready`).
-`fixtures/registry-ready.json` is the previous per-workspace registry snapshot,
-kept only until cap-process moves to `core.apps` (issue #29); the semantic rules
-below that mention workspaces describe that previous shape.
+| File | Defines |
+| --- | --- |
+| `runtime-v1.openapi.yaml` | cap-process HTTP boundary: commands, workflow effects, file upload and download |
+| `events-v1.schema.json` | the `command.committed` event envelope |
+| `manifest-v1.schema.json` | structural schema of the application manifest, derived from the `DXApplication` CRD; the operator's validator enforces the semantic rules ([data contracts, section 7](../docs/contracts/data-contracts.md#7-dxapplication-manifest-contract)) |
+| `fixtures/procurement.yaml` | equals `apps/procurement/manifest.yaml` |
+| `fixtures/app-ready.json` | its `core.apps` row (status `Ready`), as cap-process reads it |
+| `fixtures/procurement-ddl.sql` | its domain-table DDL as the operator generates it; capability integration tests install it, and an operator test fails when it is stale |
 
-## Mandatory semantic validation before side effects
+## Runtime rules the services enforce
 
-JSON Schema supplies structural constraints; it cannot establish declared-column
-references, type-compatible comparisons, role grants or workspace integrity. B's
-validator and A's strict runtime decoder must enforce the following before use:
+The operator validates the whole manifest before an application becomes
+`Ready`. cap-process loads only `Ready` applications whose capabilities are all
+enabled, and re-checks what reaches SQL or decides access, failing closed on a
+corrupted row:
 
-- Reject unknown fields/operators/features, including `semanticType`, old
-  `initialState`/`transitions`, arbitrary SQL and undeclared capability semantics.
-  Identifiers follow `[a-z][a-z0-9_]*`; domain names have exactly `domain.` prefix.
-  No interpolation of unvalidated identifiers or expression strings into SQL.
-- System columns are id/workspace_id/work_item_id/status/version/updated_at;
-  domain declarations cannot redefine them. Status/version/identity/timestamps
-  are never client insert/update fields. `work_item_id` may be an explicit insert
-  field with a same-workspace FK. Preset columns cannot also be writable columns.
-  Procurement requester_id is preset from signed user identity and immutable.
-- Every referenced column, UI field, attachment, role and command must exist.
-  Reject duplicate names; validate initial/from/to/editable/terminal state
-  consistency. UI creates no permission; file fields require explicit attachment
-  declarations. Command payload is empty in this core proposal; no undeclared
-  arbitrary business-field mutation is implied.
-- `recordFilter` has only `_and`, `_or`, and declared scalar columns compared by
-  `_eq`/`_neq`. A filter object conjoins its entries; `_and`/`_or` contain nonempty
-  filter arrays. Values are type-compatible literals or exactly
-  `X-Hasura-User-Id` / `X-Hasura-Workspace-Id` session values. No relationship
-  traversal, `_not`, raw SQL, column-to-column expressions or unknown session
-  names. Null `_eq` means IS NULL, null `_neq` means IS NOT NULL; ordinary SQL NULL
-  comparisons do not match. Both compiler and runtime evaluator reject unsupported
-  forms rather than ignoring them. Always conjoin signed workspace isolation.
-- Supported CHECK strings are only the three anchored forms in the schema:
-  `length(trim(column)) > 0`, `column > 0`, or
-  `column > 0 AND column <= 24`. Both references in the last form must be the
-  same declared numeric column; text checks require a text column. No general SQL.
-- Composite FKs have exactly `[workspace_id, foreign_column]` referencing
-  `[workspace_id, id]` on declared supported shared tables; nullable foreign IDs
-  do not make workspace nullable. Require these FKs for work_item_id, requester_id
-  and quote_file_id. Shared access columns must exist and be explicitly readable
-  for each listed role; this grants no writes or implicit relationships.
-- Workflows subscribe only to command.committed in core; effects use declared
-  commands, unique step names and literal title/description/priority. Optional
-  assignedEmployeeId is a UUID resolved in the event's workspace, never a
-  caller-provided assignment. A declared effect cannot exceed the service grant.
+- the domain table is `domain.<identifier>`; columns are identifiers with a
+  supported type and never redefine system columns (`id`, `created_by`,
+  `org_unit_id` with cap-hr, `status`, `version`, `created_at`, `updated_at`);
+- every access rule and command names a declared role; a scope is `own`,
+  `department` (requires cap-hr) or `organization`;
+- `recordFilter` uses only `_and`, `_or` and declared columns compared by
+  `_eq`/`_neq` with a type-compatible literal, null, or `X-Hasura-User-Id`.
+  Null `_eq` means IS NULL, null `_neq` means IS NOT NULL; ordinary SQL NULL
+  comparisons do not match;
+- attachments are `uuid` columns with a foreign key to `core.files`; workflow
+  effects are `create_work_item` steps on declared commands.
 
-## Identity and protocol notes
+## Identity, roles and commands
 
-`identity-claims.json` is decoded illustrative claim data, **not a signed token**.
-Its dates are fixed test data. A1 must create signed fixtures and test issuer,
-audience, expiry, signature and required claims; do not accept this JSON as
-credentials. Require UUID signed user/workspace IDs and nonempty allowed roles;
-default and selected roles belong to that set. In this core fixture `sub` equals
-the signed user ID; different mappings need explicit acceptance. B seeds employee
-IDs consistently; no automatic employee onboarding is provided. `X-Hasura-Role`
-selects an already signed grant; raw workspace/user headers never create authority.
-Workflow effect calls additionally require the configured service identity.
+`fixtures/identity-claims.json` shows the decoded claims of a Keycloak access
+token. It is not a signed token. Tokens carry identity only (`sub`, email,
+name, audience `dxos-runtime`). The caller names the role they act as in
+`X-Hasura-Role`; it is accepted only when `core.user_roles` grants it now, and a
+caller holding exactly one role may omit it. Raw `X-Hasura-User-Id` headers
+never create authority. Workflow effect calls additionally require the
+configured workflow service user acting as its role.
 
-Command receipt identity includes workspace/actor/app/entity/command/key. The
-fingerprint is SHA-256 of canonical JSON `{entity_id,expected_version,payload}`
-(object keys sorted recursively; UUID canonical lowercase; integer version).
-Scope already includes route app/command. Current authorization is checked before
-returning a stored result. Same request/key returns the stored body; different
-fingerprint returns 409. Reusing the original request preserves retry semantics.
-`command-request.json` and `command-committed.json` are request/body examples;
-use an `Idempotency-Key` header with both attempts. Errors always use the OpenAPI
-envelope; avoid leaking out-of-scope state, versions or file status.
+A command is accepted when:
 
-`event-retry.json` intentionally equals `event-command-committed.json`: transport
-retries preserve ID and payload. DB `outbox_events.id` maps to wire `event_id`.
-The event is persisted with the command transaction. Delivery does not grant
-permission; effects resolve source from the persisted event and current deployed
-step mapping, not from a caller-supplied body. Workflow source association is
-stored in the processed-step row described in the [SQL handoff](../docs/handoff/backend-sql-handoff.md).
+1. the acting role is allowed by the command;
+2. the record is readable by that role, under its scope (own records, the
+   caller's department from `cap_hr.staff`, or the whole organization) and its
+   record filter;
+3. the record satisfies the command's record filter (for example, no one
+   approves their own request);
+4. version and state match;
+5. every attachment the command requires is `CLEAN`.
+
+A record outside the role's scope answers 404, so its existence is not revealed.
+
+The status change, its audit row (actor, acting role and command), the outbox
+event and the idempotency receipt commit in one transaction. A receipt is
+identified by actor, app, entity, command and `Idempotency-Key`. Its fingerprint
+is the SHA-256 of canonical JSON `{entity_id, expected_version, payload}`. A
+retry with the same key and request returns the stored response after
+re-checking current access; a different request with the same key is a 409.
+`command-request.json` and `command-committed.json` are request and response
+examples.
+
+`event-retry.json` equals `event-command-committed.json`: transport retries
+preserve the event id and payload. The database `outbox_events.id` is the wire
+`event_id`. Delivery grants no permission; a workflow effect resolves its source
+from the persisted event and the application's declared steps, never from the
+caller's body. Each step runs at most once per event
+(`cap_process.processed_workflow_steps`).
 
 ## Fixtures and checks
 
-`fixtures/negative-cases.json` records design inputs and expected future rejection;
-these are not executed runtime PASS claims. Contract tests verify sample agreement
-and API field ownership, without adding dependencies or claiming full JSON Schema
-validation. Run `python3 -m unittest discover -s tests -p test_machine_contracts.py -v`.
-Parse JSON with `python3 -m json.tool FILE` and YAML with installed PyYAML.
-A standards-compliant JSON Schema/OpenAPI validator remains a B handoff prerequisite;
-none is installed in the current Python environment. Schema shape alone does not
-validate a manifest's semantic safety.
+`fixtures/negative-cases.json` lists cases that must be refused. Those marked
+`TESTED` are covered by the cap-process integration tests; the others record
+design inputs. Contract tests check that the samples agree:
+`python3 -m unittest discover -s tests -p test_machine_contracts.py -v`. Schema
+shape alone does not establish a manifest's semantic safety.
 
-Runtime private configuration: DATABASE_URL, OIDC_ISSUER_URL, OIDC_JWKS_URL,
-OIDC_AUDIENCE, KESTRA_URL, S3_ENDPOINT, S3_BUCKET, CLAMAV_ADDRESS. Real DB tests
-require TEST_DATABASE_URL and integration build tags. UI receives only public
-issuer/client/callback and gateway configuration. Never expose service credentials.
+Runtime configuration: `DATABASE_URL`, `OIDC_ISSUER_URL`, `OIDC_JWKS_URL`,
+`OIDC_AUDIENCE`, `ROLE_CACHE_TTL`, `KESTRA_URL`, `S3_ENDPOINT`, `S3_BUCKET`,
+`CLAMAV_ADDRESS`. Database tests require `TEST_DATABASE_URL` and the
+`integration` build tag. The UI receives only the public issuer, client,
+callback and gateway configuration; service credentials are never exposed.

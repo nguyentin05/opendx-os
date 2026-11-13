@@ -19,14 +19,19 @@
     scripts/seed-demo.py seed     accounts, departments and roles (re-runnable)
     scripts/seed-demo.py scopes   sample purchase requests, then what each
                                   person sees through the gateway
+    scripts/seed-demo.py flow     one request through the whole approval chain,
+                                  including the refusals along the way
 
 `seed` creates the Keycloak accounts below (password DEMO_PASSWORD), mirrors
 them into core.users, places them in departments (cap_hr) and grants roles
 (core.user_roles), as an administrator would (ADR 0007). Run it after the
 operator has installed the sample applications.
 
-`scopes` signs in through a temporary Keycloak client that allows scripted
-logins (the shipped client allows only the browser flow) and removes it after.
+`scopes` and `flow` sign in through a temporary Keycloak client that allows
+scripted logins (the shipped client allows only the browser flow) and remove it
+after. Everything else goes through the gateway as the UI would: quotes are
+uploaded to cap-process and scanned by ClamAV, requests are filed through
+GraphQL, and state changes are cap-process commands.
 
 For local demos only: never point it at a stack holding real data.
 """
@@ -34,13 +39,13 @@ For local demos only: never point it at a stack holding real data.
 from __future__ import annotations
 
 import argparse
-import base64
 import json
 import os
 import pathlib
 import subprocess
 import sys
 import time
+import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -260,9 +265,57 @@ def graphql(token: str, role: str, query: str, variables=None):
     return body["data"], None
 
 
-def subject(token: str) -> str:
-    payload = token.split(".")[1]
-    return json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))["sub"]
+
+REQUESTER = "role_procurement_requester"
+REQUEST_FIELDS = "id item_description status version"
+
+
+def upload_quote(token: str, name: str) -> str:
+    """Uploads a quote through cap-process and waits until ClamAV marks it CLEAN."""
+    boundary = uuid.uuid4().hex
+    pdf = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
+    body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"app_id\"\r\n\r\nprocurement\r\n"
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{name}\"\r\n"
+            "Content-Type: application/pdf\r\n\r\n").encode() + pdf + f"\r\n--{boundary}--\r\n".encode()
+    req = urllib.request.Request(f"{GATEWAY}/api/cap/process/files/upload", data=body, method="POST", headers={
+        "Authorization": "Bearer " + token, "X-Hasura-Role": REQUESTER,
+        "Content-Type": "multipart/form-data; boundary=" + boundary})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            file_id = json.loads(resp.read())["file_id"]
+    except urllib.error.HTTPError as err:
+        sys.exit(f"upload failed: {err.code} {err.read().decode(errors='replace')}")
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        data, err = graphql(token, REQUESTER, "query($id: uuid!) { core_files(where: {id: {_eq: $id}}) { scan_status } }", {"id": file_id})
+        status = (data or {}).get("core_files", [{}])[0].get("scan_status") if data and data["core_files"] else None
+        if status == "CLEAN":
+            return file_id
+        if status == "INFECTED":
+            sys.exit("the sample quote was flagged as infected")
+        time.sleep(1)
+    sys.exit("the quote was not scanned within a minute; see: docker compose logs cap-process clamav")
+
+
+def file_request(token: str, vendor: str, item: str, amount: int) -> dict:
+    quote = upload_quote(token, "bao-gia.pdf")
+    data, err = graphql(token, REQUESTER,
+                        "mutation($o: domain_procurement_requests_insert_input!) "
+                        f"{{ insert_domain_procurement_requests_one(object: $o) {{ {REQUEST_FIELDS} }} }}",
+                        {"o": {"vendor_name": vendor, "item_description": item, "quoted_amount": amount, "quote_file_id": quote}})
+    if err:
+        sys.exit(f"filing a request: {err}")
+    return data["insert_domain_procurement_requests_one"]
+
+
+def command(token: str, role: str, name: str, record: dict):
+    """Runs a cap-process command; returns (HTTP status, new record state)."""
+    status, body = http(f"{GATEWAY}/api/cap/process/commands/procurement/{name}",
+                        {"entity_id": record["id"], "expected_version": record["version"], "payload": {}},
+                        token, headers={"X-Hasura-Role": role, "Idempotency-Key": str(uuid.uuid4())})
+    if status == 200:
+        record = dict(record, status=body["status"], version=body["version"])
+    return status, record
 
 
 def scopes() -> None:
@@ -270,41 +323,26 @@ def scopes() -> None:
         tokens = {p[0]: sign_in(p[0]) for p in PEOPLE if p[0] != "quan.tri"}
         list_query = "{ domain_procurement_requests(order_by: {created_at: asc}) { item_description status } }"
 
-        # Each requester files their requests once, through the gateway.
+        # Each requester files their requests once, with a scanned quote, and
+        # submits the ones marked so through cap-process.
         for username in sorted({r[0] for r in REQUESTS}):
-            data, err = graphql(tokens[username], "role_procurement_requester", list_query)
+            data, err = graphql(tokens[username], REQUESTER, list_query)
             if err:
                 sys.exit(f"{username}: {err}")
             if data["domain_procurement_requests"]:
                 continue
-            for _, vendor, item, amount, _ in (r for r in REQUESTS if r[0] == username):
-                _, err = graphql(tokens[username], "role_procurement_requester",
-                                 "mutation($o: domain_procurement_requests_insert_input!) "
-                                 "{ insert_domain_procurement_requests_one(object: $o) { id } }",
-                                 {"o": {"vendor_name": vendor, "item_description": item, "quoted_amount": amount}})
-                if err:
-                    sys.exit(f"{username} files a request: {err}")
-
-        # Submitting is a cap-process command. Until cap-process runs on this
-        # schema (issue #29) the transition is made the way cap-process
-        # makes it: a trusted dxos_process session naming actor and action.
-        for username, _, item, _, submitted in REQUESTS:
-            if not submitted:
-                continue
-            actor = lit(subject(tokens[username]))
-            psql(f"""BEGIN;
-SET LOCAL SESSION AUTHORIZATION dxos_process;
-SELECT set_config('dxos.actor_id', {actor}, true), set_config('dxos.role', 'role_procurement_requester', true),
-       set_config('dxos.action', 'submit', true);
-UPDATE domain.procurement_requests SET status = 'SUBMITTED'
- WHERE created_by = {actor} AND item_description = {lit(item)} AND status = 'DRAFT';
-COMMIT;""")
+            for _, vendor, item, amount, submit in (r for r in REQUESTS if r[0] == username):
+                record = file_request(tokens[username], vendor, item, amount)
+                if submit:
+                    status, _ = command(tokens[username], REQUESTER, "submit", record)
+                    if status != 200:
+                        sys.exit(f"{username} submits: HTTP {status}")
 
         depts = dict(DEPARTMENTS)
         people = {p[0]: p for p in PEOPLE}
         rows = [("Person", "Department", "Acting as", "Sees")]
-        for username, role in [("an.nguyen", "role_procurement_requester"),
-                               ("binh.tran", "role_procurement_requester"),
+        for username, role in [("an.nguyen", REQUESTER),
+                               ("binh.tran", REQUESTER),
                                ("cuong.le", "role_procurement_manager"),
                                ("dung.pham", "role_procurement_manager"),
                                ("giang.vo", "role_procurement_finance"),
@@ -324,14 +362,52 @@ COMMIT;""")
     with_demo_client(run)
 
 
+def flow() -> None:
+    """One request from filing to budget approval, with the refusals on the way."""
+    def run():
+        t = {p[0]: sign_in(p[0]) for p in PEOPLE if p[0] != "quan.tri"}
+        people = {p[0]: f"{p[1]} {p[2]}" for p in PEOPLE}
+        rows = [("Step", "Who", "Acting as", "Result")]
+        record = file_request(t["an.nguyen"], "Phong Vũ", "Màn hình 27 inch", 6900000)
+        rows.append(("file request + scanned quote", people["an.nguyen"], REQUESTER, record["status"]))
+
+        def step(label, user, role, name, expect):
+            nonlocal record
+            status, after = command(t[user], role, name, record)
+            outcome = {200: after["status"], 403: "refused (403)", 404: "not visible (404)", 409: "conflict (409)"}.get(status, f"HTTP {status}")
+            mark = "ok" if status == expect else f"UNEXPECTED, wanted {expect}"
+            rows.append((label, people[user], role, f"{outcome}  [{mark}]"))
+            if status == 200:
+                record = after
+
+        step("manager acts on a draft", "cuong.le", "role_procurement_manager", "approve", 404)
+        step("submit", "an.nguyen", REQUESTER, "submit", 200)
+        step("other department approves", "dung.pham", "role_procurement_manager", "approve", 404)
+        step("requester approves", "an.nguyen", REQUESTER, "approve", 403)
+        step("department manager approves", "cuong.le", "role_procurement_manager", "approve", 200)
+        step("finance approves the budget", "giang.vo", "role_procurement_finance", "approve_budget", 200)
+
+        own = file_request(t["cuong.le"], "Phong Vũ", "Ghế công thái học", 4500000)
+        status, own = command(t["cuong.le"], REQUESTER, "submit", own)
+        status, _ = command(t["cuong.le"], "role_procurement_manager", "approve", own)
+        rows.append(("approve one's own request", people["cuong.le"], "role_procurement_manager",
+                     f"{'refused (403)' if status == 403 else f'HTTP {status}'}  [{'ok' if status == 403 else 'UNEXPECTED'}]"))
+        print("Procurement approval chain through cap-process (POST /api/cap/process/commands/...):")
+        print()
+        table(rows)
+        audit = psql(f"SELECT string_agg(action || ' by ' || coalesce(acting_role, '-'), ', ' ORDER BY seq) "
+                     f"FROM core.audit_logs WHERE entity_id = {lit(record['id'])}")
+        print()
+        print("Audit trail of the first request:", audit)
+
+    with_demo_client(run)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=["seed", "scopes"])
+    parser.add_argument("command", choices=["seed", "scopes", "flow"])
     args = parser.parse_args()
-    if args.command == "seed":
-        seed()
-    else:
-        scopes()
+    {"seed": seed, "scopes": scopes, "flow": flow}[args.command]()
 
 
 if __name__ == "__main__":

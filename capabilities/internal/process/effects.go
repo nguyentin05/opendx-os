@@ -17,11 +17,9 @@ package process
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
@@ -38,8 +36,13 @@ func (e *Engine) ConfigureWorkflowService(user, role string) error {
 	e.serviceRole = role
 	return nil
 }
+
+// ExecuteWorkItemEffect runs one create_work_item step of an application's
+// workflow for a committed command event, at most once per (event, step). Only
+// the configured workflow service principal acting as its role may call it.
+// The work item belongs to the application and points back at the record.
 func (e *Engine) ExecuteWorkItemEffect(ctx context.Context, actor *auth.Identity, eventID, stepName string) (string, error) {
-	if actor == nil || e.serviceUser == "" || !uuidPattern.MatchString(actor.UserID) || strings.ToLower(actor.UserID) != e.serviceUser || actor.Role != e.serviceRole || !contains(actor.AllowedRoles, e.serviceRole) || !uuidPattern.MatchString(actor.WorkspaceID) || !uuidPattern.MatchString(eventID) || !namePattern.MatchString(stepName) {
+	if actor == nil || e.serviceUser == "" || !uuidPattern.MatchString(actor.UserID) || strings.ToLower(actor.UserID) != e.serviceUser || actor.Role != e.serviceRole || !uuidPattern.MatchString(eventID) || !namePattern.MatchString(stepName) {
 		return "", ErrEffectDenied
 	}
 	// PostgreSQL UUID equality ignores hex case; lock keys must use the same identity.
@@ -52,16 +55,16 @@ func (e *Engine) ExecuteWorkItemEffect(ctx context.Context, actor *auth.Identity
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, eventID+":"+stepName); err != nil {
 		return "", err
 	}
-	var app, entityType, eventType string
+	var app, entityType, entityID, eventType string
 	var payload []byte
-	if err = tx.QueryRowContext(ctx, `SELECT app_id,entity_type,event_type,payload FROM core.outbox_events WHERE id=$1 AND workspace_id=$2`, eventID, actor.WorkspaceID).Scan(&app, &entityType, &eventType, &payload); err != nil {
+	if err = tx.QueryRowContext(ctx, `SELECT app_id,entity_type,entity_id::text,event_type,payload FROM core.outbox_events WHERE id=$1`, eventID).Scan(&app, &entityType, &entityID, &eventType, &payload); err != nil {
 		return "", ErrEffectDenied
 	}
-	a, err := e.apps.Load(ctx, actor.WorkspaceID, app)
+	a, err := e.apps.Load(ctx, app)
 	if err != nil {
 		return "", err
 	}
-	if eventType != "command.committed" || entityType != a.DomainTable {
+	if eventType != "command.committed" || entityType != a.Table() {
 		return "", ErrEffectDenied
 	}
 	var envelope struct {
@@ -72,38 +75,45 @@ func (e *Engine) ExecuteWorkItemEffect(ctx context.Context, actor *auth.Identity
 	if json.Unmarshal(payload, &envelope) != nil {
 		return "", ErrEffectDenied
 	}
-	effect, err := resolveEffect(a.ManifestSpec.Workflows, eventType, envelope.Payload.Command, stepName)
+	effect, err := resolveEffect(a.Spec.Workflows, eventType, envelope.Payload.Command, stepName)
 	if err != nil {
 		return "", err
 	}
-	var workID string
-	err = tx.QueryRowContext(ctx, `SELECT work_item_id::text FROM core.processed_workflow_steps WHERE event_id=$1 AND step_name=$2 AND workspace_id=$3`, eventID, stepName, actor.WorkspaceID).Scan(&workID)
+	var done []byte
+	err = tx.QueryRowContext(ctx, `SELECT result FROM cap_process.processed_workflow_steps WHERE event_id=$1 AND step_name=$2`, eventID, stepName).Scan(&done)
 	if err == nil {
-		return workID, nil
+		var previous struct {
+			WorkItemID string `json:"work_item_id"`
+		}
+		if json.Unmarshal(done, &previous) != nil {
+			return "", ErrEffectDenied
+		}
+		return previous.WorkItemID, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return "", err
 	}
-	var assigned any
-	if effect.Fields.AssignedEmployeeID != "" {
-		var employee string
-		if err = tx.QueryRowContext(ctx, `SELECT id::text FROM core.employees WHERE workspace_id=$1 AND id=$2 FOR SHARE`, actor.WorkspaceID, effect.Fields.AssignedEmployeeID).Scan(&employee); err != nil {
+	var assignee any
+	if effect.Fields.AssigneeID != "" {
+		var user string
+		if err = tx.QueryRowContext(ctx, `SELECT id::text FROM core.users WHERE id=$1 AND status='ACTIVE' FOR SHARE`, effect.Fields.AssigneeID).Scan(&user); err != nil {
 			return "", ErrEffectDenied
 		}
-		assigned = employee
+		assignee = user
 	}
-	var b [16]byte
-	if _, err = rand.Read(b[:]); err != nil {
+	workID, err := newUUID()
+	if err != nil {
 		return "", err
 	}
-	b[6] = b[6]&15 | 64
-	b[8] = b[8]&63 | 128
-	workID = fmt.Sprintf("%x-%x-%x-%x-%x", b[:4], b[4:6], b[6:8], b[8:10], b[10:])
-	if _, err = tx.ExecContext(ctx, `INSERT INTO core.work_items(id,workspace_id,title,description,priority,assigned_employee_id) VALUES($1,$2,$3,$4,$5,$6)`, workID, actor.WorkspaceID, effect.Fields.Title, effect.Fields.Description, effect.Fields.Priority, assigned); err != nil {
+	if _, err = tx.ExecContext(ctx, `SELECT set_config('dxos.actor_id',$1,true),set_config('dxos.action',$2,true),set_config('dxos.role',$3,true)`, e.serviceUser, stepName, e.serviceRole); err != nil {
+		return "", err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO cap_work.work_items(id,app_id,title,description,priority,assignee_id,source_type,source_id,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		workID, app, effect.Fields.Title, effect.Fields.Description, effect.Fields.Priority, assignee, a.Table(), entityID, e.serviceUser); err != nil {
 		return "", err
 	}
 	result, _ := json.Marshal(map[string]string{"work_item_id": workID})
-	if _, err = tx.ExecContext(ctx, `INSERT INTO core.processed_workflow_steps(event_id,step_name,workspace_id,work_item_id,result,outcome) VALUES($1,$2,$3,$4,$5::jsonb,'success')`, eventID, stepName, actor.WorkspaceID, workID, string(result)); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO cap_process.processed_workflow_steps(event_id,step_name,app_id,result,outcome) VALUES($1,$2,$3,$4::jsonb,'success')`, eventID, stepName, app, string(result)); err != nil {
 		return "", err
 	}
 	if err = tx.Commit(); err != nil {

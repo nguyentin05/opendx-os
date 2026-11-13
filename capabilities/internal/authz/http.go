@@ -21,6 +21,8 @@ import (
 	"log"
 	"net/http"
 	"strings"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
 // Handler serves:
@@ -39,24 +41,27 @@ func Handler(r *Resolver) http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	mux.HandleFunc("GET /hasura", func(w http.ResponseWriter, req *http.Request) {
-		s, ok := resolve(w, req, r)
-		if !ok {
+		token, found := strings.CutPrefix(req.Header.Get("Authorization"), "Bearer ")
+		if !found || strings.TrimSpace(token) == "" {
+			deny(w, "bearer token required")
 			return
 		}
-		role := strings.TrimSpace(req.Header.Get("X-Hasura-Role"))
+		id, err := r.Authorize(req.Context(), strings.TrimSpace(token), strings.TrimSpace(req.Header.Get("X-Hasura-Role")))
 		switch {
-		case role == "" && len(s.Grants) == 1:
-			role = s.Grants[0].Role
-		case role == "":
-			deny(w, "select a role with the X-Hasura-Role header")
+		case errors.Is(err, auth.ErrUnauthenticated):
+			deny(w, "invalid token or disabled account")
 			return
-		case !s.Holds(role):
-			deny(w, "role not held")
+		case errors.Is(err, auth.ErrForbidden):
+			deny(w, "role not held; name one held role in X-Hasura-Role")
+			return
+		case err != nil:
+			log.Printf("authorization lookup failed: %v", err)
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "authorization unavailable"})
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{
-			"X-Hasura-User-Id": s.User.Subject,
-			"X-Hasura-Role":    role,
+			"X-Hasura-User-Id": id.UserID,
+			"X-Hasura-Role":    id.Role,
 		})
 	})
 	mux.HandleFunc("GET /api/auth/me", func(w http.ResponseWriter, req *http.Request) {

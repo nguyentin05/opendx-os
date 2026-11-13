@@ -30,7 +30,7 @@ func fileError(w http.ResponseWriter, status int) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": http.StatusText(status), "message": http.StatusText(status)}}) // Best-effort response; the client may have disconnected.
 }
-func (s *Service) AuthenticatedHandler(v auth.Verifier) http.Handler {
+func (s *Service) AuthenticatedHandler(v auth.Authorizer) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/cap/process/files/upload", s.uploadHTTP)
 	mux.HandleFunc("GET /api/cap/process/files/{file_id}", s.downloadHTTP)

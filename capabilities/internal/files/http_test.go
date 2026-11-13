@@ -27,8 +27,8 @@ import (
 
 type verifier struct{}
 
-func (verifier) Verify(context.Context, string) (*auth.Identity, error) {
-	return &auth.Identity{UserID: "22222222-2222-4222-8222-222222222222", WorkspaceID: "11111111-1111-4111-8111-111111111111", Role: "role_procurement", AllowedRoles: []string{"role_procurement"}}, nil
+func (verifier) Authorize(context.Context, string, string) (*auth.Identity, error) {
+	return &auth.Identity{UserID: "22222222-2222-4222-8222-222222222222", Role: "role_procurement_requester"}, nil
 }
 func TestOrdinaryUserCannotMarkClean(t *testing.T) {
 	s := &Service{}

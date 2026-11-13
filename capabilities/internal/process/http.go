@@ -121,7 +121,7 @@ func (e *Engine) Handler() http.Handler {
 }
 
 // AuthenticatedHandler preserves the C0 error envelope for authentication failures.
-func (e *Engine) AuthenticatedHandler(v auth.Verifier) http.Handler {
+func (e *Engine) AuthenticatedHandler(v auth.Authorizer) http.Handler {
 	h := auth.Middleware(v, e.Handler())
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { h.ServeHTTP(&envelopeWriter{ResponseWriter: w}, r) })
 }
@@ -147,7 +147,7 @@ func (w *envelopeWriter) Write(b []byte) (int, error) {
 }
 
 // AuthenticatedEffectHandler admits only the configured workflow service principal.
-func (e *Engine) AuthenticatedEffectHandler(v auth.Verifier) http.Handler {
+func (e *Engine) AuthenticatedEffectHandler(v auth.Authorizer) http.Handler {
 	return auth.Middleware(v, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, err := auth.ExtractIdentity(r)
 		if err != nil {

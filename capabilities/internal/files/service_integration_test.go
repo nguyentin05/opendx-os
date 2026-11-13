@@ -22,9 +22,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
-	"github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
 	"github.com/opendx-os/opendx-os/capabilities/internal/testutil"
@@ -73,32 +71,23 @@ func (s *controlledScanner) Scan(_ context.Context, r io.Reader) (ScanResult, er
 	}
 	return s.result, s.err
 }
+
+// fileFixture is the platform with alice (requester, department A) as the
+// caller; the service runs as dxos_process.
 func fileFixture(t *testing.T) (*Service, *sql.DB, *auth.Identity, *memoryStorage, *controlledScanner) {
 	t.Helper()
-	db := testutil.Database(t)
-	testutil.ProcessSchema(t, db, `CREATE TABLE domain.procurement_requests(id uuid,workspace_id uuid,work_item_id uuid,requester_id uuid,quote_file_id uuid,status text,version bigint,updated_at timestamptz,vendor_name text,item_description text,quoted_amount numeric,rejection_reason text);ALTER TABLE core.file_objects ADD COLUMN bucket text NOT NULL DEFAULT 'bucket',ADD COLUMN object_key text,ADD COLUMN file_name text,ADD COLUMN sha256_hash text,ADD COLUMN uploaded_by uuid,ADD COLUMN mime_type text,ADD COLUMN size_bytes bigint,ADD COLUMN scanned_at timestamptz,ADD COLUMN created_at timestamptz NOT NULL DEFAULT now(),ADD COLUMN scan_attempt_count integer NOT NULL DEFAULT 0 CHECK(scan_attempt_count>=0),ADD COLUMN scan_next_attempt_at timestamptz NOT NULL DEFAULT now(),ADD UNIQUE(bucket,object_key);`)
-	b, e := os.ReadFile("../../../contracts/fixtures/registry-ready.json")
-	if e != nil {
-		t.Fatal(e)
-	}
-	a, e := registry.Decode(b)
-	if e != nil {
-		t.Fatal(e)
-	}
-	spec, _ := json.Marshal(a.ManifestSpec)
-	ui, _ := json.Marshal(a.UISchema)
-	sm, _ := json.Marshal(a.StateMachine)
-	if _, e = db.Exec(`INSERT INTO core.capability_registry VALUES('cap-process',true)`); e != nil {
-		t.Fatal(e)
-	}
-	if _, e = db.Exec(`INSERT INTO core.app_registry VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NULL,$12)`, a.WorkspaceID, a.AppID, a.DisplayName, a.Version, a.RoleName, a.DomainTable, string(spec), string(ui), string(sm), pq.Array(a.DependentCapabilities), a.Status, a.UpdatedAt); e != nil {
-		t.Fatal(e)
-	}
-	id := &auth.Identity{WorkspaceID: a.WorkspaceID, UserID: "22222222-2222-4222-8222-222222222222", Role: "role_procurement", AllowedRoles: []string{"role_procurement"}}
+	p := testutil.NewPlatform(t)
+	alice := p.User(t, "alice", p.OrgUnit(t, "A"), "role_procurement_requester")
+	id := &auth.Identity{UserID: alice, Role: "role_procurement_requester"}
 	store := &memoryStorage{objects: map[string][]byte{}}
 	scanner := &controlledScanner{result: Clean}
-	return NewService(db, registry.NewStore(db), store, scanner, "bucket"), db, id, store, scanner
+	platforms[id] = p
+	return NewService(p.Process, registry.NewStore(p.Process), store, scanner, "bucket"), p.Admin, id, store, scanner
 }
+
+// platforms lets a test reach the platform of a fixture identity.
+var platforms = map[*auth.Identity]*testutil.Platform{}
+
 func upload(t *testing.T, s *Service, id *auth.Identity) *FileObject {
 	t.Helper()
 	f, e := s.Upload(context.Background(), id, "procurement", "untrusted.exe", bytes.NewBufferString("%PDF-1.7\nimmutable"))
@@ -110,7 +99,7 @@ func upload(t *testing.T, s *Service, id *auth.Identity) *FileObject {
 func scanStatus(t *testing.T, db *sql.DB, id string) string {
 	t.Helper()
 	var status string
-	if e := db.QueryRow(`SELECT scan_status FROM core.file_objects WHERE id=$1`, id).Scan(&status); e != nil {
+	if e := db.QueryRow(`SELECT scan_status FROM core.files WHERE id=$1`, id).Scan(&status); e != nil {
 		t.Fatal(e)
 	}
 	return status
@@ -123,10 +112,10 @@ func TestUploadStartsQuarantined(t *testing.T) {
 	}
 	var mime, hash, key string
 	var size int
-	if e := db.QueryRow(`SELECT mime_type,sha256_hash,object_key,size_bytes FROM core.file_objects WHERE id=$1`, f.ID).Scan(&mime, &hash, &key, &size); e != nil {
+	if e := db.QueryRow(`SELECT mime_type,sha256_hash,object_key,size_bytes FROM core.files WHERE id=$1`, f.ID).Scan(&mime, &hash, &key, &size); e != nil {
 		t.Fatal(e)
 	}
-	if mime != "application/pdf" || hash != digest([]byte("%PDF-1.7\nimmutable")) || key != id.WorkspaceID+"/procurement/"+f.ID || size != len("%PDF-1.7\nimmutable") {
+	if mime != "application/pdf" || hash != digest([]byte("%PDF-1.7\nimmutable")) || key != "procurement/"+f.ID || size != len("%PDF-1.7\nimmutable") {
 		t.Fatalf("metadata %s %s %s %d", mime, hash, key, size)
 	}
 }
@@ -170,25 +159,17 @@ func TestReplacementGetsNewIdentity(t *testing.T) {
 func TestUnauthorizedFileDoesNotRevealScanStatus(t *testing.T) {
 	s, db, id, _, _ := fileFixture(t)
 	f := upload(t, s, id)
-	other := *id
-	other.UserID = "99999999-9999-4999-8999-999999999999"
+	other := &auth.Identity{UserID: platforms[id].User(t, "mallory", "", "role_procurement_requester"), Role: "role_procurement_requester"}
 	for _, status := range []string{"QUARANTINED", "CLEAN", "INFECTED"} {
-		if _, e := db.Exec(`UPDATE core.file_objects SET scan_status=$1 WHERE id=$2`, status, f.ID); e != nil {
+		if _, e := db.Exec(`UPDATE core.files SET scan_status=$1 WHERE id=$2`, status, f.ID); e != nil {
 			t.Fatal(e)
 		}
-		if _, e := s.Download(context.Background(), &other, f.ID); !errors.Is(e, ErrDenied) {
+		if _, e := s.Download(context.Background(), other, f.ID); !errors.Is(e, ErrDenied) {
 			t.Fatalf("status leak %s: %v", status, e)
 		}
 	}
-	other = *id
-	other.WorkspaceID = "88888888-8888-4888-8888-888888888888"
-	if _, e := s.Download(context.Background(), &other, f.ID); !errors.Is(e, ErrDenied) {
-		t.Fatal(e)
-	}
-	other = *id
-	other.Role = "role_other"
-	other.AllowedRoles = []string{"role_other"}
-	if _, e := s.Download(context.Background(), &other, f.ID); !errors.Is(e, ErrDenied) {
+	// A role with no rule in the application may not even read its own upload.
+	if _, e := s.Download(context.Background(), &auth.Identity{UserID: id.UserID, Role: "role_review"}, f.ID); !errors.Is(e, ErrDenied) {
 		t.Fatal(e)
 	}
 }
@@ -226,7 +207,7 @@ func TestDownloadNeedsCleanReadableFile(t *testing.T) {
 func TestHashTamperNeverDownloadsOrBecomesClean(t *testing.T) {
 	s, db, id, store, _ := fileFixture(t)
 	f := upload(t, s, id)
-	key := id.WorkspaceID + "/procurement/" + f.ID
+	key := "procurement/" + f.ID
 	store.objects[key] = []byte("%PDF-1.7\ntampered")
 	if e := s.ScanPending(context.Background(), 10); e == nil {
 		t.Fatal("tamper accepted")
@@ -244,45 +225,60 @@ func TestHashTamperNeverDownloadsOrBecomesClean(t *testing.T) {
 		t.Fatal("released tampered bytes")
 	}
 }
-func TestScanResultCannotApplyToChangedMetadata(t *testing.T) {
-	s, db, id, _, scanner := fileFixture(t)
-	f := upload(t, s, id)
-	scanner.before = func() {
-		if _, e := db.Exec(`UPDATE core.file_objects SET sha256_hash=$1 WHERE id=$2`, digest([]byte("changed")), f.ID); e != nil {
-			t.Fatal(e)
-		}
-	}
-	if e := s.ScanPending(context.Background(), 10); e != nil {
-		t.Fatal(e)
-	}
-	if scanStatus(t, db, f.ID) != "QUARANTINED" {
-		t.Fatal("stale scan applied")
-	}
-}
-func TestAttachedReadableAccess(t *testing.T) {
+
+// The scan result is applied only to the row that was read; the database
+// itself refuses to change a file's content metadata or application.
+func TestFileMetadataIsImmutable(t *testing.T) {
 	s, db, id, _, _ := fileFixture(t)
 	f := upload(t, s, id)
+	for _, stmt := range []string{
+		`UPDATE core.files SET sha256_hash = repeat('b', 64) WHERE id = $1`,
+		`UPDATE core.files SET app_id = 'other_app' WHERE id = $1`,
+		`UPDATE core.files SET object_key = 'elsewhere' WHERE id = $1`,
+	} {
+		if _, e := db.Exec(stmt, f.ID); e == nil {
+			t.Fatalf("accepted: %s", stmt)
+		}
+	}
+}
+
+// A file attached to a record is readable by whoever can read that record
+// under their role's scope: here a department manager once it is submitted,
+// never another department, and finance across the organization.
+func TestAttachedReadableAccess(t *testing.T) {
+	s, _, id, _, _ := fileFixture(t)
+	p := platforms[id]
+	f := upload(t, s, id)
 	if e := s.ScanPending(context.Background(), 10); e != nil {
 		t.Fatal(e)
 	}
-	other := *id
-	other.UserID = "99999999-9999-4999-8999-999999999999"
-	if _, e := s.Download(context.Background(), &other, f.ID); !errors.Is(e, ErrDenied) {
+	var deptA string
+	if e := p.Admin.QueryRow(`SELECT org_unit_id::text FROM cap_hr.staff WHERE user_id = $1`, id.UserID).Scan(&deptA); e != nil {
 		t.Fatal(e)
 	}
-	if _, e := db.Exec(`INSERT INTO domain.procurement_requests(id,workspace_id,requester_id,quote_file_id) VALUES('33333333-3333-4333-8333-333333333333',$1,$2,$3)`, id.WorkspaceID, id.UserID, f.ID); e != nil {
-		t.Fatal(e)
+	carol := &auth.Identity{UserID: p.User(t, "carol", deptA, "role_procurement_manager"), Role: "role_procurement_manager"}
+	dan := &auth.Identity{UserID: p.User(t, "dan", p.OrgUnit(t, "B"), "role_procurement_manager"), Role: "role_procurement_manager"}
+	erin := &auth.Identity{UserID: p.User(t, "erin", "", "role_procurement_finance"), Role: "role_procurement_finance"}
+	can := func(who *auth.Identity) bool {
+		r, e := s.Download(context.Background(), who, f.ID)
+		if e == nil {
+			_ = r.Close()
+		}
+		return e == nil
 	}
-	r, e := s.Download(context.Background(), &other, f.ID)
-	if e != nil {
-		t.Fatal(e)
+	if can(carol) || can(erin) {
+		t.Fatal("an unattached upload is readable only by its uploader")
 	}
-	_ = r.Close()
-	if _, e = db.Exec(`UPDATE core.app_registry SET manifest_spec=jsonb_set(manifest_spec,'{domainAccess,select,0,recordFilter}', '{"requester_id":{"_eq":"X-Hasura-User-Id"}}'::jsonb)`); e != nil {
-		t.Fatal(e)
+	entity := purchase(t, p, id.UserID, f.ID)
+	if can(carol) || can(erin) {
+		t.Fatal("a draft's quote must stay private to the requester")
 	}
-	if _, e = s.Download(context.Background(), &other, f.ID); !errors.Is(e, ErrDenied) {
-		t.Fatalf("record filter ignored: %v", e)
+	p.SetStatus(t, entity, id.UserID, "SUBMITTED")
+	if !can(carol) || !can(erin) || can(dan) {
+		t.Fatalf("submitted: carol %v, erin %v, dan %v; want true, true, false", can(carol), can(erin), can(dan))
+	}
+	if !can(id) {
+		t.Fatal("the uploader keeps access")
 	}
 }
 func TestUploadSizeBoundaryAndMIME(t *testing.T) {
@@ -295,7 +291,7 @@ func TestUploadSizeBoundaryAndMIME(t *testing.T) {
 		}
 	}
 	var n int
-	if err := db.QueryRow(`SELECT count(*) FROM core.file_objects`).Scan(&n); err != nil {
+	if err := db.QueryRow(`SELECT count(*) FROM core.files`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 3 {
@@ -310,29 +306,13 @@ func TestUploadSizeBoundaryAndMIME(t *testing.T) {
 		t.Fatal(e)
 	}
 }
-func TestScanCannotBlessChangedAppScope(t *testing.T) {
-	s, db, id, _, scanner := fileFixture(t)
-	f := upload(t, s, id)
-	scanner.before = func() {
-		if _, e := db.Exec(`UPDATE core.file_objects SET app_id='different_app' WHERE id=$1`, f.ID); e != nil {
-			t.Fatal(e)
-		}
-	}
-	if e := s.ScanPending(context.Background(), 10); e != nil {
-		t.Fatal(e)
-	}
-	if scanStatus(t, db, f.ID) != "QUARANTINED" {
-		t.Fatal("scan blessed changed immutable app scope")
-	}
-}
-
 func TestFailedBatchDoesNotStarveLaterUpload(t *testing.T) {
 	s, db, id, store, _ := fileFixture(t)
 	first := upload(t, s, id)
 	second := upload(t, s, id)
 	healthy := upload(t, s, id)
 	for _, f := range []*FileObject{first, second} {
-		store.objects[id.WorkspaceID+"/procurement/"+f.ID] = []byte("%PDF-1.7\npermanent hash failure")
+		store.objects["procurement/"+f.ID] = []byte("%PDF-1.7\npermanent hash failure")
 	}
 	if e := s.ScanPending(context.Background(), 2); e == nil {
 		t.Fatal("expected failed batch")
@@ -352,7 +332,17 @@ func TestFailedBatchDoesNotStarveLaterUpload(t *testing.T) {
 
 func makeScanDue(t *testing.T, db *sql.DB, id string) {
 	t.Helper()
-	if _, e := db.Exec(`UPDATE core.file_objects SET scan_next_attempt_at=now()-interval '1 second' WHERE id=$1`, id); e != nil {
+	if _, e := db.Exec(`UPDATE core.files SET scan_next_attempt_at=now()-interval '1 second' WHERE id=$1`, id); e != nil {
 		t.Fatal(e)
 	}
+}
+
+// purchase files a purchase request as owner; quote may be empty.
+func purchase(t *testing.T, p *testutil.Platform, owner, quote string) string {
+	t.Helper()
+	values := map[string]any{"vendor_name": "Acme", "item_description": "Laptop", "quoted_amount": 1200}
+	if quote != "" {
+		values["quote_file_id"] = quote
+	}
+	return p.Insert(t, owner, "role_procurement_requester", values)
 }

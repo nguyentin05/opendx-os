@@ -31,7 +31,6 @@ import (
 )
 
 const user = "22222222-2222-4222-8222-222222222222"
-const workspace = "11111111-1111-4111-8111-111111111111"
 
 func signed(t *testing.T, k *rsa.PrivateKey, kid string, c map[string]any) string {
 	t.Helper()
@@ -46,9 +45,9 @@ func signed(t *testing.T, k *rsa.PrivateKey, kid string, c map[string]any) strin
 	return s + "." + base64.RawURLEncoding.EncodeToString(sig)
 }
 func claims() map[string]any {
-	return map[string]any{"iss": "https://issuer.test", "aud": "runtime", "sub": user, "exp": time.Now().Add(time.Hour).Unix(), "https://hasura.io/jwt/claims": map[string]any{"x-hasura-user-id": user, "x-hasura-workspace-id": workspace, "x-hasura-default-role": "role_user", "x-hasura-allowed-roles": []string{"role_user", "role_manager"}}}
+	return map[string]any{"iss": "https://issuer.test", "aud": "runtime", "sub": user, "exp": time.Now().Add(time.Hour).Unix(), "email": "alice@example.test", "name": "Alice"}
 }
-func TestVerifiedJWTAndMiddleware(t *testing.T) {
+func TestVerifiedJWT(t *testing.T) {
 	k, _ := rsa.GenerateKey(rand.Reader, 2048)
 	other, _ := rsa.GenerateKey(rand.Reader, 2048)
 	kid := "one"
@@ -56,7 +55,7 @@ func TestVerifiedJWTAndMiddleware(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{map[string]string{"kty": "RSA", "alg": "RS256", "use": "sig", "kid": kid, "n": base64.RawURLEncoding.EncodeToString(k.N.Bytes()), "e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(k.E)).Bytes())}}}) // Best-effort response; the client may have disconnected.
 	}))
 	defer srv.Close()
-	v, e := NewVerifier(context.Background(), VerifierConfig{IssuerURL: "https://issuer.test", Audience: "runtime", JWKSURL: srv.URL})
+	v, e := NewAuthenticator(context.Background(), VerifierConfig{IssuerURL: "https://issuer.test", Audience: "runtime", JWKSURL: srv.URL})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -66,11 +65,13 @@ func TestVerifiedJWTAndMiddleware(t *testing.T) {
 		key     *rsa.PrivateKey
 		missing bool
 	}{
-		{name: "valid", key: k}, {name: "missing", missing: true, key: k}, {name: "expired", key: k, change: func(c map[string]any) { c["exp"] = time.Now().Add(-time.Minute).Unix() }}, {name: "issuer", key: k, change: func(c map[string]any) { c["iss"] = "other" }}, {name: "audience", key: k, change: func(c map[string]any) { c["aud"] = "other" }}, {name: "signature", key: other}, {name: "subject", key: k, change: func(c map[string]any) { c["sub"] = "other" }}, {name: "workspace", key: k, change: func(c map[string]any) {
-			c["https://hasura.io/jwt/claims"].(map[string]any)["x-hasura-workspace-id"] = "invalid"
-		}}, {name: "default", key: k, change: func(c map[string]any) {
-			c["https://hasura.io/jwt/claims"].(map[string]any)["x-hasura-default-role"] = "admin"
-		}},
+		{name: "valid", key: k}, {name: "missing", missing: true, key: k},
+		{name: "expired", key: k, change: func(c map[string]any) { c["exp"] = time.Now().Add(-time.Minute).Unix() }},
+		{name: "not yet valid", key: k, change: func(c map[string]any) { c["nbf"] = time.Now().Add(time.Minute).Unix() }},
+		{name: "issuer", key: k, change: func(c map[string]any) { c["iss"] = "other" }},
+		{name: "audience", key: k, change: func(c map[string]any) { c["aud"] = "other" }},
+		{name: "signature", key: other},
+		{name: "subject", key: k, change: func(c map[string]any) { c["sub"] = "other" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := claims()
@@ -81,10 +82,10 @@ func TestVerifiedJWTAndMiddleware(t *testing.T) {
 			if tc.missing {
 				token = ""
 			}
-			id, e := v.Verify(context.Background(), token)
+			p, e := v.Authenticate(context.Background(), token)
 			if tc.name == "valid" {
-				if e != nil || id.UserID != user || id.WorkspaceID != workspace || id.Role != "role_user" {
-					t.Fatalf("%+v %v", id, e)
+				if e != nil || p.Subject != user || p.Email != "alice@example.test" {
+					t.Fatalf("%+v %v", p, e)
 				}
 			} else if e == nil {
 				t.Fatal("invalid token accepted")
@@ -92,29 +93,8 @@ func TestVerifiedJWTAndMiddleware(t *testing.T) {
 		})
 	}
 	kid = "rotated"
-	if _, e := v.Verify(context.Background(), signed(t, k, kid, claims())); e != nil {
+	if _, e := v.Authenticate(context.Background(), signed(t, k, kid, claims())); e != nil {
 		t.Fatalf("rotation: %v", e)
-	}
-	for _, tc := range []struct {
-		token, role string
-		status      int
-	}{{"", "role_user", 401}, {signed(t, k, kid, claims()), "admin", 403}, {signed(t, k, kid, claims()), "role_manager", 204}} {
-		r := httptest.NewRequest("GET", "/", nil)
-		r.Header.Set("Authorization", "Bearer "+tc.token)
-		r.Header.Set("X-Hasura-Role", tc.role)
-		r.Header.Set("X-Hasura-Workspace-Id", "spoof")
-		r.Header.Set("X-Hasura-User-Id", "spoof")
-		w := httptest.NewRecorder()
-		Middleware(v, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			id, e := ExtractIdentity(r)
-			if e != nil || id.UserID != user || id.WorkspaceID != workspace || id.Role != "role_manager" {
-				t.Errorf("identity %+v %v", id, e)
-			}
-			w.WriteHeader(204)
-		})).ServeHTTP(w, r)
-		if w.Code != tc.status {
-			t.Fatalf("got %d want %d", w.Code, tc.status)
-		}
 	}
 }
 
@@ -125,7 +105,7 @@ func TestRejectOversizedJWKS(t *testing.T) {
 		_, _ = w.Write(make([]byte, 1<<20))
 	}))
 	defer srv.Close()
-	if _, err := NewVerifier(context.Background(), VerifierConfig{IssuerURL: "https://issuer.test", Audience: "runtime", JWKSURL: srv.URL}); err == nil {
+	if _, err := NewAuthenticator(context.Background(), VerifierConfig{IssuerURL: "https://issuer.test", Audience: "runtime", JWKSURL: srv.URL}); err == nil {
 		t.Fatal("oversized JWKS accepted")
 	}
 }
@@ -150,12 +130,12 @@ func TestKnownSigningKeysExpireAndRefresh(t *testing.T) {
 				_ = json.NewEncoder(w).Encode(map[string]any{"keys": keys}) // Best-effort response; the client may have disconnected.
 			}))
 			defer srv.Close()
-			verifier, err := NewVerifier(context.Background(), VerifierConfig{IssuerURL: "https://issuer.test", Audience: "runtime", JWKSURL: srv.URL})
+			verifier, err := NewAuthenticator(context.Background(), VerifierConfig{IssuerURL: "https://issuer.test", Audience: "runtime", JWKSURL: srv.URL})
 			if err != nil {
 				t.Fatal(err)
 			}
 			token := signed(t, old, "one", claims())
-			if _, err = verifier.Verify(context.Background(), token); err != nil {
+			if _, err = verifier.Authenticate(context.Background(), token); err != nil {
 				t.Fatal(err)
 			}
 			switch mode {
@@ -170,16 +150,16 @@ func TestKnownSigningKeysExpireAndRefresh(t *testing.T) {
 			v.mu.Lock()
 			v.lastRefresh = time.Now().Add(-6 * time.Minute)
 			v.mu.Unlock()
-			if _, err = verifier.Verify(context.Background(), token); err == nil {
+			if _, err = verifier.Authenticate(context.Background(), token); err == nil {
 				t.Fatal("stale signing key accepted")
 			}
 			if mode == "same_kid_replacement" {
-				if _, err = verifier.Verify(context.Background(), signed(t, replacement, "one", claims())); err != nil {
+				if _, err = verifier.Authenticate(context.Background(), signed(t, replacement, "one", claims())); err != nil {
 					t.Fatalf("replacement rejected: %v", err)
 				}
 			}
 			if mode == "unavailable" {
-				if _, err = verifier.Verify(context.Background(), token); err == nil {
+				if _, err = verifier.Authenticate(context.Background(), token); err == nil {
 					t.Fatal("stale key accepted during refresh backoff")
 				}
 			}

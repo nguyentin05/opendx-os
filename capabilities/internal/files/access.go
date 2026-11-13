@@ -20,41 +20,37 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"regexp"
+	"strings"
+
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
-	"regexp"
 )
 
 var uuid = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
+// application returns the app when the caller's role has any access rule in
+// it: only such roles may upload files for it.
 func (s *Service) application(ctx context.Context, id *auth.Identity, app string) (*registry.AppDefinition, error) {
-	if id == nil || !uuid.MatchString(id.UserID) || !uuid.MatchString(id.WorkspaceID) {
+	if id == nil || !uuid.MatchString(id.UserID) {
 		return nil, ErrDenied
 	}
-	granted := false
-	for _, r := range id.AllowedRoles {
-		granted = granted || r == id.Role
-	}
-	if !granted {
+	a, e := s.apps.Load(ctx, app)
+	if e != nil || !a.HasRole(id.Role) {
 		return nil, ErrDenied
 	}
-	a, e := s.apps.Load(ctx, id.WorkspaceID, app)
-	if e != nil {
-		return nil, ErrDenied
-	}
-	for _, p := range append(append(append([]registry.Permission{}, a.ManifestSpec.DomainAccess.Select...), a.ManifestSpec.DomainAccess.Insert...), a.ManifestSpec.DomainAccess.Update...) {
-		if p.Role == id.Role {
-			return a, nil
-		}
-	}
-	return nil, ErrDenied
+	return a, nil
 }
+
+// readable returns where a file is stored when the caller may read it: they
+// uploaded it, or it is attached to a record their role can read with the
+// attachment column visible (scope and record filter included).
 func (s *Service) readable(ctx context.Context, id *auth.Identity, file string) (string, string, string, error) {
-	if id == nil || !uuid.MatchString(id.WorkspaceID) || !uuid.MatchString(file) {
+	if id == nil || !uuid.MatchString(file) {
 		return "", "", "", ErrDenied
 	}
-	var app, owner, key, hash, status string
-	e := s.db.QueryRowContext(ctx, `SELECT app_id,COALESCE(uploaded_by::text,'') FROM core.file_objects WHERE id=$1 AND workspace_id=$2 AND bucket=$3`, file, id.WorkspaceID, s.bucket).Scan(&app, &owner)
+	var app, owner string
+	e := s.db.QueryRowContext(ctx, `SELECT app_id,uploaded_by::text FROM core.files WHERE id=$1 AND bucket=$2`, file, s.bucket).Scan(&app, &owner)
 	if e != nil {
 		return "", "", "", ErrDenied
 	}
@@ -62,18 +58,18 @@ func (s *Service) readable(ctx context.Context, id *auth.Identity, file string) 
 	if e != nil {
 		return "", "", "", ErrDenied
 	}
-	allowed := owner == id.UserID
+	allowed := strings.EqualFold(owner, id.UserID)
 	if !allowed {
-		types := map[string]string{"id": "uuid", "workspace_id": "uuid", "work_item_id": "uuid", "status": "text", "version": "bigint", "updated_at": "timestamptz"}
-		for _, c := range a.ManifestSpec.DomainTable.Columns {
-			types[c.Name] = c.Type
+		viewer, e := a.Viewer(ctx, s.db, strings.ToLower(id.UserID), id.Role)
+		if e != nil {
+			return "", "", "", ErrDenied
 		}
-		for _, attachment := range a.ManifestSpec.Attachments {
-			rows, e := s.db.QueryContext(ctx, `SELECT to_jsonb(d) FROM `+a.DomainTable+` d WHERE workspace_id=$1 AND `+attachment.Column+`=$2`, id.WorkspaceID, file)
+		for _, attachment := range a.Spec.Attachments {
+			rows, e := s.db.QueryContext(ctx, `SELECT to_jsonb(d) FROM `+a.Table()+` d WHERE `+attachment.Column+`=$1`, file)
 			if e != nil {
 				return "", "", "", ErrDenied
 			}
-			for rows.Next() {
+			for rows.Next() && !allowed {
 				var raw []byte
 				if rows.Scan(&raw) != nil {
 					continue
@@ -84,20 +80,8 @@ func (s *Service) readable(ctx context.Context, id *auth.Identity, file string) 
 				if d.Decode(&row) != nil {
 					continue
 				}
-				for _, p := range a.ManifestSpec.DomainAccess.Select {
-					if p.Role != id.Role {
-						continue
-					}
-					column := false
-					for _, c := range p.Columns {
-						column = column || c == attachment.Column
-					}
-					if !column {
-						continue
-					}
-					ok, e := registry.Matches(p.RecordFilter, row, id, types)
-					allowed = allowed || e == nil && ok
-				}
+				ok, e := a.CanSee(viewer, row, attachment.Column)
+				allowed = e == nil && ok
 			}
 			e = rows.Err()
 			_ = rows.Close()
@@ -109,6 +93,7 @@ func (s *Service) readable(ctx context.Context, id *auth.Identity, file string) 
 	if !allowed {
 		return "", "", "", ErrDenied
 	}
-	e = s.db.QueryRowContext(ctx, `SELECT object_key,sha256_hash,scan_status FROM core.file_objects WHERE id=$1 AND workspace_id=$2 AND app_id=$3 AND bucket=$4`, file, id.WorkspaceID, app, s.bucket).Scan(&key, &hash, &status)
+	var key, hash, status string
+	e = s.db.QueryRowContext(ctx, `SELECT object_key,sha256_hash,scan_status FROM core.files WHERE id=$1 AND app_id=$2 AND bucket=$3`, file, app, s.bucket).Scan(&key, &hash, &status)
 	return key, hash, status, e
 }

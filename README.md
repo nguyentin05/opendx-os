@@ -58,6 +58,7 @@ docker compose up -d --build
 scripts/test-compose.sh # waits for every service and checks it answers
 scripts/seed-demo.py seed    # demo accounts, departments and roles
 scripts/seed-demo.py scopes  # what each demo person sees
+scripts/seed-demo.py flow    # one purchase request through the approval chain
 ```
 
 The defaults are for a local machine only; change every password in `.env`

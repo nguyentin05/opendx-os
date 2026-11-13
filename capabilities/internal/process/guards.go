@@ -15,14 +15,8 @@
 
 package process
 
-import (
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
-	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
-)
+import ()
 
-func matches(f map[string]any, row map[string]any, id *auth.Identity, types ...map[string]string) (bool, error) {
-	return registry.Matches(f, row, id, types...)
-}
 func contains(a []string, s string) bool {
 	for _, v := range a {
 		if v == s {

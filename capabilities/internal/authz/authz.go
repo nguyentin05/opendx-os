@@ -30,8 +30,8 @@ import (
 )
 
 // ErrUnauthenticated means the token is missing or invalid, or the account is
-// disabled.
-var ErrUnauthenticated = errors.New("unauthenticated")
+// disabled or unknown.
+var ErrUnauthenticated = auth.ErrUnauthenticated
 
 // Grant is one role a user holds, with its owner (an application, a
 // capability, or neither for platform roles).
@@ -93,6 +93,22 @@ func NewResolver(authn auth.Authenticator, store Store, ttl time.Duration) *Reso
 	return &Resolver{authn: authn, store: store, ttl: ttl, now: time.Now, cache: map[string]cached{}}
 }
 
+// Authorize implements auth.Authorizer: the caller acts as role, which they
+// must hold; with no role named, a caller holding exactly one acts as it.
+func (r *Resolver) Authorize(ctx context.Context, token, role string) (*auth.Identity, error) {
+	s, err := r.Resolve(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case role == "" && len(s.Grants) == 1:
+		role = s.Grants[0].Role
+	case role == "" || !s.Holds(role):
+		return nil, auth.ErrForbidden
+	}
+	return &auth.Identity{UserID: s.User.Subject, Role: role}, nil
+}
+
 // Resolve authenticates token and returns the caller's current grants. It
 // returns ErrUnauthenticated for a bad token or a disabled account; any other
 // error is a store failure.
@@ -133,12 +149,24 @@ func (r *Resolver) Resolve(ctx context.Context, token string) (*Session, error) 
 
 // PostgresStore is the Store over the platform database. Its connection role
 // (dxos_authz) may read the registry and grants and write only the identity
-// columns of core.users.
-type PostgresStore struct{ DB *sql.DB }
+// columns of core.users. With ReadOnly (capability services, whose connection
+// may not write core.users) Mirror only reads the account; a user who has not
+// yet been mirrored by dxos-authz is unknown.
+type PostgresStore struct {
+	DB       *sql.DB
+	ReadOnly bool
+}
 
 // Mirror implements Store.
 func (s PostgresStore) Mirror(ctx context.Context, p auth.Principal) (string, error) {
 	var status string
+	if s.ReadOnly {
+		err := s.DB.QueryRowContext(ctx, `SELECT status FROM core.users WHERE id = $1`, p.Subject).Scan(&status)
+		if errors.Is(err, sql.ErrNoRows) {
+			return "UNKNOWN", nil
+		}
+		return status, err
+	}
 	err := s.DB.QueryRowContext(ctx, `
 		WITH upserted AS (
 		    INSERT INTO core.users (id, email, display_name) VALUES ($1, $2, $3)

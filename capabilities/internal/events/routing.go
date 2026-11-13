@@ -11,13 +11,12 @@ import (
 )
 
 // Route is deployment-owned configuration, never supplied by an event caller.
-// Each entry is tied to an active published workspace/app/package version.
+// Each entry is tied to an installed app version and one of its workflows.
 type Route struct {
-	WorkspaceID string `json:"workspace_id"`
-	AppID       string `json:"app_id"`
-	Version     string `json:"version"`
-	WorkflowID  string `json:"workflow_id"`
-	Endpoint    string `json:"endpoint"`
+	AppID      string `json:"app_id"`
+	Version    string `json:"version"`
+	WorkflowID string `json:"workflow_id"`
+	Endpoint   string `json:"endpoint"`
 }
 
 func (p *Publisher) SetAuthorization(scheme, credential string) error {
@@ -33,8 +32,8 @@ func (p *Publisher) SetRoutes(routes []Route) error {
 	}
 	keys := map[string]bool{}
 	for _, r := range routes {
-		key := r.WorkspaceID + "/" + r.AppID + "/" + r.WorkflowID
-		if r.WorkspaceID == "" || r.AppID == "" || r.Version == "" || r.WorkflowID == "" || ValidateEndpoint(r.Endpoint) != nil || keys[key] {
+		key := r.AppID + "/" + r.WorkflowID
+		if r.AppID == "" || r.Version == "" || r.WorkflowID == "" || ValidateEndpoint(r.Endpoint) != nil || keys[key] {
 			return errors.New("invalid or duplicate workflow route")
 		}
 		keys[key] = true
@@ -43,11 +42,8 @@ func (p *Publisher) SetRoutes(routes []Route) error {
 	return nil
 }
 func selectRoute(routes []Route, app *registry.AppDefinition, eventType string) (string, error) {
-	if app.Status != "Ready" {
-		return "", errors.New("workflow app is not Ready")
-	}
 	workflow := ""
-	for _, w := range app.ManifestSpec.Workflows {
+	for _, w := range app.Spec.Workflows {
 		for _, event := range w.SubscribedEvents {
 			if event == eventType {
 				if workflow != "" {
@@ -59,7 +55,7 @@ func selectRoute(routes []Route, app *registry.AppDefinition, eventType string) 
 	}
 	endpoint := ""
 	for _, r := range routes {
-		if r.WorkspaceID == app.WorkspaceID && r.AppID == app.AppID && r.Version == app.Version && r.WorkflowID == workflow {
+		if r.AppID == app.AppID && r.Version == app.Version && r.WorkflowID == workflow {
 			if endpoint != "" {
 				return "", errors.New("ambiguous deployed workflow routes")
 			}
@@ -76,14 +72,13 @@ func (p *Publisher) resolveEndpoint(ctx context.Context, payload []byte) (string
 		return p.endpoint, nil
 	} // Explicit legacy full-endpoint mode.
 	var event struct {
-		WorkspaceID string `json:"workspace_id"`
-		AppID       string `json:"app_id"`
-		EventType   string `json:"event_type"`
+		AppID     string `json:"app_id"`
+		EventType string `json:"event_type"`
 	}
 	if json.Unmarshal(payload, &event) != nil {
 		return "", errors.New("invalid persisted envelope")
 	}
-	app, err := registry.NewStore(p.db).Load(ctx, event.WorkspaceID, event.AppID)
+	app, err := registry.NewStore(p.db).Load(ctx, event.AppID)
 	if err != nil {
 		return "", err
 	}

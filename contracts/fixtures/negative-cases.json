@@ -10,31 +10,33 @@
     "status": "DESIGN_ONLY"
   },
   {
-    "name": "cross-workspace-fk",
+    "name": "other-department-approval",
     "input": {
-      "workspace_id": "11111111-1111-4111-8111-111111111111",
-      "foreign_workspace_id": "55555555-5555-4555-8555-555555555555"
+      "command": "approve",
+      "role": "role_procurement_manager",
+      "record_org_unit_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "actor_org_unit_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     },
-    "expected": "reject",
-    "assertion": "Reject same-workspace FK mismatch",
-    "status": "DESIGN_ONLY"
+    "expected": "404",
+    "assertion": "A department-scoped role neither sees nor acts on another department's record",
+    "status": "TESTED"
   },
   {
     "name": "self-approval",
     "input": {
       "command": "approve",
-      "requester_id": "22222222-2222-4222-8222-222222222222",
+      "created_by": "22222222-2222-4222-8222-222222222222",
       "actor_id": "22222222-2222-4222-8222-222222222222"
     },
     "expected": "403",
     "assertion": "recordFilter rejects self approval",
-    "status": "DESIGN_ONLY"
+    "status": "TESTED"
   },
   {
     "name": "unsupported-filter",
     "input": {
       "recordFilter": {
-        "requester_id": {
+        "created_by": {
           "_like": "%"
         }
       }
@@ -53,24 +55,15 @@
     "status": "DESIGN_ONLY"
   },
   {
-    "name": "malformed-claims",
-    "input": {
-      "x-hasura-allowed-roles": "role_procurement"
-    },
-    "expected": "401",
-    "assertion": "Roles must be signed array",
-    "status": "DESIGN_ONLY"
-  },
-  {
     "name": "ungranted-role",
     "input": {
-      "selected_role": "admin",
-      "allowed_roles": [
-        "role_procurement"
+      "X-Hasura-Role": "role_procurement_finance",
+      "held_roles": [
+        "role_procurement_requester"
       ]
     },
     "expected": "403",
-    "assertion": "Role selection cannot expand grant",
-    "status": "DESIGN_ONLY"
+    "assertion": "A role the caller does not hold in core.user_roles is refused",
+    "status": "TESTED"
   }
 ]
