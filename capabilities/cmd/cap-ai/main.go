@@ -1,117 +1,66 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 DX-OS Open-Core Contributors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
 
-// Command cap-ai serves document extraction and policy retrieval endpoints.
+// Command cap-ai serves the authenticated AI capability boundary.
 package main
 
 import (
+	"context"
 	"database/sql"
-	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
+	"time"
 
 	_ "github.com/lib/pq"
-	"github.com/opendx-os/opendx-os/capabilities/internal/ai"
+	"github.com/opendx-os/opendx-os/capabilities/internal/ai/access"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
-type ExtractionRequest struct {
-	FileID string `json:"file_id"`
-}
+type config struct{ DatabaseURL, IssuerURL, JWKSURL, Audience, Port string }
 
-type RAGRequest struct {
-	AppName string `json:"app_name"`
-	Query   string `json:"query"`
+func loadConfig(getenv func(string) string) (config, error) {
+	c := config{DatabaseURL: getenv("DATABASE_URL"), IssuerURL: getenv("OIDC_ISSUER_URL"), JWKSURL: getenv("OIDC_JWKS_URL"), Audience: getenv("OIDC_AUDIENCE"), Port: getenv("PORT")}
+	for _, v := range []string{c.DatabaseURL, c.IssuerURL, c.JWKSURL, c.Audience} {
+		if strings.TrimSpace(v) == "" {
+			return config{}, errors.New("DATABASE_URL and OIDC identity configuration are required")
+		}
+	}
+	if c.Port == "" {
+		c.Port = "8083"
+	}
+	port, err := strconv.Atoi(c.Port)
+	if err != nil || port < 1 || port > 65535 {
+		return config{}, errors.New("invalid PORT")
+	}
+	return c, nil
 }
-
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8083"
-	}
-
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		dsn = "postgres://dxos_app:dxos_secret@localhost:5432/dxos_db?sslmode=disable"
-	}
-
-	appsDir := os.Getenv("APPS_DIR")
-	if appsDir == "" {
-		appsDir = "./apps"
-	}
-
-	db, err := sql.Open("postgres", dsn)
+	c, err := loadConfig(os.Getenv)
 	if err != nil {
-		log.Fatalf("failed to connect to database: %v", err)
+		log.Fatal(err)
+	}
+	db, err := sql.Open("postgres", c.DatabaseURL)
+	if err != nil {
+		log.Fatal("invalid database configuration")
 	}
 	defer func() { _ = db.Close() }()
-
-	aiEngine := ai.NewAIEngine(db, appsDir)
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "service": "cap-ai"}) // Best-effort response; the client may have disconnected.
-	})
-
-	mux.HandleFunc("POST /api/cap/ai/extract", func(w http.ResponseWriter, r *http.Request) {
-		iden, err := auth.ExtractIdentity(r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-			return
-		}
-
-		var req ExtractionRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid request body", http.StatusBadRequest)
-			return
-		}
-
-		res, code, err := aiEngine.ExtractDocument(r.Context(), iden.WorkspaceID, req.FileID)
-		if err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(code)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()}) // Best-effort response; the client may have disconnected.
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(res) // Best-effort response; the client may have disconnected.
-	})
-
-	mux.HandleFunc("POST /api/cap/ai/rag", func(w http.ResponseWriter, r *http.Request) {
-		var req RAGRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid request body", http.StatusBadRequest)
-			return
-		}
-
-		resp, err := aiEngine.QueryPolicy(r.Context(), req.AppName, req.Query)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp) // Best-effort response; the client may have disconnected.
-	})
-
-	log.Printf("[cap-ai] Listening on port %s", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
-		log.Fatalf("server exited: %v", err)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	err = db.PingContext(ctx)
+	cancel()
+	if err != nil {
+		log.Fatal("database unavailable")
+	}
+	verifier, err := auth.NewSubjectVerifier(context.Background(), auth.VerifierConfig{IssuerURL: c.IssuerURL, JWKSURL: c.JWKSURL, Audience: c.Audience})
+	if err != nil {
+		log.Fatal("identity verification unavailable or invalid configuration")
+	}
+	server := &http.Server{Addr: ":" + c.Port, Handler: newHandler(access.Authenticator{Verifier: verifier, Membership: access.NewDBMembership(db)}), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
+	log.Printf("cap-ai listening on port %s", c.Port)
+	if err = server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Fatal("cap-ai listener failed")
 	}
 }
