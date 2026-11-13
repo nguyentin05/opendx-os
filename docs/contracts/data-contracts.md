@@ -113,36 +113,47 @@ Lineage must preserve the full source record set behind each aggregate metric, n
 
 ## 7. `DXApplication` manifest contract
 
-This is the intended logical shape. Before extending parsers or app packages,
-agree on a versioned serialization, validator, and sample that consumers all use.
-The existing parser and app examples are partial implementations; differences
-from this table must be resolved explicitly rather than guessed independently.
+The operator's validator (`operator/internal/manifest`) is the reference
+implementation of this serialization; `apps/*/manifest.yaml` are validated
+samples and `contracts/fixtures/app-ready.json` is the matching `core.apps` row.
+One installation serves one organization, so a manifest names no workspace.
 
 | Field | Meaning and required data |
 | --- | --- |
-| `kind` | `DXApplication` |
-| `metadata` | `name`, `displayName`, `version` of the app package |
-| `spec.role` | The app's primary business role; other roles must be declared in the corresponding permissions |
-| `spec.sharedAccess` | List of `core.*` tables, columns read, roles, and relationships used; no implicit write access to master data |
-| `spec.domainTable` | Table name, columns/data types, nullability, CHECK constraints, composite FK within the workspace; the system columns in section 3 are managed by the Operator |
-| `spec.domainAccess` | Allowlist of roles/columns for select, insert, and update; permission conditions on records. Deny undeclared operations by default |
-| `spec.stateMachine` | `initial`, `editableStates`, `terminalStates` eligible for export, and commands with `from`, `to`, `allowedRoles`; states not in `editableStates` disallow content-editing CRUD |
-| `spec.attachments` | File FK columns to check on download/OCR/command; do not infer them from domain column names |
-| `spec.workflows` | Flows with an identity, a YAML file in the package, and subscribed events; `ot.event.accepted` or `command.committed` carries workspace/app/entity/version and an event ID as applicable |
-| `spec.capabilities` | Capabilities required for the app/features to operate |
-| `spec.uiSchema` | `listColumns`, `formFields`, views/actions referencing declared fields and commands; creates no additional permissions |
+| `kind` | `DXApplication` (`apiVersion: dxos.io/v1alpha1`) |
+| `metadata` | `name` (the `app_id`), `displayName`, `version` of the app package |
+| `spec.capabilities` | Tier 2 capabilities the app uses. `cap-process` is required; `cap-hr` adds departments (`org_unit_id`, `department` scope); `cap-work` is required by `create_work_item` effects. Each must be enabled when the app is installed |
+| `spec.roles` | Roles the app owns (`name`, optional `description`). Every role used anywhere in the manifest must be declared here. A role belongs to exactly one app; `role_operator`, `role_auditor` and `role_workflow` are reserved |
+| `spec.sharedAccess` | Optional. Shared tables the app's roles read, from a closed catalog: `core.users`, `core.files`, `cap_hr.org_units`, `cap_hr.staff`, `cap_work.work_items`, `cap_data.devices`. Rows of `core.files` and `cap_work.work_items` are limited to the app's own `app_id`. No write access |
+| `spec.domainTable` | `domain.<name>`, business columns (type, nullability, allowlisted CHECK) and optional `foreignKeys` (`column` → `references`, one of the referenceable catalog tables). System columns are managed by the operator: `id`, `created_by`, `status`, `version`, `created_at`, `updated_at`, plus `org_unit_id` for cap-hr apps |
+| `spec.domainAccess` | Allowlist of roles and columns for `select`, `insert` and optional `update`. `select` and `update` rules declare a `scope`: `own` (`created_by` is the caller), `department` (the record's `org_unit_id` is the caller's department in `cap_hr.staff`; requires cap-hr) or `organization`. An optional `recordFilter` narrows the scope. Insert rules have no scope: the creator and department are stamped by database triggers. System columns are never writable |
+| `spec.stateMachine` | `initial`, `editableStates`, `terminalStates`, and commands with `from`, `to`, `allowedRoles` and an optional `recordFilter` (for example `created_by _neq X-Hasura-User-Id` forbids self-approval). The domain table's `status` CHECK lists exactly these states |
+| `spec.attachments` | Optional. File columns (foreign keys to `core.files`) that must be `CLEAN` for the listed commands |
+| `spec.workflows` | Optional. Flows with an identity, a YAML file in the package, `command.committed` subscription and literal `create_work_item` effects (`title`, `description`, `priority`, optional `assigneeId`) |
+| `spec.uiSchema` | `listColumns`, `formFields`, `actions` referencing declared columns and commands; creates no permissions |
 
-A workflow is registered only in a deployed workspace/app and runs under a least-privilege service identity. Event content does not grant permissions beyond the workspace. Table names, columns, relationships, and declared expressions must pass validator checks before DDL/metadata generation.
+Filters use `_and`, `_or` and declared columns compared with `_eq`/`_neq`; the
+only session value is `X-Hasura-User-Id`.
 
-### Implementation gaps
+### Installation and registry
 
-The current Go types use `stateMachine.initialState` and `transitions`; the logical
-contract above also needs editable/terminal states and command validation.
-Attachment-column bindings, constraint/FK declarations, per-role access rules, and
-workflow field names need one serialization shared by the parser, sample apps,
-validators, services, and UI. Resolve compatibility and migrations for existing
-data/manifests when changing that serialization. An example without matching
-validation remains illustrative.
+Installing an application writes, in one transaction after its DDL and Hasura
+metadata succeed, the `core.apps` row (`Ready`), its roles in `core.roles` and
+its capabilities in `core.app_capabilities`. Each attempt is recorded in
+`core.app_deployments`; a failed upgrade keeps the previous version `Ready` and
+records `last_error`, a failed first install leaves the row `Failed`. A role
+owned by another app, a capability or the platform, or a capability that is not
+enabled, refuses the app before any change. Uninstalling marks the row `Removed`,
+drops its Hasura permissions and releases its capabilities; the domain table,
+data, roles and role assignments are kept. Roles dropped from a manifest are
+deleted with their assignments.
+
+### Pending consumers
+
+`cap-process` still reads the previous registry shape
+(`contracts/fixtures/registry-ready.json`, `core.app_registry`) and must move to
+`core.apps` and this manifest (issue #29). Command scopes follow each role's
+`select` scope until cap-process enforces them (issue #31).
 
 ## 8. Semantic concept ownership
 

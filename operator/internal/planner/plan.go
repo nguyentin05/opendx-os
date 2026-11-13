@@ -16,6 +16,7 @@
 package planner
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
@@ -52,6 +53,7 @@ func BuildPlan(apps []manifest.DXApplication, live ManagedState) (Plan, error) {
 
 	seenNames := map[string]bool{}
 	seenTables := map[string]bool{}
+	roleOwner := map[string]string{}
 	desiredSharedGrants := map[sharedGrantKey][]string{}
 
 	for i := range apps {
@@ -67,6 +69,12 @@ func BuildPlan(apps []manifest.DXApplication, live ManagedState) (Plan, error) {
 		}
 		seenNames[app.Metadata.Name] = true
 		seenTables[app.Spec.DomainTable.Name] = true
+		for _, role := range app.RoleNames() {
+			if owner, taken := roleOwner[role]; taken {
+				return Plan{}, fmt.Errorf("role %q is declared by both %s and %s; a role belongs to one application", role, owner, app.Metadata.Name)
+			}
+			roleOwner[role] = app.Metadata.Name
+		}
 
 		ddl, err := GenerateDDL(app)
 		if err != nil {
@@ -171,4 +179,41 @@ func BuildApplyPlan(app manifest.DXApplication, live ManagedState) (Plan, error)
 	}
 	desired = append(desired, app)
 	return BuildPlan(desired, live)
+}
+
+// Changed returns, in input order, the applications of apps that are not
+// installed or whose definition differs from the installed one.
+func Changed(apps []manifest.DXApplication, live ManagedState) []string {
+	installed := make(map[string]string, len(live.ActiveApps))
+	for _, a := range live.ActiveApps {
+		if c, ok := Canonical(a); ok {
+			installed[a.Metadata.Name] = c
+		}
+	}
+	var out []string
+	for _, a := range apps {
+		c, ok := Canonical(a)
+		if !ok || installed[a.Metadata.Name] != c {
+			out = append(out, a.Metadata.Name)
+		}
+	}
+	return out
+}
+
+// Canonical renders a value as JSON with sorted keys and normalized numbers, so
+// a manifest parsed from YAML compares equal to one decoded from the database.
+func Canonical(v any) (string, bool) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return "", false
+	}
+	var generic any
+	if err := json.Unmarshal(raw, &generic); err != nil {
+		return "", false
+	}
+	out, err := json.Marshal(generic)
+	if err != nil {
+		return "", false
+	}
+	return string(out), true
 }

@@ -23,11 +23,11 @@ import (
 
 func TestCLIExportCRD(t *testing.T) {
 	var out, errOut bytes.Buffer
-	code := runCLI([]string{"export-crd", "-workspace", "11111111-1111-4111-8111-111111111111,22222222-2222-4222-8222-222222222222", "../../../apps/process-fixture"}, &out, &errOut, nil, nil)
+	code := runCLI([]string{"export-crd", "../../../apps/process-fixture"}, &out, &errOut, nil, nil)
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errOut.String())
 	}
-	for _, needle := range []string{"kind: DXApplication", "name: process-fixture", "- 22222222-2222-4222-8222-222222222222", "definition: |"} {
+	for _, needle := range []string{"kind: DXApplication", "name: process-fixture", "name: role_review", "definition: |"} {
 		if !strings.Contains(out.String(), needle) {
 			t.Fatalf("output missing %q:\n%s", needle, out.String())
 		}
@@ -35,8 +35,8 @@ func TestCLIExportCRD(t *testing.T) {
 
 	out.Reset()
 	errOut.Reset()
-	if code := runCLI([]string{"export-crd", "-workspace", "not-a-uuid", "../../../apps/process-fixture"}, &out, &errOut, nil, nil); code == 0 {
-		t.Fatal("invalid workspace must fail")
+	if code := runCLI([]string{"export-crd", "-workspace", "11111111-1111-4111-8111-111111111111", "../../../apps/process-fixture"}, &out, &errOut, nil, nil); code == 0 {
+		t.Fatal("the removed -workspace flag must be rejected")
 	}
 	if code := runCLI([]string{"export-crd"}, &out, &errOut, nil, nil); code == 0 {
 		t.Fatal("missing package path must fail")

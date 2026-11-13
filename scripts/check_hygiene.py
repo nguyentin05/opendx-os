@@ -47,7 +47,7 @@ HEADER_FILENAMES = {"Makefile", "Dockerfile"}
 BANNED_DIRS = {"node_modules", "vendor", ".venv", "venv", "__pycache__", ".git"}
 RUNTIME_NON_DOMAIN_PATHS = ("platform", "operator/internal", "capabilities", "workspace-ui/src")
 DOMAIN_APP_NAMES = ("maintenance", "procurement", "timesheet")
-SYSTEM_MANAGED_COLUMNS = {"id", "workspace_id", "status", "version", "updated_at"}
+SYSTEM_MANAGED_COLUMNS = {"id", "created_by", "org_unit_id", "status", "version", "created_at", "updated_at"}
 
 
 def iter_repo_files(root: pathlib.Path):
@@ -117,14 +117,11 @@ def check_app_manifests(root: pathlib.Path, errors: list[str]) -> None:
             continue
         spec = data.get("spec", {})
         required_spec_keys = {
-            "role",
-            "sharedAccess",
+            "capabilities",
+            "roles",
             "domainTable",
             "domainAccess",
             "stateMachine",
-            "attachments",
-            "workflows",
-            "capabilities",
             "uiSchema",
         }
         missing = required_spec_keys - set(spec.keys())
@@ -142,11 +139,11 @@ def check_app_manifests(root: pathlib.Path, errors: list[str]) -> None:
                         f"{rel}: domainAccess.{op} for role {rule.get('role')} exposes system-managed columns {sorted(forbidden)}"
                     )
 
-        for fkey in spec.get("domainTable", {}).get("compositeForeignKeys", []):
-            cols = fkey.get("columns", [])
-            ref_cols = fkey.get("referencesColumns", [])
-            if not cols or cols[0] != "workspace_id" or not ref_cols or ref_cols[0] != "workspace_id":
-                errors.append(f"{rel}: compositeForeignKeys must start with workspace_id")
+        declared_roles = {role.get("name") for role in spec.get("roles", [])}
+        for op in ("select", "insert", "update"):
+            for rule in domain_access.get(op, []):
+                if rule.get("role") not in declared_roles:
+                    errors.append(f"{rel}: domainAccess.{op} uses undeclared role {rule.get('role')}")
 
         for wf in spec.get("workflows", []):
             wf_file = manifest_path.parent / wf.get("file", "")

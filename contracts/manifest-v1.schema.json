@@ -1,5 +1,16 @@
 {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dxos.io/contracts/manifest-v1.schema.json",
+  "title": "DXApplication manifest (dxos.io/v1alpha1)",
+  "$comment": "Structural schema derived from the DXApplication CRD (operator/config/crd/bases). Semantic rules (declared roles, scopes, capabilities, column references) are enforced by operator/internal/manifest.Validate.",
   "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
   "properties": {
     "apiVersion": {
       "const": "dxos.io/v1alpha1"
@@ -9,6 +20,12 @@
     },
     "metadata": {
       "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "displayName",
+        "version"
+      ],
       "properties": {
         "name": {
           "type": "string",
@@ -22,77 +39,212 @@
           "type": "string",
           "minLength": 1
         }
-      },
-      "required": [
-        "name",
-        "displayName",
-        "version"
-      ],
-      "additionalProperties": false
+      }
     },
     "spec": {
-      "type": "object",
+      "description": "DXApplicationSpec mirrors the DXApplication manifest contract\n(docs/contracts/data-contracts.md). JSON field names are identical to the\nmanifest so that both forms convert losslessly.",
       "properties": {
-        "role": {
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9_]*$"
-        },
-        "sharedAccess": {
-          "type": "array",
+        "attachments": {
+          "description": "Attachments binds file columns to commands that require a CLEAN scan.",
           "items": {
-            "type": "object",
+            "description": "Attachment binds a file column to the commands that require a CLEAN file.",
             "properties": {
-              "table": {
-                "enum": [
-                  "core.employees",
-                  "core.work_items",
-                  "core.file_objects"
-                ]
+              "column": {
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
               },
-              "roles": {
-                "type": "array",
+              "requireCleanOnCommands": {
                 "items": {
-                  "type": "string",
-                  "pattern": "^[a-z][a-z0-9_]*$"
+                  "type": "string"
                 },
                 "minItems": 1,
-                "uniqueItems": true
-              },
-              "columns": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "pattern": "^[a-z][a-z0-9_]*$"
-                },
-                "minItems": 1,
-                "uniqueItems": true
+                "type": "array"
               }
             },
             "required": [
-              "table",
-              "roles",
-              "columns"
+              "column",
+              "requireCleanOnCommands"
             ],
+            "type": "object",
             "additionalProperties": false
           },
+          "type": "array"
+        },
+        "capabilities": {
+          "description": "Capabilities lists the Tier 2 capabilities the application depends on.\ncap-process is required.",
+          "items": {
+            "pattern": "^cap-[a-z]+$",
+            "type": "string"
+          },
           "minItems": 1,
-          "uniqueItems": true
+          "type": "array"
+        },
+        "domainAccess": {
+          "description": "DomainAccess declares per-role select/insert/update rules on the domain table.",
+          "properties": {
+            "insert": {
+              "items": {
+                "description": "AccessRule allows one role a set of columns within its scope, optionally\nnarrowed by a record filter.",
+                "properties": {
+                  "columns": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "presets": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "Presets set uuid columns from X-Hasura-User-Id (insert only).",
+                    "type": "object"
+                  },
+                  "recordFilter": {
+                    "type": "object",
+                    "description": "RecordFilter is a Hasura boolean expression over declared columns."
+                  },
+                  "role": {
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "type": "string"
+                  },
+                  "scope": {
+                    "description": "Scope is required on select and update: own records, own department\n(requires cap-hr) or the whole organization. Not allowed on insert.",
+                    "enum": [
+                      "own",
+                      "department",
+                      "organization"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "columns",
+                  "role"
+                ],
+                "type": "object",
+                "additionalProperties": false
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "select": {
+              "items": {
+                "description": "AccessRule allows one role a set of columns within its scope, optionally\nnarrowed by a record filter.",
+                "properties": {
+                  "columns": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "presets": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "Presets set uuid columns from X-Hasura-User-Id (insert only).",
+                    "type": "object"
+                  },
+                  "recordFilter": {
+                    "type": "object",
+                    "description": "RecordFilter is a Hasura boolean expression over declared columns."
+                  },
+                  "role": {
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "type": "string"
+                  },
+                  "scope": {
+                    "description": "Scope is required on select and update: own records, own department\n(requires cap-hr) or the whole organization. Not allowed on insert.",
+                    "enum": [
+                      "own",
+                      "department",
+                      "organization"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "columns",
+                  "role"
+                ],
+                "type": "object",
+                "additionalProperties": false
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "update": {
+              "items": {
+                "description": "AccessRule allows one role a set of columns within its scope, optionally\nnarrowed by a record filter.",
+                "properties": {
+                  "columns": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "presets": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "Presets set uuid columns from X-Hasura-User-Id (insert only).",
+                    "type": "object"
+                  },
+                  "recordFilter": {
+                    "type": "object",
+                    "description": "RecordFilter is a Hasura boolean expression over declared columns."
+                  },
+                  "role": {
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "type": "string"
+                  },
+                  "scope": {
+                    "description": "Scope is required on select and update: own records, own department\n(requires cap-hr) or the whole organization. Not allowed on insert.",
+                    "enum": [
+                      "own",
+                      "department",
+                      "organization"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "columns",
+                  "role"
+                ],
+                "type": "object",
+                "additionalProperties": false
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "insert",
+            "select"
+          ],
+          "type": "object",
+          "additionalProperties": false
         },
         "domainTable": {
-          "type": "object",
+          "description": "DomainTable declares the isolated business table generated by the Operator.",
           "properties": {
-            "name": {
-              "type": "string",
-              "pattern": "^domain\\.[a-z][a-z0-9_]*$"
-            },
             "columns": {
-              "type": "array",
               "items": {
-                "type": "object",
+                "description": "Column is a business column; system columns are managed by the Operator.",
                 "properties": {
+                  "check": {
+                    "description": "Check is a SQL CHECK expression from the validator's allowlist.",
+                    "type": "string"
+                  },
                   "name": {
-                    "type": "string",
-                    "pattern": "^[a-z][a-z0-9_]*$"
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "type": "string"
+                  },
+                  "nullable": {
+                    "description": "Nullable is required so that additive upgrades are explicit.",
+                    "type": "boolean"
                   },
                   "type": {
                     "enum": [
@@ -101,453 +253,211 @@
                       "date",
                       "numeric(14,2)",
                       "numeric(4,2)"
-                    ]
-                  },
-                  "nullable": {
-                    "type": "boolean"
-                  },
-                  "check": {
-                    "type": "string",
-                    "pattern": "^(length\\(trim\\([a-z][a-z0-9_]*\\)\\) > 0|[a-z][a-z0-9_]* > 0|[a-z][a-z0-9_]* > 0 AND [a-z][a-z0-9_]* <= 24)$"
+                    ],
+                    "type": "string"
                   }
                 },
                 "required": [
                   "name",
-                  "type",
-                  "nullable"
+                  "nullable",
+                  "type"
                 ],
+                "type": "object",
                 "additionalProperties": false
               },
               "minItems": 1,
-              "uniqueItems": true
+              "type": "array"
             },
-            "compositeForeignKeys": {
-              "type": "array",
+            "foreignKeys": {
               "items": {
-                "type": "object",
+                "description": "ForeignKey links a business uuid column to the id of a shared table.",
                 "properties": {
-                  "columns": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "pattern": "^[a-z][a-z0-9_]*$"
-                    },
-                    "minItems": 1,
-                    "uniqueItems": true
+                  "column": {
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "type": "string"
                   },
-                  "referencesTable": {
-                    "enum": [
-                      "core.employees",
-                      "core.work_items",
-                      "core.file_objects"
-                    ]
-                  },
-                  "referencesColumns": {
-                    "const": [
-                      "workspace_id",
-                      "id"
-                    ]
+                  "references": {
+                    "pattern": "^(core|cap_[a-z]+)\\.[a-z][a-z0-9_]*$",
+                    "type": "string"
                   }
                 },
                 "required": [
-                  "columns",
-                  "referencesTable",
-                  "referencesColumns"
+                  "column",
+                  "references"
                 ],
+                "type": "object",
                 "additionalProperties": false
               },
-              "minItems": 1,
-              "uniqueItems": true
+              "type": "array"
+            },
+            "name": {
+              "pattern": "^domain\\.[a-z][a-z0-9_]*$",
+              "type": "string"
             }
           },
           "required": [
-            "name",
             "columns",
-            "compositeForeignKeys"
+            "name"
           ],
+          "type": "object",
           "additionalProperties": false
         },
-        "domainAccess": {
-          "type": "object",
-          "properties": {
-            "select": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "role": {
-                    "type": "string",
-                    "pattern": "^[a-z][a-z0-9_]*$"
-                  },
-                  "columns": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "pattern": "^[a-z][a-z0-9_]*$"
-                    },
-                    "minItems": 1,
-                    "uniqueItems": true
-                  },
-                  "recordFilter": {
-                    "$ref": "#/$defs/filter"
-                  },
-                  "presets": {
-                    "type": "object",
-                    "propertyNames": {
-                      "type": "string",
-                      "pattern": "^[a-z][a-z0-9_]*$"
-                    },
-                    "additionalProperties": {
-                      "enum": [
-                        "X-Hasura-User-Id",
-                        "X-Hasura-Workspace-Id"
-                      ]
-                    }
-                  }
-                },
-                "required": [
-                  "role",
-                  "columns"
-                ],
-                "additionalProperties": false
+        "roles": {
+          "description": "Roles are owned by this application; no other application may use them.",
+          "items": {
+            "description": "Role is one application role (core.roles).",
+            "properties": {
+              "description": {
+                "type": "string"
               },
-              "minItems": 1,
-              "uniqueItems": true
+              "name": {
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              }
             },
-            "insert": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "role": {
-                    "type": "string",
-                    "pattern": "^[a-z][a-z0-9_]*$"
-                  },
-                  "columns": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "pattern": "^[a-z][a-z0-9_]*$"
-                    },
-                    "minItems": 1,
-                    "uniqueItems": true
-                  },
-                  "recordFilter": {
-                    "$ref": "#/$defs/filter"
-                  },
-                  "presets": {
-                    "type": "object",
-                    "propertyNames": {
-                      "type": "string",
-                      "pattern": "^[a-z][a-z0-9_]*$"
-                    },
-                    "additionalProperties": {
-                      "enum": [
-                        "X-Hasura-User-Id",
-                        "X-Hasura-Workspace-Id"
-                      ]
-                    }
-                  }
-                },
-                "required": [
-                  "role",
-                  "columns"
-                ],
-                "additionalProperties": false
-              },
-              "minItems": 1,
-              "uniqueItems": true
-            },
-            "update": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "role": {
-                    "type": "string",
-                    "pattern": "^[a-z][a-z0-9_]*$"
-                  },
-                  "columns": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "pattern": "^[a-z][a-z0-9_]*$"
-                    },
-                    "minItems": 1,
-                    "uniqueItems": true
-                  },
-                  "recordFilter": {
-                    "$ref": "#/$defs/filter"
-                  },
-                  "presets": {
-                    "type": "object",
-                    "propertyNames": {
-                      "type": "string",
-                      "pattern": "^[a-z][a-z0-9_]*$"
-                    },
-                    "additionalProperties": {
-                      "enum": [
-                        "X-Hasura-User-Id",
-                        "X-Hasura-Workspace-Id"
-                      ]
-                    }
-                  }
-                },
-                "required": [
-                  "role",
-                  "columns"
-                ],
-                "additionalProperties": false
-              },
-              "minItems": 1,
-              "uniqueItems": true
-            }
+            "required": [
+              "name"
+            ],
+            "type": "object",
+            "additionalProperties": false
           },
-          "required": [
-            "select",
-            "insert",
-            "update"
-          ],
-          "additionalProperties": false
+          "minItems": 1,
+          "type": "array"
+        },
+        "sharedAccess": {
+          "description": "SharedAccess declares the shared Tier 1 and Tier 2 tables, columns and\nroles the application reads.",
+          "items": {
+            "description": "SharedAccess grants read access to a shared Tier 1 or Tier 2 table.",
+            "properties": {
+              "columns": {
+                "items": {
+                  "pattern": "^[a-z][a-z0-9_]*$",
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "roles": {
+                "items": {
+                  "pattern": "^[a-z][a-z0-9_]*$",
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "table": {
+                "pattern": "^(core|cap_[a-z]+)\\.[a-z][a-z0-9_]*$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "columns",
+              "roles",
+              "table"
+            ],
+            "type": "object",
+            "additionalProperties": false
+          },
+          "type": "array"
         },
         "stateMachine": {
-          "type": "object",
+          "description": "StateMachine declares states and the commands that move between them.",
           "properties": {
-            "initial": {
-              "type": "string",
-              "minLength": 1
-            },
-            "editableStates": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "minLength": 1
-              },
-              "minItems": 1,
-              "uniqueItems": true
-            },
-            "terminalStates": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "minLength": 1
-              },
-              "minItems": 1,
-              "uniqueItems": true
-            },
             "commands": {
-              "type": "array",
               "items": {
-                "type": "object",
+                "description": "Command is a role-guarded state transition executed by cap-process.",
                 "properties": {
-                  "name": {
-                    "type": "string",
-                    "pattern": "^[a-z][a-z0-9_]*$"
+                  "allowedRoles": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array"
                   },
                   "from": {
-                    "type": "array",
                     "items": {
-                      "type": "string",
-                      "minLength": 1
+                      "type": "string"
                     },
                     "minItems": 1,
-                    "uniqueItems": true
+                    "type": "array"
                   },
-                  "to": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "allowedRoles": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "pattern": "^[a-z][a-z0-9_]*$"
-                    },
-                    "minItems": 1,
-                    "uniqueItems": true
+                  "name": {
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "type": "string"
                   },
                   "recordFilter": {
-                    "$ref": "#/$defs/filter"
+                    "type": "object",
+                    "description": ""
+                  },
+                  "to": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                    "type": "string"
                   }
                 },
                 "required": [
-                  "name",
+                  "allowedRoles",
                   "from",
-                  "to",
-                  "allowedRoles"
+                  "name",
+                  "to"
                 ],
+                "type": "object",
                 "additionalProperties": false
               },
               "minItems": 1,
-              "uniqueItems": true
+              "type": "array"
+            },
+            "editableStates": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "initial": {
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+              "type": "string"
+            },
+            "terminalStates": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
             }
           },
           "required": [
-            "initial",
+            "commands",
             "editableStates",
-            "terminalStates",
-            "commands"
+            "initial",
+            "terminalStates"
           ],
+          "type": "object",
           "additionalProperties": false
         },
-        "attachments": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "column": {
-                "type": "string",
-                "pattern": "^[a-z][a-z0-9_]*$"
-              },
-              "requireCleanOnCommands": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "pattern": "^[a-z][a-z0-9_]*$"
-                },
-                "minItems": 1,
-                "uniqueItems": true
-              }
-            },
-            "required": [
-              "column",
-              "requireCleanOnCommands"
-            ],
-            "additionalProperties": false
-          },
-          "minItems": 1,
-          "uniqueItems": true
-        },
-        "workflows": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^[a-z][a-z0-9_]*$"
-              },
-              "file": {
-                "type": "string",
-                "pattern": "^workflows/[a-z][a-z0-9_]*\\.yaml$"
-              },
-              "subscribedEvents": {
-                "type": "array",
-                "items": {
-                  "const": "command.committed"
-                },
-                "minItems": 1,
-                "uniqueItems": true
-              },
-              "effects": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "stepName": {
-                      "type": "string",
-                      "pattern": "^[a-z][a-z0-9_]*$"
-                    },
-                    "kind": {
-                      "const": "create_work_item"
-                    },
-                    "whenCommands": {
-                      "type": "array",
-                      "items": {
-                        "type": "string",
-                        "pattern": "^[a-z][a-z0-9_]*$"
-                      },
-                      "minItems": 1,
-                      "uniqueItems": true
-                    },
-                    "fields": {
-                      "type": "object",
-                      "properties": {
-                        "title": {
-                          "type": "string",
-                          "minLength": 1
-                        },
-                        "description": {
-                          "type": "string"
-                        },
-                        "priority": {
-                          "enum": [
-                            "LOW",
-                            "MEDIUM",
-                            "HIGH",
-                            "CRITICAL"
-                          ]
-                        },
-                        "assignedEmployeeId": {
-                          "type": "string",
-                          "format": "uuid"
-                        }
-                      },
-                      "required": [
-                        "title",
-                        "description",
-                        "priority"
-                      ],
-                      "additionalProperties": false
-                    }
-                  },
-                  "required": [
-                    "stepName",
-                    "kind",
-                    "whenCommands",
-                    "fields"
-                  ],
-                  "additionalProperties": false
-                },
-                "minItems": 1,
-                "uniqueItems": true
-              }
-            },
-            "required": [
-              "id",
-              "file",
-              "subscribedEvents",
-              "effects"
-            ],
-            "additionalProperties": false
-          },
-          "minItems": 1,
-          "uniqueItems": true
-        },
-        "capabilities": {
-          "type": "array",
-          "items": {
-            "enum": [
-              "cap-process"
-            ]
-          },
-          "minItems": 1,
-          "uniqueItems": true
-        },
         "uiSchema": {
-          "type": "object",
+          "description": "UISchema configures the schema-driven App Shell.",
           "properties": {
-            "listColumns": {
-              "type": "array",
+            "actions": {
               "items": {
-                "type": "string",
-                "pattern": "^[a-z][a-z0-9_]*$"
+                "type": "string"
               },
               "minItems": 1,
-              "uniqueItems": true
+              "type": "array"
             },
             "formFields": {
-              "type": "array",
               "items": {
-                "type": "object",
+                "description": "FormField is one input of the generated form.",
                 "properties": {
-                  "name": {
-                    "type": "string",
-                    "pattern": "^[a-z][a-z0-9_]*$"
-                  },
                   "label": {
-                    "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "name": {
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "type": "string"
+                  },
+                  "required": {
+                    "type": "boolean"
                   },
                   "type": {
                     "enum": [
@@ -556,114 +466,149 @@
                       "number",
                       "file",
                       "date"
-                    ]
-                  },
-                  "required": {
-                    "type": "boolean"
+                    ],
+                    "type": "string"
                   }
                 },
                 "required": [
-                  "name",
                   "label",
-                  "type",
-                  "required"
+                  "name",
+                  "required",
+                  "type"
                 ],
+                "type": "object",
                 "additionalProperties": false
               },
               "minItems": 1,
-              "uniqueItems": true
+              "type": "array"
             },
-            "actions": {
-              "type": "array",
+            "listColumns": {
               "items": {
-                "type": "string",
-                "pattern": "^[a-z][a-z0-9_]*$"
+                "type": "string"
               },
               "minItems": 1,
-              "uniqueItems": true
+              "type": "array"
             }
           },
           "required": [
-            "listColumns",
+            "actions",
             "formFields",
-            "actions"
+            "listColumns"
           ],
+          "type": "object",
           "additionalProperties": false
+        },
+        "workflows": {
+          "description": "Workflows declares the automation flows and their business effects.",
+          "items": {
+            "description": "Workflow is an automation flow. The definition is inlined because the\ncontroller cannot read package files from inside the cluster.",
+            "properties": {
+              "effects": {
+                "items": {
+                  "description": "Effect is a deduplicated business effect executed through cap-process.",
+                  "properties": {
+                    "fields": {
+                      "description": "EffectFields are the literal work item fields owned by the manifest.",
+                      "properties": {
+                        "assigneeId": {
+                          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                          "type": "string"
+                        },
+                        "description": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "priority": {
+                          "enum": [
+                            "LOW",
+                            "MEDIUM",
+                            "HIGH",
+                            "CRITICAL"
+                          ],
+                          "type": "string"
+                        },
+                        "title": {
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "description",
+                        "priority",
+                        "title"
+                      ],
+                      "type": "object",
+                      "additionalProperties": false
+                    },
+                    "kind": {
+                      "enum": [
+                        "create_work_item"
+                      ],
+                      "type": "string"
+                    },
+                    "stepName": {
+                      "pattern": "^[a-z][a-z0-9_]*$",
+                      "type": "string"
+                    },
+                    "whenCommands": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "fields",
+                    "kind",
+                    "stepName",
+                    "whenCommands"
+                  ],
+                  "type": "object",
+                  "additionalProperties": false
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "file": {
+                "description": "File is the package-relative path the definition was read from. It is\ninformational and preserved so that a resource converts back to its package.",
+                "pattern": "^workflows/[a-z][a-z0-9_]*\\.yaml$",
+                "type": "string"
+              },
+              "id": {
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              },
+              "subscribedEvents": {
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "required": [
+              "effects",
+              "id",
+              "subscribedEvents",
+              "file"
+            ],
+            "type": "object",
+            "additionalProperties": false
+          },
+          "type": "array"
         }
       },
       "required": [
-        "role",
-        "sharedAccess",
-        "domainTable",
-        "domainAccess",
-        "stateMachine",
-        "attachments",
-        "workflows",
         "capabilities",
+        "domainAccess",
+        "domainTable",
+        "roles",
+        "stateMachine",
         "uiSchema"
       ],
-      "additionalProperties": false
-    }
-  },
-  "required": [
-    "apiVersion",
-    "kind",
-    "metadata",
-    "spec"
-  ],
-  "additionalProperties": false,
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://dxos.io/contracts/manifest-v1.schema.json",
-  "title": "PROPOSED C0 core manifest v1",
-  "$defs": {
-    "filter": {
       "type": "object",
-      "minProperties": 1,
-      "properties": {
-        "_and": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/filter"
-          },
-          "minItems": 1,
-          "uniqueItems": true
-        },
-        "_or": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/filter"
-          },
-          "minItems": 1,
-          "uniqueItems": true
-        }
-      },
-      "patternProperties": {
-        "^[a-z][a-z0-9_]*$": {
-          "type": "object",
-          "minProperties": 1,
-          "properties": {
-            "_eq": {
-              "type": [
-                "string",
-                "number",
-                "boolean",
-                "null"
-              ]
-            },
-            "_neq": {
-              "type": [
-                "string",
-                "number",
-                "boolean",
-                "null"
-              ]
-            }
-          },
-          "additionalProperties": false
-        }
-      },
       "additionalProperties": false
     }
-  },
-  "$comment": "Structural validation only. Mandatory semantic validation is specified in README.md; B approval and validator implementation pending. Unsupported semanticType, raw SQL and unknown properties are rejected."
+  }
 }

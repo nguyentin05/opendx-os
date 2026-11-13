@@ -1,34 +1,25 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 DX-OS Open-Core Contributors
-
 apiVersion: dxos.io/v1alpha1
 kind: DXApplication
 metadata:
   name: timesheet
   displayName: "Employee Timesheet"
-  version: "0.1.0"
+  version: "0.2.0"
 spec:
-  role: role_timesheet
+  capabilities: [cap-process, cap-hr]
+  roles:
+    - name: role_timesheet_employee
+      description: Logs their own working hours
+    - name: role_timesheet_manager
+      description: Approves the timesheets of their department
   sharedAccess:
-    - table: core.employees
-      roles: [role_timesheet, role_manager_timesheet]
-      columns: [id, workspace_id, full_name, department]
-      relationships:
-        - name: timesheet_entries
-          type: array
-          targetTable: domain.timesheet_entries
-          mapping:
-            workspace_id: workspace_id
-            id: employee_id
-    - table: core.work_items
-      roles: [role_timesheet, role_manager_timesheet]
-      columns: [id, workspace_id, title, priority, created_at]
+    - table: core.users
+      roles: [role_timesheet_employee, role_timesheet_manager]
+      columns: [id, display_name]
   domainTable:
     name: domain.timesheet_entries
     columns:
-      - name: employee_id
-        type: uuid
-        nullable: false
       - name: work_date
         type: date
         nullable: false
@@ -36,24 +27,20 @@ spec:
         type: numeric(4,2)
         nullable: false
         check: "logged_hours > 0 AND logged_hours <= 24"
-    compositeForeignKeys:
-      - columns: [workspace_id, work_item_id]
-        referencesTable: core.work_items
-        referencesColumns: [workspace_id, id]
-      - columns: [workspace_id, employee_id]
-        referencesTable: core.employees
-        referencesColumns: [workspace_id, id]
   domainAccess:
     select:
-      - role: role_timesheet
-        columns: [id, workspace_id, work_item_id, employee_id, work_date, logged_hours, status, version, updated_at]
-      - role: role_manager_timesheet
-        columns: [id, workspace_id, work_item_id, employee_id, work_date, logged_hours, status, version, updated_at]
+      - role: role_timesheet_employee
+        scope: own
+        columns: [id, created_by, org_unit_id, work_date, logged_hours, status, version, updated_at]
+      - role: role_timesheet_manager
+        scope: department
+        columns: [id, created_by, org_unit_id, work_date, logged_hours, status, version, updated_at]
     insert:
-      - role: role_timesheet
-        columns: [work_item_id, employee_id, work_date, logged_hours]
+      - role: role_timesheet_employee
+        columns: [work_date, logged_hours]
     update:
-      - role: role_timesheet
+      - role: role_timesheet_employee
+        scope: own
         columns: [work_date, logged_hours]
   stateMachine:
     initial: SUBMITTED
@@ -63,25 +50,17 @@ spec:
       - name: approve
         from: [SUBMITTED]
         to: APPROVED
-        allowedRoles: [role_manager_timesheet]
+        allowedRoles: [role_timesheet_manager]
+        recordFilter:
+          created_by:
+            _neq: X-Hasura-User-Id
       - name: reject
         from: [SUBMITTED]
         to: REJECTED
-        allowedRoles: [role_manager_timesheet]
-  attachments: []
-  workflows:
-    - id: timesheet_review_flow
-      file: workflows/timesheet_flow.yaml
-      subscribedEvents:
-        - command.committed
-  capabilities:
-    - cap-process
-    - cap-data
+        allowedRoles: [role_timesheet_manager]
   uiSchema:
-    listColumns: [employee_id, work_date, logged_hours, status, version, updated_at]
+    listColumns: [created_by, work_date, logged_hours, status, version, updated_at]
     formFields:
-      - { name: work_item_id, label: "Work Item", type: uuid, required: true }
-      - { name: employee_id, label: "Employee", type: uuid, required: true }
       - { name: work_date, label: "Work Date", type: date, required: true }
       - { name: logged_hours, label: "Logged Hours (0-24)", type: number, required: true }
     actions: [approve, reject]

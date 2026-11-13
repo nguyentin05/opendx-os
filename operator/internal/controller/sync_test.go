@@ -22,76 +22,50 @@ import (
 
 	"github.com/opendx-os/opendx-os/operator/internal/apply"
 	"github.com/opendx-os/opendx-os/operator/internal/manifest"
-	"github.com/opendx-os/opendx-os/operator/internal/planner"
-)
-
-const (
-	wsA = "11111111-1111-4111-8111-111111111111"
-	wsB = "22222222-2222-4222-8222-222222222222"
 )
 
 func fixture(t *testing.T) *manifest.DXApplication {
 	t.Helper()
-	app, err := manifest.ParseFile(filepath.Join("..", "..", "..", "contracts", "fixtures", "procurement.yaml"))
+	app, err := manifest.ParseFile(filepath.Join("..", "..", "..", "apps", "procurement", "manifest.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return app
 }
 
-// fromDB simulates a definition decoded from JSONB (numbers become float64).
-func fromDB(t *testing.T, app *manifest.DXApplication) manifest.DXApplication {
+// row simulates a core.apps row; the spec comes back from JSONB.
+func row(t *testing.T, app *manifest.DXApplication, status string) apply.AppRow {
 	t.Helper()
 	raw, _ := json.Marshal(app.Spec)
-	var spec manifest.AppSpec
-	if err := json.Unmarshal(raw, &spec); err != nil {
-		t.Fatal(err)
-	}
-	return manifest.DXApplication{APIVersion: app.APIVersion, Kind: app.Kind, Metadata: app.Metadata, Spec: spec}
-}
-
-func row(t *testing.T, app *manifest.DXApplication, ws, status string) apply.RegistryRow {
-	t.Helper()
-	raw, _ := json.Marshal(app.Spec)
-	return apply.RegistryRow{AppID: app.Metadata.Name, WorkspaceID: ws, Version: app.Metadata.Version, Status: status, Spec: raw}
+	return apply.AppRow{AppID: app.Metadata.Name, Version: app.Metadata.Version, Status: status, Spec: raw}
 }
 
 func TestInSync(t *testing.T) {
 	app := fixture(t)
-	live := planner.ManagedState{ActiveApps: []manifest.DXApplication{fromDB(t, app)}}
-	ready := []apply.RegistryRow{row(t, app, wsA, "Ready"), row(t, app, wsB, "Ready")}
+	ready := []apply.AppRow{row(t, app, "Ready")}
 
-	if !inSync(app, live, ready, []string{wsA, wsB}) {
-		t.Fatal("matching definition and publications must be in sync")
+	if !inSync(app, ready) {
+		t.Fatal("a Ready row with the same definition must be in sync")
 	}
-	if !inSync(app, live, ready, []string{wsB, wsA}) {
-		t.Fatal("workspace order must not matter")
+	if inSync(app, nil) {
+		t.Fatal("a missing row must trigger reconcile")
 	}
-	if inSync(app, live, ready, []string{wsA}) {
-		t.Fatal("an extra published workspace must trigger reconcile")
-	}
-	if inSync(app, live, ready[:1], []string{wsA, wsB}) {
-		t.Fatal("a missing workspace must trigger reconcile")
-	}
-	if inSync(app, planner.ManagedState{}, ready, []string{wsA, wsB}) {
-		t.Fatal("a missing definition must trigger reconcile")
+	for _, status := range []string{"Applying", "Failed", "Removed"} {
+		if inSync(app, []apply.AppRow{row(t, app, status)}) {
+			t.Fatalf("a %s row must trigger reconcile", status)
+		}
 	}
 
 	upgraded := *app
-	upgraded.Metadata.Version = "0.2.0"
-	if inSync(&upgraded, live, ready, []string{wsA, wsB}) {
+	upgraded.Metadata.Version = "0.3.0"
+	if inSync(&upgraded, ready) {
 		t.Fatal("a version change must trigger reconcile")
-	}
-
-	failed := []apply.RegistryRow{row(t, app, wsA, "Ready"), row(t, app, wsB, "Failed")}
-	if inSync(app, live, failed, []string{wsA, wsB}) {
-		t.Fatal("a non-Ready publication must trigger reconcile")
 	}
 
 	changed := *app
 	changed.Spec.DomainTable.Columns = append([]manifest.ColumnDef(nil), app.Spec.DomainTable.Columns...)
 	changed.Spec.DomainTable.Columns[0].Nullable = !changed.Spec.DomainTable.Columns[0].Nullable
-	if inSync(&changed, live, ready, []string{wsA, wsB}) {
+	if inSync(&changed, ready) {
 		t.Fatal("a spec change at the same version must trigger reconcile")
 	}
 }

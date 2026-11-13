@@ -17,11 +17,11 @@ class MachineContracts(unittest.TestCase):
 
     def test_registry_snapshot_matches_manifest(self):
         manifest = yaml.safe_load((ROOT / 'contracts/fixtures/procurement.yaml').read_text())
-        registry = json.loads((ROOT / 'contracts/fixtures/registry-ready.json').read_text())
-        self.assertEqual(registry['manifest_spec'], manifest['spec'])
-        self.assertEqual(registry['state_machine'], manifest['spec']['stateMachine'])
-        self.assertEqual(registry['ui_schema'], manifest['spec']['uiSchema'])
-        self.assertEqual(registry['status'], 'Ready')
+        app = json.loads((ROOT / 'contracts/fixtures/app-ready.json').read_text())
+        self.assertEqual(app['spec'], manifest['spec'])
+        self.assertEqual(app['app_id'], manifest['metadata']['name'])
+        self.assertEqual(app['version'], manifest['metadata']['version'])
+        self.assertEqual(app['status'], 'Ready')
 
     def test_wire_event_and_retry_keep_identity(self):
         event = json.loads((ROOT / 'contracts/fixtures/event-command-committed.json').read_text())
@@ -39,10 +39,17 @@ class MachineContracts(unittest.TestCase):
         response = json.loads((ROOT / 'contracts/fixtures/command-committed.json').read_text())
         self.assertEqual(set(response), set(api['components']['schemas']['CommandResponse']['required']))
 
-    def test_procurement_presets_and_self_approval_guard(self):
+    def test_procurement_scopes_and_self_approval_guard(self):
         spec = yaml.safe_load((ROOT / 'contracts/fixtures/procurement.yaml').read_text())['spec']
         insert = spec['domainAccess']['insert'][0]
-        self.assertNotIn('requester_id', insert['columns'])
-        self.assertEqual(insert['presets']['requester_id'], 'X-Hasura-User-Id')
-        approve = next(c for c in spec['stateMachine']['commands'] if c['name'] == 'approve')
-        self.assertEqual(approve['recordFilter'], {'requester_id': {'_neq': 'X-Hasura-User-Id'}})
+        self.assertNotIn('created_by', insert['columns'])
+        self.assertNotIn('org_unit_id', insert['columns'])
+        scopes = {rule['role']: rule['scope'] for rule in spec['domainAccess']['select']}
+        self.assertEqual(scopes, {
+            'role_procurement_requester': 'own',
+            'role_procurement_manager': 'department',
+            'role_procurement_finance': 'organization',
+        })
+        for name in ('approve', 'approve_budget'):
+            command = next(c for c in spec['stateMachine']['commands'] if c['name'] == name)
+            self.assertEqual(command['recordFilter'], {'created_by': {'_neq': 'X-Hasura-User-Id'}})

@@ -49,8 +49,8 @@ spec:
       openAPIV3Schema:
         description: |-
           DXApplication is a cluster-scoped application definition. One resource owns an
-          application's global tables, triggers, Hasura metadata and workflows, and
-          publishes them to the listed workspaces.
+          application's domain table, triggers, Hasura metadata, roles and workflows,
+          and its row in the core.apps registry.
         properties:
           apiVersion:
             description: |-
@@ -72,8 +72,8 @@ spec:
           spec:
             description: |-
               DXApplicationSpec mirrors the DXApplication manifest contract
-              (docs/contracts/data-contracts.md section 7) plus the publication targets.
-              JSON field names are identical to the manifest so that both forms convert losslessly.
+              (docs/contracts/data-contracts.md). JSON field names are identical to the
+              manifest so that both forms convert losslessly.
             properties:
               attachments:
                 description: Attachments binds file columns to commands that require
@@ -96,8 +96,9 @@ spec:
                   type: object
                 type: array
               capabilities:
-                description: Capabilities lists the Tier 2 capabilities the application
-                  depends on.
+                description: |-
+                  Capabilities lists the Tier 2 capabilities the application depends on.
+                  cap-process is required.
                 items:
                   pattern: ^cap-[a-z]+$
                   type: string
@@ -113,8 +114,9 @@ spec:
                 properties:
                   insert:
                     items:
-                      description: AccessRule allows one role a set of columns, optionally
-                        filtered by record.
+                      description: |-
+                        AccessRule allows one role a set of columns within its scope, optionally
+                        narrowed by a record filter.
                       properties:
                         columns:
                           items:
@@ -124,8 +126,8 @@ spec:
                         presets:
                           additionalProperties:
                             type: string
-                          description: Presets are server-side column presets from
-                            session variables (insert only).
+                          description: Presets set uuid columns from X-Hasura-User-Id
+                            (insert only).
                           type: object
                         recordFilter:
                           description: RecordFilter is a Hasura boolean expression
@@ -133,6 +135,15 @@ spec:
                           x-kubernetes-preserve-unknown-fields: true
                         role:
                           pattern: ^[a-z][a-z0-9_]*$
+                          type: string
+                        scope:
+                          description: |-
+                            Scope is required on select and update: own records, own department
+                            (requires cap-hr) or the whole organization. Not allowed on insert.
+                          enum:
+                          - own
+                          - department
+                          - organization
                           type: string
                       required:
                       - columns
@@ -142,8 +153,9 @@ spec:
                     type: array
                   select:
                     items:
-                      description: AccessRule allows one role a set of columns, optionally
-                        filtered by record.
+                      description: |-
+                        AccessRule allows one role a set of columns within its scope, optionally
+                        narrowed by a record filter.
                       properties:
                         columns:
                           items:
@@ -153,8 +165,8 @@ spec:
                         presets:
                           additionalProperties:
                             type: string
-                          description: Presets are server-side column presets from
-                            session variables (insert only).
+                          description: Presets set uuid columns from X-Hasura-User-Id
+                            (insert only).
                           type: object
                         recordFilter:
                           description: RecordFilter is a Hasura boolean expression
@@ -162,6 +174,15 @@ spec:
                           x-kubernetes-preserve-unknown-fields: true
                         role:
                           pattern: ^[a-z][a-z0-9_]*$
+                          type: string
+                        scope:
+                          description: |-
+                            Scope is required on select and update: own records, own department
+                            (requires cap-hr) or the whole organization. Not allowed on insert.
+                          enum:
+                          - own
+                          - department
+                          - organization
                           type: string
                       required:
                       - columns
@@ -171,8 +192,9 @@ spec:
                     type: array
                   update:
                     items:
-                      description: AccessRule allows one role a set of columns, optionally
-                        filtered by record.
+                      description: |-
+                        AccessRule allows one role a set of columns within its scope, optionally
+                        narrowed by a record filter.
                       properties:
                         columns:
                           items:
@@ -182,8 +204,8 @@ spec:
                         presets:
                           additionalProperties:
                             type: string
-                          description: Presets are server-side column presets from
-                            session variables (insert only).
+                          description: Presets set uuid columns from X-Hasura-User-Id
+                            (insert only).
                           type: object
                         recordFilter:
                           description: RecordFilter is a Hasura boolean expression
@@ -192,16 +214,23 @@ spec:
                         role:
                           pattern: ^[a-z][a-z0-9_]*$
                           type: string
+                        scope:
+                          description: |-
+                            Scope is required on select and update: own records, own department
+                            (requires cap-hr) or the whole organization. Not allowed on insert.
+                          enum:
+                          - own
+                          - department
+                          - organization
+                          type: string
                       required:
                       - columns
                       - role
                       type: object
-                    minItems: 1
                     type: array
                 required:
                 - insert
                 - select
-                - update
                 type: object
               domainTable:
                 description: DomainTable declares the isolated business table generated
@@ -238,50 +267,52 @@ spec:
                       type: object
                     minItems: 1
                     type: array
-                  compositeForeignKeys:
+                  foreignKeys:
                     items:
-                      description: ForeignKey is a same-workspace composite foreign
-                        key.
+                      description: ForeignKey links a business uuid column to the
+                        id of a shared table.
                       properties:
-                        columns:
-                          items:
-                            type: string
-                          maxItems: 2
-                          minItems: 2
-                          type: array
-                        referencesColumns:
-                          items:
-                            type: string
-                          maxItems: 2
-                          minItems: 2
-                          type: array
-                        referencesTable:
-                          pattern: ^core\.[a-z][a-z0-9_]*$
+                        column:
+                          pattern: ^[a-z][a-z0-9_]*$
+                          type: string
+                        references:
+                          pattern: ^(core|cap_[a-z]+)\.[a-z][a-z0-9_]*$
                           type: string
                       required:
-                      - columns
-                      - referencesColumns
-                      - referencesTable
+                      - column
+                      - references
                       type: object
-                    minItems: 1
                     type: array
                   name:
                     pattern: ^domain\.[a-z][a-z0-9_]*$
                     type: string
                 required:
                 - columns
-                - compositeForeignKeys
                 - name
                 type: object
-              role:
-                description: Role is the application's primary business role.
-                pattern: ^[a-z][a-z0-9_]*$
-                type: string
+              roles:
+                description: Roles are owned by this application; no other application
+                  may use them.
+                items:
+                  description: Role is one application role (core.roles).
+                  properties:
+                    description:
+                      type: string
+                    name:
+                      pattern: ^[a-z][a-z0-9_]*$
+                      type: string
+                  required:
+                  - name
+                  type: object
+                minItems: 1
+                type: array
               sharedAccess:
-                description: SharedAccess declares the core.* tables, columns and
+                description: |-
+                  SharedAccess declares the shared Tier 1 and Tier 2 tables, columns and
                   roles the application reads.
                 items:
-                  description: SharedAccess grants read access to a core table.
+                  description: SharedAccess grants read access to a shared Tier 1
+                    or Tier 2 table.
                   properties:
                     columns:
                       items:
@@ -296,14 +327,13 @@ spec:
                       minItems: 1
                       type: array
                     table:
-                      pattern: ^core\.[a-z][a-z0-9_]*$
+                      pattern: ^(core|cap_[a-z]+)\.[a-z][a-z0-9_]*$
                       type: string
                   required:
                   - columns
                   - roles
                   - table
                   type: object
-                minItems: 1
                 type: array
               stateMachine:
                 description: StateMachine declares states and the commands that move
@@ -406,8 +436,7 @@ spec:
                 - listColumns
                 type: object
               version:
-                description: Version of the application package. Every workspace runs
-                  this version.
+                description: Version of the application package.
                 minLength: 1
                 type: string
               workflows:
@@ -432,7 +461,7 @@ spec:
                             description: EffectFields are the literal work item fields
                               owned by the manifest.
                             properties:
-                              assignedEmployeeId:
+                              assigneeId:
                                 pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
                                 type: string
                               description:
@@ -494,30 +523,22 @@ spec:
                   - subscribedEvents
                   type: object
                 type: array
-              workspaces:
-                description: Workspaces lists the workspace IDs where the application
-                  is published.
-                items:
-                  pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
-                  type: string
-                minItems: 1
-                type: array
-                x-kubernetes-list-type: set
             required:
             - capabilities
             - displayName
             - domainAccess
             - domainTable
-            - role
-            - sharedAccess
+            - roles
             - stateMachine
             - uiSchema
             - version
-            - workspaces
             type: object
           status:
             description: DXApplicationStatus is the observed state (ADR 0004).
             properties:
+              activeVersion:
+                description: ActiveVersion is the version recorded as Ready in core.apps.
+                type: string
               conditions:
                 items:
                   description: Condition contains details for one aspect of the current
@@ -580,28 +601,6 @@ spec:
               observedGeneration:
                 format: int64
                 type: integer
-              workspaces:
-                items:
-                  description: WorkspacePublication reports the registry state of
-                    one workspace.
-                  properties:
-                    id:
-                      pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
-                      type: string
-                    message:
-                      type: string
-                    published:
-                      type: boolean
-                    version:
-                      type: string
-                  required:
-                  - id
-                  - published
-                  type: object
-                type: array
-                x-kubernetes-list-map-keys:
-                - id
-                x-kubernetes-list-type: map
             type: object
         required:
         - spec

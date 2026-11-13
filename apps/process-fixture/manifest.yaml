@@ -1,52 +1,41 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 DX-OS Open-Core Contributors
+# Independent fixture for cap-process tests: no cap-hr, so reviewers see the
+# whole organization and requesters their own records.
 apiVersion: dxos.io/v1alpha1
 kind: DXApplication
 metadata:
   name: process_fixture
   displayName: Independent Review Fixture
-  version: 0.1.0
+  version: 0.2.0
 spec:
-  role: role_review
+  capabilities:
+  - cap-process
+  - cap-work
+  roles:
+  - name: role_review
+    description: Creates and submits review requests
+  - name: role_review_manager
+    description: Decides review requests
   sharedAccess:
-  - table: core.employees
+  - table: core.users
     roles:
     - role_review
-    - role_manager_review
+    - role_review_manager
     columns:
     - id
-    - workspace_id
-    - full_name
-    - email
-    - department
-  - table: core.work_items
+    - display_name
+  - table: core.files
     roles:
     - role_review
-    - role_manager_review
+    - role_review_manager
     columns:
     - id
-    - workspace_id
-    - title
-    - description
-    - priority
-    - created_at
-  - table: core.file_objects
-    roles:
-    - role_review
-    - role_manager_review
-    columns:
-    - id
-    - workspace_id
     - file_name
     - scan_status
-    - sha256_hash
-    - scanned_at
   domainTable:
     name: domain.review_requests
     columns:
-    - name: requester_id
-      type: uuid
-      nullable: false
     - name: vendor_name
       type: text
       nullable: false
@@ -65,36 +54,16 @@ spec:
     - name: rejection_reason
       type: text
       nullable: true
-    compositeForeignKeys:
-    - columns:
-      - workspace_id
-      - work_item_id
-      referencesTable: core.work_items
-      referencesColumns:
-      - workspace_id
-      - id
-    - columns:
-      - workspace_id
-      - requester_id
-      referencesTable: core.employees
-      referencesColumns:
-      - workspace_id
-      - id
-    - columns:
-      - workspace_id
-      - quote_file_id
-      referencesTable: core.file_objects
-      referencesColumns:
-      - workspace_id
-      - id
+    foreignKeys:
+    - column: quote_file_id
+      references: core.files
   domainAccess:
     select:
     - role: role_review
+      scope: own
       columns:
       - id
-      - workspace_id
-      - work_item_id
-      - requester_id
+      - created_by
       - vendor_name
       - item_description
       - quoted_amount
@@ -103,15 +72,11 @@ spec:
       - status
       - version
       - updated_at
-      recordFilter:
-        workspace_id:
-          _eq: X-Hasura-Workspace-Id
-    - role: role_manager_review
+    - role: role_review_manager
+      scope: organization
       columns:
       - id
-      - workspace_id
-      - work_item_id
-      - requester_id
+      - created_by
       - vendor_name
       - item_description
       - quoted_amount
@@ -120,33 +85,21 @@ spec:
       - status
       - version
       - updated_at
-      recordFilter:
-        workspace_id:
-          _eq: X-Hasura-Workspace-Id
     insert:
     - role: role_review
       columns:
-      - work_item_id
       - vendor_name
       - item_description
       - quoted_amount
       - quote_file_id
-      presets:
-        workspace_id: X-Hasura-Workspace-Id
-        requester_id: X-Hasura-User-Id
-      recordFilter:
-        workspace_id:
-          _eq: X-Hasura-Workspace-Id
     update:
     - role: role_review
+      scope: own
       columns:
       - vendor_name
       - item_description
       - quoted_amount
       - quote_file_id
-      recordFilter:
-        workspace_id:
-          _eq: X-Hasura-Workspace-Id
   stateMachine:
     initial: OPEN
     editableStates:
@@ -167,16 +120,16 @@ spec:
       - IN_REVIEW
       to: DONE
       allowedRoles:
-      - role_manager_review
+      - role_review_manager
       recordFilter:
-        requester_id:
+        created_by:
           _neq: X-Hasura-User-Id
     - name: reject
       from:
       - IN_REVIEW
       to: DECLINED
       allowedRoles:
-      - role_manager_review
+      - role_review_manager
     - name: cancel
       from:
       - OPEN
@@ -184,7 +137,7 @@ spec:
       to: WITHDRAWN
       allowedRoles:
       - role_review
-      - role_manager_review
+      - role_review_manager
   attachments:
   - column: quote_file_id
     requireCleanOnCommands:
@@ -204,8 +157,6 @@ spec:
         title: Review fixture request
         description: Review the submitted request in its source application.
         priority: MEDIUM
-  capabilities:
-  - cap-process
   uiSchema:
     listColumns:
     - vendor_name
@@ -216,10 +167,6 @@ spec:
     - version
     - updated_at
     formFields:
-    - name: work_item_id
-      label: Work Item
-      type: uuid
-      required: true
     - name: vendor_name
       label: Vendor Name
       type: text
