@@ -72,7 +72,7 @@ func (p *Publisher) PublishPending(ctx context.Context, limit int) error {
 	if limit < 1 || limit > 1000 {
 		return errors.New("invalid batch limit")
 	}
-	for i := 0; i < limit; i++ {
+	for range limit {
 		var b [16]byte
 		if _, e := rand.Read(b[:]); e != nil {
 			return e
