@@ -109,7 +109,7 @@ create_credentials() {
 
 create_init_configmaps() {
     local args=()
-    for f in "$ROOT"/platform/postgres/init/* "$ROOT"/platform/k8s/dev/initdb/*; do
+    for f in "$ROOT"/platform/postgres/init/*; do
         args+=(--from-file="$(basename "$f")=$f")
     done
     kc -n "$PLATFORM_NS" create configmap postgres-init "${args[@]}" --dry-run=client -o yaml | kc apply -f - >/dev/null

@@ -47,11 +47,22 @@ python3 -m unittest discover -s tests -v
 installed, UI tests and a build. See [verification](docs/development/verification.md)
 for module commands, prerequisites, and coverage limits.
 
-For infrastructure work, review [compose.yaml](compose.yaml) and
-[.env.example](.env.example) before preparing local configuration. Compose currently
-defines PostgreSQL, Hasura, Keycloak, and APISIX; it does not launch the complete
-planned platform. Match variable names to the Compose file, since the example
-environment and Compose are not fully aligned.
+## Run locally
+
+Docker Compose starts the platform: PostgreSQL, Hasura, Keycloak, SeaweedFS,
+ClamAV, Kestra, cap-process, APISIX and the workspace UI.
+
+```bash
+cp .env.example .env    # optional: Compose has the same local defaults
+docker compose up -d --build
+scripts/test-compose.sh # waits for every service and checks it answers
+```
+
+The defaults are for a local machine only; change every password in `.env`
+before exposing the stack. Database roles and passwords are set when the data
+volume is first initialised, so after changing them run `docker compose down -v`.
+Applications are installed with `dxos-operator` (see the
+[installation guide](docs/operations/installation.md)).
 
 ## Documentation
 
