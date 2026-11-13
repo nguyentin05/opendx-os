@@ -140,7 +140,12 @@
             "version",
             "created_at",
             "updated_at"
-          ]
+          ],
+          "recordFilter": {
+            "status": {
+              "_neq": "DRAFT"
+            }
+          }
         },
         {
           "role": "role_procurement_finance",

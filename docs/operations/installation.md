@@ -56,6 +56,12 @@ registry discovery and beta automatic-workflow readiness remain open.
    effect within `ROLE_CACHE_TTL` (default 5s), with no new token
    ([ADR 0007](../adr/0007-keycloak-authenticates-platform-authorizes.md)).
 
+   For a demo organization, run `scripts/seed-demo.py seed`. It creates three
+   departments and six Keycloak accounts (password `DEMO_PASSWORD`, default
+   `Demo@2026`) with procurement, maintenance and timesheet roles, and is safe to
+   re-run. `scripts/seed-demo.py scopes` then files sample purchase requests and
+   prints what each person sees through the gateway. Use it on local stacks only.
+
 4. The `operator` service installs exactly the application packages in
    `OPERATOR_APPS_DIR` (default `./apps`, mounted read-only), checking every
    `OPERATOR_RECONCILE_INTERVAL` (default `30s`). It runs
