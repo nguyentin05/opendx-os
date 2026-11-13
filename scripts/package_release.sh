@@ -31,6 +31,8 @@ tar -C "${REPO_ROOT}" \
     --exclude=".git" \
     --exclude=".agents" \
     --exclude="AGENTS.md" \
+    --exclude="AGENTS.local.md" \
+    --exclude=".scratch" \
     --exclude="CLAUDE.md" \
     --exclude="docs/superpowers" \
     --exclude="dist" \

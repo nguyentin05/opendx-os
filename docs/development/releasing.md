@@ -20,13 +20,18 @@ complete packager and release verification environment are still needed.
    `COPYRIGHT.txt`; report any dependency whose license has not been verified.
 3. Package `dist/dxos-open-core-X.Y.Z.tar.gz`, extracting into
    `dxos-open-core-X.Y.Z/`, and produce `SHA256SUMS`. Use the actual packager;
-   `scripts/package_release.sh` is not present in the current checkout.
+   `scripts/package_release.sh` is the source-tree packager in this checkout.
    Artifact changes require repackaging and checksum verification.
 4. Inspect the archive itself. Exclude internal agent guidance (`.agents/`,
-   `AGENTS.md`, and `CLAUDE.md` if present) using actual paths and the packager's
+   `AGENTS.md`, `AGENTS.local.md`, `CLAUDE.md` if present, and local `.scratch/`)
+   using actual paths and the packager's
    exclusion mechanism. Existing `.gitattributes` excludes `.agents/` and
    `AGENTS.md` for `git archive`. Keep project contracts, architecture, and
-   development documentation in the distribution. An `export-ignore` entry
+   development documentation, including shared designs and integration handoffs,
+   in the distribution. Only user-local material in `.scratch/` and the existing
+   private `docs/superpowers/` workspace are excluded; do not classify a whole
+   documentation directory as private solely because it is named design or handoff.
+   An `export-ignore` entry
    does not prove exclusion when another packager is used.
 5. Extract into a fresh temporary directory, then run the extracted
    `scripts/install.sh <target-dir>` into a separate target. Verify the target's

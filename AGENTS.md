@@ -4,6 +4,8 @@ Work within the user's assigned scope. Choose an approach and checks appropriate
 to the requested output; ordinary implementation choices do not require another
 approval. Preserve unrelated edits and report unresolved product decisions.
 
+Read `AGENTS.local.md` at the repository root if it exists.
+
 ## Read by task
 
 Read relevant project documents and actual implementation before changing a part.

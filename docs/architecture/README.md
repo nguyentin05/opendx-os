@@ -174,8 +174,10 @@ implementation context pending coordinated follow-up; they do not override ADR 0
 [ADR 0007: Native RAG identity and source boundaries](../adr/0007-native-rag-identity-and-source-boundaries.md)
 records conversation-approved RAG decisions under accepted ADR 0005; remaining
 shared-contract and runtime convergence is tracked separately. It does not supersede accepted workspace contracts
-by itself. See the [baseline](rag-baseline.md), [authorization proposal](rag-authorization-proposal.md)
-and [acceptance/handoff](../development/rag-acceptance-plan.md) for current scope and gaps.
+by itself. See the [authorization proposal](rag-authorization-proposal.md),
+[RAG contracts](../contracts/rag-api.proposed.md) and shared
+[verification guidance](../development/verification.md). Detailed execution plans
+and handoffs are user-local, outside the committed documentation.
 
 ## 3. Key References
 

@@ -6,7 +6,7 @@
 
 ## Context and dependencies
 
-[Baseline](../architecture/rag-baseline.md) identifies conflicting SQL, accepted workspace ADRs and runtime consumers. ADR numbers 0005 and 0006 are reserved for issues #9 and #10. This decision does not supersede their responsibilities. ADR 0005 owns the one-organization target and supersession of workspace clauses in ADR 0001/0003 and shared contracts. ADR 0006 owns app business-logic placement; no app-service hook or command-payload feature is selected here.
+Current SQL and runtime consumers remain partially aligned with the accepted organization model; ADR 0005 records the target. Detailed source inventories and implementation progress are user-local. ADR numbers 0005 and 0006 are reserved for issues #9 and #10. This decision does not supersede their responsibilities. ADR 0005 owns the one-organization target and supersession of workspace clauses in ADR 0001/0003 and shared contracts. ADR 0006 owns app business-logic placement; no app-service hook or command-payload feature is selected here.
 
 ## Decisions and acceptance register
 
@@ -31,8 +31,8 @@ Nested `access` keeps the security declaration together and removes ambiguity be
 
 - [Authorization](../architecture/rag-authorization-proposal.md) is the single source for access/source predicates and revocation behavior.
 - [RAG contracts](../contracts/rag-api.proposed.md) own serialization, metadata/version ownership, job/publication and Gateway boundaries.
-- [Migration](../development/rag-migration-plan.md) owns conversion/cutover/rollback. Capability disablement never implies data deletion.
-- [Acceptance](../development/rag-acceptance-plan.md) owns R01–R20 and counterexample evidence.
+- Migration preserves retained data and blocks unclear identity/source mappings; capability disablement never implies deletion. Detailed migration/run evidence is user-local.
+- [Security and acceptance](../contracts/security-and-acceptance.md) defines shared security requirements; [verification](../development/verification.md) defines evidence standards. Detailed RAG test plans and handoffs are user-local.
 
 The personal library can ship local full-text search before hosted RAG. App Ready and Knowledge Source Ready are independent. Revocation denies through canonical policy even if derived indexes remain stored. Implementation must preserve previous eligible source versions on failed indexing, but a late worker must never reactivate a removed source.
 
