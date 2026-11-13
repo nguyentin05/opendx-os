@@ -31,7 +31,8 @@ type exportedPermission struct {
 }
 
 type exportedRelationship struct {
-	Name string `json:"name"`
+	Name  string `json:"name"`
+	Using any    `json:"using"`
 }
 
 type exportedTable struct {
@@ -116,12 +117,17 @@ func (r *Runner) MetadataDrift(ctx context.Context, plan planner.Plan) ([]string
 			if op.Type == "pg_create_array_relationship" {
 				list = table.ArrayRelationships
 			}
-			found := false
-			for _, rel := range list {
-				found = found || rel.Name == name
+			var have *exportedRelationship
+			for i := range list {
+				if list[i].Name == name {
+					have = &list[i]
+				}
 			}
-			if !found {
+			switch {
+			case have == nil:
 				drift = append(drift, fmt.Sprintf("relationship %s on %s is missing", name, key))
+			case relationshipDef(have.Using) != relationshipDef(args["using"]):
+				drift = append(drift, fmt.Sprintf("relationship %s on %s differs", name, key))
 			}
 		}
 	}
@@ -196,4 +202,53 @@ func normalizePermission(v any) (string, error) {
 	}
 	out, err := json.Marshal(generic)
 	return string(out), err
+}
+
+// relationshipDef renders what a manually configured relationship joins: the
+// remote table and the column mapping. Other fields Hasura adds on export
+// (insertion_order) are left out.
+func relationshipDef(using any) string {
+	raw, err := json.Marshal(using)
+	if err != nil {
+		return ""
+	}
+	var u struct {
+		Manual struct {
+			RemoteTable   planner.TableRef  `json:"remote_table"`
+			ColumnMapping map[string]string `json:"column_mapping"`
+		} `json:"manual_configuration"`
+	}
+	if err := json.Unmarshal(raw, &u); err != nil {
+		return ""
+	}
+	out, _ := json.Marshal(u.Manual) // map keys are sorted
+	return string(out)
+}
+
+// relationshipIndex maps "<kind>:<schema>.<table>:<name>" to the definition of
+// every relationship in exported metadata.
+func relationshipIndex(raw json.RawMessage) map[string]string {
+	index := map[string]string{}
+	var meta exportedMetadata
+	if json.Unmarshal(raw, &meta) != nil {
+		return index
+	}
+	for _, src := range meta.Sources {
+		if src.Name != "default" {
+			continue
+		}
+		for _, t := range src.Tables {
+			for _, rel := range t.ObjectRelationships {
+				index[relationshipKey("pg_create_object_relationship", t.Table, rel.Name)] = relationshipDef(rel.Using)
+			}
+			for _, rel := range t.ArrayRelationships {
+				index[relationshipKey("pg_create_array_relationship", t.Table, rel.Name)] = relationshipDef(rel.Using)
+			}
+		}
+	}
+	return index
+}
+
+func relationshipKey(opType string, table planner.TableRef, name string) string {
+	return opType + ":" + table.Schema + "." + table.Name + ":" + name
 }

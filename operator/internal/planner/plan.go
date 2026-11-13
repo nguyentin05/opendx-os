@@ -105,6 +105,8 @@ func BuildPlan(apps []manifest.DXApplication, live ManagedState) (Plan, error) {
 	}
 
 	// Calculate excess managed permissions from live state that are no longer desired
+	plan.HasuraOps = orderOperations(plan.HasuraOps)
+
 	desiredDomainPerm := map[string]bool{}
 	for _, app := range apps {
 		tbl := app.Spec.DomainTable.Name
@@ -157,6 +159,40 @@ func BuildPlan(apps []manifest.DXApplication, live ManagedState) (Plan, error) {
 	return plan, nil
 }
 
+// orderOperations puts every table tracking first, then every relationship,
+// then every permission, keeping plan order within a phase and dropping exact
+// duplicates. Applications share relationships (cap_hr.org_units.staff serves
+// every department-scoped application), and a permission filter depends on the
+// relationships it traverses, so all of them must exist before any permission.
+func orderOperations(ops []HasuraMetadataPayload) []HasuraMetadataPayload {
+	phase := func(op HasuraMetadataPayload) int {
+		switch op.Type {
+		case "pg_track_table":
+			return 0
+		case "pg_create_object_relationship", "pg_create_array_relationship":
+			return 1
+		default:
+			return 2
+		}
+	}
+	seen := map[string]bool{}
+	out := make([]HasuraMetadataPayload, 0, len(ops))
+	for want := 0; want <= 2; want++ {
+		for _, op := range ops {
+			if phase(op) != want {
+				continue
+			}
+			key, ok := Canonical(op)
+			if ok && seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, op)
+		}
+	}
+	return out
+}
+
 func dropPermOp(opType string, table TableRef, role string) HasuraMetadataPayload {
 	return HasuraMetadataPayload{
 		Type: opType,
@@ -168,17 +204,40 @@ func dropPermOp(opType string, table TableRef, role string) HasuraMetadataPayloa
 	}
 }
 
-// BuildApplyPlan updates one package while retaining the other active packages.
-// Only explicit full-set reconcile removes packages and their managed grants.
+// BuildApplyPlan installs or upgrades one application and keeps every other
+// installed application at its installed definition. Planning one change at a
+// time against the live set means an application that is refused cannot hold
+// back another.
 func BuildApplyPlan(app manifest.DXApplication, live ManagedState) (Plan, error) {
-	desired := make([]manifest.DXApplication, 0, len(live.ActiveApps)+1)
-	for _, active := range live.ActiveApps {
-		if active.Metadata.Name != app.Metadata.Name {
-			desired = append(desired, active)
-		}
-	}
+	desired := live.without(app.Metadata.Name)
 	desired = append(desired, app)
 	return BuildPlan(desired, live)
+}
+
+// BuildRemovePlan uninstalls one application and keeps every other installed
+// application at its installed definition.
+func BuildRemovePlan(name string, live ManagedState) (Plan, error) {
+	return BuildPlan(live.without(name), live)
+}
+
+// Has reports whether the named application is installed.
+func (s ManagedState) Has(name string) bool {
+	for _, a := range s.ActiveApps {
+		if a.Metadata.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (s ManagedState) without(name string) []manifest.DXApplication {
+	out := make([]manifest.DXApplication, 0, len(s.ActiveApps)+1)
+	for _, a := range s.ActiveApps {
+		if a.Metadata.Name != name {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // Changed returns, in input order, the applications of apps that are not

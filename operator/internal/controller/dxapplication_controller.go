@@ -20,8 +20,6 @@ package controller
 import (
 	"context"
 	"errors"
-	"fmt"
-	"sort"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -37,7 +35,6 @@ import (
 	dxosv1alpha1 "github.com/opendx-os/opendx-os/operator/api/v1alpha1"
 	"github.com/opendx-os/opendx-os/operator/internal/apply"
 	"github.com/opendx-os/opendx-os/operator/internal/crdconv"
-	"github.com/opendx-os/opendx-os/operator/internal/manifest"
 	"github.com/opendx-os/opendx-os/operator/internal/planner"
 )
 
@@ -131,11 +128,10 @@ func (r *DXApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	definitions, err := r.desiredDefinitions(ctx, &app, desired, live)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	plan, err := planner.BuildPlan(definitions, live)
+	// Plan this application against the installed set only, like the
+	// directory reconciler: another resource that is refused or not yet
+	// applied cannot block it.
+	plan, err := planner.BuildApplyPlan(*desired, live)
 	if err != nil {
 		log.Info("plan rejected", "error", err.Error())
 		return ctrl.Result{}, r.patchStatus(ctx, &app, func(a *dxosv1alpha1.DXApplication) {
@@ -201,41 +197,6 @@ func (r *DXApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	})
 }
 
-// desiredDefinitions returns the global definition set: every active definition,
-// overridden by the valid, non-deleting resources in the cluster, with this
-// resource replaced by desired. Definitions without a resource (CLI-managed) and
-// definitions whose resource is invalid or deleting are kept unchanged, so no
-// other application loses its grants because of this reconcile.
-func (r *DXApplicationReconciler) desiredDefinitions(ctx context.Context, app *dxosv1alpha1.DXApplication, desired *manifest.DXApplication, live planner.ManagedState) ([]manifest.DXApplication, error) {
-	byName := make(map[string]manifest.DXApplication, len(live.ActiveApps)+1)
-	for _, a := range live.ActiveApps {
-		byName[a.Metadata.Name] = a
-	}
-	var list dxosv1alpha1.DXApplicationList
-	if err := r.List(ctx, &list); err != nil {
-		return nil, fmt.Errorf("list DXApplications: %w", err)
-	}
-	for i := range list.Items {
-		other := &list.Items[i]
-		if other.Name == app.Name || !other.DeletionTimestamp.IsZero() {
-			continue
-		}
-		m, _, err := crdconv.ToManifest(other)
-		if err != nil {
-			continue
-		}
-		byName[m.Metadata.Name] = *m
-	}
-	byName[desired.Metadata.Name] = *desired
-
-	out := make([]manifest.DXApplication, 0, len(byName))
-	for _, m := range byName {
-		out = append(out, m)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Metadata.Name < out[j].Metadata.Name })
-	return out, nil
-}
-
 // cleanup uninstalls the application: its Hasura permissions are dropped and
 // core.apps is marked Removed. Domain tables, data and roles are retained.
 func (r *DXApplicationReconciler) cleanup(ctx context.Context, app *dxosv1alpha1.DXApplication) error {
@@ -244,19 +205,10 @@ func (r *DXApplicationReconciler) cleanup(ctx context.Context, app *dxosv1alpha1
 		return err
 	}
 	appID := crdconv.AppIDFromName(app.Name)
-	desired := make([]manifest.DXApplication, 0, len(live.ActiveApps))
-	found := false
-	for _, a := range live.ActiveApps {
-		if a.Metadata.Name == appID {
-			found = true
-			continue
-		}
-		desired = append(desired, a)
-	}
-	if !found {
+	if !live.Has(appID) {
 		return nil
 	}
-	plan, err := planner.BuildPlan(desired, live)
+	plan, err := planner.BuildRemovePlan(appID, live)
 	if err != nil {
 		return err
 	}

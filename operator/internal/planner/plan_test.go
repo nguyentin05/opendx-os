@@ -106,3 +106,22 @@ func TestBuildApplyPlanPreservesOtherActivePackages(t *testing.T) {
 		t.Fatalf("single app apply discarded active package: %+v", plan.RemovedApps)
 	}
 }
+
+func TestBuildRemovePlanRemovesOnlyThatApp(t *testing.T) {
+	first := loadApp(t, "procurement")
+	second := loadApp(t, "process-fixture")
+	live := ManagedState{ActiveApps: []manifest.DXApplication{*first, *second}}
+	if !live.Has("process_fixture") || live.Has("timesheet") {
+		t.Fatal("Has must report exactly the installed applications")
+	}
+	plan, err := BuildRemovePlan("process_fixture", live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Apps) != 1 || plan.Apps[0].Metadata.Name != "procurement" {
+		t.Fatalf("plan keeps %d apps, want only procurement", len(plan.Apps))
+	}
+	if len(plan.RemovedApps) != 1 || plan.RemovedApps[0] != "process_fixture" {
+		t.Fatalf("removed = %v, want [process_fixture]", plan.RemovedApps)
+	}
+}

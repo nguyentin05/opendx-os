@@ -28,6 +28,8 @@ import (
 // tracked tables, permissions and relationships, and answers export_metadata in
 // the Hasura v2 (version 3) shape so drift detection can be exercised. Stored
 // permission bodies are returned verbatim; real Hasura may normalize defaults.
+// Like Hasura, it refuses to drop a relationship that a permission filter
+// traverses unless the drop cascades, and then drops those permissions too.
 type FakeHasura struct {
 	mu     sync.Mutex
 	tables map[string]*fakeTable
@@ -42,7 +44,12 @@ type tableRef struct {
 type fakeTable struct {
 	ref   tableRef
 	perms map[string]map[string]json.RawMessage // op -> role -> permission
-	rels  map[string]string                     // name -> object|array
+	rels  map[string]fakeRelationship
+}
+
+type fakeRelationship struct {
+	kind  string // object|array
+	using json.RawMessage
 }
 
 // NewFakeHasura returns an empty fake.
@@ -52,7 +59,7 @@ func (f *FakeHasura) table(ref tableRef) *fakeTable {
 	key := ref.Schema + "." + ref.Name
 	t := f.tables[key]
 	if t == nil {
-		t = &fakeTable{ref: ref, perms: map[string]map[string]json.RawMessage{}, rels: map[string]string{}}
+		t = &fakeTable{ref: ref, perms: map[string]map[string]json.RawMessage{}, rels: map[string]fakeRelationship{}}
 		f.tables[key] = t
 	}
 	return t
@@ -68,6 +75,8 @@ func (f *FakeHasura) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Permission   json.RawMessage `json:"permission"`
 			Name         string          `json:"name"`
 			Relationship string          `json:"relationship"`
+			Using        json.RawMessage `json:"using"`
+			Cascade      bool            `json:"cascade"`
 		} `json:"args"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -116,7 +125,10 @@ func (f *FakeHasura) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			reply(http.StatusBadRequest, `{"code":"already-exists"}`)
 			return
 		}
-		t.rels[req.Args.Name] = strings.TrimSuffix(strings.TrimPrefix(req.Type, "pg_create_"), "_relationship")
+		t.rels[req.Args.Name] = fakeRelationship{
+			kind:  strings.TrimSuffix(strings.TrimPrefix(req.Type, "pg_create_"), "_relationship"),
+			using: req.Args.Using,
+		}
 		f.writes++
 		reply(http.StatusOK, `{"message":"success"}`)
 	case req.Type == "pg_drop_relationship":
@@ -129,12 +141,66 @@ func (f *FakeHasura) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			reply(http.StatusBadRequest, `{"code":"not-exists"}`)
 			return
 		}
+		dependents := f.dependentsLocked(t.ref, req.Args.Relationship)
+		if len(dependents) > 0 && !req.Args.Cascade {
+			reply(http.StatusBadRequest, `{"code":"dependency-error","error":"cannot drop due to the following dependent objects"}`)
+			return
+		}
+		for _, d := range dependents {
+			delete(f.tables[d.table].perms[d.op], d.role)
+		}
 		delete(t.rels, req.Args.Relationship)
 		f.writes++
 		reply(http.StatusOK, `{"message":"success"}`)
 	default:
 		reply(http.StatusOK, `{"message":"success"}`)
 	}
+}
+
+type permRef struct{ table, op, role string }
+
+// dependentsLocked lists the permissions whose filter traverses relationship
+// name on table ref: a permission on that table, or on a table with a
+// relationship to it, whose body uses name as a key.
+func (f *FakeHasura) dependentsLocked(ref tableRef, name string) []permRef {
+	needle := `"` + name + `":`
+	var out []permRef
+	for key, t := range f.tables {
+		reaches := t.ref == ref
+		for _, r := range t.rels {
+			var using struct {
+				Manual struct {
+					RemoteTable tableRef `json:"remote_table"`
+				} `json:"manual_configuration"`
+			}
+			_ = json.Unmarshal(r.using, &using)
+			reaches = reaches || using.Manual.RemoteTable == ref
+		}
+		if !reaches {
+			continue
+		}
+		for op, roles := range t.perms {
+			for role, body := range roles {
+				if strings.Contains(string(body), needle) {
+					out = append(out, permRef{table: key, op: op, role: role})
+				}
+			}
+		}
+	}
+	return out
+}
+
+// exportedUsing returns a relationship definition as Hasura exports it, which
+// adds insertion_order to a manual configuration.
+func exportedUsing(raw json.RawMessage) any {
+	var using map[string]map[string]any
+	if json.Unmarshal(raw, &using) != nil {
+		return nil
+	}
+	if manual, ok := using["manual_configuration"]; ok {
+		manual["insertion_order"] = nil
+	}
+	return using
 }
 
 func (f *FakeHasura) exportLocked() string {
@@ -148,7 +214,8 @@ func (f *FakeHasura) exportLocked() string {
 		Permission json.RawMessage `json:"permission"`
 	}
 	type rel struct {
-		Name string `json:"name"`
+		Name  string `json:"name"`
+		Using any    `json:"using"`
 	}
 	tables := make([]map[string]any, 0, len(keys))
 	for _, k := range keys {
@@ -170,9 +237,9 @@ func (f *FakeHasura) exportLocked() string {
 		}
 		for _, kind := range []string{"object", "array"} {
 			var list []rel
-			for name, k := range t.rels {
-				if k == kind {
-					list = append(list, rel{Name: name})
+			for name, r := range t.rels {
+				if r.kind == kind {
+					list = append(list, rel{Name: name, Using: exportedUsing(r.using)})
 				}
 			}
 			sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
