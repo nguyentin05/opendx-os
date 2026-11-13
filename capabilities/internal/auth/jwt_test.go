@@ -186,3 +186,46 @@ func TestKnownSigningKeysExpireAndRefresh(t *testing.T) {
 		})
 	}
 }
+
+// A Keycloak token after ADR 0007 carries identity only: no Hasura claims.
+func TestAuthenticateReturnsIdentityWithoutRoles(t *testing.T) {
+	k, _ := rsa.GenerateKey(rand.Reader, 2048)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{map[string]string{"kty": "RSA", "alg": "RS256", "use": "sig", "kid": "one", "n": base64.RawURLEncoding.EncodeToString(k.N.Bytes()), "e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(k.E)).Bytes())}}})
+	}))
+	defer srv.Close()
+	a, e := NewAuthenticator(context.Background(), VerifierConfig{IssuerURL: "https://issuer.test", Audience: "runtime", JWKSURL: srv.URL})
+	if e != nil {
+		t.Fatal(e)
+	}
+	identity := func() map[string]any {
+		return map[string]any{"iss": "https://issuer.test", "aud": []string{"runtime", "account"}, "sub": "22222222-2222-4222-8222-22222222222A",
+			"exp": time.Now().Add(time.Hour).Unix(), "email": "alice@example.test", "name": "Alice Nguyen", "preferred_username": "alice"}
+	}
+
+	p, e := a.Authenticate(context.Background(), signed(t, k, "one", identity()))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if p.Subject != "22222222-2222-4222-8222-22222222222a" || p.Email != "alice@example.test" || p.Name != "Alice Nguyen" {
+		t.Fatalf("principal = %+v", p)
+	}
+
+	c := identity()
+	delete(c, "name")
+	if p, e = a.Authenticate(context.Background(), signed(t, k, "one", c)); e != nil || p.Name != "alice" {
+		t.Fatalf("name must fall back to preferred_username: %+v, %v", p, e)
+	}
+	for name, change := range map[string]func(map[string]any){
+		"no email": func(c map[string]any) { delete(c, "email") },
+		"audience": func(c map[string]any) { c["aud"] = "other" },
+		"expired":  func(c map[string]any) { c["exp"] = time.Now().Add(-time.Minute).Unix() },
+		"subject":  func(c map[string]any) { c["sub"] = "alice" },
+	} {
+		c := identity()
+		change(c)
+		if _, e := a.Authenticate(context.Background(), signed(t, k, "one", c)); e == nil {
+			t.Fatalf("%s: token must be rejected", name)
+		}
+	}
+}

@@ -27,6 +27,7 @@ services:
       # Login passwords for the runtime roles, applied by 08_runtime_passwords.sh.
       HASURA_DATABASE_PASSWORD: ${HASURA_DATABASE_PASSWORD:-change-me-local-hasura-db}
       PROCESS_DATABASE_PASSWORD: ${PROCESS_DATABASE_PASSWORD:-change-me-local-process-db}
+      AUTHZ_DATABASE_PASSWORD: ${AUTHZ_DATABASE_PASSWORD:-change-me-local-authz-db}
       KESTRA_DATABASE_PASSWORD: ${KESTRA_DATABASE_PASSWORD:-change-me-local-kestra-database}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
@@ -59,8 +60,35 @@ services:
       HASURA_GRAPHQL_ADMIN_SECRET: ${HASURA_ADMIN_SECRET:-dxos_admin_secret}
       HASURA_GRAPHQL_ENABLE_CONSOLE: "false"
       HASURA_GRAPHQL_DEV_MODE: "false"
-      HASURA_GRAPHQL_UNAUTHORIZED_ROLE: "anonymous"
-      HASURA_GRAPHQL_JWT_SECRET: '{"jwk_url":"${OIDC_JWKS_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/certs}","issuer":"${OIDC_ISSUER_URL:-http://localhost:8085/realms/dxos}","audience":"${OIDC_AUDIENCE:-dxos-runtime}"}'
+      # Keycloak authenticates; dxos-authz decides the caller's role from
+      # core.user_roles on each request (ADR 0007). Tokens carry no roles.
+      HASURA_GRAPHQL_AUTH_HOOK: http://authz:8090/hasura
+      HASURA_GRAPHQL_AUTH_HOOK_MODE: GET
+    depends_on:
+      postgres:
+        condition: service_healthy
+      authz:
+        condition: service_healthy
+
+  authz:
+    build:
+      context: ./capabilities
+      dockerfile: Dockerfile
+      args:
+        SERVICE: dxos-authz
+    restart: unless-stopped
+    environment:
+      PORT: "8090"
+      DATABASE_URL: postgres://dxos_authz:${AUTHZ_DATABASE_PASSWORD:-change-me-local-authz-db}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-http://localhost:8085/realms/dxos}
+      OIDC_JWKS_URL: ${OIDC_JWKS_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/certs}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-dxos-runtime}
+      ROLE_CACHE_TTL: ${ROLE_CACHE_TTL:-5s}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
     depends_on:
       postgres:
         condition: service_healthy
@@ -79,6 +107,9 @@ services:
     ports:
       - "${KEYCLOAK_PORT:-8085}:8085"
     volumes:
+      # Users and sessions live here; the realm file is imported only into an
+      # empty store, so restarts keep accounts created at run time.
+      - keycloak-data:/opt/keycloak/data
       - ./platform/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     # Hasura and cap-process fetch the realm's signing keys at startup, so they
     # wait for this. The image has no curl; bash talks to the management port.
@@ -202,6 +233,7 @@ services:
       - ./platform/apisix/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
     depends_on:
       - hasura
+      - authz
       - cap-process
       - keycloak
 
@@ -217,6 +249,7 @@ services:
 
 volumes:
   pg-data:
+  keycloak-data:
   seaweedfs-data:
   clamav-data:
   kestra-data:

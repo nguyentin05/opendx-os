@@ -48,6 +48,14 @@ registry discovery and beta automatic-workflow readiness remain open.
    `scripts/test-compose.sh` waits for every service, logs in as each runtime role
    from another container and probes each HTTP entry point.
 
+   Sign-in uses Keycloak (realm `dxos`, client `dxos-portal`, browser flow with
+   PKCE). Create accounts in the Keycloak admin console
+   (`http://localhost:8085/admin`, `KEYCLOAK_ADMIN`/`KEYCLOAK_ADMIN_PASSWORD`). A
+   user appears in `core.users` on their first request. Grant roles by inserting
+   into `core.user_roles` and departments into `cap_hr.staff`. The roles take
+   effect within `ROLE_CACHE_TTL` (default 5s), with no new token
+   ([ADR 0007](../adr/0007-keycloak-authenticates-platform-authorizes.md)).
+
 4. The `operator` service installs exactly the application packages in
    `OPERATOR_APPS_DIR` (default `./apps`, mounted read-only), checking every
    `OPERATOR_RECONCILE_INTERVAL` (default `30s`). It runs
