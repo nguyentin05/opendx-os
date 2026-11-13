@@ -155,10 +155,17 @@ flowchart TB
 
 ## 2. Architecture Decision Records (ADRs)
 
+[ADR 0005](../adr/0005-department-and-application-data-model.md) records the accepted
+one-organization target with independent application and department identity.
+Workspace-oriented descriptions in this document and current contracts are legacy/partial
+implementation context pending coordinated follow-up; they do not override ADR 0005.
+
+
 - [ADR 0001: Three-Tier Composable Architecture with Shared Core and Isolated Domain Tables](../adr/0001-three-tier-composable-architecture.md)
 - [ADR 0002: Core Schema Purity and Semantic Cross-App Data Synchronization](../adr/0002-semantic-schema-governance-and-cross-app-data-sync.md)
 - [ADR 0003: Separation of Core Kernel Schema and Pluggable Capability Data Schemas (cap-data)](../adr/0003-modular-capability-schema-separation-for-iot-data.md)
 - [ADR 0004: Kubernetes CRD Operator with a Cluster-Scoped Application Definition](../adr/0004-kubernetes-crd-operator.md) (proposed)
+- [ADR 0005: Department and application data model](../adr/0005-department-and-application-data-model.md) (accepted; runtime alignment pending)
 
 ---
 
