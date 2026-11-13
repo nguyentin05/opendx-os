@@ -128,7 +128,10 @@ func (v *jwtVerifier) refresh(ctx context.Context) error {
 	v.lastRefresh = time.Now()
 	return nil
 }
-func (v *jwtVerifier) Verify(ctx context.Context, token string) (*Identity, error) {
+func (v *jwtVerifier) verifiedPayload(ctx context.Context, token string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(token) > 32768 {
 		return nil, errors.New("oversized token")
 	}
@@ -177,6 +180,17 @@ func (v *jwtVerifier) Verify(ctx context.Context, token string) (*Identity, erro
 		return nil, e
 	}
 	payload, e := base64.RawURLEncoding.DecodeString(parts[1])
+	if e != nil {
+		return nil, e
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func (v *jwtVerifier) Verify(ctx context.Context, token string) (*Identity, error) {
+	payload, e := v.verifiedPayload(ctx, token)
 	if e != nil {
 		return nil, e
 	}
