@@ -34,83 +34,70 @@ class TestContractsAndHygiene(unittest.TestCase):
         )
 
     def test_core_schema_invariants(self) -> None:
-        kernel_sql = (ROOT / "platform" / "postgres" / "init" / "01_core_schema.sql").read_text(encoding="utf-8")
-        cap_reg_sql = (ROOT / "platform" / "postgres" / "init" / "02_capability_registry.sql").read_text(encoding="utf-8")
-        app_reg_sql = (ROOT / "platform" / "postgres" / "init" / "03_app_registry.sql").read_text(encoding="utf-8")
-        cap_data_sql = (ROOT / "platform" / "postgres" / "capabilities" / "cap_data.sql").read_text(encoding="utf-8")
-        cap_process_sql = (ROOT / "platform" / "postgres" / "capabilities" / "cap_process.sql").read_text(encoding="utf-8")
-        cap_ai_sql = (ROOT / "platform" / "postgres" / "capabilities" / "cap_ai.sql").read_text(encoding="utf-8")
+        init_dir = ROOT / "platform" / "postgres" / "init"
+        cap_dir = ROOT / "platform" / "postgres" / "capabilities"
+        kernel_sql = (init_dir / "01_core_schema.sql").read_text(encoding="utf-8")
+        cap_reg_sql = (init_dir / "02_capability_registry.sql").read_text(encoding="utf-8")
+        app_reg_sql = (init_dir / "03_app_registry.sql").read_text(encoding="utf-8")
+        cap_sql = {
+            path.stem: path.read_text(encoding="utf-8") for path in sorted(cap_dir.glob("cap_*.sql"))
+        }
+        init_sql = {path.name: path.read_text(encoding="utf-8") for path in sorted(init_dir.glob("*.sql"))}
 
-        kernel_tables = [
-            "core.workspaces",
-            "core.employees",
-            "core.work_items",
-            "core.file_objects",
-            "core.audit_logs",
-            "core.outbox_events",
-        ]
-        for table in kernel_tables:
+        # Tier 1 kernel: identity, files, audit and events only.
+        for table in ("core.users", "core.files", "core.audit_logs", "core.outbox_events"):
             self.assertIn(
                 f"CREATE TABLE IF NOT EXISTS {table}",
                 kernel_sql,
                 f"Missing {table} in 01_core_schema.sql",
             )
 
-        # Registries are cleanly separated in init/ (02_capability_registry.sql & 03_app_registry.sql)
-        self.assertIn("CREATE TABLE IF NOT EXISTS core.capability_registry", cap_reg_sql)
-        self.assertIn("CREATE TABLE IF NOT EXISTS core.app_registry", app_reg_sql)
-        self.assertNotIn("CREATE TABLE IF NOT EXISTS core.capability_registry", kernel_sql)
-        self.assertNotIn("CREATE TABLE IF NOT EXISTS core.app_registry", kernel_sql)
+        # Registries live in their own files, not in the kernel.
+        self.assertIn("CREATE TABLE IF NOT EXISTS core.capabilities", cap_reg_sql)
+        for table in ("core.apps", "core.roles", "core.user_roles"):
+            self.assertIn(f"CREATE TABLE IF NOT EXISTS {table}", app_reg_sql)
+            self.assertNotIn(f"CREATE TABLE IF NOT EXISTS {table}", kernel_sql)
+        self.assertNotIn("CREATE TABLE IF NOT EXISTS core.capabilities", kernel_sql)
 
-        # Tier 2 cap-process module owns command receipts and workflow step idempotency
-        cap_process_tables = [
-            "core.command_receipts",
-            "core.processed_workflow_steps",
-        ]
-        for table in cap_process_tables:
-            self.assertIn(
-                f"CREATE TABLE IF NOT EXISTS {table}",
-                cap_process_sql,
-                f"Missing {table} in cap_process.sql",
+        # One installation is one organization: no workspace concept remains.
+        for name, sql in {**init_sql, **{f"{k}.sql": v for k, v in cap_sql.items()}}.items():
+            self.assertNotIn("workspace", sql.lower(), f"{name} still refers to workspaces")
+
+        # Tier 1 never depends on Tier 2: no table or key in init/ points at a capability schema.
+        for name, sql in init_sql.items():
+            self.assertNotRegex(sql, r"REFERENCES\s+cap_", f"{name} references a Tier 2 table")
+            self.assertNotRegex(
+                sql, r"CREATE TABLE IF NOT EXISTS\s+(cap_|domain\.)", f"{name} creates a Tier 2/3 table"
             )
-            self.assertNotIn(
-                f"CREATE TABLE IF NOT EXISTS {table}",
-                kernel_sql,
-                f"{table} leaked into 01_core_schema.sql",
-            )
-        self.assertNotIn("CREATE TABLE IF NOT EXISTS core.outbox_events", cap_process_sql)
 
-        # Pure Core Kernel must delegate device, telemetry, and link tables to cap-data (Tier 2)
-        self.assertNotIn("CREATE TABLE IF NOT EXISTS core.devices", kernel_sql)
-        self.assertNotIn("CREATE TABLE IF NOT EXISTS core.ot_events", kernel_sql)
-        self.assertNotIn("source_device_id", kernel_sql)
-        self.assertNotIn("CREATE TABLE IF NOT EXISTS domain.", kernel_sql)
+        # Each Tier 2 capability owns its schema and registers itself.
+        expected_tables = {
+            "cap_hr": ("cap_hr.org_units", "cap_hr.staff"),
+            "cap_work": ("cap_work.work_items",),
+            "cap_process": ("cap_process.command_receipts", "cap_process.processed_workflow_steps"),
+            "cap_data": (
+                "cap_data.devices",
+                "cap_data.ot_events",
+                "cap_data.export_batches",
+                "cap_data.data_lineage",
+            ),
+            "cap_ai": (),
+        }
+        self.assertEqual(sorted(cap_sql), sorted(expected_tables))
+        for cap, tables in expected_tables.items():
+            sql = cap_sql[cap]
+            self.assertIn("INSERT INTO core.capabilities", sql, f"{cap}.sql does not register itself")
+            self.assertIn(cap.replace("_", "-"), sql)
+            for table in tables:
+                self.assertIn(f"CREATE TABLE IF NOT EXISTS {table}", sql, f"Missing {table} in {cap}.sql")
+                self.assertNotIn(f"CREATE TABLE IF NOT EXISTS {table}", kernel_sql)
 
-        # Tier 2 capabilities are pluggable modules in platform/postgres/capabilities/
-        cap_data_tables = [
-            "core.devices",
-            "core.device_work_items",
-            "core.ot_events",
-            "core.export_batches",
-            "core.data_lineage",
-        ]
-        for table in cap_data_tables:
-            self.assertIn(
-                f"CREATE TABLE IF NOT EXISTS {table}",
-                cap_data_sql,
-                f"Missing {table} in platform/postgres/capabilities/cap_data.sql",
-            )
-        self.assertIn("cap-data", cap_data_sql)
-        self.assertIn("cap-process", cap_process_sql)
-        self.assertIn("cap-ai", cap_ai_sql)
-
-        # Serialized per-workspace audit lock & server-side version trigger function must exist
-        self.assertIn("pg_advisory_xact_lock(hashtext(NEW.workspace_id::text))", kernel_sql)
+        # Audit chains are serialized per application; versions are bumped server-side.
+        self.assertIn("pg_advisory_xact_lock(hashtext('dxos.audit:' || NEW.chain))", kernel_sql)
         self.assertIn("core.bump_domain_record_version()", kernel_sql)
 
-        # Pluggable capability loader script must exist and be executable
-        cap_loader = ROOT / "platform" / "postgres" / "init" / "04_capabilities.sh"
-        self.assertTrue(cap_loader.exists(), "Missing 04_capabilities.sh loader")
+        # Pluggable capability loader script must exist.
+        self.assertTrue((init_dir / "04_capabilities.sh").exists(), "Missing 04_capabilities.sh loader")
 
     def test_contextual_employee_isolation_in_manifests(self) -> None:
         sql = (ROOT / "platform" / "postgres" / "init" / "01_core_schema.sql").read_text(encoding="utf-8")
