@@ -1,0 +1,46 @@
+# DESIGN ONLY — illustrative policy fixtures for tests; NOT SQL migration/API schema.
+# Real user_ids and document_ids come from authenticated requests and storage,
+# not caller-supplied authorization claims.
+
+fixtures:
+  users:
+    - {id: user_an, roles: [role_hr]}
+    - {id: user_binh, roles: [role_hr]}
+    - {id: user_cuong, roles: [role_hr]}
+    - {id: user_vien, roles: []}
+
+  documents:
+    - id: handbook
+      app_id: hr
+      source_state: CLEAN
+      active_version_state: READY
+      access_mode: ROLE
+      allowed_roles: [role_hr]
+      acl: []
+      expected_readers: [user_an, user_binh, user_cuong]
+
+    - id: payroll
+      app_id: hr
+      source_state: CLEAN
+      active_version_state: READY
+      access_mode: RESTRICTED
+      allowed_roles: [role_hr]
+      acl:
+        - {user_id: user_binh, action: READ}
+      expected_readers: [user_binh]
+
+    - id: personal_notes
+      app_id: personal_library  # requires approved personal-source contract
+      owner_user_id: user_vien
+      source_state: CLEAN
+      active_version_state: READY
+      access_mode: PRIVATE
+      acl: []
+      expected_readers: [user_vien]
+
+  assertions:
+    - "user_an cannot read payroll through search, preview, citation or agent tool"
+    - "user_binh can read payroll only while ACL remains active"
+    - "user_cuong cannot obtain payroll by knowing document_id"
+    - "revocation blocks future queries even if embeddings still exist"
+    - "a QUARANTINED version never becomes searchable"

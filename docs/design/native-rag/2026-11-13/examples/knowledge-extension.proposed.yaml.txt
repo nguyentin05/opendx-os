@@ -1,0 +1,29 @@
+# DESIGN ONLY — NOT CURRENTLY ACCEPTED BY THE DXApplication C0 PARSER.
+# Conceptual fragment under DXApplication.spec, not a deployable complete manifest.
+# First agree on a versioned contract, then add parser/validator/operator tests.
+#
+# The package declares a role ceiling, never named-user grants that expose payroll.
+knowledge:
+  sources:
+    - id: hr_handbook
+      path: knowledge/handbook.md
+      mediaType: text/markdown
+      access:
+        mode: ROLE
+        allowedRoles:
+          - role_hr
+      indexingProfile: standard-text-v1
+
+    - id: hr_payroll
+      path: knowledge/payroll_policy.pdf
+      mediaType: application/pdf
+      access:
+        mode: RESTRICTED
+        allowedRoles:
+          - role_hr
+        grantsManagedBy: authorized_hr_admin
+      indexingProfile: complex-pdf-v1
+
+# Runtime documents are NOT declared here.
+# Owner-only uploads are created via authenticated Knowledge API and
+# do not get deleted when an app package is reconciled.

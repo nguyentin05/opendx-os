@@ -6,86 +6,60 @@ partial; existing Go types and sample YAML are not evidence that every requireme
 below is enforced. See [architecture and decision changes](../architecture/README.md#decisions-and-contract-changes)
 and [security acceptance criteria](security-and-acceptance.md).
 
-## 1. Identity and same-workspace links
+## 1. Identity, application and department boundaries
 
-- The authenticated context includes `user_id`, `workspace_id`, the set of allowed roles, and the selected role. The effective role must belong to the authenticated role set; role or workspace names from the body/header do not create permissions.
-- Tables scoped to a workspace contain `workspace_id NOT NULL` referencing `core.workspaces(id)`. For referenced entity tables, `id` is the primary key; add `UNIQUE(workspace_id, id)` to support composite FKs. Link/receipt/batch tables may use a suitable composite business key.
-- Every FK between workspace-bearing tables uses `(workspace_id, <foreign_id>) REFERENCES <table>(workspace_id, id)`. This applies to work items, employees, devices, files, and domain relationships. Optional FKs allow `<foreign_id>` to be null but never `workspace_id`.
-- Hasura derives `workspace_id`/creator identity fields from the session through presets on insert, locks them on update, and filters select/update/delete by effective permissions. A service using higher DB privileges must enforce the same constraint.
-- Nested inserts, upserts, and relationships must not open an extra path around permissions. If permissions for an operation have not been designed, do not grant that operation.
+[ADR 0005](../adr/0005-department-and-application-data-model.md) supersedes the workspace model. One installation serves one organization; no workspace claim or row column is part of the target contract. `app_id` identifies application provenance; `org_unit_id` identifies a department in `cap_hr`. They are independent dimensions, not substitutes for one another.
 
-## 2. Shared entities
+Keycloak verifies identity. An ACTIVE `core.users` row and current `core.user_roles` determine business membership. Requested roles are selectors checked against DB membership, ownership and authorized app/capability scope; JWT business-role claims do not grant permission. New DB grants must work without refreshing token business-role lists once the target cutover is complete. Current JWT-only middleware is partial implementation, not the target authority.
 
-The field inventory below uses logical names. Entity IDs use UUID; audit IDs use BIGSERIAL. Apply the workspace/FK rules from section 1 to every table that has a workspace.
+Application roles declare own-record, own-department or organization scope. Missing membership or an unavailable authority denies access. Department-dependent access requires enabled `cap_hr` and authoritative staff membership; organization scope still respects app/resource/column permissions and PRIVATE document ownership. Core never gains a foreign key to a capability/domain table to implement these scopes.
 
-| Table | Fields and specific constraints |
+DB role administration is authorized and audited; its transaction commit is the membership-change authority. Hasura, service APIs, original-file routes and registry context must converge on this authority. Token verification alone does not establish current business access. Hasura session delivery and subscription revocation require their own verified mechanism before P1 is considered complete.
+
+Relationships and nested/upsert writes must preserve app, owner and department constraints; an installation-wide UUID reference alone is insufficient authorization. A service with higher DB privileges enforces the same resource predicates. Do not mechanically replace every legacy composite workspace FK with app_id: shared masters and app-produced records have different ownership.
+
+## 2. Kernel and optional capability ownership
+
+The following is the target logical inventory, not a claim that every runtime consumer uses these tables. IDs are UUID except stable app/capability/role identifiers and audit sequence identity. Exact migration mappings must be explicit and preserve retained data.
+
+| Owner | Data / constraints |
 | --- | --- |
-| `core.workspaces` | `id`, unique `code`, `name` |
-| `core.employees` | `id`, `workspace_id`, `full_name`, `email`, `department`, `created_at`; unique `(workspace_id, email)` |
-| `core.work_items` | `id`, `workspace_id`, `title`, `description`, `priority`, `assigned_employee_id`, `created_at` |
-| `core.file_objects` | `id`, `workspace_id`, `bucket`, `object_key`, `file_name`, `scan_status`, `sha256_hash`, `uploaded_by`, `scanned_at` |
-| `core.audit_logs` | `id`, `workspace_id`, `actor_id`, `action`, `entity_type`, `entity_id`, `entity_version`, `payload`, `prev_hash`, `row_hash`, `created_at` |
-| `core.outbox_events` | Durable event identity, workspace, event type, payload, and dispatch status; producer transaction and retry-safe delivery |
-| `core.app_registry` | Published app configuration by `(workspace_id, app_id)`: display name, role/permissions, domain tables, UI schema, state machine, dependent capabilities, and deployment status |
-| `core.app_definitions` | Active global application definition by `app_id`: display name, version, validated spec. Domain tables and Hasura metadata are shared by all workspaces, so the Operator plans them from this table; every workspace publishing an app runs this version ([ADR 0004](../adr/0004-kubernetes-crd-operator.md)) |
-| `core.capability_registry` | Shared capability inventory: `cap_id`, `category_hpdi`, `base_route`, `enabled`; permission to use a capability is still evaluated per caller and app |
+| `core.users` | Universal identity, Keycloak subject, ACTIVE/disabled status; no department foreign key |
+| `core.roles`, `core.user_roles` | Platform/app/capability role ownership and current membership; not per-document ACL |
+| `core.apps`, `core.capabilities`, `core.app_capabilities` | Kernel registry identities and declared dependencies, independent of app domain schemas |
+| `core.files` | app_id, immutable original identity/object key/checksum, uploaded_by, MIME/size, quarantine/scan result; real app registry reference required |
+| `core.audit_logs`, `core.outbox_events` | App/source/actor provenance, append-only audit and durable retryable events; no dependency on capability tables |
+| `cap_hr` | Shared organization departments/staff/positions; master data has no app_id |
+| `cap_work` | App-origin work items and their provenance; business lifecycle remains in the owning app domain record |
+| `cap_process` | Command receipts and processed workflow effects; atomic idempotency/concurrency |
+| `cap_data` | Optional physical master data, OT and export/lineage; distinguish shared master identity from app-produced records |
+| `cap_ai` | Proposed document collections/ACL/versions/jobs/chunks/model usage, defined by the [RAG contract](rag-api.proposed.md); not currently implemented storage |
 
-The registry/audit/export tables are written by the control plane or the assigned service. User roles may read only the parts they are granted. `core.work_items` keeps the shared work identity; business state lives in each domain table.
+Applications use only declared, available capabilities. Capability data may reference Core identifiers; Core cannot depend on a capability or application table/service. References from `core.files` to `core.apps` are kernel registry references, not dependencies on app-owned domain tables. Disabling a capability or unpublishing an app does not authorize dropping retained data.
 
-As established by [ADR 0002](../adr/0002-semantic-schema-governance-and-cross-app-data-sync.md),
-domain attributes such as `skill_level` and `work_shift` belong in application
-tables. Employee relationships expose only the domain tables authorized for the
-effective role; a shared employee does not grant cross-app traversal.
+ADR 0002's domain-attribute ownership remains applicable: app business attributes belong in domain tables, and a shared identity does not grant unrelated relationship traversal. Its older employee/workspace example is superseded by ADR 0005.
 
-### Optional capability storage
+## 3. Domain records and state
 
-[ADR 0003](../adr/0003-modular-capability-schema-separation-for-iot-data.md)
-separates the base kernel from capability SQL. The `core.*` namespace does not
-imply that every table is part of the base installation.
+Domain records retain independent app-owned lifecycle, version, server timestamps and authoritative creator. Work-item linkage, if declared, points to `cap_work`; department linkage, if declared, points to `cap_hr`. System-generated ownership and app/department constraints must be validated on insert and remain immutable except through an explicitly designed authorized operation. Exact manifest fields/presets are coordinated implementation work; old workspace-bearing sample manifests are legacy fixtures until migrated.
 
-| Module | Tables and logical fields |
-| --- | --- |
-| `cap-process` | `core.command_receipts` for durable command results; `core.processed_workflow_steps` for effect deduplication |
-| `cap-data` | `core.devices`: `id`, `workspace_id`, `device_code`, `name`, `location`, `status`, `last_reading` |
-| `cap-data` | `core.device_work_items`: same-workspace device/work-item association; the base work item has no `source_device_id` |
-| `cap-data` | `core.ot_events`: `id`, `workspace_id`, `device_id`, `event_dedup_key`, `metric_name`, `metric_value`, `created_at`; unique `(workspace_id, device_id, event_dedup_key)` |
-| `cap-data` | `core.export_batches`: batch identity, workspace, Parquet location, row count, publication status, reconciliation information |
-| `cap-data` | `core.data_lineage`: batch links to `(workspace_id, entity_type, entity_id, entity_version)` |
-
-These modules live in `platform/postgres/capabilities/` and are loaded by enabled
-capability configuration. Apps without a `cap-data` declaration receive no device
-or telemetry permissions or relationships. Removing access or disabling a module
-does not by itself authorize deleting its stored data.
-
-## 3. Domain tables and initial state
-
-Every domain table has `id`, `workspace_id`, `work_item_id`, `status`, `version`, and `updated_at`. The initial state comes from `stateMachine.initial`; `version` starts at `1`; the server sets the time.
-
-| Illustrative app | Business table and fields | Initial state |
-| --- | --- | --- |
-| Maintenance | `domain.maintenance_records`: `assigned_employee_id`, `device_id`, `issue_summary`, `resolution_note` | `OPEN` |
-| Procurement | `domain.procurement_requests`: `requester_id`, `vendor_name`, `item_description`, `quoted_amount NUMERIC(14,2) > 0`, `quote_file_id`, `ai_policy_summary`, `rejection_reason` | `DRAFT` |
-| Timesheet | `domain.timesheet_entries`: `employee_id`, `work_date`, `logged_hours NUMERIC(4,2)` within `(0, 24]` | `SUBMITTED` |
-
-This is declared data for the illustrative apps, not a fixed table list inside the platform. If a record is created in an already-submitted state, as with timesheet, the create path must enforce the corresponding business conditions inside the transaction; CRUD may be opened only when those conditions are fully enforced.
+Initial state comes from `stateMachine.initial`, version starts at 1, and the server sets time. If the initial state is already submitted, create must enforce its corresponding business conditions atomically. Adding an app does not add a hardcoded app branch in shared runtime code.
 
 ## 4. Write matrix and field ownership
 
-| Operation | User role | Server responsibility |
+| Operation | Caller may supply | Server responsibility |
 | --- | --- | --- |
-| Create record | Only business columns in the `insert` allowlist | Assign workspace/actor, initial state, version `1`, timestamps; check FKs and initialization conditions |
-| Edit content | `update` allowlist, only within `editableStates` | Filter workspace/permissions, increment the version, record time and audit in the same transaction |
-| Transition state | Send a command with `expected_version` | Check role, current state, permissions on the record, related files, and write atomically |
-| Upsert/nested mutation | Denied by default; if granted, it must satisfy both the insert and update paths | Must not reset state/version, move workspace, or bypass FKs |
-| Delete | Denied by default for ordinary roles | Settle the retention/audit policy before opening it; do not replace a `cancel` command with delete |
+| Create | Allowlisted business columns | derive actor/app scope/initial state/version/time; validate department/related-source access |
+| Edit | Allowlisted columns in editable states | current DB role/resource predicate, one version increment, atomic audit |
+| Transition | declared command and expected_version | validate authority, state/version, sources and effects in one transaction |
+| Upsert/nested | denied unless explicitly designed | enforce both create/edit constraints; cannot reset owner/scope/state/version |
+| Delete | denied by default | separate retention/audit policy and authorized scope |
 
-Remove `status`, `version`, `workspace_id`, and server-managed actor/timestamp fields from the columns a client may insert/update. Use server-side presets/defaults, not merely a declared SQL `DEFAULT`. For `core.file_objects`, clients do not write `scan_status`, the verification hash, or scan results; the scanner/file service holds that permission.
+Clients cannot set ownership, scan status, hashes, version or privileged state through arbitrary insert/update fields. `core.files` scan metadata belongs to File Service/scanner. Hasura table/row/column/relationship permission is required in addition to SQL grants, and its session role must originate from current DB authority.
 
-Read permissions are declared per table, role, and column. For example, `role_maintenance` reads the employee columns needed for maintenance and the relationship to maintenance; `role_timesheet` reads the timesheet area and the relationship to timesheet. Grant a relationship only when the target table is also readable. Manager roles must have explicit grants per app; the name `role_manager` does not imply system-wide permissions.
+## Legacy consumer transition for sections 5–9
 
-Hasura enforces permissions per table, operation, role, row, and column;
-PostgreSQL `GRANT` does not replace its metadata. Domain tables keep independent
-state and version even when they share an employee or work item.
+The invariants below concerning atomicity, idempotency, immutable originals, provenance and declarative interfaces remain required. Literal `workspace_id`, old `core.*` capability table names and registry keys describe legacy consumers only and are superseded by ADR 0005 and sections 1–4 above. They are not permission to add workspace fields to new APIs. Before changing the affected module, record its exact app/source/actor key and migration mapping in its implementation plan; do not infer an OT dedup key, audit-chain partition or BI lineage key by replacing workspace text mechanically. This documentation change does not migrate those unrelated consumers or claim their new serialization is settled.
 
 ## 5. Version, command, audit, and retry
 
@@ -123,8 +97,8 @@ from this table must be resolved explicitly rather than guessed independently.
 | `kind` | `DXApplication` |
 | `metadata` | `name`, `displayName`, `version` of the app package |
 | `spec.role` | The app's primary business role; other roles must be declared in the corresponding permissions |
-| `spec.sharedAccess` | List of `core.*` tables, columns read, roles, and relationships used; no implicit write access to master data |
-| `spec.domainTable` | Table name, columns/data types, nullability, CHECK constraints, composite FK within the workspace; the system columns in section 3 are managed by the Operator |
+| `spec.sharedAccess` | Declared kernel/capability master reads, columns, roles and relationships; no implicit writes or capability access. Existing core-only serialization needs coordinated extension |
+| `spec.domainTable` | Table name, columns/data types, nullability, CHECK constraints, declared ownership/relationship constraints under ADR 0005; the system columns in section 3 are managed by the Operator |
 | `spec.domainAccess` | Allowlist of roles/columns for select, insert, and update; permission conditions on records. Deny undeclared operations by default |
 | `spec.stateMachine` | `initial`, `editableStates`, `terminalStates` eligible for export, and commands with `from`, `to`, `allowedRoles`; states not in `editableStates` disallow content-editing CRUD |
 | `spec.attachments` | File FK columns to check on download/OCR/command; do not infer them from domain column names |
@@ -165,7 +139,7 @@ records the accepted requirement without claiming that synchronization works.
 | --- | --- |
 | `cap-process` | `POST /api/cap/process/files/upload`, `POST /api/cap/process/commands/{app_id}/{command}` |
 | `cap-data` | `POST /api/cap/data/ot/events`, `POST /api/cap/data/lakehouse/export`, `GET /api/cap/data/lakehouse/analytics` |
-| `cap-ai` | `POST /api/cap/ai/extract`, `POST /api/cap/ai/rag` |
+| `cap-ai` | Legacy `POST /api/cap/ai/extract`, `POST /api/cap/ai/rag`; proposed secure APIs in [RAG contract](rag-api.proposed.md). Legacy RAG is not an authorized fallback |
 
 Inspect actual handlers and agree on request/response schemas and service
 identity before connecting callers. This logical route inventory includes work
