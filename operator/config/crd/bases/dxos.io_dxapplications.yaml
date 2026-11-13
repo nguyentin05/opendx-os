@@ -299,7 +299,10 @@ spec:
                     description:
                       type: string
                     name:
-                      pattern: ^[a-z][a-z0-9_]*$
+                      description: |-
+                        Role names start with role_: Hasura treats some names (admin) as
+                        privileged, and the prefix keeps application roles out of that space.
+                      pattern: ^role_[a-z0-9_]+$
                       type: string
                   required:
                   - name

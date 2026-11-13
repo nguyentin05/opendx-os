@@ -44,6 +44,11 @@ CREATE TRIGGER "trg_procurement_requests_20_stamp_org_unit"
 BEFORE INSERT ON "domain"."procurement_requests"
 FOR EACH ROW EXECUTE FUNCTION cap_hr.stamp_record_org_unit();
 
+DROP TRIGGER IF EXISTS "trg_procurement_requests_25_attachments" ON "domain"."procurement_requests";
+CREATE TRIGGER "trg_procurement_requests_25_attachments"
+BEFORE INSERT OR UPDATE ON "domain"."procurement_requests"
+FOR EACH ROW EXECUTE FUNCTION core.enforce_attachments('procurement', 'quote_file_id');
+
 DROP TRIGGER IF EXISTS "trg_procurement_requests_30_bump_version" ON "domain"."procurement_requests";
 CREATE TRIGGER "trg_procurement_requests_30_bump_version"
 BEFORE UPDATE ON "domain"."procurement_requests"

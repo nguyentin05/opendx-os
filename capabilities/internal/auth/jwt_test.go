@@ -26,6 +26,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -147,20 +148,34 @@ func TestKnownSigningKeysExpireAndRefresh(t *testing.T) {
 				status = 503
 			}
 			v := verifier.(*jwtVerifier)
-			v.mu.Lock()
-			v.lastRefresh = time.Now().Add(-6 * time.Minute)
-			v.mu.Unlock()
-			if _, err = verifier.Authenticate(context.Background(), token); err == nil {
-				t.Fatal("stale signing key accepted")
+			age := func(d time.Duration) {
+				v.mu.Lock()
+				v.lastRefresh = time.Now().Add(-d)
+				v.lastAttempt = time.Time{}
+				v.mu.Unlock()
+			}
+			age(6 * time.Minute)
+			_, err = verifier.Authenticate(context.Background(), token)
+			switch mode {
+			case "removed", "same_kid_replacement":
+				// The issuer answered: a key it no longer lists is revoked.
+				if err == nil {
+					t.Fatal("revoked signing key accepted")
+				}
+			case "unavailable":
+				// A short outage keeps the last keys in use.
+				if err != nil {
+					t.Fatalf("valid token rejected during a short outage: %v", err)
+				}
+				// Past the staleness bound, verification fails closed.
+				age(jwksMaxStaleness + time.Minute)
+				if _, err = verifier.Authenticate(context.Background(), token); err == nil {
+					t.Fatal("key older than the staleness bound accepted")
+				}
 			}
 			if mode == "same_kid_replacement" {
 				if _, err = verifier.Authenticate(context.Background(), signed(t, replacement, "one", claims())); err != nil {
 					t.Fatalf("replacement rejected: %v", err)
-				}
-			}
-			if mode == "unavailable" {
-				if _, err = verifier.Authenticate(context.Background(), token); err == nil {
-					t.Fatal("stale key accepted during refresh backoff")
 				}
 			}
 		})
@@ -207,5 +222,32 @@ func TestAuthenticateReturnsIdentityWithoutRoles(t *testing.T) {
 		if _, e := a.Authenticate(context.Background(), signed(t, k, "one", c)); e == nil {
 			t.Fatalf("%s: token must be rejected", name)
 		}
+	}
+}
+
+// QA finding: a slow JWKS fetch must not hold up requests whose key is known.
+func TestKeyRefreshDoesNotBlockOtherRequests(t *testing.T) {
+	k, _ := rsa.GenerateKey(rand.Reader, 2048)
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&calls, 1) > 1 {
+			time.Sleep(2 * time.Second) // the refresh after start-up is slow
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{map[string]string{"kty": "RSA", "kid": "one", "n": base64.RawURLEncoding.EncodeToString(k.N.Bytes()), "e": "AQAB"}}})
+	}))
+	defer srv.Close()
+	a, err := NewAuthenticator(context.Background(), VerifierConfig{IssuerURL: "https://issuer.test", Audience: "runtime", JWKSURL: srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An unknown key ID starts a refresh that takes two seconds.
+	go func() { _, _ = a.Authenticate(context.Background(), signed(t, k, "rotated", claims())) }()
+	time.Sleep(100 * time.Millisecond)
+	start := time.Now()
+	if _, err := a.Authenticate(context.Background(), signed(t, k, "one", claims())); err != nil {
+		t.Fatal(err)
+	}
+	if waited := time.Since(start); waited > 500*time.Millisecond {
+		t.Fatalf("a known key waited %v for an unrelated refresh", waited)
 	}
 }

@@ -96,6 +96,9 @@ func TestValidateRolesScopesAndCapabilities(t *testing.T) {
 		{"no roles", func(a *DXApplication) { a.Spec.Roles = nil }},
 		{"duplicate role", func(a *DXApplication) { a.Spec.Roles = append(a.Spec.Roles, a.Spec.Roles[0]) }},
 		{"reserved role", func(a *DXApplication) { a.Spec.Roles[0].Name = "role_operator" }},
+		// QA finding: Hasura treats admin as privileged; every role needs role_.
+		{"admin role", func(a *DXApplication) { a.Spec.Roles[0].Name = "admin" }},
+		{"role without prefix", func(a *DXApplication) { a.Spec.Roles[0].Name = "approver" }},
 		{"undeclared role in select", func(a *DXApplication) { a.Spec.DomainAccess.Select[0].Role = "role_other_app" }},
 		{"undeclared role in command", func(a *DXApplication) { a.Spec.StateMachine.Commands[0].AllowedRoles = []string{"role_other_app"} }},
 		{"undeclared role in shared access", func(a *DXApplication) { a.Spec.SharedAccess[0].Roles = []string{"role_other_app"} }},

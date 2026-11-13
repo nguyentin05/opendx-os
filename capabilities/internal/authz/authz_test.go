@@ -153,3 +153,17 @@ func TestMeListsIdentityAndRoles(t *testing.T) {
 		t.Fatalf("roles = %v", body["roles"])
 	}
 }
+
+// QA finding: a role named admin is privileged in Hasura; it is never handed
+// out, even if a registry row held it.
+func TestPrivilegedRoleNamesAreNeverGranted(t *testing.T) {
+	store := &fakeStore{status: "ACTIVE", grants: []Grant{{Role: "admin"}, {Role: "role_review"}}}
+	h := Handler(NewResolver(&fakeAuthn{name: "Alice"}, store, time.Minute))
+	if code, body := call(t, h, "/hasura", "good", "admin"); code != http.StatusUnauthorized {
+		t.Fatalf("admin role: %d %v", code, body)
+	}
+	only := &fakeStore{status: "ACTIVE", grants: []Grant{{Role: "admin"}}}
+	if code, _ := call(t, Handler(NewResolver(&fakeAuthn{name: "Alice"}, only, time.Minute)), "/hasura", "good", ""); code != http.StatusUnauthorized {
+		t.Fatalf("single admin grant used implicitly: %d", code)
+	}
+}

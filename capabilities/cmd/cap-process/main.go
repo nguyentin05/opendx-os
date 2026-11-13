@@ -59,7 +59,7 @@ func main() {
 	// Keycloak authenticates; the role a caller acts as is read from
 	// core.user_roles (ADR 0007). dxos-authz mirrors users into core.users on
 	// their first request; this connection only reads it.
-	authn, err := auth.NewAuthenticator(ctx, auth.VerifierConfig{IssuerURL: os.Getenv("OIDC_ISSUER_URL"), JWKSURL: os.Getenv("OIDC_JWKS_URL"), Audience: os.Getenv("OIDC_AUDIENCE")})
+	authn, err := auth.WaitForAuthenticator(ctx, auth.VerifierConfig{IssuerURL: os.Getenv("OIDC_ISSUER_URL"), JWKSURL: os.Getenv("OIDC_JWKS_URL"), Audience: os.Getenv("OIDC_AUDIENCE")}, time.Minute, log.Printf)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -170,6 +170,10 @@ func main() {
 		}
 	}()
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Print("HTTP server stopped unexpectedly")
+		// Exit non-zero so the supervisor sees a failure, after the workers stop.
+		stop()
+		<-workerDone
+		<-scannerDone
+		log.Fatalf("HTTP server stopped unexpectedly: %v", err)
 	}
 }

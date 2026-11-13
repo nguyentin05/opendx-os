@@ -27,6 +27,7 @@ import (
 var identifier = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 var statePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
+var roleName = regexp.MustCompile(`^role_[a-z0-9_]+$`)
 
 // Validate checks what the services rely on at run time. The operator has
 // already validated the whole manifest before marking it Ready; this guards
@@ -51,7 +52,7 @@ func (a *AppDefinition) Validate() error {
 	}
 	roles := map[string]bool{}
 	for _, r := range s.Roles {
-		if !identifier.MatchString(r.Name) || roles[r.Name] {
+		if !roleName.MatchString(r.Name) || roles[r.Name] {
 			return errors.New("invalid role")
 		}
 		roles[r.Name] = true

@@ -23,11 +23,15 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"regexp"
 	"sync"
 	"time"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
+
+// roleName is the only shape of role the platform hands out (see core.roles).
+var roleName = regexp.MustCompile(`^role_[a-z0-9_]+$`)
 
 // ErrUnauthenticated means the token is missing or invalid, or the account is
 // disabled or unknown.
@@ -106,6 +110,10 @@ func (r *Resolver) Authorize(ctx context.Context, token, role string) (*auth.Ide
 	case role == "" || !s.Holds(role):
 		return nil, auth.ErrForbidden
 	}
+	// Whatever the registry holds, never hand Hasura a privileged name.
+	if !roleName.MatchString(role) {
+		return nil, auth.ErrForbidden
+	}
 	return &auth.Identity{UserID: s.User.Subject, Role: role}, nil
 }
 
@@ -167,7 +175,20 @@ func (s PostgresStore) Mirror(ctx context.Context, p auth.Principal) (string, er
 		}
 		return status, err
 	}
-	err := s.DB.QueryRowContext(ctx, `
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = tx.Rollback() }() // Best-effort cleanup; a committed transaction is already closed.
+	// Keycloak keeps emails unique, so another row holding this address is a
+	// stale mirror (that account was deleted or changed its email). It releases
+	// the address instead of locking the current account out; a live account
+	// gets its own address back on its next request.
+	if _, err = tx.ExecContext(ctx, `UPDATE core.users SET email = id::text || '@released.invalid'
+		WHERE lower(email) = lower($2) AND id <> $1`, p.Subject, p.Email); err != nil {
+		return "", err
+	}
+	err = tx.QueryRowContext(ctx, `
 		WITH upserted AS (
 		    INSERT INTO core.users (id, email, display_name) VALUES ($1, $2, $3)
 		    ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, display_name = EXCLUDED.display_name
@@ -179,7 +200,10 @@ func (s PostgresStore) Mirror(ctx context.Context, p auth.Principal) (string, er
 		UNION ALL
 		SELECT status FROM core.users WHERE id = $1
 		LIMIT 1`, p.Subject, p.Email, p.Name).Scan(&status)
-	return status, err
+	if err != nil {
+		return "", err
+	}
+	return status, tx.Commit()
 }
 
 // Grants implements Store.

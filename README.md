@@ -53,7 +53,7 @@ Docker Compose starts the platform: PostgreSQL, Hasura, the operator, Keycloak,
 SeaweedFS, ClamAV, Kestra, cap-process, APISIX and the workspace UI.
 
 ```bash
-cp .env.example .env    # optional: Compose has the same local defaults
+scripts/init-env.sh     # .env with random secrets (optional locally)
 docker compose up -d --build
 scripts/test-compose.sh # waits for every service and checks it answers
 scripts/seed-demo.py seed    # demo accounts, departments and roles
@@ -61,10 +61,11 @@ scripts/seed-demo.py scopes  # what each demo person sees
 scripts/seed-demo.py flow    # one purchase request through the approval chain
 ```
 
-The defaults are for a local machine only; change every password in `.env`
-before exposing the stack. Database roles and passwords are set when the data
-volume is first initialised, so after changing them run `docker compose down -v`.
-The `operator` service installs every application package in `apps/`; copy a
+Without a `.env`, Compose uses development defaults and publishes ports on
+127.0.0.1 only. `scripts/init-env.sh` writes a `.env` with random secrets; do
+that before setting `BIND_ADDRESS` to expose the stack. Database roles and
+passwords are set when the data volume is first initialised, so after changing
+them run `docker compose down -v`. The `operator` service installs every application package in `apps/`; copy a
 package in or remove it and the next pass (every 30 seconds) installs or
 uninstalls it (see the [installation guide](docs/operations/installation.md)).
 

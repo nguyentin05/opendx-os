@@ -93,7 +93,9 @@ type DXApplicationSpec struct {
 
 // Role is one application role (core.roles).
 type Role struct {
-	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9_]*$`
+	// Role names start with role_: Hasura treats some names (admin) as
+	// privileged, and the prefix keeps application roles out of that space.
+	// +kubebuilder:validation:Pattern=`^role_[a-z0-9_]+$`
 	Name string `json:"name"`
 	// +optional
 	Description string `json:"description,omitempty"`

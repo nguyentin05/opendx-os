@@ -211,17 +211,26 @@ func (p *Platform) User(t *testing.T, name, orgUnit string, roles ...string) str
 // application's own columns.
 func (p *Platform) Insert(t *testing.T, owner, role string, values map[string]any) string {
 	t.Helper()
-	tx, err := p.Admin.Begin()
+	id, err := p.TryInsert(owner, role, values)
 	if err != nil {
 		t.Fatal(err)
+	}
+	return id
+}
+
+// TryInsert is Insert returning the database's refusal instead of failing.
+func (p *Platform) TryInsert(owner, role string, values map[string]any) (string, error) {
+	tx, err := p.Admin.Begin()
+	if err != nil {
+		return "", err
 	}
 	defer func() { _ = tx.Rollback() }()
 	session, _ := json.Marshal(map[string]string{"x-hasura-user-id": owner, "x-hasura-role": role})
 	if _, err = tx.Exec(`SET LOCAL SESSION AUTHORIZATION dxos_hasura`); err != nil {
-		t.Fatal(err)
+		return "", err
 	}
 	if _, err = tx.Exec(`SELECT set_config('hasura.user', $1, true)`, string(session)); err != nil {
-		t.Fatal(err)
+		return "", err
 	}
 	cols := make([]string, 0, len(values))
 	args := make([]any, 0, len(values))
@@ -233,12 +242,9 @@ func (p *Platform) Insert(t *testing.T, owner, role string, values map[string]an
 	}
 	var id string
 	if err = tx.QueryRow(`INSERT INTO `+p.Table+` (`+strings.Join(cols, ", ")+`) VALUES (`+strings.Join(marks, ", ")+`) RETURNING id::text`, args...).Scan(&id); err != nil {
-		t.Fatal(err)
+		return "", err
 	}
-	if err = tx.Commit(); err != nil {
-		t.Fatal(err)
-	}
-	return id
+	return id, tx.Commit()
 }
 
 // File records an uploaded file of the sample application with scan status.
