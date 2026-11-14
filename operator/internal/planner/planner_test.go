@@ -140,7 +140,8 @@ func TestGenerateHasuraOperations(t *testing.T) {
 		return p["filter"]
 	}
 	assertJSON(t, "requester filter", sel("role_procurement_requester"), `{"created_by":{"_eq":"X-Hasura-User-Id"}}`)
-	assertJSON(t, "manager filter", sel("role_procurement_manager"), `{"org_unit":{"staff":{"user_id":{"_eq":"X-Hasura-User-Id"}}}}`)
+	// The department scope and the manifest's record filter both apply.
+	assertJSON(t, "manager filter", sel("role_procurement_manager"), `{"_and":[{"org_unit":{"staff":{"user_id":{"_eq":"X-Hasura-User-Id"}}}},{"status":{"_neq":"DRAFT"}}]}`)
 	assertJSON(t, "finance filter", sel("role_procurement_finance"), `{"status":{"_neq":"DRAFT"}}`)
 
 	ins := perms["pg_create_insert_permission:domain.procurement_requests:role_procurement_requester"]

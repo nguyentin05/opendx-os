@@ -90,9 +90,13 @@ spec:
       - version
       - created_at
       - updated_at
+    # A draft is the requester's own until it is submitted.
     - role: role_procurement_manager
       scope: department
       columns: *procurement_columns
+      recordFilter:
+        status:
+          _neq: DRAFT
     - role: role_procurement_finance
       scope: organization
       columns: *procurement_columns

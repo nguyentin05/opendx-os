@@ -56,6 +56,8 @@ SeaweedFS, ClamAV, Kestra, cap-process, APISIX and the workspace UI.
 cp .env.example .env    # optional: Compose has the same local defaults
 docker compose up -d --build
 scripts/test-compose.sh # waits for every service and checks it answers
+scripts/seed-demo.py seed    # demo accounts, departments and roles
+scripts/seed-demo.py scopes  # what each demo person sees
 ```
 
 The defaults are for a local machine only; change every password in `.env`
