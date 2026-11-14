@@ -64,7 +64,7 @@ spec:
               name: dxos-platform-credentials
               key: hasura-db-password
         - name: ENABLED_CAPABILITIES
-          value: cap-process
+          value: cap-process,cap-hr,cap-work
         - name: PGDATA
           value: /var/lib/postgresql/data/pgdata
         ports:
@@ -96,6 +96,10 @@ spec:
           - configMap:
               name: postgres-capabilities
               items:
+              - key: cap_hr.sql
+                path: capabilities/cap_hr.sql
+              - key: cap_work.sql
+                path: capabilities/cap_work.sql
               - key: cap_process.sql
                 path: capabilities/cap_process.sql
               - key: cap_data.sql

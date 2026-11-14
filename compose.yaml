@@ -15,6 +15,11 @@
 
 name: opendx-os
 
+# Published ports listen on BIND_ADDRESS, 127.0.0.1 by default: the defaults
+# below are local development secrets and must not be reachable from the
+# network. Run scripts/init-env.sh to generate a .env with random secrets
+# before setting BIND_ADDRESS to anything else.
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -23,9 +28,14 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-dxos_admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dxos_secret}
       POSTGRES_DB: ${POSTGRES_DB:-dxos_db}
-      ENABLED_CAPABILITIES: ${ENABLED_CAPABILITIES:-cap-process}
+      ENABLED_CAPABILITIES: ${ENABLED_CAPABILITIES:-cap-process,cap-hr,cap-work,cap-data}
+      # Login passwords for the runtime roles, applied by 08_runtime_passwords.sh.
+      HASURA_DATABASE_PASSWORD: ${HASURA_DATABASE_PASSWORD:-change-me-local-hasura-db}
+      PROCESS_DATABASE_PASSWORD: ${PROCESS_DATABASE_PASSWORD:-change-me-local-process-db}
+      AUTHZ_DATABASE_PASSWORD: ${AUTHZ_DATABASE_PASSWORD:-change-me-local-authz-db}
+      KESTRA_DATABASE_PASSWORD: ${KESTRA_DATABASE_PASSWORD:-change-me-local-kestra-database}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pg-data:/var/lib/postgresql/data
       - ./platform/postgres/init/01_core_schema.sql:/docker-entrypoint-initdb.d/01_core_schema.sql:ro
@@ -35,9 +45,12 @@ services:
       - ./platform/postgres/init/05_operator_deployments.sql:/docker-entrypoint-initdb.d/05_operator_deployments.sql:ro
       - ./platform/postgres/init/06_runtime_roles.sql:/docker-entrypoint-initdb.d/06_runtime_roles.sql:ro
       - ./platform/postgres/init/07_app_definitions.sql:/docker-entrypoint-initdb.d/07_app_definitions.sql:ro
+      - ./platform/postgres/init/08_runtime_passwords.sh:/docker-entrypoint-initdb.d/08_runtime_passwords.sh:ro
       - ./platform/postgres/capabilities:/docker-entrypoint-initdb.d/capabilities:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dxos_admin} -d ${POSTGRES_DB:-dxos_db}"]
+      # TCP, not the socket: the init-time server listens on the socket only, so
+      # this passes once init scripts have finished and the real server is up.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${POSTGRES_USER:-dxos_admin} -d ${POSTGRES_DB:-dxos_db}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -46,16 +59,45 @@ services:
     image: hasura/graphql-engine:v2.45.1
     restart: unless-stopped
     ports:
-      - "${HASURA_PORT:-8080}:8080"
+      - "${BIND_ADDRESS:-127.0.0.1}:${HASURA_PORT:-8080}:8080"
     environment:
-      HASURA_GRAPHQL_DATABASE_URL: postgres://dxos_hasura:${HASURA_DATABASE_PASSWORD:-}@postgres:5432/${POSTGRES_DB:-dxos_db}
+      HASURA_GRAPHQL_DATABASE_URL: postgres://dxos_hasura:${HASURA_DATABASE_PASSWORD:-change-me-local-hasura-db}@postgres:5432/${POSTGRES_DB:-dxos_db}
       HASURA_GRAPHQL_ADMIN_SECRET: ${HASURA_ADMIN_SECRET:-dxos_admin_secret}
       HASURA_GRAPHQL_ENABLE_CONSOLE: "false"
       HASURA_GRAPHQL_DEV_MODE: "false"
-      HASURA_GRAPHQL_UNAUTHORIZED_ROLE: "anonymous"
-      HASURA_GRAPHQL_JWT_SECRET: '{"jwk_url":"${OIDC_JWKS_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/certs}","issuer":"${OIDC_ISSUER_URL:-http://localhost:8085/realms/dxos}","audience":"${OIDC_AUDIENCE:-dxos-runtime}"}'
+      # Keycloak authenticates; dxos-authz decides the caller's role from
+      # core.user_roles on each request (ADR 0007). Tokens carry no roles.
+      HASURA_GRAPHQL_AUTH_HOOK: http://authz:8090/hasura
+      HASURA_GRAPHQL_AUTH_HOOK_MODE: GET
     depends_on:
       postgres:
+        condition: service_healthy
+      authz:
+        condition: service_healthy
+
+  authz:
+    build:
+      context: ./capabilities
+      dockerfile: Dockerfile
+      args:
+        SERVICE: dxos-authz
+    restart: unless-stopped
+    environment:
+      PORT: "8090"
+      DATABASE_URL: postgres://dxos_authz:${AUTHZ_DATABASE_PASSWORD:-change-me-local-authz-db}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-http://localhost:8085/realms/dxos}
+      OIDC_JWKS_URL: ${OIDC_JWKS_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/certs}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-dxos-runtime}
+      ROLE_CACHE_TTL: ${ROLE_CACHE_TTL:-5s}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
         condition: service_healthy
 
   keycloak:
@@ -66,10 +108,22 @@ services:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HTTP_PORT: 8085
+      KC_HEALTH_ENABLED: "true"
     ports:
-      - "${KEYCLOAK_PORT:-8085}:8085"
+      - "${BIND_ADDRESS:-127.0.0.1}:${KEYCLOAK_PORT:-8085}:8085"
     volumes:
+      # Users and sessions live here; the realm file is imported only into an
+      # empty store, so restarts keep accounts created at run time.
+      - keycloak-data:/opt/keycloak/data
       - ./platform/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    # Hasura and cap-process fetch the realm's signing keys at startup, so they
+    # wait for this. The image has no curl; bash talks to the management port.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 5s
+      timeout: 5s
+      start_period: 60s
+      retries: 24
     depends_on:
       postgres:
         condition: service_healthy
@@ -103,14 +157,38 @@ services:
     restart: unless-stopped
     command: server standalone --config /app/config/config.yaml
     environment:
-      KESTRA_DATABASE_PASSWORD: ${KESTRA_DATABASE_PASSWORD:-}
+      KESTRA_DATABASE_PASSWORD: ${KESTRA_DATABASE_PASSWORD:-change-me-local-kestra-database}
       KESTRA_USER: ${KESTRA_USER:-admin@dxos.local}
       KESTRA_PASSWORD: ${KESTRA_PASSWORD:-change-me-local-kestra}
     ports:
-      - "${KESTRA_PORT:-8082}:8080"
+      - "${BIND_ADDRESS:-127.0.0.1}:${KESTRA_PORT:-8082}:8080"
     volumes:
       - kestra-data:/app/storage
       - ./platform/kestra/config.yaml:/app/config/config.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Installs exactly the application packages in ./apps and keeps them
+  # installed: copy a package directory in to install it, remove it to
+  # uninstall (its data is kept). No container needs recreating.
+  operator:
+    build:
+      context: ./operator
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["reconcile", "--dir", "/apps", "--interval", "${OPERATOR_RECONCILE_INTERVAL:-30s}"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-dxos_admin}:${POSTGRES_PASSWORD:-dxos_secret}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
+      HASURA_URL: http://hasura:8080
+      HASURA_ADMIN_SECRET: ${HASURA_ADMIN_SECRET:-dxos_admin_secret}
+    volumes:
+      - ${OPERATOR_APPS_DIR:-./apps}:/apps:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      hasura:
+        condition: service_healthy
 
   cap-process:
     build:
@@ -119,7 +197,7 @@ services:
     restart: unless-stopped
     environment:
       PORT: "8081"
-      DATABASE_URL: postgres://dxos_process:${PROCESS_DATABASE_PASSWORD:-}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
+      DATABASE_URL: postgres://dxos_process:${PROCESS_DATABASE_PASSWORD:-change-me-local-process-db}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
       OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-http://localhost:8085/realms/dxos}
       OIDC_JWKS_URL: ${OIDC_JWKS_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/certs}
       OIDC_AUDIENCE: ${OIDC_AUDIENCE:-dxos-runtime}
@@ -136,12 +214,12 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-dxos_s3_secret_key}
       CLAMAV_ADDRESS: ${CLAMAV_ADDRESS:-clamav:3310}
     ports:
-      - "${CAP_PROCESS_PORT:-8091}:8081"
+      - "${BIND_ADDRESS:-127.0.0.1}:${CAP_PROCESS_PORT:-8091}:8081"
     depends_on:
       postgres:
         condition: service_healthy
       keycloak:
-        condition: service_started
+        condition: service_healthy
       seaweedfs:
         condition: service_started
       clamav:
@@ -153,13 +231,13 @@ services:
     image: apache/apisix:3.10.0-debian
     restart: unless-stopped
     ports:
-      - "${APISIX_GATEWAY_PORT:-9080}:9080"
-      - "9092:9092"
+      - "${BIND_ADDRESS:-127.0.0.1}:${APISIX_GATEWAY_PORT:-9080}:9080"
     volumes:
       - ./platform/apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
       - ./platform/apisix/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
     depends_on:
       - hasura
+      - authz
       - cap-process
       - keycloak
 
@@ -169,12 +247,13 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - "${WORKSPACE_UI_PORT:-5173}:80"
+      - "${BIND_ADDRESS:-127.0.0.1}:${WORKSPACE_UI_PORT:-5173}:80"
     depends_on:
       - apisix
 
 volumes:
   pg-data:
+  keycloak-data:
   seaweedfs-data:
   clamav-data:
   kestra-data:

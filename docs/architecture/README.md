@@ -87,6 +87,8 @@ describe their current application. ADR 0002 refines domain-attribute ownership;
 ADR 0003 refines optional capability storage while retaining the three tiers.
 ADR 0004 (proposed) separates global definitions from per-workspace publication
 and introduces the `DXApplication` CRD controller.
+ADR 0007 keeps authentication in Keycloak and authorization in the platform:
+roles are resolved from `core.user_roles` on each request by `dxos-authz`.
 
 For a proposed change, identify relevant accepted decisions and affected contracts,
 producers, consumers, examples, and data migrations. Record a replacement decision
@@ -166,6 +168,7 @@ implementation context pending coordinated follow-up; they do not override ADR 0
 - [ADR 0003: Separation of Core Kernel Schema and Pluggable Capability Data Schemas (cap-data)](../adr/0003-modular-capability-schema-separation-for-iot-data.md)
 - [ADR 0004: Kubernetes CRD Operator with a Cluster-Scoped Application Definition](../adr/0004-kubernetes-crd-operator.md) (proposed)
 - [ADR 0005: Department and application data model](../adr/0005-department-and-application-data-model.md) (accepted; runtime alignment pending)
+- [ADR 0007: Keycloak Authenticates, the Platform Authorizes](../adr/0007-keycloak-authenticates-platform-authorizes.md)
 
 ---
 

@@ -31,6 +31,7 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/authz"
 	"github.com/opendx-os/opendx-os/capabilities/internal/files"
 	"github.com/opendx-os/opendx-os/capabilities/internal/process"
 	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
@@ -55,10 +56,22 @@ func main() {
 	}
 	defer func() { _ = db.Close() }()
 
-	verifier, err := auth.NewVerifier(context.Background(), auth.VerifierConfig{IssuerURL: os.Getenv("OIDC_ISSUER_URL"), JWKSURL: os.Getenv("OIDC_JWKS_URL"), Audience: os.Getenv("OIDC_AUDIENCE")})
+	// Keycloak authenticates; the role a caller acts as is read from
+	// core.user_roles (ADR 0007). dxos-authz mirrors users into core.users on
+	// their first request; this connection only reads it.
+	authn, err := auth.WaitForAuthenticator(ctx, auth.VerifierConfig{IssuerURL: os.Getenv("OIDC_ISSUER_URL"), JWKSURL: os.Getenv("OIDC_JWKS_URL"), Audience: os.Getenv("OIDC_AUDIENCE")}, time.Minute, log.Printf)
 	if err != nil {
 		log.Fatal(err)
 	}
+	roleCacheTTL := 5 * time.Second
+	if value := os.Getenv("ROLE_CACHE_TTL"); value != "" {
+		parsed, e := time.ParseDuration(value)
+		if e != nil || parsed < 0 || parsed > time.Minute {
+			log.Fatal("invalid ROLE_CACHE_TTL")
+		}
+		roleCacheTTL = parsed
+	}
+	verifier := authz.NewResolver(authn, authz.PostgresStore{DB: db, ReadOnly: true}, roleCacheTTL)
 	fileTimeout := 30 * time.Second
 	if value := os.Getenv("FILES_TIMEOUT"); value != "" {
 		parsed, e := time.ParseDuration(value)
@@ -157,6 +170,10 @@ func main() {
 		}
 	}()
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Print("HTTP server stopped unexpectedly")
+		// Exit non-zero so the supervisor sees a failure, after the workers stop.
+		stop()
+		<-workerDone
+		<-scannerDone
+		log.Fatalf("HTTP server stopped unexpectedly: %v", err)
 	}
 }

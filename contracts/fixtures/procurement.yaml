@@ -1,43 +1,50 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 DX-OS Open-Core Contributors
-# PROPOSED C0 handoff; not an accepted production package.
+# Contract sample: identical to apps/procurement/manifest.yaml.
 apiVersion: dxos.io/v1alpha1
 kind: DXApplication
 metadata:
   name: procurement
   displayName: Material Procurement
-  version: 0.1.0
+  version: 0.2.0
 spec:
-  role: role_procurement
+  capabilities:
+  - cap-process
+  - cap-hr
+  - cap-work
+  roles:
+  - name: role_procurement_requester
+    description: Creates and submits purchase requests
+  - name: role_procurement_manager
+    description: Approves the purchase requests of their own department
+  - name: role_procurement_finance
+    description: Reviews the budget of requests approved by a department
   sharedAccess:
-  - table: core.employees
+  - table: core.users
     roles:
-    - role_procurement
-    - role_manager_procurement
+    - role_procurement_requester
+    - role_procurement_manager
+    - role_procurement_finance
     columns:
     - id
-    - workspace_id
-    - full_name
+    - display_name
     - email
-    - department
-  - table: core.work_items
+  - table: cap_hr.org_units
     roles:
-    - role_procurement
-    - role_manager_procurement
+    - role_procurement_requester
+    - role_procurement_manager
+    - role_procurement_finance
     columns:
     - id
-    - workspace_id
-    - title
-    - description
-    - priority
-    - created_at
-  - table: core.file_objects
+    - code
+    - name
+  - table: core.files
     roles:
-    - role_procurement
-    - role_manager_procurement
+    - role_procurement_requester
+    - role_procurement_manager
+    - role_procurement_finance
     columns:
     - id
-    - workspace_id
     - file_name
     - scan_status
     - sha256_hash
@@ -45,9 +52,6 @@ spec:
   domainTable:
     name: domain.procurement_requests
     columns:
-    - name: requester_id
-      type: uuid
-      nullable: false
     - name: vendor_name
       type: text
       nullable: false
@@ -66,36 +70,17 @@ spec:
     - name: rejection_reason
       type: text
       nullable: true
-    compositeForeignKeys:
-    - columns:
-      - workspace_id
-      - work_item_id
-      referencesTable: core.work_items
-      referencesColumns:
-      - workspace_id
-      - id
-    - columns:
-      - workspace_id
-      - requester_id
-      referencesTable: core.employees
-      referencesColumns:
-      - workspace_id
-      - id
-    - columns:
-      - workspace_id
-      - quote_file_id
-      referencesTable: core.file_objects
-      referencesColumns:
-      - workspace_id
-      - id
+    foreignKeys:
+    - column: quote_file_id
+      references: core.files
   domainAccess:
     select:
-    - role: role_procurement
-      columns:
+    - role: role_procurement_requester
+      scope: own
+      columns: &procurement_columns
       - id
-      - workspace_id
-      - work_item_id
-      - requester_id
+      - created_by
+      - org_unit_id
       - vendor_name
       - item_description
       - quoted_amount
@@ -103,51 +88,36 @@ spec:
       - rejection_reason
       - status
       - version
+      - created_at
       - updated_at
+    # A draft is the requester's own until it is submitted.
+    - role: role_procurement_manager
+      scope: department
+      columns: *procurement_columns
       recordFilter:
-        workspace_id:
-          _eq: X-Hasura-Workspace-Id
-    - role: role_manager_procurement
-      columns:
-      - id
-      - workspace_id
-      - work_item_id
-      - requester_id
-      - vendor_name
-      - item_description
-      - quoted_amount
-      - quote_file_id
-      - rejection_reason
-      - status
-      - version
-      - updated_at
+        status:
+          _neq: DRAFT
+    - role: role_procurement_finance
+      scope: organization
+      columns: *procurement_columns
       recordFilter:
-        workspace_id:
-          _eq: X-Hasura-Workspace-Id
+        status:
+          _neq: DRAFT
     insert:
-    - role: role_procurement
+    - role: role_procurement_requester
       columns:
-      - work_item_id
       - vendor_name
       - item_description
       - quoted_amount
       - quote_file_id
-      presets:
-        workspace_id: X-Hasura-Workspace-Id
-        requester_id: X-Hasura-User-Id
-      recordFilter:
-        workspace_id:
-          _eq: X-Hasura-Workspace-Id
     update:
-    - role: role_procurement
+    - role: role_procurement_requester
+      scope: own
       columns:
       - vendor_name
       - item_description
       - quoted_amount
       - quote_file_id
-      recordFilter:
-        workspace_id:
-          _eq: X-Hasura-Workspace-Id
   stateMachine:
     initial: DRAFT
     editableStates:
@@ -162,35 +132,46 @@ spec:
       - DRAFT
       to: SUBMITTED
       allowedRoles:
-      - role_procurement
+      - role_procurement_requester
     - name: approve
       from:
       - SUBMITTED
+      to: BUDGET_REVIEW
+      allowedRoles:
+      - role_procurement_manager
+      recordFilter:
+        created_by:
+          _neq: X-Hasura-User-Id
+    - name: approve_budget
+      from:
+      - BUDGET_REVIEW
       to: APPROVED
       allowedRoles:
-      - role_manager_procurement
+      - role_procurement_finance
       recordFilter:
-        requester_id:
+        created_by:
           _neq: X-Hasura-User-Id
     - name: reject
       from:
       - SUBMITTED
+      - BUDGET_REVIEW
       to: REJECTED
       allowedRoles:
-      - role_manager_procurement
+      - role_procurement_manager
+      - role_procurement_finance
     - name: cancel
       from:
       - DRAFT
       - SUBMITTED
       to: CANCELLED
       allowedRoles:
-      - role_procurement
-      - role_manager_procurement
+      - role_procurement_requester
   attachments:
   - column: quote_file_id
     requireCleanOnCommands:
     - submit
     - approve
+    - approve_budget
   workflows:
   - id: procurement_approval_flow
     file: workflows/procurement_flow.yaml
@@ -205,8 +186,6 @@ spec:
         title: Review procurement request
         description: Review the submitted request in its source application.
         priority: MEDIUM
-  capabilities:
-  - cap-process
   uiSchema:
     listColumns:
     - vendor_name
@@ -217,10 +196,6 @@ spec:
     - version
     - updated_at
     formFields:
-    - name: work_item_id
-      label: Work Item
-      type: uuid
-      required: true
     - name: vendor_name
       label: Vendor Name
       type: text
@@ -240,5 +215,6 @@ spec:
     actions:
     - submit
     - approve
+    - approve_budget
     - reject
     - cancel

@@ -1,51 +1,63 @@
 {
-  "workspace_id": "11111111-1111-4111-8111-111111111111",
   "app_id": "procurement",
   "display_name": "Material Procurement",
-  "version": "0.1.0",
-  "role_name": "role_procurement",
-  "domain_table": "domain.procurement_requests",
-  "manifest_spec": {
-    "role": "role_procurement",
+  "version": "0.2.0",
+  "spec": {
+    "capabilities": [
+      "cap-process",
+      "cap-hr",
+      "cap-work"
+    ],
+    "roles": [
+      {
+        "name": "role_procurement_requester",
+        "description": "Creates and submits purchase requests"
+      },
+      {
+        "name": "role_procurement_manager",
+        "description": "Approves the purchase requests of their own department"
+      },
+      {
+        "name": "role_procurement_finance",
+        "description": "Reviews the budget of requests approved by a department"
+      }
+    ],
     "sharedAccess": [
       {
-        "table": "core.employees",
+        "table": "core.users",
         "roles": [
-          "role_procurement",
-          "role_manager_procurement"
+          "role_procurement_requester",
+          "role_procurement_manager",
+          "role_procurement_finance"
         ],
         "columns": [
           "id",
-          "workspace_id",
-          "full_name",
-          "email",
-          "department"
+          "display_name",
+          "email"
         ]
       },
       {
-        "table": "core.work_items",
+        "table": "cap_hr.org_units",
         "roles": [
-          "role_procurement",
-          "role_manager_procurement"
+          "role_procurement_requester",
+          "role_procurement_manager",
+          "role_procurement_finance"
         ],
         "columns": [
           "id",
-          "workspace_id",
-          "title",
-          "description",
-          "priority",
-          "created_at"
+          "code",
+          "name"
         ]
       },
       {
-        "table": "core.file_objects",
+        "table": "core.files",
         "roles": [
-          "role_procurement",
-          "role_manager_procurement"
+          "role_procurement_requester",
+          "role_procurement_manager",
+          "role_procurement_finance"
         ],
         "columns": [
           "id",
-          "workspace_id",
           "file_name",
           "scan_status",
           "sha256_hash",
@@ -56,11 +68,6 @@
     "domainTable": {
       "name": "domain.procurement_requests",
       "columns": [
-        {
-          "name": "requester_id",
-          "type": "uuid",
-          "nullable": false
-        },
         {
           "name": "vendor_name",
           "type": "text",
@@ -90,51 +97,22 @@
           "nullable": true
         }
       ],
-      "compositeForeignKeys": [
+      "foreignKeys": [
         {
-          "columns": [
-            "workspace_id",
-            "work_item_id"
-          ],
-          "referencesTable": "core.work_items",
-          "referencesColumns": [
-            "workspace_id",
-            "id"
-          ]
-        },
-        {
-          "columns": [
-            "workspace_id",
-            "requester_id"
-          ],
-          "referencesTable": "core.employees",
-          "referencesColumns": [
-            "workspace_id",
-            "id"
-          ]
-        },
-        {
-          "columns": [
-            "workspace_id",
-            "quote_file_id"
-          ],
-          "referencesTable": "core.file_objects",
-          "referencesColumns": [
-            "workspace_id",
-            "id"
-          ]
+          "column": "quote_file_id",
+          "references": "core.files"
         }
       ]
     },
     "domainAccess": {
       "select": [
         {
-          "role": "role_procurement",
+          "role": "role_procurement_requester",
+          "scope": "own",
           "columns": [
             "id",
-            "workspace_id",
-            "work_item_id",
-            "requester_id",
+            "created_by",
+            "org_unit_id",
             "vendor_name",
             "item_description",
             "quoted_amount",
@@ -142,21 +120,40 @@
             "rejection_reason",
             "status",
             "version",
+            "created_at",
+            "updated_at"
+          ]
+        },
+        {
+          "role": "role_procurement_manager",
+          "scope": "department",
+          "columns": [
+            "id",
+            "created_by",
+            "org_unit_id",
+            "vendor_name",
+            "item_description",
+            "quoted_amount",
+            "quote_file_id",
+            "rejection_reason",
+            "status",
+            "version",
+            "created_at",
             "updated_at"
           ],
           "recordFilter": {
-            "workspace_id": {
-              "_eq": "X-Hasura-Workspace-Id"
+            "status": {
+              "_neq": "DRAFT"
             }
           }
         },
         {
-          "role": "role_manager_procurement",
+          "role": "role_procurement_finance",
+          "scope": "organization",
           "columns": [
             "id",
-            "workspace_id",
-            "work_item_id",
-            "requester_id",
+            "created_by",
+            "org_unit_id",
             "vendor_name",
             "item_description",
             "quoted_amount",
@@ -164,50 +161,37 @@
             "rejection_reason",
             "status",
             "version",
+            "created_at",
             "updated_at"
           ],
           "recordFilter": {
-            "workspace_id": {
-              "_eq": "X-Hasura-Workspace-Id"
+            "status": {
+              "_neq": "DRAFT"
             }
           }
         }
       ],
       "insert": [
         {
-          "role": "role_procurement",
+          "role": "role_procurement_requester",
           "columns": [
-            "work_item_id",
             "vendor_name",
             "item_description",
             "quoted_amount",
             "quote_file_id"
-          ],
-          "presets": {
-            "workspace_id": "X-Hasura-Workspace-Id",
-            "requester_id": "X-Hasura-User-Id"
-          },
-          "recordFilter": {
-            "workspace_id": {
-              "_eq": "X-Hasura-Workspace-Id"
-            }
-          }
+          ]
         }
       ],
       "update": [
         {
-          "role": "role_procurement",
+          "role": "role_procurement_requester",
+          "scope": "own",
           "columns": [
             "vendor_name",
             "item_description",
             "quoted_amount",
             "quote_file_id"
-          ],
-          "recordFilter": {
-            "workspace_id": {
-              "_eq": "X-Hasura-Workspace-Id"
-            }
-          }
+          ]
         }
       ]
     },
@@ -229,7 +213,7 @@
           ],
           "to": "SUBMITTED",
           "allowedRoles": [
-            "role_procurement"
+            "role_procurement_requester"
           ]
         },
         {
@@ -237,12 +221,27 @@
           "from": [
             "SUBMITTED"
           ],
-          "to": "APPROVED",
+          "to": "BUDGET_REVIEW",
           "allowedRoles": [
-            "role_manager_procurement"
+            "role_procurement_manager"
           ],
           "recordFilter": {
-            "requester_id": {
+            "created_by": {
+              "_neq": "X-Hasura-User-Id"
+            }
+          }
+        },
+        {
+          "name": "approve_budget",
+          "from": [
+            "BUDGET_REVIEW"
+          ],
+          "to": "APPROVED",
+          "allowedRoles": [
+            "role_procurement_finance"
+          ],
+          "recordFilter": {
+            "created_by": {
               "_neq": "X-Hasura-User-Id"
             }
           }
@@ -250,11 +249,13 @@
         {
           "name": "reject",
           "from": [
-            "SUBMITTED"
+            "SUBMITTED",
+            "BUDGET_REVIEW"
           ],
           "to": "REJECTED",
           "allowedRoles": [
-            "role_manager_procurement"
+            "role_procurement_manager",
+            "role_procurement_finance"
           ]
         },
         {
@@ -265,8 +266,7 @@
           ],
           "to": "CANCELLED",
           "allowedRoles": [
-            "role_procurement",
-            "role_manager_procurement"
+            "role_procurement_requester"
           ]
         }
       ]
@@ -276,7 +276,8 @@
         "column": "quote_file_id",
         "requireCleanOnCommands": [
           "submit",
-          "approve"
+          "approve",
+          "approve_budget"
         ]
       }
     ],
@@ -303,9 +304,6 @@
         ]
       }
     ],
-    "capabilities": [
-      "cap-process"
-    ],
     "uiSchema": {
       "listColumns": [
         "vendor_name",
@@ -317,12 +315,6 @@
         "updated_at"
       ],
       "formFields": [
-        {
-          "name": "work_item_id",
-          "label": "Work Item",
-          "type": "uuid",
-          "required": true
-        },
         {
           "name": "vendor_name",
           "label": "Vendor Name",
@@ -351,124 +343,13 @@
       "actions": [
         "submit",
         "approve",
+        "approve_budget",
         "reject",
         "cancel"
       ]
     }
   },
-  "ui_schema": {
-    "listColumns": [
-      "vendor_name",
-      "item_description",
-      "quoted_amount",
-      "quote_file_id",
-      "status",
-      "version",
-      "updated_at"
-    ],
-    "formFields": [
-      {
-        "name": "work_item_id",
-        "label": "Work Item",
-        "type": "uuid",
-        "required": true
-      },
-      {
-        "name": "vendor_name",
-        "label": "Vendor Name",
-        "type": "text",
-        "required": true
-      },
-      {
-        "name": "item_description",
-        "label": "Item Description",
-        "type": "text",
-        "required": true
-      },
-      {
-        "name": "quoted_amount",
-        "label": "Quoted Amount",
-        "type": "number",
-        "required": true
-      },
-      {
-        "name": "quote_file_id",
-        "label": "Supplier Quote File",
-        "type": "file",
-        "required": false
-      }
-    ],
-    "actions": [
-      "submit",
-      "approve",
-      "reject",
-      "cancel"
-    ]
-  },
-  "state_machine": {
-    "initial": "DRAFT",
-    "editableStates": [
-      "DRAFT"
-    ],
-    "terminalStates": [
-      "APPROVED",
-      "REJECTED",
-      "CANCELLED"
-    ],
-    "commands": [
-      {
-        "name": "submit",
-        "from": [
-          "DRAFT"
-        ],
-        "to": "SUBMITTED",
-        "allowedRoles": [
-          "role_procurement"
-        ]
-      },
-      {
-        "name": "approve",
-        "from": [
-          "SUBMITTED"
-        ],
-        "to": "APPROVED",
-        "allowedRoles": [
-          "role_manager_procurement"
-        ],
-        "recordFilter": {
-          "requester_id": {
-            "_neq": "X-Hasura-User-Id"
-          }
-        }
-      },
-      {
-        "name": "reject",
-        "from": [
-          "SUBMITTED"
-        ],
-        "to": "REJECTED",
-        "allowedRoles": [
-          "role_manager_procurement"
-        ]
-      },
-      {
-        "name": "cancel",
-        "from": [
-          "DRAFT",
-          "SUBMITTED"
-        ],
-        "to": "CANCELLED",
-        "allowedRoles": [
-          "role_procurement",
-          "role_manager_procurement"
-        ]
-      }
-    ]
-  },
-  "dependent_capabilities": [
-    "cap-process"
-  ],
   "status": "Ready",
   "last_error": null,
-  "updated_at": "2026-11-05T00:00:00Z"
+  "updated_at": "2026-11-13T00:00:00Z"
 }

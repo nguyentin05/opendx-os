@@ -18,6 +18,7 @@ package apply
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/opendx-os/opendx-os/operator/internal/planner"
 )
@@ -46,4 +47,36 @@ func (r *Runner) liveColumns(ctx context.Context, table string) ([]planner.LiveC
 		cols = append(cols, c)
 	}
 	return cols, rows.Err()
+}
+
+// statesInUse returns the distinct states of the rows of an existing domain table.
+func (r *Runner) statesInUse(ctx context.Context, table string) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT DISTINCT status::text FROM `+quoteTable(table)+` ORDER BY 1`)
+	if err != nil {
+		return nil, fmt.Errorf("read states of %s: %w", table, err)
+	}
+	defer func() { _ = rows.Close() }()
+	var states []string
+	for rows.Next() {
+		var st string
+		if err := rows.Scan(&st); err != nil {
+			return nil, err
+		}
+		states = append(states, st)
+	}
+	return states, rows.Err()
+}
+
+func quoteTable(table string) string {
+	ref := planner.ParseTableRef(table)
+	return `"` + strings.ReplaceAll(ref.Schema, `"`, `""`) + `"."` + strings.ReplaceAll(ref.Name, `"`, `""`) + `"`
+}
+
+func hasColumn(cols []planner.LiveColumn, name string) bool {
+	for _, c := range cols {
+		if c.Name == name {
+			return true
+		}
+	}
+	return false
 }

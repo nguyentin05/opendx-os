@@ -22,6 +22,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -86,8 +87,11 @@ func NewDatabase(t *testing.T) *sql.DB {
 		filepath.Join(repoRoot, "platform", "postgres", "init", "02_capability_registry.sql"),
 		filepath.Join(repoRoot, "platform", "postgres", "init", "03_app_registry.sql"),
 		filepath.Join(repoRoot, "platform", "postgres", "init", "05_operator_deployments.sql"),
-		filepath.Join(repoRoot, "platform", "postgres", "init", "07_app_definitions.sql"),
+		filepath.Join(repoRoot, "platform", "postgres", "capabilities", "cap_hr.sql"),
+		filepath.Join(repoRoot, "platform", "postgres", "capabilities", "cap_work.sql"),
 		filepath.Join(repoRoot, "platform", "postgres", "capabilities", "cap_process.sql"),
+		filepath.Join(repoRoot, "platform", "postgres", "capabilities", "cap_data.sql"),
+		filepath.Join(repoRoot, "platform", "postgres", "init", "07_app_definitions.sql"),
 	}
 	for _, f := range initFiles {
 		sqlBytes, err := os.ReadFile(f)
@@ -98,8 +102,41 @@ func NewDatabase(t *testing.T) *sql.DB {
 			t.Fatalf("exec %s: %v", f, err)
 		}
 	}
+	// The database-level grants of 06_runtime_roles.sql. That script also
+	// alters cluster roles (including the test login), so it is not run here.
+	if _, err := db.Exec(runtimeGrants); err != nil {
+		t.Fatalf("grant runtime privileges: %v", err)
+	}
 
 	return db
+}
+
+const runtimeGrants = `
+GRANT USAGE ON SCHEMA core, domain TO dxos_process, dxos_hasura, dxos_reader;
+GRANT USAGE ON SCHEMA cap_hr, cap_work, cap_process, cap_data TO dxos_process, dxos_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA core, cap_hr, cap_work, cap_process, cap_data TO dxos_process, dxos_reader;
+GRANT INSERT, UPDATE ON ALL TABLES IN SCHEMA cap_work, cap_process TO dxos_process;
+GRANT INSERT, UPDATE ON core.outbox_events TO dxos_process;
+`
+
+// AsRuntime makes tx act as a runtime connection for actor: "dxos_process"
+// (cap-process, which also names the command in dxos.action) or
+// "dxos_hasura" (Hasura, which passes the session as hasura.user). The test
+// login must be a superuser to switch session authorization.
+func AsRuntime(tx *sql.Tx, connection, actor, role, action string) error {
+	if _, err := tx.Exec(`SET LOCAL SESSION AUTHORIZATION ` + connection); err != nil {
+		return err
+	}
+	switch connection {
+	case "dxos_process":
+		_, err := tx.Exec(`SELECT set_config('dxos.actor_id', $1, true), set_config('dxos.role', $2, true), set_config('dxos.action', $3, true)`, actor, role, action)
+		return err
+	case "dxos_hasura":
+		_, err := tx.Exec(`SELECT set_config('hasura.user', json_build_object('x-hasura-user-id', $1::text, 'x-hasura-role', $2::text)::text, true)`, actor, role)
+		return err
+	default:
+		return fmt.Errorf("unknown runtime connection %q", connection)
+	}
 }
 
 // ExecStatements executes test-owned multi-statement fixtures with bound values.

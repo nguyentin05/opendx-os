@@ -34,11 +34,54 @@ registry discovery and beta automatic-workflow readiness remain open.
 3. Configure environment variables and start services:
    ```bash
    cd /opt/opendx-os
-   cp .env.example .env
+   scripts/init-env.sh      # .env with random secrets
    docker compose up -d
+   scripts/test-compose.sh
    ```
+   At first start PostgreSQL loads the capabilities listed in
+   `ENABLED_CAPABILITIES` (default `cap-process,cap-hr,cap-work,cap-data`, which
+   the sample apps need), sets the runtime role passwords
+   (`HASURA_DATABASE_PASSWORD`, `PROCESS_DATABASE_PASSWORD`) and creates Kestra's
+   own `dxos_kestra` database (`KESTRA_DATABASE_PASSWORD`), all in
+   `platform/postgres/init/08_runtime_passwords.sh`. This happens once per data
+   volume: after changing these values, recreate it with `docker compose down -v`.
+   `scripts/test-compose.sh` waits for every service, logs in as each runtime role
+   from another container and probes each HTTP entry point.
 
-4. Validate and apply application manifests using `dxos-operator`:
+   Sign-in uses Keycloak (realm `dxos`, client `dxos-portal`, browser flow with
+   PKCE). Create accounts in the Keycloak admin console
+   (`http://localhost:8085/admin`, `KEYCLOAK_ADMIN`/`KEYCLOAK_ADMIN_PASSWORD`). A
+   user appears in `core.users` on their first request. Grant roles by inserting
+   into `core.user_roles` and departments into `cap_hr.staff`. The roles take
+   effect within `ROLE_CACHE_TTL` (default 5s), with no new token
+   ([ADR 0007](../adr/0007-keycloak-authenticates-platform-authorizes.md)).
+
+   For a demo organization, run `scripts/seed-demo.py seed`. It creates three
+   departments and six Keycloak accounts (password `DEMO_PASSWORD`, default
+   `Demo@2026`) with procurement, maintenance and timesheet roles, and is safe to
+   re-run. `scripts/seed-demo.py scopes` then files sample purchase requests (each
+   with a quote uploaded to cap-process and scanned by ClamAV) and prints what each
+   person sees through the gateway; `scripts/seed-demo.py flow` takes one request
+   through submit, department approval and budget approval with cap-process
+   commands, including the refusals on the way. Use them on local stacks only.
+
+4. The `operator` service installs exactly the application packages in
+   `OPERATOR_APPS_DIR` (default `./apps`, mounted read-only), checking every
+   `OPERATOR_RECONCILE_INTERVAL` (default `30s`). It runs
+   `dxos-operator reconcile --dir /apps --interval 30s`, the same planner and
+   apply code as the Kubernetes controller. No container needs recreating:
+   - copy a package directory in to install it; edit it to upgrade;
+   - remove it to uninstall: the `core.apps` row becomes `Removed`, its Hasura
+     permissions are dropped, and the domain table, data and roles are kept;
+   - Hasura metadata changed by hand is repaired on the next pass.
+
+   Each new or changed package is installed on its own, so a refused one (for
+   example, a capability that is not enabled) does not hold back the others; it
+   is retried when its package changes, or after ten minutes. While any package
+   is invalid (for instance half-copied), nothing is uninstalled. Follow it with
+   `docker compose logs -f operator`.
+
+   Without Compose, validate and apply application manifests using `dxos-operator`:
    ```bash
    ./bin/dxos-operator validate contracts/fixtures/procurement.yaml
    HASURA_URL=http://localhost:8080 HASURA_ADMIN_SECRET=dxos_admin_secret \
@@ -62,18 +105,18 @@ The CLI above keeps working without a cluster.
    `dxos-operator-config`); data lives in an `emptyDir` and is lost with the pod.
 2. Publish an application package as a resource and wait until it is ready:
    ```bash
-   go -C operator run ./cmd/dxos-operator export-crd \
-     -workspace 11111111-1111-4111-8111-111111111111 ../apps/procurement \
+   go -C operator run ./cmd/dxos-operator export-crd ../apps/procurement \
      | kubectl --context kind-dxos-dev apply -f -
    kubectl --context kind-dxos-dev wait dxapplication/procurement --for=condition=Ready
    kubectl --context kind-dxos-dev get dxapplications
    ```
-   The workspace row must exist in `core.workspaces`; `scripts/k8s/dev-cluster.sh demo`
-   seeds it, applies the package and demonstrates drift repair.
+   The capabilities the package declares (procurement: cap-process, cap-hr,
+   cap-work) must be enabled; `scripts/k8s/dev-cluster.sh demo` applies the
+   package and demonstrates drift repair.
 3. Status conditions: `Valid`, `SchemaInSync`, `PermissionsInSync`, `Published`,
-   `Ready`, plus `status.workspaces`. A blocked schema change keeps the previous
-   version serving. Deleting the resource revokes its grants and registry rows but
-   keeps the domain table and data.
+   `Ready`, plus `status.activeVersion`. A blocked schema change keeps the previous
+   version serving. Deleting the resource revokes its grants and marks the
+   `core.apps` row `Removed`; the domain table, data and roles are kept.
 4. Remove the cluster with `scripts/k8s/dev-cluster.sh down`.
 
 For another cluster, create the `dxos-operator-config` Secret (keys `DATABASE_URL`,

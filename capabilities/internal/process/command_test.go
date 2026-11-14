@@ -18,6 +18,8 @@ package process
 import (
 	"strings"
 	"testing"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
 )
 
 func TestStrictCommandRequest(t *testing.T) {
@@ -28,7 +30,7 @@ func TestStrictCommandRequest(t *testing.T) {
 	}
 }
 func TestGuardNullSemantics(t *testing.T) {
-	ok, e := matches(map[string]any{"x": map[string]any{"_neq": "a"}}, map[string]any{"x": nil}, nil)
+	ok, e := registry.Matches(map[string]any{"x": map[string]any{"_neq": "a"}}, map[string]any{"x": nil}, "")
 	if e != nil || ok {
 		t.Fatalf("NULL comparison matched: %v %v", ok, e)
 	}

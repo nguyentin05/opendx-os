@@ -100,47 +100,30 @@ class TestContractsAndHygiene(unittest.TestCase):
         self.assertTrue((init_dir / "04_capabilities.sh").exists(), "Missing 04_capabilities.sh loader")
 
     def test_contextual_employee_isolation_in_manifests(self) -> None:
-        sql = (ROOT / "platform" / "postgres" / "init" / "01_core_schema.sql").read_text(encoding="utf-8")
-        # Core employee entity must remain pure without domain-specific attribute pollution
-        self.assertNotIn("skill_level", sql)
-        self.assertNotIn("work_shift", sql)
+        # Users are pure identity; department data belongs to cap_hr and
+        # application-specific attributes to each application's domain table.
+        for path in (
+            ROOT / "platform" / "postgres" / "init" / "01_core_schema.sql",
+            ROOT / "platform" / "postgres" / "capabilities" / "cap_hr.sql",
+        ):
+            sql = path.read_text(encoding="utf-8")
+            self.assertNotIn("skill_level", sql)
+            self.assertNotIn("work_shift", sql)
 
-        maint = yaml.safe_load(
-            (ROOT / "apps" / "maintenance" / "manifest.yaml").read_text(encoding="utf-8")
-        )
-        ts = yaml.safe_load(
-            (ROOT / "apps" / "timesheet" / "manifest.yaml").read_text(encoding="utf-8")
-        )
-
-        maint_emp = next(
-            item for item in maint["spec"]["sharedAccess"] if item["table"] == "core.employees"
-        )
-        ts_emp = next(
-            item for item in ts["spec"]["sharedAccess"] if item["table"] == "core.employees"
-        )
-
-        # Both apps access pure core identity columns
-        self.assertEqual(
-            maint_emp["columns"],
-            ["id", "workspace_id", "full_name", "department"],
-        )
-        self.assertEqual(
-            ts_emp["columns"],
-            ["id", "workspace_id", "full_name", "department"],
-        )
-
-        # Contextual isolation is enforced via relationship traversal:
-        # Maintenance traverses employee -> maintenance_records only
-        self.assertEqual(
-            [r["targetTable"] for r in maint_emp["relationships"]],
-            ["domain.maintenance_records"],
-        )
-
-        # Timesheet traverses employee -> timesheet_entries only
-        self.assertEqual(
-            [r["targetTable"] for r in ts_emp["relationships"]],
-            ["domain.timesheet_entries"],
-        )
+        for app in ("maintenance", "timesheet"):
+            manifest = yaml.safe_load(
+                (ROOT / "apps" / app / "manifest.yaml").read_text(encoding="utf-8")
+            )
+            users = next(
+                item for item in manifest["spec"]["sharedAccess"] if item["table"] == "core.users"
+            )
+            # Applications read identity columns only.
+            self.assertEqual(users["columns"], ["id", "display_name"], app)
+            # Department scoping comes from cap-hr, never from a column the app owns.
+            self.assertIn("cap-hr", manifest["spec"]["capabilities"], app)
+            columns = {c["name"] for c in manifest["spec"]["domainTable"]["columns"]}
+            self.assertNotIn("org_unit_id", columns, app)
+            self.assertNotIn("department", columns, app)
 
 
 if __name__ == "__main__":

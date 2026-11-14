@@ -16,6 +16,8 @@
 package planner
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -25,10 +27,14 @@ import (
 
 func loadFixtureApp(t *testing.T) *manifest.DXApplication {
 	t.Helper()
-	path := filepath.Join("..", "..", "..", "contracts", "fixtures", "procurement.yaml")
-	app, err := manifest.ParseFile(path)
+	return loadApp(t, "procurement")
+}
+
+func loadApp(t *testing.T, name string) *manifest.DXApplication {
+	t.Helper()
+	app, err := manifest.ParseFile(filepath.Join("..", "..", "..", "apps", name, "manifest.yaml"))
 	if err != nil {
-		t.Fatalf("failed to parse procurement fixture: %v", err)
+		t.Fatalf("failed to parse %s manifest: %v", name, err)
 	}
 	return app
 }
@@ -43,18 +49,49 @@ func TestGenerateDDL(t *testing.T) {
 	checks := []string{
 		`CREATE TABLE IF NOT EXISTS "domain"."procurement_requests"`,
 		`"id" uuid PRIMARY KEY DEFAULT gen_random_uuid()`,
-		`"workspace_id" uuid NOT NULL REFERENCES "core"."workspaces"("id")`,
+		`"created_by" uuid NOT NULL REFERENCES "core"."users"("id")`,
+		`"org_unit_id" uuid NOT NULL REFERENCES "cap_hr"."org_units"("id")`,
 		`"status" text NOT NULL DEFAULT 'DRAFT'`,
-		`FOREIGN KEY ("workspace_id", "work_item_id") REFERENCES "core"."work_items"("workspace_id", "id")`,
-		`FOREIGN KEY ("workspace_id", "requester_id") REFERENCES "core"."employees"("workspace_id", "id")`,
-		`FOREIGN KEY ("workspace_id", "quote_file_id") REFERENCES "core"."file_objects"("workspace_id", "id")`,
-		`core.bump_domain_record_version()`,
-		`core.record_domain_update_audit()`,
+		`"created_at" timestamptz NOT NULL DEFAULT now()`,
+		`FOREIGN KEY ("quote_file_id") REFERENCES "core"."files"("id")`,
+		`CHECK ("status" IN ('DRAFT', 'SUBMITTED', 'BUDGET_REVIEW', 'APPROVED', 'REJECTED', 'CANCELLED'))`,
+		`CREATE INDEX IF NOT EXISTS "idx_procurement_requests_created_by"`,
+		`CREATE INDEX IF NOT EXISTS "idx_procurement_requests_org_unit_id"`,
+		`CREATE INDEX IF NOT EXISTS "idx_procurement_requests_status"`,
+		"BEFORE INSERT ON \"domain\".\"procurement_requests\"\nFOR EACH ROW EXECUTE FUNCTION core.stamp_record_owner();",
+		"BEFORE INSERT ON \"domain\".\"procurement_requests\"\nFOR EACH ROW EXECUTE FUNCTION cap_hr.stamp_record_org_unit();",
+		"BEFORE UPDATE ON \"domain\".\"procurement_requests\"\nFOR EACH ROW EXECUTE FUNCTION core.bump_domain_record_version();",
+		"AFTER INSERT OR UPDATE ON \"domain\".\"procurement_requests\"\nFOR EACH ROW EXECUTE FUNCTION core.record_domain_audit('procurement');",
 	}
 	for _, want := range checks {
 		if !strings.Contains(ddl, want) {
 			t.Errorf("DDL missing %q, got:\n%s", want, ddl)
 		}
+	}
+	for _, gone := range []string{"workspace", "work_item_id", "requester_id"} {
+		if strings.Contains(ddl, gone) {
+			t.Errorf("DDL still mentions %q", gone)
+		}
+	}
+	// PostgreSQL fires BEFORE triggers of one event in name order: the creator
+	// must be stamped before the department is derived from it.
+	if !strings.Contains(ddl, `"trg_procurement_requests_10_stamp_owner"`) || !strings.Contains(ddl, `"trg_procurement_requests_20_stamp_org_unit"`) {
+		t.Error("owner and department triggers must be named so that the owner sorts first")
+	}
+}
+
+func TestGenerateDDLWithoutHR(t *testing.T) {
+	ddl, err := GenerateDDL(loadApp(t, "process-fixture"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, unwanted := range []string{"org_unit_id", "cap_hr"} {
+		if strings.Contains(ddl, unwanted) {
+			t.Errorf("DDL of an application without cap-hr mentions %q", unwanted)
+		}
+	}
+	if !strings.Contains(ddl, "core.record_domain_audit('process_fixture')") {
+		t.Error("audit trigger must name the application")
 	}
 }
 
@@ -65,27 +102,74 @@ func TestGenerateHasuraOperations(t *testing.T) {
 		t.Fatalf("unexpected error generating Hasura operations: %v", err)
 	}
 
-	var foundTrack, foundInsert, foundUpdate bool
-	for _, op := range ops {
-		switch op.Type {
-		case "pg_track_table":
-			foundTrack = true
-		case "pg_create_insert_permission":
-			foundInsert = true
-			args := op.Args.(map[string]any)
-			perm := args["permission"].(map[string]any)
-			presets := perm["set"].(map[string]string)
-			if presets["status"] != "DRAFT" || presets["requester_id"] != "X-Hasura-User-Id" || presets["workspace_id"] != "X-Hasura-Workspace-Id" {
-				t.Fatalf("unexpected insert presets: %+v", presets)
+	perms := map[string]map[string]any{}
+	firstPermission, lastRelationship := -1, -1
+	tracked := map[string]bool{}
+	for i, op := range ops {
+		args := op.Args.(map[string]any)
+		switch {
+		case op.Type == "pg_track_table":
+			ref := args["table"].(TableRef)
+			tracked[ref.Schema+"."+ref.Name] = true
+		case strings.HasSuffix(op.Type, "_relationship"):
+			lastRelationship = i
+		case strings.HasSuffix(op.Type, "_permission"):
+			if firstPermission < 0 {
+				firstPermission = i
 			}
-		case "pg_create_update_permission":
-			foundUpdate = true
-		case "pg_create_delete_permission":
+			ref := args["table"].(TableRef)
+			perms[op.Type+":"+ref.Schema+"."+ref.Name+":"+args["role"].(string)] = args["permission"].(map[string]any)
+		}
+		if op.Type == "pg_create_delete_permission" {
 			t.Fatal("delete permission must never be generated")
 		}
 	}
-	if !foundTrack || !foundInsert || !foundUpdate {
-		t.Fatalf("missing expected Hasura ops: track=%v insert=%v update=%v", foundTrack, foundInsert, foundUpdate)
+	if lastRelationship > firstPermission {
+		t.Fatal("relationships must be created before the permissions that traverse them")
+	}
+	for _, table := range []string{"domain.procurement_requests", "core.users", "core.files", "cap_hr.org_units", "cap_hr.staff"} {
+		if !tracked[table] {
+			t.Errorf("table %s is not tracked", table)
+		}
+	}
+
+	sel := func(role string) any {
+		p := perms["pg_create_select_permission:domain.procurement_requests:"+role]
+		if p == nil {
+			t.Fatalf("missing select permission for %s", role)
+		}
+		return p["filter"]
+	}
+	assertJSON(t, "requester filter", sel("role_procurement_requester"), `{"created_by":{"_eq":"X-Hasura-User-Id"}}`)
+	// The department scope and the manifest's record filter both apply.
+	assertJSON(t, "manager filter", sel("role_procurement_manager"), `{"_and":[{"org_unit":{"staff":{"user_id":{"_eq":"X-Hasura-User-Id"}}}},{"status":{"_neq":"DRAFT"}}]}`)
+	assertJSON(t, "finance filter", sel("role_procurement_finance"), `{"status":{"_neq":"DRAFT"}}`)
+
+	ins := perms["pg_create_insert_permission:domain.procurement_requests:role_procurement_requester"]
+	assertJSON(t, "insert presets", ins["set"], `{"status":"DRAFT"}`)
+	assertJSON(t, "insert check", ins["check"], `{"status":{"_eq":"DRAFT"}}`)
+
+	upd := perms["pg_create_update_permission:domain.procurement_requests:role_procurement_requester"]
+	assertJSON(t, "update filter", upd["filter"], `{"_and":[{"created_by":{"_eq":"X-Hasura-User-Id"}},{"status":{"_in":["DRAFT"]}}]}`)
+
+	// A role sees the app's files it uploaded or that are attached to records
+	// it may read; the application alone is not enough.
+	files := perms["pg_create_select_permission:core.files:role_procurement_manager"]
+	assertJSON(t, "manager files filter", files["filter"], `{"_and":[{"app_id":{"_eq":"procurement"}},{"_or":[{"uploaded_by":{"_eq":"X-Hasura-User-Id"}},{"procurement_requests_by_quote_file_id":{"_and":[{"org_unit":{"staff":{"user_id":{"_eq":"X-Hasura-User-Id"}}}},{"status":{"_neq":"DRAFT"}}]}}]}]}`)
+	ownFiles := perms["pg_create_select_permission:core.files:role_procurement_requester"]
+	assertJSON(t, "requester files filter", ownFiles["filter"], `{"_and":[{"app_id":{"_eq":"procurement"}},{"_or":[{"uploaded_by":{"_eq":"X-Hasura-User-Id"}},{"procurement_requests_by_quote_file_id":{"created_by":{"_eq":"X-Hasura-User-Id"}}}]}]}`)
+	users := perms["pg_create_select_permission:core.users:role_procurement_manager"]
+	assertJSON(t, "users filter", users["filter"], `{}`)
+}
+
+func assertJSON(t *testing.T, what string, got any, want string) {
+	t.Helper()
+	b, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != want {
+		t.Errorf("%s = %s, want %s", what, b, want)
 	}
 }
 
@@ -98,10 +182,37 @@ func TestDDLGrantsDeclaredDomainToRestrictedRuntimeRoles(t *testing.T) {
 	for _, grant := range []string{
 		`GRANT SELECT, INSERT, UPDATE ON "domain"."procurement_requests" TO dxos_hasura, dxos_process;`,
 		`GRANT SELECT ON "domain"."procurement_requests" TO dxos_reader;`,
-		`GRANT SELECT ON "core"."employees" TO dxos_hasura;`,
+		`GRANT SELECT ON "core"."users" TO dxos_hasura;`,
+		`GRANT SELECT ON "cap_hr"."staff" TO dxos_hasura;`,
 	} {
 		if !strings.Contains(ddl, grant) {
 			t.Errorf("missing restricted runtime grant: %s", grant)
 		}
+	}
+}
+
+// contracts/fixtures/procurement-ddl.sql is the DDL capability tests install;
+// it must stay what the operator generates.
+func TestProcurementDDLFixtureIsCurrent(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "fixtures", "procurement-ddl.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body []string
+	header := true
+	for _, line := range strings.SplitAfter(string(raw), "\n") {
+		if header && strings.HasPrefix(line, "-- ") && !strings.HasPrefix(line, "-- Auto-generated") {
+			continue
+		}
+		header = false
+		body = append(body, line)
+	}
+	app := loadApp(t, "procurement")
+	want, err := GenerateDDL(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(body, "") != want+"\n" && strings.Join(body, "") != want {
+		t.Fatal("contracts/fixtures/procurement-ddl.sql is stale; regenerate it with:\n  go -C operator run ./cmd/dxos-operator plan -format sql ../apps/procurement/manifest.yaml")
 	}
 }

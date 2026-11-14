@@ -16,69 +16,87 @@
 package planner
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/opendx-os/opendx-os/operator/internal/manifest"
 )
 
-func TestBuildPlanPreservesSharedGrantsAndDropsExcess(t *testing.T) {
-	app1 := *loadFixtureApp(t)
-	app2 := *loadFixtureApp(t)
-	app2.Metadata.Name = "review_fixture"
-	app2.Spec.DomainTable.Name = "domain.review_requests"
-	app2.Spec.Role = "role_review"
-	// Suppose app2 shares role_procurement on core.employees
-	app2.Spec.SharedAccess[0].Roles = []string{"role_review", "role_procurement"}
-	app2.Spec.DomainAccess.Select[0].Role = "role_review"
-	app2.Spec.DomainAccess.Insert[0].Role = "role_review"
-	app2.Spec.DomainAccess.Update[0].Role = "role_review"
-	app2.Spec.StateMachine.Commands[0].AllowedRoles = []string{"role_review"}
-	app2.Spec.StateMachine.Commands[3].AllowedRoles = []string{"role_review"}
+func TestBuildPlanDropsGrantsOfRemovedApp(t *testing.T) {
+	procurement := *loadApp(t, "procurement")
+	review := *loadApp(t, "process-fixture")
 
-	// Live state has both app1 and app2; desired state removes app2
-	live := ManagedState{ActiveApps: []manifest.DXApplication{app1, app2}}
-	plan, err := BuildPlan([]manifest.DXApplication{app1}, live)
+	live := ManagedState{ActiveApps: []manifest.DXApplication{procurement, review}}
+	plan, err := BuildPlan([]manifest.DXApplication{procurement}, live)
 	if err != nil {
 		t.Fatalf("BuildPlan failed: %v", err)
 	}
-
-	if len(plan.RemovedApps) != 1 || plan.RemovedApps[0] != "review_fixture" {
-		t.Fatalf("expected review_fixture in RemovedApps, got %+v", plan.RemovedApps)
+	if len(plan.RemovedApps) != 1 || plan.RemovedApps[0] != "process_fixture" {
+		t.Fatalf("expected process_fixture in RemovedApps, got %+v", plan.RemovedApps)
 	}
 
-	// Ensure role_procurement on core.employees is NOT dropped because app1 still requires it,
-	// while role_review on core.employees IS dropped.
-	var droppedReviewShared, droppedProcurementShared bool
+	dropped := map[string]bool{}
 	for _, op := range plan.DropOps {
 		args := op.Args.(map[string]any)
 		tbl := args["table"].(TableRef)
-		role := args["role"].(string)
-		if tbl.Schema == "core" && tbl.Name == "employees" {
-			if role == "role_review" {
-				droppedReviewShared = true
-			}
-			if role == "role_procurement" {
-				droppedProcurementShared = true
-			}
+		dropped[op.Type+":"+tbl.Schema+"."+tbl.Name+":"+args["role"].(string)] = true
+	}
+	for _, want := range []string{
+		"pg_drop_select_permission:domain.review_requests:role_review",
+		"pg_drop_insert_permission:domain.review_requests:role_review",
+		"pg_drop_select_permission:core.users:role_review_manager",
+	} {
+		if !dropped[want] {
+			t.Errorf("expected drop %s, got %v", want, dropped)
 		}
 	}
-	if !droppedReviewShared {
-		t.Fatal("expected excess shared grant for role_review on core.employees to be dropped")
+	for key := range dropped {
+		if strings.Contains(key, "role_procurement") {
+			t.Errorf("grant of the remaining application dropped: %s", key)
+		}
 	}
-	if droppedProcurementShared {
-		t.Fatal("shared grant for role_procurement on core.employees must be preserved for active app1")
+}
+
+func TestBuildPlanRejectsRoleOfAnotherApp(t *testing.T) {
+	procurement := *loadApp(t, "procurement")
+	review := *loadApp(t, "process-fixture")
+	review.Spec.Roles = append(review.Spec.Roles, manifest.RoleDef{Name: "role_procurement_manager"})
+	_, err := BuildPlan([]manifest.DXApplication{procurement, review}, ManagedState{})
+	if err == nil || !strings.Contains(err.Error(), `role "role_procurement_manager" is declared by both`) {
+		t.Fatalf("expected a role ownership conflict, got %v", err)
+	}
+}
+
+func TestChangedReportsNewAndModifiedApps(t *testing.T) {
+	procurement := *loadApp(t, "procurement")
+	review := *loadApp(t, "process-fixture")
+
+	// The installed copy comes back from core.apps as JSON.
+	raw, err := json.Marshal(procurement.Spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installed := procurement
+	installed.Spec = manifest.AppSpec{}
+	if err := json.Unmarshal(raw, &installed.Spec); err != nil {
+		t.Fatal(err)
+	}
+	live := ManagedState{ActiveApps: []manifest.DXApplication{installed}}
+
+	if got := Changed([]manifest.DXApplication{procurement, review}, live); len(got) != 1 || got[0] != "process_fixture" {
+		t.Fatalf("Changed = %v, want [process_fixture]", got)
+	}
+	upgraded := procurement
+	upgraded.Metadata.Version = "0.3.0"
+	if got := Changed([]manifest.DXApplication{upgraded}, live); len(got) != 1 || got[0] != "procurement" {
+		t.Fatalf("Changed = %v, want [procurement]", got)
 	}
 }
 
 func TestBuildApplyPlanPreservesOtherActivePackages(t *testing.T) {
-	first, err := manifest.ParseFile("../../../apps/procurement/manifest.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := manifest.ParseFile("../../../apps/process-fixture/manifest.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
+	first := loadApp(t, "procurement")
+	second := loadApp(t, "process-fixture")
 	live := ManagedState{ActiveApps: []manifest.DXApplication{*first}}
 	plan, err := BuildApplyPlan(*second, live)
 	if err != nil {
@@ -86,5 +104,24 @@ func TestBuildApplyPlanPreservesOtherActivePackages(t *testing.T) {
 	}
 	if len(plan.RemovedApps) != 0 || len(plan.Apps) != 2 {
 		t.Fatalf("single app apply discarded active package: %+v", plan.RemovedApps)
+	}
+}
+
+func TestBuildRemovePlanRemovesOnlyThatApp(t *testing.T) {
+	first := loadApp(t, "procurement")
+	second := loadApp(t, "process-fixture")
+	live := ManagedState{ActiveApps: []manifest.DXApplication{*first, *second}}
+	if !live.Has("process_fixture") || live.Has("timesheet") {
+		t.Fatal("Has must report exactly the installed applications")
+	}
+	plan, err := BuildRemovePlan("process_fixture", live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Apps) != 1 || plan.Apps[0].Metadata.Name != "procurement" {
+		t.Fatalf("plan keeps %d apps, want only procurement", len(plan.Apps))
+	}
+	if len(plan.RemovedApps) != 1 || plan.RemovedApps[0] != "process_fixture" {
+		t.Fatalf("removed = %v, want [process_fixture]", plan.RemovedApps)
 	}
 }

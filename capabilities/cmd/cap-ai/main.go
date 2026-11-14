@@ -69,8 +69,7 @@ func main() {
 	})
 
 	mux.HandleFunc("POST /api/cap/ai/extract", func(w http.ResponseWriter, r *http.Request) {
-		iden, err := auth.ExtractIdentity(r)
-		if err != nil {
+		if _, err := auth.ExtractIdentity(r); err != nil {
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
 		}
@@ -81,7 +80,7 @@ func main() {
 			return
 		}
 
-		res, code, err := aiEngine.ExtractDocument(r.Context(), iden.WorkspaceID, req.FileID)
+		res, code, err := aiEngine.ExtractDocument(r.Context(), req.FileID)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(code)

@@ -18,6 +18,7 @@ package planner
 import (
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 
 	"github.com/opendx-os/opendx-os/operator/internal/manifest"
@@ -44,169 +45,180 @@ func ParseTableRef(name string) TableRef {
 	return TableRef{Schema: "public", Name: name}
 }
 
-// GenerateHasuraOperations generates metadata API commands to track tables, set permissions, and configure relationships.
+// Session filters for the role scopes. A department filter walks from the
+// record to its department and on to the department's staff, so a caller sees
+// the record when they are staff of the record's department.
+var (
+	ownFilter        = map[string]any{"created_by": map[string]any{"_eq": "X-Hasura-User-Id"}}
+	departmentFilter = map[string]any{"org_unit": map[string]any{"staff": map[string]any{"user_id": map[string]any{"_eq": "X-Hasura-User-Id"}}}}
+)
+
+// ScopeFilter returns the Hasura row filter of a role scope; organization scope
+// has no filter.
+func ScopeFilter(scope string) map[string]any {
+	switch scope {
+	case manifest.ScopeOwn:
+		return ownFilter
+	case manifest.ScopeDepartment:
+		return departmentFilter
+	default:
+		return nil
+	}
+}
+
+// GenerateHasuraOperations generates metadata API commands to track tables,
+// configure relationships and set permissions. Relationships come before
+// permissions because department filters traverse them.
 func GenerateHasuraOperations(app *manifest.DXApplication) ([]HasuraMetadataPayload, error) {
 	if err := manifest.Validate(app); err != nil {
 		return nil, fmt.Errorf("validate manifest before Hasura generation: %w", err)
 	}
 
 	var ops []HasuraMetadataPayload
-	sourceName := "default"
 	domainTableRef := ParseTableRef(app.Spec.DomainTable.Name)
+	sm := app.Spec.StateMachine
 
-	// 1. Track domain table
-	ops = append(ops, HasuraMetadataPayload{
-		Type: "pg_track_table",
-		Args: map[string]any{
-			"source": sourceName,
-			"table":  domainTableRef,
-		},
-	})
-
-	// 2. Domain table SELECT permissions
-	for _, sel := range app.Spec.DomainAccess.Select {
-		ops = append(ops, HasuraMetadataPayload{
-			Type: "pg_create_select_permission",
-			Args: map[string]any{
-				"source": sourceName,
-				"table":  domainTableRef,
-				"role":   sel.Role,
-				"permission": map[string]any{
-					"columns":            sel.Columns,
-					"filter":             conjoinWorkspaceFilter(sel.RecordFilter),
-					"allow_aggregations": false,
-				},
-			},
-		})
+	// 1. Track the domain table and the shared tables it reads.
+	ops = append(ops, trackTable(domainTableRef))
+	for _, t := range SharedTablesRead(app) {
+		ops = append(ops, trackTable(ParseTableRef(t)))
 	}
 
-	// 3. Domain table INSERT permissions (presets enforce initial status, workspace_id, and user presets)
-	for _, ins := range app.Spec.DomainAccess.Insert {
-		presets := map[string]string{
-			"workspace_id": "X-Hasura-Workspace-Id",
-			"status":       app.Spec.StateMachine.Initial,
-		}
-		maps.Copy(presets, ins.Presets)
-		checkFilter := conjoinFilters(
-			conjoinWorkspaceFilter(ins.RecordFilter),
-			map[string]any{"status": map[string]any{"_eq": app.Spec.StateMachine.Initial}},
+	// 2. Relationships.
+	for _, fk := range app.Spec.DomainTable.ForeignKeys {
+		remote := ParseTableRef(fk.References)
+		ops = append(ops,
+			relationship("pg_create_object_relationship", domainTableRef, strings.TrimSuffix(fk.Column, "_id"), remote, map[string]string{fk.Column: "id"}),
+			relationship("pg_create_array_relationship", remote, domainTableRef.Name+"_by_"+fk.Column, domainTableRef, map[string]string{"id": fk.Column}),
 		)
-		ops = append(ops, HasuraMetadataPayload{
-			Type: "pg_create_insert_permission",
-			Args: map[string]any{
-				"source": sourceName,
-				"table":  domainTableRef,
-				"role":   ins.Role,
-				"permission": map[string]any{
-					"columns":      ins.Columns,
-					"check":        checkFilter,
-					"set":          presets,
-					"backend_only": false,
-				},
-			},
-		})
+	}
+	if usesDepartmentScope(app) {
+		orgUnits := TableRef{Schema: "cap_hr", Name: "org_units"}
+		ops = append(ops,
+			relationship("pg_create_object_relationship", domainTableRef, "org_unit", orgUnits, map[string]string{"org_unit_id": "id"}),
+			relationship("pg_create_array_relationship", orgUnits, "staff", TableRef{Schema: "cap_hr", Name: "staff"}, map[string]string{"id": "org_unit_id"}),
+		)
 	}
 
-	// 4. Domain table UPDATE permissions (restricted strictly to editableStates)
+	// 3. Domain table SELECT permissions: the role scope narrowed by the rule's filter.
+	for _, sel := range app.Spec.DomainAccess.Select {
+		ops = append(ops, permission("pg_create_select_permission", domainTableRef, sel.Role, map[string]any{
+			"columns":            sel.Columns,
+			"filter":             nonNil(selectFilter(sel)),
+			"allow_aggregations": false,
+		}))
+	}
+
+	// 4. Domain table INSERT permissions. New records start in the initial
+	// state; creator and department are stamped by database triggers.
+	for _, ins := range app.Spec.DomainAccess.Insert {
+		presets := map[string]string{"status": sm.Initial}
+		maps.Copy(presets, ins.Presets)
+		ops = append(ops, permission("pg_create_insert_permission", domainTableRef, ins.Role, map[string]any{
+			"columns":      ins.Columns,
+			"check":        conjoinFilters(map[string]any{"status": map[string]any{"_eq": sm.Initial}}, ins.RecordFilter),
+			"set":          presets,
+			"backend_only": false,
+		}))
+	}
+
+	// 5. Domain table UPDATE permissions, restricted to editable states.
 	for _, upd := range app.Spec.DomainAccess.Update {
-		editableGuard := map[string]any{
-			"status": map[string]any{"_in": app.Spec.StateMachine.EditableStates},
-		}
-		updateFilter := conjoinFilters(conjoinWorkspaceFilter(upd.RecordFilter), editableGuard)
-		ops = append(ops, HasuraMetadataPayload{
-			Type: "pg_create_update_permission",
-			Args: map[string]any{
-				"source": sourceName,
-				"table":  domainTableRef,
-				"role":   upd.Role,
-				"permission": map[string]any{
-					"columns": upd.Columns,
-					"filter":  updateFilter,
-					"check":   editableGuard,
-				},
-			},
-		})
+		editableGuard := map[string]any{"status": map[string]any{"_in": sm.EditableStates}}
+		ops = append(ops, permission("pg_create_update_permission", domainTableRef, upd.Role, map[string]any{
+			"columns": upd.Columns,
+			"filter":  conjoinFilters(conjoinFilters(ScopeFilter(upd.Scope), upd.RecordFilter), editableGuard),
+			"check":   editableGuard,
+		}))
 	}
 
-	// 5. Shared tables SELECT permissions
+	// 6. Shared tables SELECT permissions. Rows of app-scoped tables are limited
+	// to the application's own rows.
 	for _, shared := range app.Spec.SharedAccess {
-		sharedRef := ParseTableRef(shared.Table)
-		ops = append(ops, HasuraMetadataPayload{
-			Type: "pg_track_table",
-			Args: map[string]any{
-				"source": sourceName,
-				"table":  sharedRef,
-			},
-		})
 		for _, role := range shared.Roles {
-			ops = append(ops, HasuraMetadataPayload{
-				Type: "pg_create_select_permission",
-				Args: map[string]any{
-					"source": sourceName,
-					"table":  sharedRef,
-					"role":   role,
-					"permission": map[string]any{
-						"columns":            shared.Columns,
-						"filter":             conjoinWorkspaceFilter(nil),
-						"allow_aggregations": false,
-					},
-				},
-			})
+			ops = append(ops, permission("pg_create_select_permission", ParseTableRef(shared.Table), role, map[string]any{
+				"columns":            shared.Columns,
+				"filter":             nonNil(sharedFilter(app, shared.Table, role)),
+				"allow_aggregations": false,
+			}))
 		}
-	}
-
-	// 6. Relationships derived from CompositeForeignKeys
-	for _, fk := range app.Spec.DomainTable.CompositeForeignKeys {
-		fkCol := fk.Columns[1]
-		sharedRef := ParseTableRef(fk.ReferencesTable)
-		relName := strings.TrimSuffix(fkCol, "_id")
-		ops = append(ops, HasuraMetadataPayload{
-			Type: "pg_create_object_relationship",
-			Args: map[string]any{
-				"source": sourceName,
-				"table":  domainTableRef,
-				"name":   relName,
-				"using": map[string]any{
-					"manual_configuration": map[string]any{
-						"remote_table": sharedRef,
-						"column_mapping": map[string]string{
-							"workspace_id": "workspace_id",
-							fkCol:          "id",
-						},
-					},
-				},
-			},
-		})
-		ops = append(ops, HasuraMetadataPayload{
-			Type: "pg_create_array_relationship",
-			Args: map[string]any{
-				"source": sourceName,
-				"table":  sharedRef,
-				"name":   domainTableRef.Name + "_by_" + fkCol,
-				"using": map[string]any{
-					"manual_configuration": map[string]any{
-						"remote_table": domainTableRef,
-						"column_mapping": map[string]string{
-							"workspace_id": "workspace_id",
-							"id":           fkCol,
-						},
-					},
-				},
-			},
-		})
 	}
 
 	return ops, nil
 }
 
-func conjoinWorkspaceFilter(f map[string]any) map[string]any {
-	ws := map[string]any{
-		"workspace_id": map[string]any{"_eq": "X-Hasura-Workspace-Id"},
+func trackTable(t TableRef) HasuraMetadataPayload {
+	return HasuraMetadataPayload{Type: "pg_track_table", Args: map[string]any{"source": "default", "table": t}}
+}
+
+// selectFilter is the row filter of a domain select rule: its scope narrowed
+// by its record filter.
+func selectFilter(rule manifest.AccessRule) map[string]any {
+	return conjoinFilters(ScopeFilter(rule.Scope), rule.RecordFilter)
+}
+
+// sharedFilter limits what role reads of a shared table. App-scoped tables
+// show only the application's rows. Files are narrower still: a role sees the
+// files its user uploaded, and files attached to domain records the role may
+// read (through the array relationship from core.files to the domain table),
+// so knowing the application is not enough to list other people's files.
+func sharedFilter(app *manifest.DXApplication, table, role string) map[string]any {
+	if !manifest.SharedTables[table].AppScoped {
+		return nil
 	}
-	if len(f) == 0 {
-		return ws
+	filter := map[string]any{"app_id": map[string]any{"_eq": app.Metadata.Name}}
+	if table != "core.files" {
+		return filter
 	}
-	return conjoinFilters(ws, f)
+	visible := []any{map[string]any{"uploaded_by": map[string]any{"_eq": "X-Hasura-User-Id"}}}
+	domain := ParseTableRef(app.Spec.DomainTable.Name)
+	for _, fk := range app.Spec.DomainTable.ForeignKeys {
+		if fk.References != "core.files" {
+			continue
+		}
+		for _, sel := range app.Spec.DomainAccess.Select {
+			if sel.Role == role && slices.Contains(sel.Columns, fk.Column) {
+				visible = append(visible, map[string]any{domain.Name + "_by_" + fk.Column: nonNil(selectFilter(sel))})
+			}
+		}
+	}
+	return conjoinFilters(filter, map[string]any{"_or": visible})
+}
+
+func relationship(kind string, table TableRef, name string, remote TableRef, mapping map[string]string) HasuraMetadataPayload {
+	return HasuraMetadataPayload{
+		Type: kind,
+		Args: map[string]any{
+			"source": "default",
+			"table":  table,
+			"name":   name,
+			"using": map[string]any{
+				"manual_configuration": map[string]any{
+					"remote_table":   remote,
+					"column_mapping": mapping,
+				},
+			},
+		},
+	}
+}
+
+func permission(kind string, table TableRef, role string, body map[string]any) HasuraMetadataPayload {
+	return HasuraMetadataPayload{
+		Type: kind,
+		Args: map[string]any{
+			"source":     "default",
+			"table":      table,
+			"role":       role,
+			"permission": body,
+		},
+	}
+}
+
+func nonNil(f map[string]any) map[string]any {
+	if f == nil {
+		return map[string]any{}
+	}
+	return f
 }
 
 func conjoinFilters(a, b map[string]any) map[string]any {

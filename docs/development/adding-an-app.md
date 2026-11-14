@@ -7,27 +7,27 @@ services, and UI. Resolve relevant contract gaps before extending independent
 parsers or app packages.
 
 1. Create `apps/<app>/manifest.yaml`, `workflows/*.yaml`, and `knowledge/*.md`.
-   Declare domain fields, permissions, same-workspace relationships, state
-   machine, attachment bindings, workflows/events, capabilities, and UI metadata.
+   Declare capabilities, the roles the app owns, domain fields and foreign keys,
+   per-role access with a scope (own, department, organization), state machine,
+   attachment bindings, workflows, and UI metadata.
 2. Put thresholds and business handling in declared workflows. Map standard OT
    events to those flows; adding an app must not add an app-name branch to shared
    capabilities, UI, or bootstrap DDL.
-3. Validate the package using the current schema/validator. Record what remains
-   illustrative if the validator cannot yet enforce the required contract.
+3. Validate the package: `go -C operator run ./cmd/dxos-operator validate ../apps/<app>/manifest.yaml`.
 4. In an assigned deployment environment, review the Operator plan for generated
    DDL, permissions, managed resources, and revocations. Apply and publish only
    configuration that reaches `Ready` once lifecycle support exists.
-5. Verify registry discovery without a UI rebuild, workspace/role isolation,
+5. Verify registry discovery without a UI rebuild, role scopes,
    initial state, stale commands, attachment checks, retry-safe events, and
    capability disablement. Reconcile must preserve other apps' valid grants.
 
-The CLI currently supports a partial interface: inspect
-[its command implementation](../../operator/cmd/dxos-operator/main.go) before
-running it. The intended plan/apply lifecycle above is not evidence that the
-current CLI provisions a full installation. It currently offers `plan`, a
-`reconcile` scaffold, and `version`; `apply` is not implemented.
+The [CLI](../../operator/cmd/dxos-operator/main.go) offers `validate`, `plan`,
+`apply` (install or upgrade one app), `reconcile` (install exactly the apps of a
+directory; with `--interval` it keeps doing so, which is how the Compose
+`operator` service runs), `export-crd` and `controller`. Under Compose, copying
+a package into `apps/` is enough to install it.
 
 Use an app beyond maintenance, procurement, and timesheet to test pluggability.
-A useful scenario combines employee reads, file bindings, same-workspace FKs,
+A useful scenario combines user reads, file bindings, department scope,
 and `ot.event.accepted`; duplicate delivery must not repeat business work.
 Record evidence using [verification](verification.md).

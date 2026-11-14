@@ -62,8 +62,10 @@ END $$;
 -- Every role is owned by the platform, one application or one capability. The
 -- operator registers application roles from manifests; a capability's SQL
 -- file registers its own roles.
+-- Names start with role_ so no role can collide with names Hasura treats as
+-- privileged (admin).
 CREATE TABLE IF NOT EXISTS core.roles (
-    name TEXT PRIMARY KEY CHECK (length(trim(name)) > 0),
+    name TEXT PRIMARY KEY CHECK (name ~ '^role_[a-z0-9_]+$'),
     app_id TEXT REFERENCES core.apps(app_id),
     cap_id TEXT REFERENCES core.capabilities(cap_id),
     description TEXT NOT NULL DEFAULT '',

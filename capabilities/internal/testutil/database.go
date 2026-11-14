@@ -33,6 +33,12 @@ import (
 // Each call owns a fresh database, so fixture core schemas cannot touch the supplied DB.
 func Database(t *testing.T) *sql.DB {
 	t.Helper()
+	db, _ := database(t)
+	return db
+}
+
+func database(t *testing.T) (*sql.DB, string) {
+	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Fatal("TEST_DATABASE_URL is required with -tags=integration (no silent skip)")
@@ -78,5 +84,5 @@ func Database(t *testing.T) *sql.DB {
 	if e = db.Ping(); e != nil {
 		t.Fatal(e)
 	}
-	return db
+	return db, u.String()
 }

@@ -71,8 +71,6 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-const wsAlpha = "11111111-1111-4111-8111-111111111111"
-
 // minimalApp is structurally valid for the CRD schema; semantic validation is
 // exercised by the reconcile tests.
 func minimalApp(name string) *dxosv1alpha1.DXApplication {
@@ -81,22 +79,18 @@ func minimalApp(name string) *dxosv1alpha1.DXApplication {
 		Spec: dxosv1alpha1.DXApplicationSpec{
 			DisplayName: "Test",
 			Version:     "0.1.0",
-			Workspaces:  []string{wsAlpha},
-			Role:        "role_test",
+			Roles:       []dxosv1alpha1.Role{{Name: "role_test"}},
 			SharedAccess: []dxosv1alpha1.SharedAccess{{
-				Table: "core.work_items", Roles: []string{"role_test"}, Columns: []string{"id", "workspace_id"},
+				Table: "core.users", Roles: []string{"role_test"}, Columns: []string{"id", "display_name"},
 			}},
 			DomainTable: dxosv1alpha1.DomainTable{
-				Name:    "domain.test_records",
-				Columns: []dxosv1alpha1.Column{{Name: "note", Type: "text", Nullable: true}},
-				CompositeForeignKeys: []dxosv1alpha1.ForeignKey{{
-					Columns: []string{"workspace_id", "work_item_id"}, ReferencesTable: "core.work_items", ReferencesColumns: []string{"workspace_id", "id"},
-				}},
+				Name:        "domain.test_records",
+				Columns:     []dxosv1alpha1.Column{{Name: "note", Type: "text", Nullable: true}, {Name: "owner_id", Type: "uuid", Nullable: true}},
+				ForeignKeys: []dxosv1alpha1.ForeignKey{{Column: "owner_id", References: "core.users"}},
 			},
 			DomainAccess: dxosv1alpha1.DomainAccess{
-				Select: []dxosv1alpha1.AccessRule{{Role: "role_test", Columns: []string{"id"}}},
+				Select: []dxosv1alpha1.AccessRule{{Role: "role_test", Scope: "own", Columns: []string{"id"}}},
 				Insert: []dxosv1alpha1.AccessRule{{Role: "role_test", Columns: []string{"note"}}},
-				Update: []dxosv1alpha1.AccessRule{{Role: "role_test", Columns: []string{"note"}}},
 			},
 			StateMachine: dxosv1alpha1.StateMachine{
 				Initial: "OPEN", EditableStates: []string{"OPEN"}, TerminalStates: []string{"DONE"},
@@ -139,12 +133,13 @@ func TestCRDSchemaAcceptsStructurallyValidResource(t *testing.T) {
 func TestCRDSchemaRejectsInvalidResources(t *testing.T) {
 	ctx := context.Background()
 	cases := map[string]func(*dxosv1alpha1.DXApplication){
-		"no workspaces":        func(a *dxosv1alpha1.DXApplication) { a.Spec.Workspaces = nil },
-		"workspace not a uuid": func(a *dxosv1alpha1.DXApplication) { a.Spec.Workspaces = []string{"alpha"} },
+		"no roles":             func(a *dxosv1alpha1.DXApplication) { a.Spec.Roles = nil },
+		"unknown scope":        func(a *dxosv1alpha1.DXApplication) { a.Spec.DomainAccess.Select[0].Scope = "everyone" },
+		"shared table schema":  func(a *dxosv1alpha1.DXApplication) { a.Spec.SharedAccess[0].Table = "domain.other_records" },
 		"unsupported column":   func(a *dxosv1alpha1.DXApplication) { a.Spec.DomainTable.Columns[0].Type = "jsonb" },
-		"table outside domain": func(a *dxosv1alpha1.DXApplication) { a.Spec.DomainTable.Name = "core.work_items" },
+		"table outside domain": func(a *dxosv1alpha1.DXApplication) { a.Spec.DomainTable.Name = "core.users" },
 		"bad capability":       func(a *dxosv1alpha1.DXApplication) { a.Spec.Capabilities = []string{"process"} },
-		"effect kind":          func(a *dxosv1alpha1.DXApplication) {
+		"effect kind": func(a *dxosv1alpha1.DXApplication) {
 			a.Spec.Workflows = []dxosv1alpha1.Workflow{{ID: "f", Definition: "id: f", SubscribedEvents: []string{"command.committed"},
 				Effects: []dxosv1alpha1.Effect{{StepName: "s", Kind: "send_email", WhenCommands: []string{"close"},
 					Fields: dxosv1alpha1.EffectFields{Title: "t", Description: "d", Priority: "LOW"}}}}}

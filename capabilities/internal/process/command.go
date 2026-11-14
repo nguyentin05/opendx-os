@@ -44,30 +44,46 @@ var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]
 var namePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 var errCommand = errors.New("command rejected")
 
+func newUUID() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	b[6] = b[6]&15 | 64
+	b[8] = b[8]&63 | 128
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[:4], b[4:6], b[6:8], b[8:10], b[10:]), nil
+}
+
+// Execute runs a state-machine command on one record. The caller must act as
+// a role the command allows; the record must be one that role can read (its
+// scope and record filter), and must satisfy the command's record filter. The
+// status change, its audit row (acting role included), the outbox event and
+// the idempotency receipt commit together.
 func (e *Engine) Execute(ctx context.Context, id *auth.Identity, app, command, key string, req *CommandRequest) (*CommandResponse, int, error) {
 	fail := func(status int) (*CommandResponse, int, error) { return nil, status, errCommand }
-	if id == nil || !uuidPattern.MatchString(id.UserID) || !uuidPattern.MatchString(id.WorkspaceID) {
+	if id == nil || !uuidPattern.MatchString(id.UserID) || !namePattern.MatchString(id.Role) {
 		return fail(401)
-	}
-	if !contains(id.AllowedRoles, id.Role) {
-		return fail(403)
 	}
 	if req == nil || !uuidPattern.MatchString(req.EntityID) || req.ExpectedVersion < 1 || req.Payload == nil || len(req.Payload) != 0 || !namePattern.MatchString(app) || !namePattern.MatchString(command) || strings.TrimSpace(key) == "" || len(key) > 1024 {
 		return fail(400)
 	}
+	user := strings.ToLower(id.UserID)
 	request := *req
 	request.EntityID = strings.ToLower(req.EntityID)
 	b, _ := json.Marshal(request)
 	hash := sha256.Sum256(b)
 	fingerprint := hex.EncodeToString(hash[:])
-	a, err := e.apps.Load(ctx, id.WorkspaceID, app)
+	a, err := e.apps.Load(ctx, app)
+	if errors.Is(err, registry.ErrUnavailable) {
+		return fail(404)
+	}
 	if err != nil {
 		return fail(503)
 	}
 	var cmd *registry.Command
-	for i := range a.ManifestSpec.StateMachine.Commands {
-		if a.ManifestSpec.StateMachine.Commands[i].Name == command {
-			cmd = &a.ManifestSpec.StateMachine.Commands[i]
+	for i := range a.Spec.StateMachine.Commands {
+		if a.Spec.StateMachine.Commands[i].Name == command {
+			cmd = &a.Spec.StateMachine.Commands[i]
 		}
 	}
 	if cmd == nil || !contains(cmd.AllowedRoles, id.Role) {
@@ -78,13 +94,14 @@ func (e *Engine) Execute(ctx context.Context, id *auth.Identity, app, command, k
 		return fail(503)
 	}
 	defer func() { _ = tx.Rollback() }() // Best-effort cleanup; a committed transaction is already closed.
-	scope, _ := json.Marshal([]string{id.WorkspaceID, id.UserID, app, request.EntityID, command, key})
+	scope, _ := json.Marshal([]string{user, app, request.EntityID, command, key})
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, string(scope)); err != nil {
 		return fail(503)
 	}
-	// Lock before checking current row filters and cache. Cached retries bypass only stale version/state.
+	// Lock before checking current access and the receipt: a cached retry
+	// bypasses only a stale version or state, never a lost permission.
 	var raw []byte
-	err = tx.QueryRowContext(ctx, `SELECT to_jsonb(d) FROM `+a.DomainTable+` d WHERE workspace_id=$1 AND id=$2 FOR UPDATE`, id.WorkspaceID, request.EntityID).Scan(&raw)
+	err = tx.QueryRowContext(ctx, `SELECT to_jsonb(d) FROM `+a.Table()+` d WHERE id=$1 FOR UPDATE`, request.EntityID).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fail(404)
 	}
@@ -97,24 +114,18 @@ func (e *Engine) Execute(ctx context.Context, id *auth.Identity, app, command, k
 	if decoder.Decode(&row) != nil {
 		return fail(503)
 	}
-	columnTypes := map[string]string{"id": "uuid", "workspace_id": "uuid", "work_item_id": "uuid", "version": "bigint", "status": "text", "updated_at": "timestamptz"}
-	for _, c := range a.ManifestSpec.DomainTable.Columns {
-		columnTypes[c.Name] = c.Type
+	viewer, err := a.Viewer(ctx, tx, user, id.Role)
+	if err != nil {
+		return fail(503)
 	}
-	readable := false
-	for _, p := range a.ManifestSpec.DomainAccess.Select {
-		if p.Role == id.Role {
-			ok, er := matches(p.RecordFilter, row, id, columnTypes)
-			if er != nil {
-				return fail(503)
-			}
-			readable = readable || ok
-		}
+	readable, err := a.CanSee(viewer, row, "")
+	if err != nil {
+		return fail(503)
 	}
 	if !readable {
 		return fail(404)
 	}
-	ok, err := matches(cmd.RecordFilter, row, id, columnTypes)
+	ok, err := registry.Matches(cmd.RecordFilter, row, user, a.ColumnTypes())
 	if err != nil {
 		return fail(503)
 	}
@@ -124,7 +135,7 @@ func (e *Engine) Execute(ctx context.Context, id *auth.Identity, app, command, k
 	var oldHash string
 	var body []byte
 	var status int
-	err = tx.QueryRowContext(ctx, `SELECT payload_hash,response_status,response_body FROM core.command_receipts WHERE workspace_id=$1 AND actor_id=$2 AND app_id=$3 AND entity_id=$4 AND command=$5 AND idempotency_key=$6`, id.WorkspaceID, id.UserID, app, request.EntityID, command, key).Scan(&oldHash, &status, &body)
+	err = tx.QueryRowContext(ctx, `SELECT payload_hash,response_status,response_body FROM cap_process.command_receipts WHERE actor_id=$1 AND app_id=$2 AND entity_id=$3 AND command=$4 AND idempotency_key=$5`, user, app, request.EntityID, command, key).Scan(&oldHash, &status, &body)
 	if err == nil {
 		if oldHash != fingerprint {
 			return fail(409)
@@ -148,7 +159,7 @@ func (e *Engine) Execute(ctx context.Context, id *auth.Identity, app, command, k
 	if current.Version != req.ExpectedVersion || !contains(cmd.From, current.Status) {
 		return fail(409)
 	}
-	for _, att := range a.ManifestSpec.Attachments {
+	for _, att := range a.Spec.Attachments {
 		if !contains(att.RequireCleanOnCommands, command) {
 			continue
 		}
@@ -157,7 +168,7 @@ func (e *Engine) Execute(ctx context.Context, id *auth.Identity, app, command, k
 			return fail(422)
 		}
 		var scan string
-		err = tx.QueryRowContext(ctx, `SELECT scan_status FROM core.file_objects WHERE workspace_id=$1 AND app_id=$2 AND id=$3 FOR SHARE`, id.WorkspaceID, app, file).Scan(&scan)
+		err = tx.QueryRowContext(ctx, `SELECT scan_status FROM core.files WHERE app_id=$1 AND id=$2 FOR SHARE`, app, file).Scan(&scan)
 		if errors.Is(err, sql.ErrNoRows) {
 			return fail(404)
 		}
@@ -168,27 +179,24 @@ func (e *Engine) Execute(ctx context.Context, id *auth.Identity, app, command, k
 			return fail(422)
 		}
 	}
-	if _, err = tx.ExecContext(ctx, `SELECT set_config('dxos.actor_id',$1,true),set_config('dxos.action',$2,true)`, id.UserID, command); err != nil {
+	if _, err = tx.ExecContext(ctx, `SELECT set_config('dxos.actor_id',$1,true),set_config('dxos.action',$2,true),set_config('dxos.role',$3,true)`, user, command, id.Role); err != nil {
 		return fail(503)
 	}
 	resp := &CommandResponse{EntityID: request.EntityID, Status: cmd.To, ExecutedAt: time.Now().UTC()}
-	err = tx.QueryRowContext(ctx, `UPDATE `+a.DomainTable+` SET status=$1 WHERE workspace_id=$2 AND id=$3 RETURNING version`, cmd.To, id.WorkspaceID, request.EntityID).Scan(&resp.Version)
+	err = tx.QueryRowContext(ctx, `UPDATE `+a.Table()+` SET status=$1 WHERE id=$2 RETURNING version`, cmd.To, request.EntityID).Scan(&resp.Version)
 	if err != nil {
 		return fail(503)
 	}
-	var random [16]byte
-	if _, err = rand.Read(random[:]); err != nil {
+	eventID, err := newUUID()
+	if err != nil {
 		return fail(503)
 	}
-	random[6] = random[6]&15 | 64
-	random[8] = random[8]&63 | 128
-	eventID := fmt.Sprintf("%x-%x-%x-%x-%x", random[:4], random[4:6], random[6:8], random[8:10], random[10:])
-	event, _ := json.Marshal(map[string]any{"event_id": eventID, "event_type": "command.committed", "workspace_id": id.WorkspaceID, "app_id": app, "entity_type": a.DomainTable, "entity_id": request.EntityID, "entity_version": resp.Version, "payload": map[string]any{"command": command, "actor_id": id.UserID, "from_status": current.Status, "to_status": cmd.To, "executed_at": resp.ExecutedAt}})
-	if _, err = tx.ExecContext(ctx, `INSERT INTO core.outbox_events(id,workspace_id,app_id,event_type,entity_type,entity_id,entity_version,payload) VALUES($1,$2,$3,'command.committed',$4,$5,$6,$7::jsonb)`, eventID, id.WorkspaceID, app, a.DomainTable, request.EntityID, resp.Version, string(event)); err != nil {
+	event, _ := json.Marshal(map[string]any{"event_id": eventID, "event_type": "command.committed", "app_id": app, "entity_type": a.Table(), "entity_id": request.EntityID, "entity_version": resp.Version, "payload": map[string]any{"command": command, "actor_id": user, "acting_role": id.Role, "from_status": current.Status, "to_status": cmd.To, "executed_at": resp.ExecutedAt}})
+	if _, err = tx.ExecContext(ctx, `INSERT INTO core.outbox_events(id,app_id,event_type,entity_type,entity_id,entity_version,payload) VALUES($1,$2,'command.committed',$3,$4,$5,$6::jsonb)`, eventID, app, a.Table(), request.EntityID, resp.Version, string(event)); err != nil {
 		return fail(503)
 	}
 	body, _ = json.Marshal(resp)
-	if _, err = tx.ExecContext(ctx, `INSERT INTO core.command_receipts(workspace_id,actor_id,app_id,entity_id,command,idempotency_key,payload_hash,response_status,response_body) VALUES($1,$2,$3,$4,$5,$6,$7,200,$8::jsonb)`, id.WorkspaceID, id.UserID, app, request.EntityID, command, key, fingerprint, string(body)); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO cap_process.command_receipts(actor_id,app_id,entity_id,command,idempotency_key,payload_hash,response_status,response_body) VALUES($1,$2,$3,$4,$5,$6,200,$7::jsonb)`, user, app, request.EntityID, command, key, fingerprint, string(body)); err != nil {
 		return fail(503)
 	}
 	if tx.Commit() != nil {

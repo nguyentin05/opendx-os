@@ -22,8 +22,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	_ "github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/operator/internal/apply"
@@ -33,8 +36,6 @@ import (
 	"github.com/opendx-os/opendx-os/operator/internal/planner"
 	"github.com/opendx-os/opendx-os/operator/internal/reconcile"
 )
-
-const defaultWorkspaceID = "11111111-1111-4111-8111-111111111111"
 
 func main() {
 	os.Exit(runCLI(os.Args[1:], os.Stdout, os.Stderr, nil, nil))
@@ -91,9 +92,9 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "Commands:")
 	_, _ = fmt.Fprintln(w, "  validate <manifest.yaml>                 Strictly validate a C0 v1 manifest")
 	_, _ = fmt.Fprintln(w, "  plan [-format sql|hasura] <manifest.yaml> Generate DDL or Hasura metadata plan")
-	_, _ = fmt.Fprintln(w, "  apply [-workspace UUID] <manifest.yaml>   Apply a single validated manifest")
-	_, _ = fmt.Fprintln(w, "  reconcile [-workspace UUID] <apps-dir>    Reconcile all application packages")
-	_, _ = fmt.Fprintln(w, "  export-crd [-workspace UUID[,UUID]] <app-dir> Print a DXApplication resource for an app package")
+	_, _ = fmt.Fprintln(w, "  apply <manifest.yaml>                    Install or upgrade one application")
+	_, _ = fmt.Fprintln(w, "  reconcile [--interval 30s] <apps-dir>    Install exactly the applications in a directory")
+	_, _ = fmt.Fprintln(w, "  export-crd <app-dir>                     Print a DXApplication resource for an app package")
 	_, _ = fmt.Fprintln(w, "  controller [flags]                       Run the Kubernetes DXApplication controller")
 	_, _ = fmt.Fprintln(w, "  version                                  Print operator version")
 }
@@ -157,12 +158,11 @@ func runPlanCmd(args []string, stdout, stderr io.Writer) int {
 func runExportCRDCmd(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("export-crd", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	ws := fs.String("workspace", defaultWorkspaceID, "Comma-separated workspace UUIDs the application is published to")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 1 {
-		_, _ = fmt.Fprintln(stderr, "Usage: dxos-operator export-crd [-workspace UUID[,UUID]] <app-dir>")
+		_, _ = fmt.Fprintln(stderr, "Usage: dxos-operator export-crd <app-dir>")
 		return 1
 	}
-	app, err := crdconv.FromPackage(fs.Arg(0), strings.Split(*ws, ","))
+	app, err := crdconv.FromPackage(fs.Arg(0))
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "Export failed: %v\n", err)
 		return 1
@@ -197,9 +197,8 @@ func buildRunnersFromEnv() (*sql.DB, *apply.Runner, *reconcile.Runner, error) {
 func runApplyCmd(args []string, stdout, stderr io.Writer, applier *apply.Runner) int {
 	fs := flag.NewFlagSet("apply", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	ws := fs.String("workspace", defaultWorkspaceID, "Target workspace UUID")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 1 {
-		_, _ = fmt.Fprintln(stderr, "Usage: dxos-operator apply [-workspace UUID] <manifest.yaml>")
+		_, _ = fmt.Fprintln(stderr, "Usage: dxos-operator apply <manifest.yaml>")
 		return 1
 	}
 
@@ -227,31 +226,38 @@ func runApplyCmd(args []string, stdout, stderr io.Writer, applier *apply.Runner)
 		_, _ = fmt.Fprintf(stderr, "Failed reading live state: %v\n", err)
 		return 1
 	}
-	published, err := applier.ReadPublications(ctx)
-	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "Failed reading publications: %v\n", err)
-		return 1
-	}
-	scope := planner.ScopeWorkspace(live, published, *ws, []manifest.DXApplication{*app}, false)
-	plan, err := planner.BuildPlan(scope.Desired, live)
+	plan, err := planner.BuildApplyPlan(*app, live)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "Failed building plan: %v\n", err)
 		return 1
 	}
-	if err := applier.Run(ctx, plan, apply.Publication{Upsert: scope.Upsert, Remove: scope.Remove}); err != nil {
+	if err := applier.Run(ctx, plan, []string{app.Metadata.Name}); err != nil {
 		_, _ = fmt.Fprintf(stderr, "Apply failed: %v\n", err)
 		return 1
 	}
-	_, _ = fmt.Fprintf(stdout, "Applied application %s (v%s) to workspace %s\n", app.Metadata.Name, app.Metadata.Version, *ws)
+	_, _ = fmt.Fprintf(stdout, "Applied application %s (v%s)\n", app.Metadata.Name, app.Metadata.Version)
 	return 0
 }
 
 func runReconcileCmd(args []string, stdout, stderr io.Writer, applier *apply.Runner, reconciler *reconcile.Runner) int {
 	fs := flag.NewFlagSet("reconcile", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	ws := fs.String("workspace", defaultWorkspaceID, "Target workspace UUID")
-	if err := fs.Parse(args); err != nil || fs.NArg() != 1 {
-		_, _ = fmt.Fprintln(stderr, "Usage: dxos-operator reconcile [-workspace UUID] <apps-dir>")
+	dir := fs.String("dir", "", "directory holding one application package per subdirectory")
+	interval := fs.Duration("interval", 0, "reconcile repeatedly at this interval until stopped (0: once)")
+	usage := "Usage: dxos-operator reconcile [--interval 30s] (--dir <apps-dir> | <apps-dir>)"
+	if err := fs.Parse(args); err != nil {
+		_, _ = fmt.Fprintln(stderr, usage)
+		return 1
+	}
+	switch {
+	case *dir == "" && fs.NArg() == 1:
+		*dir = fs.Arg(0)
+	case *dir == "" || fs.NArg() != 0:
+		_, _ = fmt.Fprintln(stderr, usage)
+		return 1
+	}
+	if *interval < 0 {
+		_, _ = fmt.Fprintln(stderr, "--interval must not be negative")
 		return 1
 	}
 
@@ -271,10 +277,31 @@ func runReconcileCmd(args []string, stdout, stderr io.Writer, applier *apply.Run
 		}
 	}
 
-	if err := reconciler.Run(context.Background(), *ws, fs.Arg(0)); err != nil {
+	if *interval > 0 {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		log := slog.New(slog.NewTextHandler(stderr, nil))
+		if err := reconciler.Watch(ctx, *dir, *interval, log); err != nil {
+			_, _ = fmt.Fprintf(stderr, "Reconcile failed: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+
+	res, err := reconciler.Pass(context.Background(), *dir)
+	for _, name := range res.Installed {
+		_, _ = fmt.Fprintf(stdout, "Installed %s\n", name)
+	}
+	for _, name := range res.Removed {
+		_, _ = fmt.Fprintf(stdout, "Uninstalled %s\n", name)
+	}
+	if len(res.Repaired) > 0 {
+		_, _ = fmt.Fprintf(stdout, "Repaired Hasura metadata drift: %s\n", strings.Join(res.Repaired, "; "))
+	}
+	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "Reconcile failed: %v\n", err)
 		return 1
 	}
-	_, _ = fmt.Fprintf(stdout, "Reconciled applications in %s for workspace %s\n", fs.Arg(0), *ws)
+	_, _ = fmt.Fprintf(stdout, "Reconciled applications in %s\n", *dir)
 	return 0
 }

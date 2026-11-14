@@ -32,7 +32,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -47,8 +46,6 @@ const (
 	kind        = "DXApplication"
 	workflowDir = "workflows"
 )
-
-var uuidPattern = regexp.MustCompile(dxosv1alpha1.UUIDPattern)
 
 // NameFromAppID maps a manifest identifier to a DNS-1123 resource name.
 func NameFromAppID(appID string) string { return strings.ReplaceAll(appID, "_", "-") }
@@ -99,12 +96,9 @@ func ToManifest(app *dxosv1alpha1.DXApplication) (*manifest.DXApplication, Workf
 	return m, flows, nil
 }
 
-// FromPackage builds a resource from an application package directory and the
-// workspaces it is published to. The package is validated by manifest.ParseFile.
-func FromPackage(dir string, workspaces []string) (*dxosv1alpha1.DXApplication, error) {
-	if err := validateWorkspaces(workspaces); err != nil {
-		return nil, err
-	}
+// FromPackage builds a resource from an application package directory. The
+// package is validated by manifest.ParseFile.
+func FromPackage(dir string) (*dxosv1alpha1.DXApplication, error) {
 	m, err := manifest.ParseFile(filepath.Join(dir, "manifest.yaml"))
 	if err != nil {
 		return nil, err
@@ -130,7 +124,6 @@ func FromPackage(dir string, workspaces []string) (*dxosv1alpha1.DXApplication, 
 	}
 	spec.DisplayName = m.Metadata.DisplayName
 	spec.Version = m.Metadata.Version
-	spec.Workspaces = append([]string(nil), workspaces...)
 
 	return &dxosv1alpha1.DXApplication{
 		TypeMeta:   metav1.TypeMeta{APIVersion: apiVersion, Kind: kind},
@@ -142,21 +135,4 @@ func FromPackage(dir string, workspaces []string) (*dxosv1alpha1.DXApplication, 
 // MarshalYAML renders a resource as a single YAML document.
 func MarshalYAML(app *dxosv1alpha1.DXApplication) ([]byte, error) {
 	return yaml.Marshal(app)
-}
-
-func validateWorkspaces(workspaces []string) error {
-	if len(workspaces) == 0 {
-		return errors.New("at least one workspace UUID is required")
-	}
-	seen := map[string]bool{}
-	for _, ws := range workspaces {
-		if !uuidPattern.MatchString(ws) {
-			return fmt.Errorf("invalid workspace UUID %q", ws)
-		}
-		if seen[strings.ToLower(ws)] {
-			return fmt.Errorf("duplicate workspace %q", ws)
-		}
-		seen[strings.ToLower(ws)] = true
-	}
-	return nil
 }

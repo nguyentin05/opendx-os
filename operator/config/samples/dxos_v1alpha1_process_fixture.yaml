@@ -24,28 +24,20 @@ spec:
     - approve
   capabilities:
   - cap-process
+  - cap-work
   displayName: Independent Review Fixture
   domainAccess:
     insert:
     - columns:
-      - work_item_id
       - vendor_name
       - item_description
       - quoted_amount
       - quote_file_id
-      presets:
-        requester_id: X-Hasura-User-Id
-        workspace_id: X-Hasura-Workspace-Id
-      recordFilter:
-        workspace_id:
-          _eq: X-Hasura-Workspace-Id
       role: role_review
     select:
     - columns:
       - id
-      - workspace_id
-      - work_item_id
-      - requester_id
+      - created_by
       - vendor_name
       - item_description
       - quoted_amount
@@ -54,15 +46,11 @@ spec:
       - status
       - version
       - updated_at
-      recordFilter:
-        workspace_id:
-          _eq: X-Hasura-Workspace-Id
       role: role_review
+      scope: own
     - columns:
       - id
-      - workspace_id
-      - work_item_id
-      - requester_id
+      - created_by
       - vendor_name
       - item_description
       - quoted_amount
@@ -71,25 +59,18 @@ spec:
       - status
       - version
       - updated_at
-      recordFilter:
-        workspace_id:
-          _eq: X-Hasura-Workspace-Id
-      role: role_manager_review
+      role: role_review_manager
+      scope: organization
     update:
     - columns:
       - vendor_name
       - item_description
       - quoted_amount
       - quote_file_id
-      recordFilter:
-        workspace_id:
-          _eq: X-Hasura-Workspace-Id
       role: role_review
+      scope: own
   domainTable:
     columns:
-    - name: requester_id
-      nullable: false
-      type: uuid
     - check: length(trim(vendor_name)) > 0
       name: vendor_name
       nullable: false
@@ -108,63 +89,31 @@ spec:
     - name: rejection_reason
       nullable: true
       type: text
-    compositeForeignKeys:
-    - columns:
-      - workspace_id
-      - work_item_id
-      referencesColumns:
-      - workspace_id
-      - id
-      referencesTable: core.work_items
-    - columns:
-      - workspace_id
-      - requester_id
-      referencesColumns:
-      - workspace_id
-      - id
-      referencesTable: core.employees
-    - columns:
-      - workspace_id
-      - quote_file_id
-      referencesColumns:
-      - workspace_id
-      - id
-      referencesTable: core.file_objects
+    foreignKeys:
+    - column: quote_file_id
+      references: core.files
     name: domain.review_requests
-  role: role_review
+  roles:
+  - description: Creates and submits review requests
+    name: role_review
+  - description: Decides review requests
+    name: role_review_manager
   sharedAccess:
   - columns:
     - id
-    - workspace_id
-    - full_name
-    - email
-    - department
+    - display_name
     roles:
     - role_review
-    - role_manager_review
-    table: core.employees
+    - role_review_manager
+    table: core.users
   - columns:
     - id
-    - workspace_id
-    - title
-    - description
-    - priority
-    - created_at
-    roles:
-    - role_review
-    - role_manager_review
-    table: core.work_items
-  - columns:
-    - id
-    - workspace_id
     - file_name
     - scan_status
-    - sha256_hash
-    - scanned_at
     roles:
     - role_review
-    - role_manager_review
-    table: core.file_objects
+    - role_review_manager
+    table: core.files
   stateMachine:
     commands:
     - allowedRoles:
@@ -174,23 +123,23 @@ spec:
       name: submit
       to: IN_REVIEW
     - allowedRoles:
-      - role_manager_review
+      - role_review_manager
       from:
       - IN_REVIEW
       name: approve
       recordFilter:
-        requester_id:
+        created_by:
           _neq: X-Hasura-User-Id
       to: DONE
     - allowedRoles:
-      - role_manager_review
+      - role_review_manager
       from:
       - IN_REVIEW
       name: reject
       to: DECLINED
     - allowedRoles:
       - role_review
-      - role_manager_review
+      - role_review_manager
       from:
       - OPEN
       - IN_REVIEW
@@ -210,10 +159,6 @@ spec:
     - reject
     - cancel
     formFields:
-    - label: Work Item
-      name: work_item_id
-      required: true
-      type: uuid
     - label: Vendor Name
       name: vendor_name
       required: true
@@ -238,7 +183,7 @@ spec:
     - status
     - version
     - updated_at
-  version: 0.1.0
+  version: 0.2.0
   workflows:
   - definition: |
       # SPDX-License-Identifier: Apache-2.0
@@ -279,5 +224,3 @@ spec:
     id: review_flow
     subscribedEvents:
     - command.committed
-  workspaces:
-  - 11111111-1111-4111-8111-111111111111
