@@ -3,6 +3,11 @@
 - **Status:** Accepted
 - **Date:** 2026-11-05
 
+> **Partially superseded:** [ADR 0005](0005-department-and-application-data-model.md)
+> replaces workspace isolation and shared-entity placement with the one-organization
+> model. Unaffected architectural principles remain in force; examples below are
+> historical where they conflict with ADR 0005.
+
 ## Context
 
 In an enterprise composable open-core architecture, master entities (such as `core.employees`) risk architectural degradation when domain-specific attributes are prematurely placed into Tier 1:
