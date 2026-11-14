@@ -116,34 +116,32 @@ def check_app_manifests(root: pathlib.Path, errors: list[str]) -> None:
             errors.append(f"{rel}: kind must be DXApplication")
             continue
         spec = data.get("spec", {})
-        required_spec_keys = {
-            "capabilities",
-            "roles",
-            "domainTable",
-            "domainAccess",
-            "stateMachine",
-            "uiSchema",
-        }
+        required_spec_keys = {"capabilities", "roles", "tables"}
         missing = required_spec_keys - set(spec.keys())
         if missing:
             errors.append(f"{rel}: missing required spec keys: {sorted(missing)}")
             continue
 
-        domain_access = spec.get("domainAccess", {})
-        for op in ("insert", "update"):
-            for rule in domain_access.get(op, []):
-                cols = set(rule.get("columns", []))
-                forbidden = cols & SYSTEM_MANAGED_COLUMNS
-                if forbidden:
-                    errors.append(
-                        f"{rel}: domainAccess.{op} for role {rule.get('role')} exposes system-managed columns {sorted(forbidden)}"
-                    )
-
         declared_roles = {role.get("name") for role in spec.get("roles", [])}
-        for op in ("select", "insert", "update"):
-            for rule in domain_access.get(op, []):
-                if rule.get("role") not in declared_roles:
-                    errors.append(f"{rel}: domainAccess.{op} uses undeclared role {rule.get('role')}")
+        for table in spec.get("tables", []):
+            name = table.get("name")
+            missing = {"name", "columns", "access", "ui"} - set(table.keys())
+            if missing:
+                errors.append(f"{rel}: table {name} is missing keys: {sorted(missing)}")
+                continue
+            access = table.get("access", {})
+            for op in ("insert", "update"):
+                for rule in access.get(op, []):
+                    cols = set(rule.get("columns", []))
+                    forbidden = cols & SYSTEM_MANAGED_COLUMNS
+                    if forbidden:
+                        errors.append(
+                            f"{rel}: {name} access.{op} for role {rule.get('role')} exposes system-managed columns {sorted(forbidden)}"
+                        )
+            for op in ("select", "insert", "update"):
+                for rule in access.get(op, []):
+                    if rule.get("role") not in declared_roles:
+                        errors.append(f"{rel}: {name} access.{op} uses undeclared role {rule.get('role')}")
 
         for wf in spec.get("workflows", []):
             wf_file = manifest_path.parent / wf.get("file", "")

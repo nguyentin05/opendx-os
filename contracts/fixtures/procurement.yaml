@@ -49,8 +49,8 @@ spec:
     - scan_status
     - sha256_hash
     - scanned_at
-  domainTable:
-    name: domain.procurement_requests
+  tables:
+  - name: domain.procurement_requests
     columns:
     - name: vendor_name
       type: text
@@ -73,105 +73,138 @@ spec:
     foreignKeys:
     - column: quote_file_id
       references: core.files
-  domainAccess:
-    select:
-    - role: role_procurement_requester
-      scope: own
-      columns: &procurement_columns
-      - id
-      - created_by
-      - org_unit_id
+    access:
+      select:
+      - role: role_procurement_requester
+        scope: own
+        columns: &procurement_columns
+        - id
+        - created_by
+        - org_unit_id
+        - vendor_name
+        - item_description
+        - quoted_amount
+        - quote_file_id
+        - rejection_reason
+        - status
+        - version
+        - created_at
+        - updated_at
+      # A draft is the requester's own until it is submitted.
+      - role: role_procurement_manager
+        scope: department
+        columns: *procurement_columns
+        recordFilter:
+          status:
+            _neq: DRAFT
+      - role: role_procurement_finance
+        scope: organization
+        columns: *procurement_columns
+        recordFilter:
+          status:
+            _neq: DRAFT
+      insert:
+      - role: role_procurement_requester
+        columns:
+        - vendor_name
+        - item_description
+        - quoted_amount
+        - quote_file_id
+      update:
+      - role: role_procurement_requester
+        scope: own
+        columns:
+        - vendor_name
+        - item_description
+        - quoted_amount
+        - quote_file_id
+    stateMachine:
+      initial: DRAFT
+      editableStates:
+      - DRAFT
+      terminalStates:
+      - APPROVED
+      - REJECTED
+      - CANCELLED
+      commands:
+      - name: submit
+        from:
+        - DRAFT
+        to: SUBMITTED
+        allowedRoles:
+        - role_procurement_requester
+      - name: approve
+        from:
+        - SUBMITTED
+        to: BUDGET_REVIEW
+        allowedRoles:
+        - role_procurement_manager
+        recordFilter:
+          created_by:
+            _neq: X-Hasura-User-Id
+      - name: approve_budget
+        from:
+        - BUDGET_REVIEW
+        to: APPROVED
+        allowedRoles:
+        - role_procurement_finance
+        recordFilter:
+          created_by:
+            _neq: X-Hasura-User-Id
+      - name: reject
+        from:
+        - SUBMITTED
+        - BUDGET_REVIEW
+        to: REJECTED
+        allowedRoles:
+        - role_procurement_manager
+        - role_procurement_finance
+      - name: cancel
+        from:
+        - DRAFT
+        - SUBMITTED
+        to: CANCELLED
+        allowedRoles:
+        - role_procurement_requester
+    attachments:
+    - column: quote_file_id
+      requireCleanOnCommands:
+      - submit
+      - approve
+      - approve_budget
+    ui:
+      listColumns:
       - vendor_name
       - item_description
       - quoted_amount
       - quote_file_id
-      - rejection_reason
       - status
       - version
-      - created_at
       - updated_at
-    # A draft is the requester's own until it is submitted.
-    - role: role_procurement_manager
-      scope: department
-      columns: *procurement_columns
-      recordFilter:
-        status:
-          _neq: DRAFT
-    - role: role_procurement_finance
-      scope: organization
-      columns: *procurement_columns
-      recordFilter:
-        status:
-          _neq: DRAFT
-    insert:
-    - role: role_procurement_requester
-      columns:
-      - vendor_name
-      - item_description
-      - quoted_amount
-      - quote_file_id
-    update:
-    - role: role_procurement_requester
-      scope: own
-      columns:
-      - vendor_name
-      - item_description
-      - quoted_amount
-      - quote_file_id
-  stateMachine:
-    initial: DRAFT
-    editableStates:
-    - DRAFT
-    terminalStates:
-    - APPROVED
-    - REJECTED
-    - CANCELLED
-    commands:
-    - name: submit
-      from:
-      - DRAFT
-      to: SUBMITTED
-      allowedRoles:
-      - role_procurement_requester
-    - name: approve
-      from:
-      - SUBMITTED
-      to: BUDGET_REVIEW
-      allowedRoles:
-      - role_procurement_manager
-      recordFilter:
-        created_by:
-          _neq: X-Hasura-User-Id
-    - name: approve_budget
-      from:
-      - BUDGET_REVIEW
-      to: APPROVED
-      allowedRoles:
-      - role_procurement_finance
-      recordFilter:
-        created_by:
-          _neq: X-Hasura-User-Id
-    - name: reject
-      from:
-      - SUBMITTED
-      - BUDGET_REVIEW
-      to: REJECTED
-      allowedRoles:
-      - role_procurement_manager
-      - role_procurement_finance
-    - name: cancel
-      from:
-      - DRAFT
-      - SUBMITTED
-      to: CANCELLED
-      allowedRoles:
-      - role_procurement_requester
-  attachments:
-  - column: quote_file_id
-    requireCleanOnCommands:
-    - submit
-    - approve
-    - approve_budget
+      formFields:
+      - name: vendor_name
+        label: Vendor Name
+        type: text
+        required: true
+      - name: item_description
+        label: Item Description
+        type: text
+        required: true
+      - name: quoted_amount
+        label: Quoted Amount
+        type: number
+        required: true
+      - name: quote_file_id
+        label: Supplier Quote File
+        type: file
+        required: false
+      actions:
+      - submit
+      - approve
+      - approve_budget
+      - reject
+      - cancel
+
   workflows:
   - id: procurement_approval_flow
     file: workflows/procurement_flow.yaml
@@ -186,35 +219,3 @@ spec:
         title: Review procurement request
         description: Review the submitted request in its source application.
         priority: MEDIUM
-  uiSchema:
-    listColumns:
-    - vendor_name
-    - item_description
-    - quoted_amount
-    - quote_file_id
-    - status
-    - version
-    - updated_at
-    formFields:
-    - name: vendor_name
-      label: Vendor Name
-      type: text
-      required: true
-    - name: item_description
-      label: Item Description
-      type: text
-      required: true
-    - name: quoted_amount
-      label: Quoted Amount
-      type: number
-      required: true
-    - name: quote_file_id
-      label: Supplier Quote File
-      type: file
-      required: false
-    actions:
-    - submit
-    - approve
-    - approve_budget
-    - reject
-    - cancel

@@ -40,7 +40,7 @@ type Platform struct {
 	// Process acts as dxos_process, the connection cap-process uses: its
 	// grants are the real ones from 06_runtime_roles.sql.
 	Process *sql.DB
-	// Table is the sample application's domain table.
+	// Table is the sample application's first domain table.
 	Table string
 	dsn   string
 }
@@ -53,9 +53,9 @@ type fixtureSpec struct {
 	Roles        []struct {
 		Name string `json:"name"`
 	} `json:"roles"`
-	DomainTable struct {
+	Tables []struct {
 		Name string `json:"name"`
-	} `json:"domainTable"`
+	} `json:"tables"`
 }
 
 func repoRoot() string {
@@ -134,7 +134,7 @@ func NewPlatform(t *testing.T) *Platform {
 	}
 	exec("domain DDL", readRepo(t, "contracts", "fixtures", row.AppID+"-ddl.sql"))
 
-	return &Platform{Admin: admin, Process: As(t, dsn, "dxos_process"), Table: spec.DomainTable.Name, dsn: dsn}
+	return &Platform{Admin: admin, Process: As(t, dsn, "dxos_process"), Table: spec.Tables[0].Name, dsn: dsn}
 }
 
 // As opens a pool whose every connection acts as role (SET SESSION
@@ -220,6 +220,21 @@ func (p *Platform) Insert(t *testing.T, owner, role string, values map[string]an
 
 // TryInsert is Insert returning the database's refusal instead of failing.
 func (p *Platform) TryInsert(owner, role string, values map[string]any) (string, error) {
+	return p.TryInsertInto(p.Table, owner, role, values)
+}
+
+// InsertInto is Insert for another table of the sample application.
+func (p *Platform) InsertInto(t *testing.T, table, owner, role string, values map[string]any) string {
+	t.Helper()
+	id, err := p.TryInsertInto(table, owner, role, values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// TryInsertInto is TryInsert for another table of the sample application.
+func (p *Platform) TryInsertInto(table, owner, role string, values map[string]any) (string, error) {
 	tx, err := p.Admin.Begin()
 	if err != nil {
 		return "", err
@@ -241,7 +256,7 @@ func (p *Platform) TryInsert(owner, role string, values map[string]any) (string,
 		marks = append(marks, fmt.Sprintf("$%d", len(args)))
 	}
 	var id string
-	if err = tx.QueryRow(`INSERT INTO `+p.Table+` (`+strings.Join(cols, ", ")+`) VALUES (`+strings.Join(marks, ", ")+`) RETURNING id::text`, args...).Scan(&id); err != nil {
+	if err = tx.QueryRow(`INSERT INTO `+table+` (`+strings.Join(cols, ", ")+`) VALUES (`+strings.Join(marks, ", ")+`) RETURNING id::text`, args...).Scan(&id); err != nil {
 		return "", err
 	}
 	return id, tx.Commit()
@@ -263,6 +278,12 @@ func (p *Platform) File(t *testing.T, uploader, status string) string {
 // session naming an actor and an action.
 func (p *Platform) SetStatus(t *testing.T, entity, actor, status string) {
 	t.Helper()
+	p.SetStatusIn(t, p.Table, entity, actor, status)
+}
+
+// SetStatusIn is SetStatus for another table of the sample application.
+func (p *Platform) SetStatusIn(t *testing.T, table, entity, actor, status string) {
+	t.Helper()
 	tx, err := p.Admin.Begin()
 	if err != nil {
 		t.Fatal(err)
@@ -274,10 +295,59 @@ func (p *Platform) SetStatus(t *testing.T, entity, actor, status string) {
 			t.Fatal(err)
 		}
 	}
-	if _, err = tx.Exec(`UPDATE `+p.Table+` SET status = $1 WHERE id = $2`, status, entity); err != nil {
+	if _, err = tx.Exec(`UPDATE `+table+` SET status = $1 WHERE id = $2`, status, entity); err != nil {
 		t.Fatal(err)
 	}
 	if err = tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// TwinPrefix is prepended to the command names of the table AddTwin creates.
+const TwinPrefix = "twin_"
+
+// AddTwin gives the sample application a second process table: a copy of its
+// first table whose commands carry TwinPrefix (command names are unique within
+// an application). It returns the new table's name.
+func (p *Platform) AddTwin(t *testing.T) string {
+	t.Helper()
+	var raw []byte
+	if err := p.Admin.QueryRow(`SELECT spec FROM core.apps WHERE app_id = $1`, AppID).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var spec map[string]any
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		t.Fatal(err)
+	}
+	tables := spec["tables"].([]any)
+	copied, _ := json.Marshal(tables[0])
+	var twin map[string]any
+	if err := json.Unmarshal(copied, &twin); err != nil {
+		t.Fatal(err)
+	}
+	name := p.Table + "_twins"
+	twin["name"] = name
+	for _, c := range twin["stateMachine"].(map[string]any)["commands"].([]any) {
+		c.(map[string]any)["name"] = TwinPrefix + c.(map[string]any)["name"].(string)
+	}
+	if attachments, ok := twin["attachments"].([]any); ok {
+		for _, a := range attachments {
+			commands := a.(map[string]any)["requireCleanOnCommands"].([]any)
+			for i := range commands {
+				commands[i] = TwinPrefix + commands[i].(string)
+			}
+		}
+	}
+	spec["tables"] = append(tables, twin)
+	updated, _ := json.Marshal(spec)
+	if _, err := p.Admin.Exec(`UPDATE core.apps SET spec = $1 WHERE app_id = $2`, string(updated), AppID); err != nil {
+		t.Fatal(err)
+	}
+	// The twin's DDL is the first table's with every name derived from it renamed.
+	short := strings.TrimPrefix(p.Table, "domain.")
+	ddl := strings.ReplaceAll(readRepo(t, "contracts", "fixtures", AppID+"-ddl.sql"), short, short+"_twins")
+	if _, err := p.Admin.Exec(ddl); err != nil {
+		t.Fatalf("twin DDL: %v", err)
+	}
+	return name
 }

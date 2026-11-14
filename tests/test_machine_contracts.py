@@ -2,6 +2,8 @@
 # Copyright 2026 DX-OS Open-Core Contributors
 """Contract consistency checks; these do not exercise runtime authorization."""
 import json
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -14,6 +16,13 @@ class MachineContracts(unittest.TestCase):
     def test_contract_artifacts_exist(self):
         for name in ('manifest-v1.schema.json', 'events-v1.schema.json', 'runtime-v1.openapi.yaml'):
             self.assertTrue((ROOT / 'contracts' / name).is_file(), name)
+
+    def test_manifest_schema_is_generated_from_the_crd(self):
+        result = subprocess.run(
+            [sys.executable, str(ROOT / 'scripts/gen-manifest-schema.py'), '--check'],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_registry_snapshot_matches_manifest(self):
         manifest = yaml.safe_load((ROOT / 'contracts/fixtures/procurement.yaml').read_text())
@@ -41,15 +50,16 @@ class MachineContracts(unittest.TestCase):
 
     def test_procurement_scopes_and_self_approval_guard(self):
         spec = yaml.safe_load((ROOT / 'contracts/fixtures/procurement.yaml').read_text())['spec']
-        insert = spec['domainAccess']['insert'][0]
+        table = next(t for t in spec['tables'] if t['name'] == 'domain.procurement_requests')
+        insert = table['access']['insert'][0]
         self.assertNotIn('created_by', insert['columns'])
         self.assertNotIn('org_unit_id', insert['columns'])
-        scopes = {rule['role']: rule['scope'] for rule in spec['domainAccess']['select']}
+        scopes = {rule['role']: rule['scope'] for rule in table['access']['select']}
         self.assertEqual(scopes, {
             'role_procurement_requester': 'own',
             'role_procurement_manager': 'department',
             'role_procurement_finance': 'organization',
         })
         for name in ('approve', 'approve_budget'):
-            command = next(c for c in spec['stateMachine']['commands'] if c['name'] == name)
+            command = next(c for c in table['stateMachine']['commands'] if c['name'] == name)
             self.assertEqual(command['recordFilter'], {'created_by': {'_neq': 'X-Hasura-User-Id'}})

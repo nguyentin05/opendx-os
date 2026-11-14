@@ -33,8 +33,8 @@ spec:
     - id
     - file_name
     - scan_status
-  domainTable:
-    name: domain.review_requests
+  tables:
+  - name: domain.review_requests
     columns:
     - name: vendor_name
       type: text
@@ -57,92 +57,124 @@ spec:
     foreignKeys:
     - column: quote_file_id
       references: core.files
-  domainAccess:
-    select:
-    - role: role_review
-      scope: own
-      columns:
-      - id
-      - created_by
+    access:
+      select:
+      - role: role_review
+        scope: own
+        columns:
+        - id
+        - created_by
+        - vendor_name
+        - item_description
+        - quoted_amount
+        - quote_file_id
+        - rejection_reason
+        - status
+        - version
+        - updated_at
+      - role: role_review_manager
+        scope: organization
+        columns:
+        - id
+        - created_by
+        - vendor_name
+        - item_description
+        - quoted_amount
+        - quote_file_id
+        - rejection_reason
+        - status
+        - version
+        - updated_at
+      insert:
+      - role: role_review
+        columns:
+        - vendor_name
+        - item_description
+        - quoted_amount
+        - quote_file_id
+      update:
+      - role: role_review
+        scope: own
+        columns:
+        - vendor_name
+        - item_description
+        - quoted_amount
+        - quote_file_id
+    stateMachine:
+      initial: OPEN
+      editableStates:
+      - OPEN
+      terminalStates:
+      - DONE
+      - DECLINED
+      - WITHDRAWN
+      commands:
+      - name: submit
+        from:
+        - OPEN
+        to: IN_REVIEW
+        allowedRoles:
+        - role_review
+      - name: approve
+        from:
+        - IN_REVIEW
+        to: DONE
+        allowedRoles:
+        - role_review_manager
+        recordFilter:
+          created_by:
+            _neq: X-Hasura-User-Id
+      - name: reject
+        from:
+        - IN_REVIEW
+        to: DECLINED
+        allowedRoles:
+        - role_review_manager
+      - name: cancel
+        from:
+        - OPEN
+        - IN_REVIEW
+        to: WITHDRAWN
+        allowedRoles:
+        - role_review
+        - role_review_manager
+    attachments:
+    - column: quote_file_id
+      requireCleanOnCommands:
+      - submit
+      - approve
+    ui:
+      listColumns:
       - vendor_name
       - item_description
       - quoted_amount
       - quote_file_id
-      - rejection_reason
       - status
       - version
       - updated_at
-    - role: role_review_manager
-      scope: organization
-      columns:
-      - id
-      - created_by
-      - vendor_name
-      - item_description
-      - quoted_amount
-      - quote_file_id
-      - rejection_reason
-      - status
-      - version
-      - updated_at
-    insert:
-    - role: role_review
-      columns:
-      - vendor_name
-      - item_description
-      - quoted_amount
-      - quote_file_id
-    update:
-    - role: role_review
-      scope: own
-      columns:
-      - vendor_name
-      - item_description
-      - quoted_amount
-      - quote_file_id
-  stateMachine:
-    initial: OPEN
-    editableStates:
-    - OPEN
-    terminalStates:
-    - DONE
-    - DECLINED
-    - WITHDRAWN
-    commands:
-    - name: submit
-      from:
-      - OPEN
-      to: IN_REVIEW
-      allowedRoles:
-      - role_review
-    - name: approve
-      from:
-      - IN_REVIEW
-      to: DONE
-      allowedRoles:
-      - role_review_manager
-      recordFilter:
-        created_by:
-          _neq: X-Hasura-User-Id
-    - name: reject
-      from:
-      - IN_REVIEW
-      to: DECLINED
-      allowedRoles:
-      - role_review_manager
-    - name: cancel
-      from:
-      - OPEN
-      - IN_REVIEW
-      to: WITHDRAWN
-      allowedRoles:
-      - role_review
-      - role_review_manager
-  attachments:
-  - column: quote_file_id
-    requireCleanOnCommands:
-    - submit
-    - approve
+      formFields:
+      - name: vendor_name
+        label: Vendor Name
+        type: text
+        required: true
+      - name: item_description
+        label: Item Description
+        type: text
+        required: true
+      - name: quoted_amount
+        label: Quoted Amount
+        type: number
+        required: true
+      - name: quote_file_id
+        label: Supplier Quote File
+        type: file
+        required: false
+      actions:
+      - submit
+      - approve
+      - reject
+      - cancel
+
   workflows:
   - id: review_flow
     file: workflows/review_flow.yaml
@@ -157,34 +189,3 @@ spec:
         title: Review fixture request
         description: Review the submitted request in its source application.
         priority: MEDIUM
-  uiSchema:
-    listColumns:
-    - vendor_name
-    - item_description
-    - quoted_amount
-    - quote_file_id
-    - status
-    - version
-    - updated_at
-    formFields:
-    - name: vendor_name
-      label: Vendor Name
-      type: text
-      required: true
-    - name: item_description
-      label: Item Description
-      type: text
-      required: true
-    - name: quoted_amount
-      label: Quoted Amount
-      type: number
-      required: true
-    - name: quote_file_id
-      label: Supplier Quote File
-      type: file
-      required: false
-    actions:
-    - submit
-    - approve
-    - reject
-    - cancel

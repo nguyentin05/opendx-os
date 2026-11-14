@@ -121,7 +121,7 @@ class TestContractsAndHygiene(unittest.TestCase):
             self.assertEqual(users["columns"], ["id", "display_name"], app)
             # Department scoping comes from cap-hr, never from a column the app owns.
             self.assertIn("cap-hr", manifest["spec"]["capabilities"], app)
-            columns = {c["name"] for c in manifest["spec"]["domainTable"]["columns"]}
+            columns = {c["name"] for t in manifest["spec"]["tables"] for c in t["columns"]}
             self.assertNotIn("org_unit_id", columns, app)
             self.assertNotIn("department", columns, app)
 

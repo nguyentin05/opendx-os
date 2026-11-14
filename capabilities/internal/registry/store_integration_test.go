@@ -29,7 +29,7 @@ func TestStoreLoadsOnlyReadyApplications(t *testing.T) {
 	store := NewStore(p.Process)
 	ctx := context.Background()
 	got, err := store.Load(ctx, testutil.AppID)
-	if err != nil || got.Spec.StateMachine.Initial != "DRAFT" || got.Version == "" {
+	if err != nil || len(got.Spec.Tables) == 0 || got.Spec.Tables[0].StateMachine.Initial != "DRAFT" || got.Version == "" {
 		t.Fatalf("load: %+v %v", got, err)
 	}
 	if _, err := store.Load(ctx, "not_installed"); err != ErrUnavailable {
@@ -51,7 +51,7 @@ func TestStoreLoadsOnlyReadyApplications(t *testing.T) {
 		t.Fatal("disabled a capability in use")
 	}
 	// A corrupted registry row fails closed.
-	if _, err := p.Admin.Exec(`UPDATE core.apps SET spec = jsonb_set(spec, '{domainTable,name}', '"domain.x; DROP TABLE core.users"') WHERE app_id = $1`, testutil.AppID); err != nil {
+	if _, err := p.Admin.Exec(`UPDATE core.apps SET spec = jsonb_set(spec, '{tables,0,name}', '"domain.x; DROP TABLE core.users"') WHERE app_id = $1`, testutil.AppID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.Load(ctx, testutil.AppID); err == nil {

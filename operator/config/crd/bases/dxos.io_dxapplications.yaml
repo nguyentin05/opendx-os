@@ -75,26 +75,6 @@ spec:
               (docs/contracts/data-contracts.md). JSON field names are identical to the
               manifest so that both forms convert losslessly.
             properties:
-              attachments:
-                description: Attachments binds file columns to commands that require
-                  a CLEAN scan.
-                items:
-                  description: Attachment binds a file column to the commands that
-                    require a CLEAN file.
-                  properties:
-                    column:
-                      pattern: ^[a-z][a-z0-9_]*$
-                      type: string
-                    requireCleanOnCommands:
-                      items:
-                        type: string
-                      minItems: 1
-                      type: array
-                  required:
-                  - column
-                  - requireCleanOnCommands
-                  type: object
-                type: array
               capabilities:
                 description: |-
                   Capabilities lists the Tier 2 capabilities the application depends on.
@@ -108,188 +88,6 @@ spec:
                 description: DisplayName is shown by the App Shell.
                 minLength: 1
                 type: string
-              domainAccess:
-                description: DomainAccess declares per-role select/insert/update rules
-                  on the domain table.
-                properties:
-                  insert:
-                    items:
-                      description: |-
-                        AccessRule allows one role a set of columns within its scope, optionally
-                        narrowed by a record filter.
-                      properties:
-                        columns:
-                          items:
-                            type: string
-                          minItems: 1
-                          type: array
-                        presets:
-                          additionalProperties:
-                            type: string
-                          description: Presets set uuid columns from X-Hasura-User-Id
-                            (insert only).
-                          type: object
-                        recordFilter:
-                          description: RecordFilter is a Hasura boolean expression
-                            over declared columns.
-                          x-kubernetes-preserve-unknown-fields: true
-                        role:
-                          pattern: ^[a-z][a-z0-9_]*$
-                          type: string
-                        scope:
-                          description: |-
-                            Scope is required on select and update: own records, own department
-                            (requires cap-hr) or the whole organization. Not allowed on insert.
-                          enum:
-                          - own
-                          - department
-                          - organization
-                          type: string
-                      required:
-                      - columns
-                      - role
-                      type: object
-                    minItems: 1
-                    type: array
-                  select:
-                    items:
-                      description: |-
-                        AccessRule allows one role a set of columns within its scope, optionally
-                        narrowed by a record filter.
-                      properties:
-                        columns:
-                          items:
-                            type: string
-                          minItems: 1
-                          type: array
-                        presets:
-                          additionalProperties:
-                            type: string
-                          description: Presets set uuid columns from X-Hasura-User-Id
-                            (insert only).
-                          type: object
-                        recordFilter:
-                          description: RecordFilter is a Hasura boolean expression
-                            over declared columns.
-                          x-kubernetes-preserve-unknown-fields: true
-                        role:
-                          pattern: ^[a-z][a-z0-9_]*$
-                          type: string
-                        scope:
-                          description: |-
-                            Scope is required on select and update: own records, own department
-                            (requires cap-hr) or the whole organization. Not allowed on insert.
-                          enum:
-                          - own
-                          - department
-                          - organization
-                          type: string
-                      required:
-                      - columns
-                      - role
-                      type: object
-                    minItems: 1
-                    type: array
-                  update:
-                    items:
-                      description: |-
-                        AccessRule allows one role a set of columns within its scope, optionally
-                        narrowed by a record filter.
-                      properties:
-                        columns:
-                          items:
-                            type: string
-                          minItems: 1
-                          type: array
-                        presets:
-                          additionalProperties:
-                            type: string
-                          description: Presets set uuid columns from X-Hasura-User-Id
-                            (insert only).
-                          type: object
-                        recordFilter:
-                          description: RecordFilter is a Hasura boolean expression
-                            over declared columns.
-                          x-kubernetes-preserve-unknown-fields: true
-                        role:
-                          pattern: ^[a-z][a-z0-9_]*$
-                          type: string
-                        scope:
-                          description: |-
-                            Scope is required on select and update: own records, own department
-                            (requires cap-hr) or the whole organization. Not allowed on insert.
-                          enum:
-                          - own
-                          - department
-                          - organization
-                          type: string
-                      required:
-                      - columns
-                      - role
-                      type: object
-                    type: array
-                required:
-                - insert
-                - select
-                type: object
-              domainTable:
-                description: DomainTable declares the isolated business table generated
-                  by the Operator.
-                properties:
-                  columns:
-                    items:
-                      description: Column is a business column; system columns are
-                        managed by the Operator.
-                      properties:
-                        check:
-                          description: Check is a SQL CHECK expression from the validator's
-                            allowlist.
-                          type: string
-                        name:
-                          pattern: ^[a-z][a-z0-9_]*$
-                          type: string
-                        nullable:
-                          description: Nullable is required so that additive upgrades
-                            are explicit.
-                          type: boolean
-                        type:
-                          enum:
-                          - uuid
-                          - text
-                          - date
-                          - numeric(14,2)
-                          - numeric(4,2)
-                          type: string
-                      required:
-                      - name
-                      - nullable
-                      - type
-                      type: object
-                    minItems: 1
-                    type: array
-                  foreignKeys:
-                    items:
-                      description: ForeignKey links a business uuid column to the
-                        id of a shared table.
-                      properties:
-                        column:
-                          pattern: ^[a-z][a-z0-9_]*$
-                          type: string
-                        references:
-                          pattern: ^(core|cap_[a-z]+)\.[a-z][a-z0-9_]*$
-                          type: string
-                      required:
-                      - column
-                      - references
-                      type: object
-                    type: array
-                  name:
-                    pattern: ^domain\.[a-z][a-z0-9_]*$
-                    type: string
-                required:
-                - columns
-                - name
-                type: object
               roles:
                 description: Roles are owned by this application; no other application
                   may use them.
@@ -338,106 +136,321 @@ spec:
                   - table
                   type: object
                 type: array
-              stateMachine:
-                description: StateMachine declares states and the commands that move
-                  between them.
-                properties:
-                  commands:
-                    items:
-                      description: Command is a role-guarded state transition executed
-                        by cap-process.
+              tables:
+                description: |-
+                  Tables declares the application's domain tables (ADR 0008). The Operator
+                  generates each of them. A table with a state machine is a process table;
+                  one without is a plain table.
+                items:
+                  description: Table describes one domain table with its access rules,
+                    lifecycle and UI.
+                  properties:
+                    access:
+                      description: Access declares per-role select/insert/update rules
+                        on the table.
                       properties:
-                        allowedRoles:
+                        insert:
+                          items:
+                            description: |-
+                              AccessRule allows one role a set of columns within its scope, optionally
+                              narrowed by a record filter.
+                            properties:
+                              columns:
+                                items:
+                                  type: string
+                                minItems: 1
+                                type: array
+                              presets:
+                                additionalProperties:
+                                  type: string
+                                description: Presets set uuid columns from X-Hasura-User-Id
+                                  (insert only).
+                                type: object
+                              recordFilter:
+                                description: RecordFilter is a Hasura boolean expression
+                                  over declared columns.
+                                x-kubernetes-preserve-unknown-fields: true
+                              role:
+                                pattern: ^[a-z][a-z0-9_]*$
+                                type: string
+                              scope:
+                                description: |-
+                                  Scope is required on select and update: own records, own department
+                                  (requires cap-hr) or the whole organization. Not allowed on insert.
+                                enum:
+                                - own
+                                - department
+                                - organization
+                                type: string
+                            required:
+                            - columns
+                            - role
+                            type: object
+                          minItems: 1
+                          type: array
+                        select:
+                          items:
+                            description: |-
+                              AccessRule allows one role a set of columns within its scope, optionally
+                              narrowed by a record filter.
+                            properties:
+                              columns:
+                                items:
+                                  type: string
+                                minItems: 1
+                                type: array
+                              presets:
+                                additionalProperties:
+                                  type: string
+                                description: Presets set uuid columns from X-Hasura-User-Id
+                                  (insert only).
+                                type: object
+                              recordFilter:
+                                description: RecordFilter is a Hasura boolean expression
+                                  over declared columns.
+                                x-kubernetes-preserve-unknown-fields: true
+                              role:
+                                pattern: ^[a-z][a-z0-9_]*$
+                                type: string
+                              scope:
+                                description: |-
+                                  Scope is required on select and update: own records, own department
+                                  (requires cap-hr) or the whole organization. Not allowed on insert.
+                                enum:
+                                - own
+                                - department
+                                - organization
+                                type: string
+                            required:
+                            - columns
+                            - role
+                            type: object
+                          minItems: 1
+                          type: array
+                        update:
+                          items:
+                            description: |-
+                              AccessRule allows one role a set of columns within its scope, optionally
+                              narrowed by a record filter.
+                            properties:
+                              columns:
+                                items:
+                                  type: string
+                                minItems: 1
+                                type: array
+                              presets:
+                                additionalProperties:
+                                  type: string
+                                description: Presets set uuid columns from X-Hasura-User-Id
+                                  (insert only).
+                                type: object
+                              recordFilter:
+                                description: RecordFilter is a Hasura boolean expression
+                                  over declared columns.
+                                x-kubernetes-preserve-unknown-fields: true
+                              role:
+                                pattern: ^[a-z][a-z0-9_]*$
+                                type: string
+                              scope:
+                                description: |-
+                                  Scope is required on select and update: own records, own department
+                                  (requires cap-hr) or the whole organization. Not allowed on insert.
+                                enum:
+                                - own
+                                - department
+                                - organization
+                                type: string
+                            required:
+                            - columns
+                            - role
+                            type: object
+                          type: array
+                      required:
+                      - insert
+                      - select
+                      type: object
+                    attachments:
+                      description: Attachments binds file columns to commands that
+                        require a CLEAN scan.
+                      items:
+                        description: Attachment binds a file column to the commands
+                          that require a CLEAN file.
+                        properties:
+                          column:
+                            pattern: ^[a-z][a-z0-9_]*$
+                            type: string
+                          requireCleanOnCommands:
+                            items:
+                              type: string
+                            minItems: 1
+                            type: array
+                        required:
+                        - column
+                        - requireCleanOnCommands
+                        type: object
+                      type: array
+                    columns:
+                      items:
+                        description: Column is a business column; system columns are
+                          managed by the Operator.
+                        properties:
+                          check:
+                            description: Check is a SQL CHECK expression from the
+                              validator's allowlist.
+                            type: string
+                          name:
+                            pattern: ^[a-z][a-z0-9_]*$
+                            type: string
+                          nullable:
+                            description: Nullable is required so that additive upgrades
+                              are explicit.
+                            type: boolean
+                          type:
+                            enum:
+                            - uuid
+                            - text
+                            - date
+                            - numeric(14,2)
+                            - numeric(4,2)
+                            type: string
+                        required:
+                        - name
+                        - nullable
+                        - type
+                        type: object
+                      minItems: 1
+                      type: array
+                    foreignKeys:
+                      items:
+                        description: ForeignKey links a business uuid column to the
+                          id of a shared table.
+                        properties:
+                          column:
+                            pattern: ^[a-z][a-z0-9_]*$
+                            type: string
+                          references:
+                            description: References is a shared table or another table
+                              of the same application.
+                            pattern: ^(core|cap_[a-z]+|domain)\.[a-z][a-z0-9_]*$
+                            type: string
+                        required:
+                        - column
+                        - references
+                        type: object
+                      type: array
+                    name:
+                      pattern: ^domain\.[a-z][a-z0-9_]*$
+                      type: string
+                    stateMachine:
+                      description: |-
+                        StateMachine declares states and the commands that move between them. A
+                        table without one is edited freely within its access rules.
+                      properties:
+                        commands:
+                          items:
+                            description: Command is a role-guarded state transition
+                              executed by cap-process.
+                            properties:
+                              allowedRoles:
+                                items:
+                                  type: string
+                                minItems: 1
+                                type: array
+                              from:
+                                items:
+                                  type: string
+                                minItems: 1
+                                type: array
+                              name:
+                                pattern: ^[a-z][a-z0-9_]*$
+                                type: string
+                              recordFilter:
+                                x-kubernetes-preserve-unknown-fields: true
+                              to:
+                                pattern: ^[A-Za-z][A-Za-z0-9_]*$
+                                type: string
+                            required:
+                            - allowedRoles
+                            - from
+                            - name
+                            - to
+                            type: object
+                          minItems: 1
+                          type: array
+                        editableStates:
                           items:
                             type: string
                           minItems: 1
                           type: array
-                        from:
-                          items:
-                            type: string
-                          minItems: 1
-                          type: array
-                        name:
-                          pattern: ^[a-z][a-z0-9_]*$
-                          type: string
-                        recordFilter:
-                          x-kubernetes-preserve-unknown-fields: true
-                        to:
+                        initial:
                           pattern: ^[A-Za-z][A-Za-z0-9_]*$
                           type: string
+                        terminalStates:
+                          items:
+                            type: string
+                          minItems: 1
+                          type: array
                       required:
-                      - allowedRoles
-                      - from
-                      - name
-                      - to
+                      - commands
+                      - editableStates
+                      - initial
+                      - terminalStates
                       type: object
-                    minItems: 1
-                    type: array
-                  editableStates:
-                    items:
-                      type: string
-                    minItems: 1
-                    type: array
-                  initial:
-                    pattern: ^[A-Za-z][A-Za-z0-9_]*$
-                    type: string
-                  terminalStates:
-                    items:
-                      type: string
-                    minItems: 1
-                    type: array
-                required:
-                - commands
-                - editableStates
-                - initial
-                - terminalStates
-                type: object
-              uiSchema:
-                description: UISchema configures the schema-driven App Shell.
-                properties:
-                  actions:
-                    items:
-                      type: string
-                    minItems: 1
-                    type: array
-                  formFields:
-                    items:
-                      description: FormField is one input of the generated form.
+                    ui:
+                      description: UI configures the table's list and form in the
+                        App Shell.
                       properties:
-                        label:
-                          minLength: 1
-                          type: string
-                        name:
-                          pattern: ^[a-z][a-z0-9_]*$
-                          type: string
-                        required:
-                          type: boolean
-                        type:
-                          enum:
-                          - uuid
-                          - text
-                          - number
-                          - file
-                          - date
-                          type: string
+                        actions:
+                          description: Actions lists the commands of a process table;
+                            other tables have none.
+                          items:
+                            type: string
+                          type: array
+                        formFields:
+                          items:
+                            description: FormField is one input of the generated form.
+                            properties:
+                              label:
+                                minLength: 1
+                                type: string
+                              name:
+                                pattern: ^[a-z][a-z0-9_]*$
+                                type: string
+                              required:
+                                type: boolean
+                              type:
+                                enum:
+                                - uuid
+                                - text
+                                - number
+                                - file
+                                - date
+                                type: string
+                            required:
+                            - label
+                            - name
+                            - required
+                            - type
+                            type: object
+                          minItems: 1
+                          type: array
+                        listColumns:
+                          items:
+                            type: string
+                          minItems: 1
+                          type: array
                       required:
-                      - label
-                      - name
-                      - required
-                      - type
+                      - formFields
+                      - listColumns
                       type: object
-                    minItems: 1
-                    type: array
-                  listColumns:
-                    items:
-                      type: string
-                    minItems: 1
-                    type: array
-                required:
-                - actions
-                - formFields
-                - listColumns
-                type: object
+                  required:
+                  - access
+                  - columns
+                  - name
+                  - ui
+                  type: object
+                minItems: 1
+                type: array
               version:
                 description: Version of the application package.
                 minLength: 1
@@ -529,11 +542,8 @@ spec:
             required:
             - capabilities
             - displayName
-            - domainAccess
-            - domainTable
             - roles
-            - stateMachine
-            - uiSchema
+            - tables
             - version
             type: object
           status:

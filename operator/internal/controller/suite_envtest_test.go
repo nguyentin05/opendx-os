@@ -83,25 +83,25 @@ func minimalApp(name string) *dxosv1alpha1.DXApplication {
 			SharedAccess: []dxosv1alpha1.SharedAccess{{
 				Table: "core.users", Roles: []string{"role_test"}, Columns: []string{"id", "display_name"},
 			}},
-			DomainTable: dxosv1alpha1.DomainTable{
+			Capabilities: []string{"cap-process"},
+			Tables: []dxosv1alpha1.Table{{
 				Name:        "domain.test_records",
 				Columns:     []dxosv1alpha1.Column{{Name: "note", Type: "text", Nullable: true}, {Name: "owner_id", Type: "uuid", Nullable: true}},
 				ForeignKeys: []dxosv1alpha1.ForeignKey{{Column: "owner_id", References: "core.users"}},
-			},
-			DomainAccess: dxosv1alpha1.DomainAccess{
-				Select: []dxosv1alpha1.AccessRule{{Role: "role_test", Scope: "own", Columns: []string{"id"}}},
-				Insert: []dxosv1alpha1.AccessRule{{Role: "role_test", Columns: []string{"note"}}},
-			},
-			StateMachine: dxosv1alpha1.StateMachine{
-				Initial: "OPEN", EditableStates: []string{"OPEN"}, TerminalStates: []string{"DONE"},
-				Commands: []dxosv1alpha1.Command{{Name: "close", From: []string{"OPEN"}, To: "DONE", AllowedRoles: []string{"role_test"}}},
-			},
-			Capabilities: []string{"cap-process"},
-			UISchema: dxosv1alpha1.UISchema{
-				ListColumns: []string{"note"},
-				FormFields:  []dxosv1alpha1.FormField{{Name: "note", Label: "Note", Type: "text"}},
-				Actions:     []string{"close"},
-			},
+				Access: dxosv1alpha1.Access{
+					Select: []dxosv1alpha1.AccessRule{{Role: "role_test", Scope: "own", Columns: []string{"id"}}},
+					Insert: []dxosv1alpha1.AccessRule{{Role: "role_test", Columns: []string{"note"}}},
+				},
+				StateMachine: &dxosv1alpha1.StateMachine{
+					Initial: "OPEN", EditableStates: []string{"OPEN"}, TerminalStates: []string{"DONE"},
+					Commands: []dxosv1alpha1.Command{{Name: "close", From: []string{"OPEN"}, To: "DONE", AllowedRoles: []string{"role_test"}}},
+				},
+				UI: dxosv1alpha1.UISchema{
+					ListColumns: []string{"note"},
+					FormFields:  []dxosv1alpha1.FormField{{Name: "note", Label: "Note", Type: "text"}},
+					Actions:     []string{"close"},
+				},
+			}},
 		},
 	}
 }
@@ -134,10 +134,10 @@ func TestCRDSchemaRejectsInvalidResources(t *testing.T) {
 	ctx := context.Background()
 	cases := map[string]func(*dxosv1alpha1.DXApplication){
 		"no roles":             func(a *dxosv1alpha1.DXApplication) { a.Spec.Roles = nil },
-		"unknown scope":        func(a *dxosv1alpha1.DXApplication) { a.Spec.DomainAccess.Select[0].Scope = "everyone" },
+		"unknown scope":        func(a *dxosv1alpha1.DXApplication) { a.Spec.Tables[0].Access.Select[0].Scope = "everyone" },
 		"shared table schema":  func(a *dxosv1alpha1.DXApplication) { a.Spec.SharedAccess[0].Table = "domain.other_records" },
-		"unsupported column":   func(a *dxosv1alpha1.DXApplication) { a.Spec.DomainTable.Columns[0].Type = "jsonb" },
-		"table outside domain": func(a *dxosv1alpha1.DXApplication) { a.Spec.DomainTable.Name = "core.users" },
+		"unsupported column":   func(a *dxosv1alpha1.DXApplication) { a.Spec.Tables[0].Columns[0].Type = "jsonb" },
+		"table outside domain": func(a *dxosv1alpha1.DXApplication) { a.Spec.Tables[0].Name = "core.users" },
 		"bad capability":       func(a *dxosv1alpha1.DXApplication) { a.Spec.Capabilities = []string{"process"} },
 		"effect kind": func(a *dxosv1alpha1.DXApplication) {
 			a.Spec.Workflows = []dxosv1alpha1.Workflow{{ID: "f", Definition: "id: f", SubscribedEvents: []string{"command.committed"},

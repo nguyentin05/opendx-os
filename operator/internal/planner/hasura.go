@@ -75,61 +75,80 @@ func GenerateHasuraOperations(app *manifest.DXApplication) ([]HasuraMetadataPayl
 	}
 
 	var ops []HasuraMetadataPayload
-	domainTableRef := ParseTableRef(app.Spec.DomainTable.Name)
-	sm := app.Spec.StateMachine
 
-	// 1. Track the domain table and the shared tables it reads.
-	ops = append(ops, trackTable(domainTableRef))
+	// 1. Track the domain tables and the shared tables they read.
+	for i := range app.Spec.Tables {
+		ops = append(ops, trackTable(ParseTableRef(app.Spec.Tables[i].Name)))
+	}
 	for _, t := range SharedTablesRead(app) {
 		ops = append(ops, trackTable(ParseTableRef(t)))
 	}
 
-	// 2. Relationships.
-	for _, fk := range app.Spec.DomainTable.ForeignKeys {
-		remote := ParseTableRef(fk.References)
-		ops = append(ops,
-			relationship("pg_create_object_relationship", domainTableRef, strings.TrimSuffix(fk.Column, "_id"), remote, map[string]string{fk.Column: "id"}),
-			relationship("pg_create_array_relationship", remote, domainTableRef.Name+"_by_"+fk.Column, domainTableRef, map[string]string{"id": fk.Column}),
-		)
-	}
-	if usesDepartmentScope(app) {
-		orgUnits := TableRef{Schema: "cap_hr", Name: "org_units"}
-		ops = append(ops,
-			relationship("pg_create_object_relationship", domainTableRef, "org_unit", orgUnits, map[string]string{"org_unit_id": "id"}),
-			relationship("pg_create_array_relationship", orgUnits, "staff", TableRef{Schema: "cap_hr", Name: "staff"}, map[string]string{"id": "org_unit_id"}),
-		)
-	}
-
-	// 3. Domain table SELECT permissions: the role scope narrowed by the rule's filter.
-	for _, sel := range app.Spec.DomainAccess.Select {
-		ops = append(ops, permission("pg_create_select_permission", domainTableRef, sel.Role, map[string]any{
-			"columns":            sel.Columns,
-			"filter":             nonNil(selectFilter(sel)),
-			"allow_aggregations": false,
-		}))
+	// 2. Relationships along foreign keys (to shared tables and to other tables
+	// of the application) and from a record to its department.
+	for i := range app.Spec.Tables {
+		tbl := &app.Spec.Tables[i]
+		ref := ParseTableRef(tbl.Name)
+		for _, fk := range tbl.ForeignKeys {
+			remote := ParseTableRef(fk.References)
+			ops = append(ops,
+				relationship("pg_create_object_relationship", ref, strings.TrimSuffix(fk.Column, "_id"), remote, map[string]string{fk.Column: "id"}),
+				relationship("pg_create_array_relationship", remote, ref.Name+"_by_"+fk.Column, ref, map[string]string{"id": fk.Column}),
+			)
+		}
+		if tableUsesDepartmentScope(tbl) {
+			orgUnits := TableRef{Schema: "cap_hr", Name: "org_units"}
+			ops = append(ops,
+				relationship("pg_create_object_relationship", ref, "org_unit", orgUnits, map[string]string{"org_unit_id": "id"}),
+				relationship("pg_create_array_relationship", orgUnits, "staff", TableRef{Schema: "cap_hr", Name: "staff"}, map[string]string{"id": "org_unit_id"}),
+			)
+		}
 	}
 
-	// 4. Domain table INSERT permissions. New records start in the initial
-	// state; creator and department are stamped by database triggers.
-	for _, ins := range app.Spec.DomainAccess.Insert {
-		presets := map[string]string{"status": sm.Initial}
-		maps.Copy(presets, ins.Presets)
-		ops = append(ops, permission("pg_create_insert_permission", domainTableRef, ins.Role, map[string]any{
-			"columns":      ins.Columns,
-			"check":        conjoinFilters(map[string]any{"status": map[string]any{"_eq": sm.Initial}}, ins.RecordFilter),
-			"set":          presets,
-			"backend_only": false,
-		}))
-	}
+	for i := range app.Spec.Tables {
+		tbl := &app.Spec.Tables[i]
+		ref := ParseTableRef(tbl.Name)
 
-	// 5. Domain table UPDATE permissions, restricted to editable states.
-	for _, upd := range app.Spec.DomainAccess.Update {
-		editableGuard := map[string]any{"status": map[string]any{"_in": sm.EditableStates}}
-		ops = append(ops, permission("pg_create_update_permission", domainTableRef, upd.Role, map[string]any{
-			"columns": upd.Columns,
-			"filter":  conjoinFilters(conjoinFilters(ScopeFilter(upd.Scope), upd.RecordFilter), editableGuard),
-			"check":   editableGuard,
-		}))
+		// 3. SELECT permissions: the role scope narrowed by the rule's filter.
+		for _, sel := range tbl.Access.Select {
+			ops = append(ops, permission("pg_create_select_permission", ref, sel.Role, map[string]any{
+				"columns":            sel.Columns,
+				"filter":             nonNil(selectFilter(sel)),
+				"allow_aggregations": false,
+			}))
+		}
+
+		// 4. INSERT permissions. Creator and department are stamped by database
+		// triggers; a process record starts in the initial state.
+		for _, ins := range tbl.Access.Insert {
+			presets := map[string]string{}
+			var initial map[string]any
+			if tbl.IsProcess() {
+				presets["status"] = tbl.StateMachine.Initial
+				initial = map[string]any{"status": map[string]any{"_eq": tbl.StateMachine.Initial}}
+			}
+			maps.Copy(presets, ins.Presets)
+			ops = append(ops, permission("pg_create_insert_permission", ref, ins.Role, map[string]any{
+				"columns":      ins.Columns,
+				"check":        nonNil(conjoinFilters(initial, ins.RecordFilter)),
+				"set":          presets,
+				"backend_only": false,
+			}))
+		}
+
+		// 5. UPDATE permissions; a process record is editable only in its
+		// editable states.
+		for _, upd := range tbl.Access.Update {
+			var editable map[string]any
+			if tbl.IsProcess() {
+				editable = map[string]any{"status": map[string]any{"_in": tbl.StateMachine.EditableStates}}
+			}
+			ops = append(ops, permission("pg_create_update_permission", ref, upd.Role, map[string]any{
+				"columns": upd.Columns,
+				"filter":  nonNil(conjoinFilters(conjoinFilters(ScopeFilter(upd.Scope), upd.RecordFilter), editable)),
+				"check":   nonNil(editable),
+			}))
+		}
 	}
 
 	// 6. Shared tables SELECT permissions. Rows of app-scoped tables are limited
@@ -160,7 +179,7 @@ func selectFilter(rule manifest.AccessRule) map[string]any {
 // sharedFilter limits what role reads of a shared table. App-scoped tables
 // show only the application's rows. Files are narrower still: a role sees the
 // files its user uploaded, and files attached to domain records the role may
-// read (through the array relationship from core.files to the domain table),
+// read (through the array relationships from core.files to the domain tables),
 // so knowing the application is not enough to list other people's files.
 func sharedFilter(app *manifest.DXApplication, table, role string) map[string]any {
 	if !manifest.SharedTables[table].AppScoped {
@@ -171,14 +190,16 @@ func sharedFilter(app *manifest.DXApplication, table, role string) map[string]an
 		return filter
 	}
 	visible := []any{map[string]any{"uploaded_by": map[string]any{"_eq": "X-Hasura-User-Id"}}}
-	domain := ParseTableRef(app.Spec.DomainTable.Name)
-	for _, fk := range app.Spec.DomainTable.ForeignKeys {
-		if fk.References != "core.files" {
-			continue
-		}
-		for _, sel := range app.Spec.DomainAccess.Select {
-			if sel.Role == role && slices.Contains(sel.Columns, fk.Column) {
-				visible = append(visible, map[string]any{domain.Name + "_by_" + fk.Column: nonNil(selectFilter(sel))})
+	for i := range app.Spec.Tables {
+		tbl := &app.Spec.Tables[i]
+		for _, fk := range tbl.ForeignKeys {
+			if fk.References != "core.files" {
+				continue
+			}
+			for _, sel := range tbl.Access.Select {
+				if sel.Role == role && slices.Contains(sel.Columns, fk.Column) {
+					visible = append(visible, map[string]any{ParseTableRef(tbl.Name).Name + "_by_" + fk.Column: nonNil(selectFilter(sel))})
+				}
 			}
 		}
 	}

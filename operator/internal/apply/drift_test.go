@@ -61,8 +61,8 @@ func TestMetadataDrift(t *testing.T) {
 
 	// A changed column allowlist is drift even when the permission exists.
 	app := plan.Apps[0]
-	app.Spec.DomainAccess.Insert = append([]manifest.AccessRule(nil), app.Spec.DomainAccess.Insert...)
-	app.Spec.DomainAccess.Insert[0].Columns = app.Spec.DomainAccess.Insert[0].Columns[:len(app.Spec.DomainAccess.Insert[0].Columns)-1]
+	app.Spec.Tables[0].Access.Insert = append([]manifest.AccessRule(nil), app.Spec.Tables[0].Access.Insert...)
+	app.Spec.Tables[0].Access.Insert[0].Columns = app.Spec.Tables[0].Access.Insert[0].Columns[:len(app.Spec.Tables[0].Access.Insert[0].Columns)-1]
 	narrowed, err := planner.BuildPlan([]manifest.DXApplication{app}, planner.ManagedState{})
 	if err != nil {
 		t.Fatal(err)

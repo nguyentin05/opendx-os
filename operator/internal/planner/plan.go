@@ -52,7 +52,7 @@ func BuildPlan(apps []manifest.DXApplication, live ManagedState) (Plan, error) {
 	copy(plan.Apps, apps)
 
 	seenNames := map[string]bool{}
-	seenTables := map[string]bool{}
+	seenTables := map[string]string{}
 	roleOwner := map[string]string{}
 	desiredSharedGrants := map[sharedGrantKey][]string{}
 
@@ -64,11 +64,13 @@ func BuildPlan(apps []manifest.DXApplication, live ManagedState) (Plan, error) {
 		if seenNames[app.Metadata.Name] {
 			return Plan{}, fmt.Errorf("duplicate application name %q", app.Metadata.Name)
 		}
-		if seenTables[app.Spec.DomainTable.Name] {
-			return Plan{}, fmt.Errorf("duplicate domain table %q", app.Spec.DomainTable.Name)
+		for _, t := range app.Spec.Tables {
+			if owner, taken := seenTables[t.Name]; taken {
+				return Plan{}, fmt.Errorf("domain table %q is declared by both %s and %s", t.Name, owner, app.Metadata.Name)
+			}
+			seenTables[t.Name] = app.Metadata.Name
 		}
 		seenNames[app.Metadata.Name] = true
-		seenTables[app.Spec.DomainTable.Name] = true
 		for _, role := range app.RoleNames() {
 			if owner, taken := roleOwner[role]; taken {
 				return Plan{}, fmt.Errorf("role %q is declared by both %s and %s; a role belongs to one application", role, owner, app.Metadata.Name)
@@ -109,15 +111,12 @@ func BuildPlan(apps []manifest.DXApplication, live ManagedState) (Plan, error) {
 
 	desiredDomainPerm := map[string]bool{}
 	for _, app := range apps {
-		tbl := app.Spec.DomainTable.Name
-		for _, r := range app.Spec.DomainAccess.Select {
-			desiredDomainPerm["select:"+tbl+":"+r.Role] = true
-		}
-		for _, r := range app.Spec.DomainAccess.Insert {
-			desiredDomainPerm["insert:"+tbl+":"+r.Role] = true
-		}
-		for _, r := range app.Spec.DomainAccess.Update {
-			desiredDomainPerm["update:"+tbl+":"+r.Role] = true
+		for _, t := range app.Spec.Tables {
+			for op, rules := range tableRules(t) {
+				for _, r := range rules {
+					desiredDomainPerm[op+":"+t.Name+":"+r.Role] = true
+				}
+			}
 		}
 	}
 
@@ -126,22 +125,16 @@ func BuildPlan(apps []manifest.DXApplication, live ManagedState) (Plan, error) {
 		if !seenNames[oldApp.Metadata.Name] {
 			plan.RemovedApps = append(plan.RemovedApps, oldApp.Metadata.Name)
 		}
-		oldTbl := oldApp.Spec.DomainTable.Name
-		oldRef := ParseTableRef(oldTbl)
-
-		for _, r := range oldApp.Spec.DomainAccess.Select {
-			if !desiredDomainPerm["select:"+oldTbl+":"+r.Role] {
-				plan.DropOps = append(plan.DropOps, dropPermOp("pg_drop_select_permission", oldRef, r.Role))
-			}
-		}
-		for _, r := range oldApp.Spec.DomainAccess.Insert {
-			if !desiredDomainPerm["insert:"+oldTbl+":"+r.Role] {
-				plan.DropOps = append(plan.DropOps, dropPermOp("pg_drop_insert_permission", oldRef, r.Role))
-			}
-		}
-		for _, r := range oldApp.Spec.DomainAccess.Update {
-			if !desiredDomainPerm["update:"+oldTbl+":"+r.Role] {
-				plan.DropOps = append(plan.DropOps, dropPermOp("pg_drop_update_permission", oldRef, r.Role))
+		// Permissions of a table or rule that is no longer declared are dropped;
+		// the table and its data stay.
+		for _, t := range oldApp.Spec.Tables {
+			ref := ParseTableRef(t.Name)
+			for _, op := range []string{"select", "insert", "update"} {
+				for _, r := range tableRules(t)[op] {
+					if !desiredDomainPerm[op+":"+t.Name+":"+r.Role] {
+						plan.DropOps = append(plan.DropOps, dropPermOp("pg_drop_"+op+"_permission", ref, r.Role))
+					}
+				}
 			}
 		}
 
@@ -191,6 +184,15 @@ func orderOperations(ops []HasuraMetadataPayload) []HasuraMetadataPayload {
 		}
 	}
 	return out
+}
+
+// tableRules returns a table's access rules by operation.
+func tableRules(t manifest.TableDef) map[string][]manifest.AccessRule {
+	return map[string][]manifest.AccessRule{
+		"select": t.Access.Select,
+		"insert": t.Access.Insert,
+		"update": t.Access.Update,
+	}
 }
 
 func dropPermOp(opType string, table TableRef, role string) HasuraMetadataPayload {

@@ -47,14 +47,16 @@ type systemColumn struct {
 	Default string
 }
 
-func systemColumns(app *manifest.DXApplication) map[string]systemColumn {
+func systemColumns(app *manifest.DXApplication, tbl *manifest.TableDef) map[string]systemColumn {
 	cols := map[string]systemColumn{
 		"id":         {Type: "uuid"},
 		"created_by": {Type: "uuid"},
-		"status":     {Type: "text", Default: "DEFAULT " + quoteLiteral(app.Spec.StateMachine.Initial)},
 		"version":    {Type: "bigint", Default: "DEFAULT 1"},
 		"created_at": {Type: "timestamp with time zone", Default: "DEFAULT now()"},
 		"updated_at": {Type: "timestamp with time zone", Default: "DEFAULT now()"},
+	}
+	if tbl.IsProcess() {
+		cols["status"] = systemColumn{Type: "text", Default: "DEFAULT " + quoteLiteral(tbl.StateMachine.Initial)}
 	}
 	if app.UsesCapability(manifest.CapHR) {
 		cols["org_unit_id"] = systemColumn{Type: "uuid"}
@@ -62,8 +64,8 @@ func systemColumns(app *manifest.DXApplication) map[string]systemColumn {
 	return cols
 }
 
-// DiffSchema compares the live columns of the app's domain table, and the
-// states its rows currently use, with the manifest. An empty live set means the
+// DiffSchema compares the live columns of one of the app's domain tables, and
+// the states its rows currently use, with the manifest. An empty live set means the
 // table does not exist yet and CREATE TABLE covers it.
 //
 // Supported changes are adding a nullable business column and adding a system
@@ -71,12 +73,12 @@ func systemColumns(app *manifest.DXApplication) map[string]systemColumn {
 // without existing data, a column removed from the manifest, or a state removed
 // while rows still use it blocks the apply so the previous active version keeps
 // serving.
-func DiffSchema(live []LiveColumn, statesInUse []string, app *manifest.DXApplication) (SchemaDiff, error) {
+func DiffSchema(live []LiveColumn, statesInUse []string, app *manifest.DXApplication, tbl *manifest.TableDef) (SchemaDiff, error) {
 	var diff SchemaDiff
 	if len(live) == 0 {
 		return diff, nil
 	}
-	table := app.Spec.DomainTable.Name
+	table := tbl.Name
 	byName := make(map[string]LiveColumn, len(live))
 	for _, c := range live {
 		byName[c.Name] = c
@@ -84,7 +86,7 @@ func DiffSchema(live []LiveColumn, statesInUse []string, app *manifest.DXApplica
 
 	var problems []string
 	seen := map[string]bool{}
-	system := systemColumns(app)
+	system := systemColumns(app, tbl)
 	names := make([]string, 0, len(system))
 	for name := range system {
 		names = append(names, name)
@@ -106,7 +108,7 @@ func DiffSchema(live []LiveColumn, statesInUse []string, app *manifest.DXApplica
 			problems = append(problems, fmt.Sprintf("system column %q has type %s, expected %s", name, have.Type, want.Type))
 		}
 	}
-	for _, col := range app.Spec.DomainTable.Columns {
+	for _, col := range tbl.Columns {
 		seen[col.Name] = true
 		have, ok := byName[col.Name]
 		if !ok {
@@ -130,8 +132,10 @@ func DiffSchema(live []LiveColumn, statesInUse []string, app *manifest.DXApplica
 		}
 	}
 	declared := map[string]bool{}
-	for _, st := range manifest.States(app.Spec.StateMachine) {
-		declared[st] = true
+	if tbl.IsProcess() {
+		for _, st := range manifest.States(*tbl.StateMachine) {
+			declared[st] = true
+		}
 	}
 	for _, st := range statesInUse {
 		if !declared[st] {

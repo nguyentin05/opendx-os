@@ -38,18 +38,6 @@ func (a *AppDefinition) Validate() error {
 	if !identifier.MatchString(a.AppID) {
 		return errors.New("invalid application id")
 	}
-	if !strings.HasPrefix(s.DomainTable.Name, "domain.") || !identifier.MatchString(strings.TrimPrefix(s.DomainTable.Name, "domain.")) {
-		return errors.New("invalid domain table")
-	}
-	cols := a.ColumnTypes()
-	for _, c := range s.DomainTable.Columns {
-		if !identifier.MatchString(c.Name) || !oneOf(c.Type, "uuid", "text", "date", "numeric(14,2)", "numeric(4,2)") {
-			return fmt.Errorf("invalid column %q", c.Name)
-		}
-	}
-	if len(cols) != len(systemColumns(a))+len(s.DomainTable.Columns) {
-		return errors.New("duplicate or reserved column")
-	}
 	roles := map[string]bool{}
 	for _, r := range s.Roles {
 		if !roleName.MatchString(r.Name) || roles[r.Name] {
@@ -57,63 +45,19 @@ func (a *AppDefinition) Validate() error {
 		}
 		roles[r.Name] = true
 	}
-	for _, rules := range [][]Permission{s.DomainAccess.Select, s.DomainAccess.Insert, s.DomainAccess.Update} {
-		for _, p := range rules {
-			if !roles[p.Role] {
-				return fmt.Errorf("access rule for undeclared role %q", p.Role)
-			}
-			if !oneOf(p.Scope, "", ScopeOwn, ScopeDepartment, ScopeOrganization) ||
-				p.Scope == ScopeDepartment && !a.UsesCapability("cap-hr") {
-				return fmt.Errorf("invalid scope %q", p.Scope)
-			}
-			for _, c := range p.Columns {
-				if cols[c] == "" {
-					return fmt.Errorf("unknown column %q", c)
-				}
-			}
-			if err := validateFilter(p.RecordFilter, cols, 0); err != nil {
-				return err
-			}
-		}
+	if len(s.Tables) == 0 {
+		return errors.New("no domain table (a definition stored before spec.tables must be reinstalled)")
 	}
-	sm := s.StateMachine
-	if !statePattern.MatchString(sm.Initial) {
-		return errors.New("invalid initial state")
-	}
+	tables := map[string]bool{}
 	commands := map[string]bool{}
-	for _, c := range sm.Commands {
-		if !identifier.MatchString(c.Name) || commands[c.Name] || !statePattern.MatchString(c.To) || len(c.From) == 0 || len(c.AllowedRoles) == 0 {
-			return fmt.Errorf("invalid command %q", c.Name)
+	for i := range s.Tables {
+		t := &s.Tables[i]
+		if !strings.HasPrefix(t.Name, "domain.") || !identifier.MatchString(strings.TrimPrefix(t.Name, "domain.")) || tables[t.Name] {
+			return errors.New("invalid or duplicate domain table")
 		}
-		commands[c.Name] = true
-		for _, st := range c.From {
-			if !statePattern.MatchString(st) {
-				return fmt.Errorf("invalid state in command %q", c.Name)
-			}
-		}
-		for _, r := range c.AllowedRoles {
-			if !roles[r] {
-				return fmt.Errorf("command %q allows undeclared role %q", c.Name, r)
-			}
-		}
-		if err := validateFilter(c.RecordFilter, cols, 0); err != nil {
-			return err
-		}
-	}
-	files := map[string]bool{}
-	for _, fk := range s.DomainTable.ForeignKeys {
-		if fk.References == "core.files" {
-			files[fk.Column] = true
-		}
-	}
-	for _, at := range s.Attachments {
-		if cols[at.Column] != "uuid" || !files[at.Column] {
-			return fmt.Errorf("attachment %q is not a core.files reference", at.Column)
-		}
-		for _, c := range at.RequireCleanOnCommands {
-			if !commands[c] {
-				return fmt.Errorf("attachment %q names unknown command %q", at.Column, c)
-			}
+		tables[t.Name] = true
+		if err := a.validateTable(t, roles, commands); err != nil {
+			return fmt.Errorf("%s: %w", t.Name, err)
 		}
 	}
 	steps := map[string]bool{}
@@ -138,29 +82,133 @@ func (a *AppDefinition) Validate() error {
 	return nil
 }
 
+// validateTable checks one table; commands collects command names, which are
+// unique across the application's tables.
+func (a *AppDefinition) validateTable(t *Table, roles, commands map[string]bool) error {
+	cols := a.ColumnTypes(t)
+	for _, c := range t.Columns {
+		if !identifier.MatchString(c.Name) || !oneOf(c.Type, "uuid", "text", "date", "numeric(14,2)", "numeric(4,2)") {
+			return fmt.Errorf("invalid column %q", c.Name)
+		}
+	}
+	if len(cols) != len(a.systemColumns(t))+len(t.Columns) {
+		return errors.New("duplicate or reserved column")
+	}
+	for _, rules := range [][]Permission{t.Access.Select, t.Access.Insert, t.Access.Update} {
+		for _, p := range rules {
+			if !roles[p.Role] {
+				return fmt.Errorf("access rule for undeclared role %q", p.Role)
+			}
+			if !oneOf(p.Scope, "", ScopeOwn, ScopeDepartment, ScopeOrganization) ||
+				p.Scope == ScopeDepartment && !a.UsesCapability("cap-hr") {
+				return fmt.Errorf("invalid scope %q", p.Scope)
+			}
+			for _, c := range p.Columns {
+				if cols[c] == "" {
+					return fmt.Errorf("unknown column %q", c)
+				}
+			}
+			if err := validateFilter(p.RecordFilter, cols, 0); err != nil {
+				return err
+			}
+		}
+	}
+	own := map[string]bool{}
+	if sm := t.StateMachine; sm != nil {
+		if !statePattern.MatchString(sm.Initial) {
+			return errors.New("invalid initial state")
+		}
+		for _, c := range sm.Commands {
+			if !identifier.MatchString(c.Name) || commands[c.Name] || !statePattern.MatchString(c.To) || len(c.From) == 0 || len(c.AllowedRoles) == 0 {
+				return fmt.Errorf("invalid or duplicate command %q", c.Name)
+			}
+			commands[c.Name] = true
+			own[c.Name] = true
+			for _, st := range c.From {
+				if !statePattern.MatchString(st) {
+					return fmt.Errorf("invalid state in command %q", c.Name)
+				}
+			}
+			for _, r := range c.AllowedRoles {
+				if !roles[r] {
+					return fmt.Errorf("command %q allows undeclared role %q", c.Name, r)
+				}
+			}
+			if err := validateFilter(c.RecordFilter, cols, 0); err != nil {
+				return err
+			}
+		}
+	}
+	files := map[string]bool{}
+	for _, fk := range t.ForeignKeys {
+		if fk.References == "core.files" {
+			files[fk.Column] = true
+		}
+	}
+	for _, at := range t.Attachments {
+		if cols[at.Column] != "uuid" || !files[at.Column] {
+			return fmt.Errorf("attachment %q is not a core.files reference", at.Column)
+		}
+		for _, c := range at.RequireCleanOnCommands {
+			if !own[c] {
+				return fmt.Errorf("attachment %q names unknown command %q", at.Column, c)
+			}
+		}
+	}
+	return nil
+}
+
 // UsesCapability reports whether the application declares capability id.
 func (a *AppDefinition) UsesCapability(id string) bool {
 	return oneOf(id, a.Spec.Capabilities...)
 }
 
-// Table is the application's domain table, schema-qualified. Validate has
-// checked it is an identifier.
-func (a *AppDefinition) Table() string { return a.Spec.DomainTable.Name }
+// Table returns the application's table named name (schema-qualified), or
+// nil. Validate has checked every table name is an identifier.
+func (a *AppDefinition) Table(name string) *Table {
+	for i := range a.Spec.Tables {
+		if a.Spec.Tables[i].Name == name {
+			return &a.Spec.Tables[i]
+		}
+	}
+	return nil
+}
 
-// systemColumns are the operator-managed columns of the domain table, with
-// the manifest's type names; org_unit_id exists only with cap-hr.
-func systemColumns(a *AppDefinition) map[string]string {
-	cols := map[string]string{"id": "uuid", "created_by": "uuid", "status": "text", "version": "integer", "created_at": "timestamp", "updated_at": "timestamp"}
+// Command returns the command named name and the process table it belongs to.
+// Command names are unique within an application.
+func (a *AppDefinition) Command(name string) (*Table, *Command) {
+	for i := range a.Spec.Tables {
+		t := &a.Spec.Tables[i]
+		if t.StateMachine == nil {
+			continue
+		}
+		for j := range t.StateMachine.Commands {
+			if t.StateMachine.Commands[j].Name == name {
+				return t, &t.StateMachine.Commands[j]
+			}
+		}
+	}
+	return nil, nil
+}
+
+// systemColumns are the operator-managed columns of a table, with the
+// manifest's type names; org_unit_id exists only with cap-hr and status only
+// on a process table.
+func (a *AppDefinition) systemColumns(t *Table) map[string]string {
+	cols := map[string]string{"id": "uuid", "created_by": "uuid", "version": "integer", "created_at": "timestamp", "updated_at": "timestamp"}
+	if t.StateMachine != nil {
+		cols["status"] = "text"
+	}
 	if a.UsesCapability("cap-hr") {
 		cols["org_unit_id"] = "uuid"
 	}
 	return cols
 }
 
-// ColumnTypes maps every column of the domain table to its manifest type.
-func (a *AppDefinition) ColumnTypes() map[string]string {
-	cols := systemColumns(a)
-	for _, c := range a.Spec.DomainTable.Columns {
+// ColumnTypes maps every column of the table to its manifest type.
+func (a *AppDefinition) ColumnTypes(t *Table) map[string]string {
+	cols := a.systemColumns(t)
+	for _, c := range t.Columns {
 		cols[c.Name] = c.Type
 	}
 	return cols

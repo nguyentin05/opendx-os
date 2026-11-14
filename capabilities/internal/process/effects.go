@@ -64,7 +64,8 @@ func (e *Engine) ExecuteWorkItemEffect(ctx context.Context, actor *auth.Identity
 	if err != nil {
 		return "", err
 	}
-	if eventType != "command.committed" || entityType != a.Table() {
+	// The event must concern a process table the application still declares.
+	if table := a.Table(entityType); eventType != "command.committed" || table == nil || table.StateMachine == nil {
 		return "", ErrEffectDenied
 	}
 	var envelope struct {
@@ -109,7 +110,7 @@ func (e *Engine) ExecuteWorkItemEffect(ctx context.Context, actor *auth.Identity
 		return "", err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO cap_work.work_items(id,app_id,title,description,priority,assignee_id,source_type,source_id,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-		workID, app, effect.Fields.Title, effect.Fields.Description, effect.Fields.Priority, assignee, a.Table(), entityID, e.serviceUser); err != nil {
+		workID, app, effect.Fields.Title, effect.Fields.Description, effect.Fields.Priority, assignee, entityType, entityID, e.serviceUser); err != nil {
 		return "", err
 	}
 	result, _ := json.Marshal(map[string]string{"work_item_id": workID})

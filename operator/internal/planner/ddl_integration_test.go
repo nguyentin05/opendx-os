@@ -208,3 +208,63 @@ func TestDDLIntegrationLetsHasuraReadDepartmentTables(t *testing.T) {
 		t.Fatalf("dxos_hasura must read the department tables: %v", err)
 	}
 }
+
+// Tables of one application reference each other, and a plain table gets the
+// same stamping, versioning and audit as a process table, without a state.
+func TestDDLIntegrationSeveralTables(t *testing.T) {
+	db := testutil.NewDatabase(t)
+	installDomainTable(t, db, testutil.WithLabels(loadFixtureApp(t)))
+
+	var label, createdBy, orgUnit string
+	var version int
+	err := inTx(t, db, "dxos_hasura", alice, "", func(tx *sql.Tx) error {
+		return tx.QueryRow(`INSERT INTO domain.procurement_labels (title) VALUES ('Urgent')
+			RETURNING id, created_by, org_unit_id, version`).Scan(&label, &createdBy, &orgUnit, &version)
+	})
+	if err != nil {
+		t.Fatalf("insert a label: %v", err)
+	}
+	if createdBy != alice || orgUnit != deptA || version != 1 {
+		t.Fatalf("label stamped (%s, %s, %d), want (%s, %s, 1)", createdBy, orgUnit, version, alice, deptA)
+	}
+	var hasStatus bool
+	if err := db.QueryRow(`SELECT EXISTS (SELECT 1 FROM information_schema.columns
+		WHERE table_schema = 'domain' AND table_name = 'procurement_labels' AND column_name = 'status')`).Scan(&hasStatus); err != nil || hasStatus {
+		t.Fatalf("a plain table must have no status column (exists=%t, err=%v)", hasStatus, err)
+	}
+
+	err = inTx(t, db, "dxos_hasura", alice, "", func(tx *sql.Tx) error {
+		return tx.QueryRow(`UPDATE domain.procurement_labels SET title = 'Very urgent' WHERE id = $1 RETURNING version`, label).Scan(&version)
+	})
+	if err != nil || version != 2 {
+		t.Fatalf("update a label: version %d, err %v", version, err)
+	}
+
+	// A request references a label of the same application, and only an existing one.
+	var request string
+	err = inTx(t, db, "dxos_hasura", alice, "", func(tx *sql.Tx) error {
+		return tx.QueryRow(`INSERT INTO domain.procurement_requests (vendor_name, item_description, quoted_amount, label_id)
+			VALUES ('Acme', 'Pump', 100, $1) RETURNING id`, label).Scan(&request)
+	})
+	if err != nil {
+		t.Fatalf("insert a labelled request: %v", err)
+	}
+	err = inTx(t, db, "dxos_hasura", alice, "", func(tx *sql.Tx) error {
+		_, err := tx.Exec(`INSERT INTO domain.procurement_requests (vendor_name, item_description, quoted_amount, label_id)
+			VALUES ('Acme', 'Pump', 100, gen_random_uuid())`)
+		return err
+	})
+	if err == nil || !strings.Contains(err.Error(), "fk_procurement_requests_label_id") {
+		t.Fatalf("a request must not reference a missing label, got %v", err)
+	}
+
+	// Both tables write to the application's audit chain, each under its own entity type.
+	var entities string
+	if err := db.QueryRow(`SELECT string_agg(entity_type || ':' || action, ',' ORDER BY seq) FROM core.audit_logs WHERE chain = 'procurement'`).Scan(&entities); err != nil {
+		t.Fatal(err)
+	}
+	want := "domain.procurement_labels:INSERT,domain.procurement_labels:UPDATE,domain.procurement_requests:INSERT"
+	if entities != want {
+		t.Fatalf("audit chain = %s, want %s", entities, want)
+	}
+}

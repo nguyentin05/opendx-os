@@ -17,8 +17,8 @@ spec:
     - table: core.users
       roles: [role_timesheet_employee, role_timesheet_manager]
       columns: [id, display_name]
-  domainTable:
-    name: domain.timesheet_entries
+  tables:
+  - name: domain.timesheet_entries
     columns:
       - name: work_date
         type: date
@@ -27,40 +27,40 @@ spec:
         type: numeric(4,2)
         nullable: false
         check: "logged_hours > 0 AND logged_hours <= 24"
-  domainAccess:
-    select:
-      - role: role_timesheet_employee
-        scope: own
-        columns: [id, created_by, org_unit_id, work_date, logged_hours, status, version, updated_at]
-      - role: role_timesheet_manager
-        scope: department
-        columns: [id, created_by, org_unit_id, work_date, logged_hours, status, version, updated_at]
-    insert:
-      - role: role_timesheet_employee
-        columns: [work_date, logged_hours]
-    update:
-      - role: role_timesheet_employee
-        scope: own
-        columns: [work_date, logged_hours]
-  stateMachine:
-    initial: SUBMITTED
-    editableStates: [SUBMITTED]
-    terminalStates: [APPROVED, REJECTED]
-    commands:
-      - name: approve
-        from: [SUBMITTED]
-        to: APPROVED
-        allowedRoles: [role_timesheet_manager]
-        recordFilter:
-          created_by:
-            _neq: X-Hasura-User-Id
-      - name: reject
-        from: [SUBMITTED]
-        to: REJECTED
-        allowedRoles: [role_timesheet_manager]
-  uiSchema:
-    listColumns: [created_by, work_date, logged_hours, status, version, updated_at]
-    formFields:
-      - { name: work_date, label: "Work Date", type: date, required: true }
-      - { name: logged_hours, label: "Logged Hours (0-24)", type: number, required: true }
-    actions: [approve, reject]
+    access:
+      select:
+        - role: role_timesheet_employee
+          scope: own
+          columns: [id, created_by, org_unit_id, work_date, logged_hours, status, version, updated_at]
+        - role: role_timesheet_manager
+          scope: department
+          columns: [id, created_by, org_unit_id, work_date, logged_hours, status, version, updated_at]
+      insert:
+        - role: role_timesheet_employee
+          columns: [work_date, logged_hours]
+      update:
+        - role: role_timesheet_employee
+          scope: own
+          columns: [work_date, logged_hours]
+    stateMachine:
+      initial: SUBMITTED
+      editableStates: [SUBMITTED]
+      terminalStates: [APPROVED, REJECTED]
+      commands:
+        - name: approve
+          from: [SUBMITTED]
+          to: APPROVED
+          allowedRoles: [role_timesheet_manager]
+          recordFilter:
+            created_by:
+              _neq: X-Hasura-User-Id
+        - name: reject
+          from: [SUBMITTED]
+          to: REJECTED
+          allowedRoles: [role_timesheet_manager]
+    ui:
+      listColumns: [created_by, work_date, logged_hours, status, version, updated_at]
+      formFields:
+        - { name: work_date, label: "Work Date", type: date, required: true }
+        - { name: logged_hours, label: "Logged Hours (0-24)", type: number, required: true }
+      actions: [approve, reject]
