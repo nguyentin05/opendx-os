@@ -13,8 +13,10 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
--- Tier 1 Kernel Extension Registry: Pluggable H-P-D-I Capabilities
-CREATE TABLE IF NOT EXISTS core.capability_registry (
+-- Tier 1 registry of Tier 2 capabilities. Each capability's SQL file registers
+-- itself here when it is loaded (04_capabilities.sh). An application can only
+-- be installed when every capability it declares is enabled.
+CREATE TABLE IF NOT EXISTS core.capabilities (
     cap_id TEXT PRIMARY KEY CHECK (length(trim(cap_id)) > 0),
     display_name TEXT NOT NULL CHECK (length(trim(display_name)) > 0),
     category_hpdi TEXT NOT NULL CHECK (category_hpdi IN ('H', 'P', 'D', 'I')),

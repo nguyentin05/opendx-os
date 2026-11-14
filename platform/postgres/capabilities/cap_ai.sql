@@ -14,9 +14,9 @@
 -- limitations under the License.
 
 -- Tier 2 Pluggable Capability Schema: cap-ai ([I])
--- Manages: Clean File OCR Extraction, Workspace Policy Knowledge RAG
+-- Manages: OCR of clean files and policy knowledge RAG
 
 -- Register cap-ai in capability registry
-INSERT INTO core.capability_registry (cap_id, display_name, category_hpdi, base_route, enabled)
+INSERT INTO core.capabilities (cap_id, display_name, category_hpdi, base_route, enabled)
 VALUES ('cap-ai', 'AI OCR & Policy Knowledge RAG', 'I', '/api/cap/ai', true)
 ON CONFLICT (cap_id) DO UPDATE SET enabled = true, updated_at = now();
