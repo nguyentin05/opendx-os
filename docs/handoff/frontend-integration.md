@@ -1,5 +1,9 @@
 # Frontend API integration handoff
 
+> Superseded by [integrating the UI](../development/ui-integration.md). The text
+> below describes the integration branch of early November and no longer matches
+> the manifest shape, the token contents or the routes.
+
 Status: **partial handoff; App Shell discovery is blocked**. The integrated known-app
 APIs are qualified separately in [final evidence](integration-evidence.md). There
 is no authenticated frontend registry discovery API on this revision: the real

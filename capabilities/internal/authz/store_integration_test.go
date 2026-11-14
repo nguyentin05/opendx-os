@@ -165,5 +165,12 @@ INSERT INTO core.user_roles (user_id, role_name) VALUES
 		if got := strings.Join(names, ","); got != "role_auditor,role_cap_on,role_ready" {
 			t.Fatalf("grants = %s, want platform, enabled-capability and Ready-app roles only", got)
 		}
+		apps, err := store.Apps(ctx, []string{"ready_app", "gone_app", "missing_app"})
+		if err != nil || len(apps) != 1 || apps[0].AppID != "ready_app" || apps[0].DisplayName != "Ready" || string(apps[0].Spec) != "{}" {
+			t.Fatalf("apps = %+v %v, want the Ready application only", apps, err)
+		}
+		if apps, err := store.Apps(ctx, nil); err != nil || len(apps) != 0 {
+			t.Fatalf("no applications asked: %+v %v", apps, err)
+		}
 	})
 }

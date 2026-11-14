@@ -34,6 +34,13 @@ import (
 //	                  as it.
 //	GET /api/auth/me  The caller's identity and the roles they hold, so the UI
 //	                  can offer a role switcher. Routed through the gateway.
+//	GET /api/auth/apps
+//	                  The installed applications the caller holds a role in,
+//	                  each with the roles they hold there and its tables as
+//	                  declared in the manifest (columns, access rules, state
+//	                  machine, ui), so the UI can build its navigation, lists
+//	                  and forms. It grants nothing: Hasura and cap-process
+//	                  enforce access on every request.
 //	GET /healthz
 func Handler(r *Resolver) http.Handler {
 	mux := http.NewServeMux()
@@ -75,6 +82,49 @@ func Handler(r *Resolver) http.Handler {
 			"display_name": s.User.Name,
 			"roles":        s.Grants,
 		})
+	})
+	mux.HandleFunc("GET /api/auth/apps", func(w http.ResponseWriter, req *http.Request) {
+		s, ok := resolve(w, req, r)
+		if !ok {
+			return
+		}
+		held := map[string][]Grant{}
+		var ids []string
+		for _, g := range s.Grants {
+			if g.AppID == "" {
+				continue
+			}
+			if held[g.AppID] == nil {
+				ids = append(ids, g.AppID)
+			}
+			held[g.AppID] = append(held[g.AppID], g)
+		}
+		apps, err := r.store.Apps(req.Context(), ids)
+		if err != nil {
+			log.Printf("application lookup failed: %v", err)
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "registry unavailable"})
+			return
+		}
+		out := []map[string]any{}
+		for _, a := range apps {
+			var spec struct {
+				Capabilities []string        `json:"capabilities"`
+				Tables       json.RawMessage `json:"tables"`
+			}
+			// A definition stored before spec.tables has nothing the UI can show.
+			if json.Unmarshal(a.Spec, &spec) != nil || len(spec.Tables) == 0 {
+				continue
+			}
+			out = append(out, map[string]any{
+				"app_id":       a.AppID,
+				"display_name": a.DisplayName,
+				"version":      a.Version,
+				"capabilities": spec.Capabilities,
+				"roles":        held[a.AppID],
+				"tables":       spec.Tables,
+			})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"apps": out})
 	})
 	return mux
 }

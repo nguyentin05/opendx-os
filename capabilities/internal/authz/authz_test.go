@@ -21,6 +21,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,6 +46,21 @@ type fakeStore struct {
 	mirrors int
 	reads   int
 	err     error
+	apps    []App
+	asked   []string
+}
+
+func (f *fakeStore) Apps(_ context.Context, ids []string) ([]App, error) {
+	f.asked = ids
+	var out []App
+	for _, a := range f.apps {
+		for _, id := range ids {
+			if a.AppID == id {
+				out = append(out, a)
+			}
+		}
+	}
+	return out, f.err
 }
 
 func (f *fakeStore) Mirror(context.Context, auth.Principal) (string, error) {
@@ -165,5 +181,55 @@ func TestPrivilegedRoleNamesAreNeverGranted(t *testing.T) {
 	only := &fakeStore{status: "ACTIVE", grants: []Grant{{Role: "admin"}}}
 	if code, _ := call(t, Handler(NewResolver(&fakeAuthn{name: "Alice"}, only, time.Minute)), "/hasura", "good", ""); code != http.StatusUnauthorized {
 		t.Fatalf("single admin grant used implicitly: %d", code)
+	}
+}
+
+// The UI learns which applications to show, and their tables, from the
+// registry: only applications the caller holds a role in, with those roles.
+func TestAppsListsApplicationsOfHeldRoles(t *testing.T) {
+	store := &fakeStore{status: "ACTIVE",
+		grants: []Grant{
+			{Role: "role_review", AppID: "process_fixture"},
+			{Role: "role_review_lead", AppID: "process_fixture"},
+			{Role: "role_auditor"},
+			{Role: "role_old_user", AppID: "old_app"},
+		},
+		apps: []App{
+			{AppID: "process_fixture", DisplayName: "Review", Version: "0.2.0",
+				Spec: json.RawMessage(`{"capabilities":["cap-process"],"tables":[{"name":"domain.review_requests","ui":{"listColumns":["note"]}}],"workflows":[]}`)},
+			{AppID: "other_app", DisplayName: "Other", Version: "1", Spec: json.RawMessage(`{"tables":[{"name":"domain.other"}]}`)},
+			// Stored before spec.tables: nothing to show until it is reinstalled.
+			{AppID: "old_app", DisplayName: "Old", Version: "1", Spec: json.RawMessage(`{"domainTable":{"name":"domain.old"}}`)},
+		}}
+	h := Handler(NewResolver(&fakeAuthn{name: "Alice"}, store, time.Minute))
+	code, body := call(t, h, "/api/auth/apps", "good", "")
+	if code != http.StatusOK {
+		t.Fatalf("apps: %d %v", code, body)
+	}
+	if got := strings.Join(store.asked, ","); got != "process_fixture,old_app" {
+		t.Fatalf("asked the registry for %q, want only applications of held roles", got)
+	}
+	apps, _ := body["apps"].([]any)
+	if len(apps) != 1 {
+		t.Fatalf("apps = %v, want the one application with tables", body["apps"])
+	}
+	app := apps[0].(map[string]any)
+	roles, _ := app["roles"].([]any)
+	tables, _ := app["tables"].([]any)
+	if app["app_id"] != "process_fixture" || app["version"] != "0.2.0" || len(roles) != 2 || len(tables) != 1 ||
+		tables[0].(map[string]any)["name"] != "domain.review_requests" {
+		t.Fatalf("app = %v", app)
+	}
+	if _, leaked := app["workflows"]; leaked {
+		t.Fatal("only what the UI renders is returned")
+	}
+
+	if code, _ := call(t, h, "/api/auth/apps", "", ""); code != http.StatusUnauthorized {
+		t.Fatalf("without a token: %d, want 401", code)
+	}
+	none := Handler(NewResolver(&fakeAuthn{name: "Alice"}, &fakeStore{status: "ACTIVE", grants: []Grant{{Role: "role_auditor"}}}, time.Minute))
+	code, body = call(t, none, "/api/auth/apps", "good", "")
+	if list, ok := body["apps"].([]any); code != http.StatusOK || !ok || len(list) != 0 {
+		t.Fatalf("a caller without application roles: %d %v, want an empty list", code, body)
 	}
 }
