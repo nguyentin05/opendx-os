@@ -43,14 +43,14 @@ func TestParseValidManifest(t *testing.T) {
 	if app.Metadata.Name != "procurement" {
 		t.Fatalf("expected name procurement, got %s", app.Metadata.Name)
 	}
-	if app.Spec.DomainTable.Name != "domain.procurement_requests" {
-		t.Fatalf("unexpected domainTable: %s", app.Spec.DomainTable.Name)
+	if app.Spec.Tables[0].Name != "domain.procurement_requests" {
+		t.Fatalf("unexpected domainTable: %s", app.Spec.Tables[0].Name)
 	}
 	if got := app.RoleNames(); len(got) != 3 || got[1] != "role_procurement_manager" {
 		t.Fatalf("unexpected roles: %v", got)
 	}
-	if app.Spec.DomainAccess.Select[1].Scope != ScopeDepartment {
-		t.Fatalf("manager scope = %q, want department", app.Spec.DomainAccess.Select[1].Scope)
+	if app.Spec.Tables[0].Access.Select[1].Scope != ScopeDepartment {
+		t.Fatalf("manager scope = %q, want department", app.Spec.Tables[0].Access.Select[1].Scope)
 	}
 
 	// The spec stored in core.apps (JSON) parses back to the same manifest.

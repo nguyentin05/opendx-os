@@ -55,8 +55,8 @@ func (r *Runner) ReadManagedState(ctx context.Context) (planner.ManagedState, er
 		if err := rows.Scan(&appID, &displayName, &version, &specBytes); err != nil {
 			return planner.ManagedState{}, err
 		}
-		var spec manifest.AppSpec
-		if err := json.Unmarshal(specBytes, &spec); err != nil {
+		spec, err := manifest.DecodeStoredSpec(specBytes)
+		if err != nil {
 			return planner.ManagedState{}, fmt.Errorf("decode active spec for %s: %w", appID, err)
 		}
 		state.ActiveApps = append(state.ActiveApps, manifest.DXApplication{

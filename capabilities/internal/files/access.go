@@ -64,29 +64,32 @@ func (s *Service) readable(ctx context.Context, id *auth.Identity, file string) 
 		if e != nil {
 			return "", "", "", ErrDenied
 		}
-		for _, attachment := range a.Spec.Attachments {
-			rows, e := s.db.QueryContext(ctx, `SELECT to_jsonb(d) FROM `+a.Table()+` d WHERE `+attachment.Column+`=$1`, file)
-			if e != nil {
-				return "", "", "", ErrDenied
-			}
-			for rows.Next() && !allowed {
-				var raw []byte
-				if rows.Scan(&raw) != nil {
-					continue
+		for i := range a.Spec.Tables {
+			table := &a.Spec.Tables[i]
+			for _, attachment := range table.Attachments {
+				rows, e := s.db.QueryContext(ctx, `SELECT to_jsonb(d) FROM `+table.Name+` d WHERE `+attachment.Column+`=$1`, file)
+				if e != nil {
+					return "", "", "", ErrDenied
 				}
-				var row map[string]any
-				d := json.NewDecoder(bytes.NewReader(raw))
-				d.UseNumber()
-				if d.Decode(&row) != nil {
-					continue
+				for rows.Next() && !allowed {
+					var raw []byte
+					if rows.Scan(&raw) != nil {
+						continue
+					}
+					var row map[string]any
+					d := json.NewDecoder(bytes.NewReader(raw))
+					d.UseNumber()
+					if d.Decode(&row) != nil {
+						continue
+					}
+					ok, e := a.CanSee(table, viewer, row, attachment.Column)
+					allowed = e == nil && ok
 				}
-				ok, e := a.CanSee(viewer, row, attachment.Column)
-				allowed = e == nil && ok
-			}
-			e = rows.Err()
-			_ = rows.Close()
-			if e != nil {
-				return "", "", "", ErrDenied
+				e = rows.Err()
+				_ = rows.Close()
+				if e != nil {
+					return "", "", "", ErrDenied
+				}
 			}
 		}
 	}

@@ -29,24 +29,29 @@ type AppDefinition struct {
 }
 
 // Spec is the part of the manifest's spec that capability services act on.
-// Fields the services do not use (uiSchema, sharedAccess) are ignored.
+// Fields the services do not use (ui, sharedAccess) are ignored.
 type Spec struct {
-	Capabilities []string     `json:"capabilities"`
-	Roles        []Role       `json:"roles"`
-	DomainTable  DomainTable  `json:"domainTable"`
-	DomainAccess DomainAccess `json:"domainAccess"`
-	StateMachine StateMachine `json:"stateMachine"`
-	Attachments  []Attachment `json:"attachments"`
-	Workflows    []Workflow   `json:"workflows"`
+	Capabilities []string   `json:"capabilities"`
+	Roles        []Role     `json:"roles"`
+	Tables       []Table    `json:"tables"`
+	Workflows    []Workflow `json:"workflows"`
 }
+
 type Role struct {
 	Name string `json:"name"`
 }
-type DomainTable struct {
-	Name        string       `json:"name"`
-	Columns     []Column     `json:"columns"`
-	ForeignKeys []ForeignKey `json:"foreignKeys"`
+
+// Table is one domain table of the application (ADR 0008). A table with a
+// state machine is a process table: its commands run through cap-process.
+type Table struct {
+	Name         string        `json:"name"`
+	Columns      []Column      `json:"columns"`
+	ForeignKeys  []ForeignKey  `json:"foreignKeys"`
+	Access       Access        `json:"access"`
+	StateMachine *StateMachine `json:"stateMachine"`
+	Attachments  []Attachment  `json:"attachments"`
 }
+
 type Column struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
@@ -55,7 +60,7 @@ type ForeignKey struct {
 	Column     string `json:"column"`
 	References string `json:"references"`
 }
-type DomainAccess struct {
+type Access struct {
 	Select []Permission `json:"select"`
 	Insert []Permission `json:"insert"`
 	Update []Permission `json:"update"`

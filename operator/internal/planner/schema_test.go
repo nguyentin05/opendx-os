@@ -28,7 +28,7 @@ func liveFor(app *manifest.DXApplication) []LiveColumn {
 		{"status", "text", false}, {"version", "bigint", false},
 		{"created_at", "timestamp with time zone", false}, {"updated_at", "timestamp with time zone", false},
 	}
-	for _, c := range app.Spec.DomainTable.Columns {
+	for _, c := range app.Spec.Tables[0].Columns {
 		live = append(live, LiveColumn{c.Name, c.Type, c.Nullable})
 	}
 	return live
@@ -50,25 +50,25 @@ func TestDiffSchema(t *testing.T) {
 		{
 			name: "add nullable column", live: func() []LiveColumn { return liveFor(base) },
 			mutate: func(a *manifest.DXApplication) {
-				a.Spec.DomainTable.Columns = append(a.Spec.DomainTable.Columns, manifest.ColumnDef{Name: "note", Type: "text", Nullable: true})
+				a.Spec.Tables[0].Columns = append(a.Spec.Tables[0].Columns, manifest.ColumnDef{Name: "note", Type: "text", Nullable: true})
 			},
 			wantAdd: 1,
 		},
 		{
 			name: "add required column", live: func() []LiveColumn { return liveFor(base) },
 			mutate: func(a *manifest.DXApplication) {
-				a.Spec.DomainTable.Columns = append(a.Spec.DomainTable.Columns, manifest.ColumnDef{Name: "note", Type: "text"})
+				a.Spec.Tables[0].Columns = append(a.Spec.Tables[0].Columns, manifest.ColumnDef{Name: "note", Type: "text"})
 			},
 			wantErr: `"note" is NOT NULL`,
 		},
 		{
 			name: "nullability change", live: func() []LiveColumn { return liveFor(base) },
-			mutate:  func(a *manifest.DXApplication) { a.Spec.DomainTable.Columns[0].Nullable = true },
+			mutate:  func(a *manifest.DXApplication) { a.Spec.Tables[0].Columns[0].Nullable = true },
 			wantErr: "nullable=false, manifest declares nullable=true",
 		},
 		{
 			name: "type change", live: func() []LiveColumn { return liveFor(base) },
-			mutate:  func(a *manifest.DXApplication) { a.Spec.DomainTable.Columns[2].Type = "numeric(4,2)" },
+			mutate:  func(a *manifest.DXApplication) { a.Spec.Tables[0].Columns[2].Type = "numeric(4,2)" },
 			wantErr: "has type numeric(14,2), manifest declares numeric(4,2)",
 		},
 		{
@@ -104,12 +104,11 @@ func TestDiffSchema(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			app := *base
-			app.Spec.DomainTable.Columns = append([]manifest.ColumnDef(nil), base.Spec.DomainTable.Columns...)
+			app := *base.Clone()
 			if tc.mutate != nil {
 				tc.mutate(&app)
 			}
-			diff, err := DiffSchema(tc.live(), tc.states, &app)
+			diff, err := DiffSchema(tc.live(), tc.states, &app, &app.Spec.Tables[0])
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("want error containing %q, got %v", tc.wantErr, err)

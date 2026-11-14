@@ -18,7 +18,6 @@ package registry
 import (
 	"encoding/json"
 	"os"
-	"strings"
 	"testing"
 )
 
@@ -47,29 +46,37 @@ func TestDecodeReadyApplication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.Table() != "domain.procurement_requests" || len(a.Spec.Workflows) != 1 || len(a.Spec.Attachments) != 1 || a.Spec.StateMachine.Initial != "DRAFT" {
+	table := a.Table("domain.procurement_requests")
+	if table == nil || len(a.Spec.Workflows) != 1 || len(table.Attachments) != 1 || table.StateMachine.Initial != "DRAFT" {
 		t.Fatalf("incomplete definition: %+v", a)
 	}
-	if a.ColumnTypes()["org_unit_id"] != "uuid" || !a.UsesDepartmentScope("role_procurement_manager") || a.UsesDepartmentScope("role_procurement_finance") {
+	if owner, cmd := a.Command("approve_budget"); owner != table || cmd == nil || cmd.To != "APPROVED" {
+		t.Fatal("a command must resolve to its table")
+	}
+	if owner, cmd := a.Command("no_such_command"); owner != nil || cmd != nil {
+		t.Fatal("unknown command resolved")
+	}
+	if a.ColumnTypes(table)["org_unit_id"] != "uuid" || !a.usesDepartmentScope("role_procurement_manager") || a.usesDepartmentScope("role_procurement_finance") {
 		t.Fatal("cap-hr columns and scopes not recognized")
 	}
 }
 
 func TestRejectUnsafeDefinitions(t *testing.T) {
 	spec := func(m map[string]any) map[string]any { return m["spec"].(map[string]any) }
+	table := func(m map[string]any) map[string]any { return spec(m)["tables"].([]any)[0].(map[string]any) }
 	firstSelect := func(m map[string]any) map[string]any {
-		return spec(m)["domainAccess"].(map[string]any)["select"].([]any)[0].(map[string]any)
+		return table(m)["access"].(map[string]any)["select"].([]any)[0].(map[string]any)
 	}
 	for name, mutate := range map[string]func(map[string]any){
 		"table injection": func(m map[string]any) {
-			spec(m)["domainTable"].(map[string]any)["name"] = "domain.x;DROP TABLE core.users"
+			table(m)["name"] = "domain.x;DROP TABLE core.users"
 		},
-		"non-domain table": func(m map[string]any) { spec(m)["domainTable"].(map[string]any)["name"] = "core.users" },
+		"non-domain table": func(m map[string]any) { table(m)["name"] = "core.users" },
 		"column injection": func(m map[string]any) {
-			spec(m)["domainTable"].(map[string]any)["columns"].([]any)[0].(map[string]any)["name"] = "x = x OR true"
+			table(m)["columns"].([]any)[0].(map[string]any)["name"] = "x = x OR true"
 		},
 		"reserved column": func(m map[string]any) {
-			spec(m)["domainTable"].(map[string]any)["columns"].([]any)[0].(map[string]any)["name"] = "created_by"
+			table(m)["columns"].([]any)[0].(map[string]any)["name"] = "created_by"
 		},
 		"filter operator": func(m map[string]any) {
 			firstSelect(m)["recordFilter"] = map[string]any{"status": map[string]any{"_sql": "true"}}
@@ -87,7 +94,23 @@ func TestRejectUnsafeDefinitions(t *testing.T) {
 		},
 		"unknown scope":       func(m map[string]any) { firstSelect(m)["scope"] = "everyone" },
 		"department, no hr":   func(m map[string]any) { spec(m)["capabilities"] = []any{"cap-process", "cap-work"} },
-		"attachment not file": func(m map[string]any) { spec(m)["domainTable"].(map[string]any)["foreignKeys"] = []any{} },
+		"attachment not file": func(m map[string]any) { table(m)["foreignKeys"] = []any{} },
+		// Command names are unique within an application.
+		"same command on two tables": func(m map[string]any) {
+			second := map[string]any{}
+			raw, _ := json.Marshal(table(m))
+			_ = json.Unmarshal(raw, &second)
+			second["name"] = "domain.second_records"
+			spec(m)["tables"] = append(spec(m)["tables"].([]any), second)
+		},
+		"duplicate table": func(m map[string]any) {
+			spec(m)["tables"] = append(spec(m)["tables"].([]any), table(m))
+		},
+		// A row stored before spec.tables is refused until it is reinstalled.
+		"single-table shape": func(m map[string]any) {
+			spec(m)["domainTable"] = map[string]any{"name": table(m)["name"], "columns": table(m)["columns"]}
+			delete(spec(m), "tables")
+		},
 		"bad effect": func(m map[string]any) {
 			spec(m)["workflows"].([]any)[0].(map[string]any)["effects"].([]any)[0].(map[string]any)["kind"] = "run_sql"
 		},
@@ -105,6 +128,7 @@ func TestCanSeeAppliesScopeAndRecordFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	table := &a.Spec.Tables[0]
 	const alice, carol, deptA, deptB = "22222222-2222-4222-8222-222222222222", "44444444-4444-4444-8444-444444444444",
 		"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 	row := func(status string) map[string]any {
@@ -126,16 +150,13 @@ func TestCanSeeAppliesScopeAndRecordFilter(t *testing.T) {
 		{"finance, draft", Viewer{UserID: carol, Role: "role_procurement_finance"}, row("DRAFT"), false},
 		{"no rule for role", Viewer{UserID: alice, Role: "role_review"}, row("DRAFT"), false},
 	} {
-		got, err := a.CanSee(tc.v, tc.row, "")
+		got, err := a.CanSee(table, tc.v, tc.row, "")
 		if err != nil || got != tc.want {
 			t.Errorf("%s: got %v (%v), want %v", tc.name, got, err, tc.want)
 		}
 	}
 	// The attachment column must be among the rule's visible columns.
-	if ok, _ := a.CanSee(Viewer{UserID: alice, Role: "role_procurement_requester"}, row("DRAFT"), "not_a_column"); ok {
+	if ok, _ := a.CanSee(table, Viewer{UserID: alice, Role: "role_procurement_requester"}, row("DRAFT"), "not_a_column"); ok {
 		t.Error("a column the rule does not expose must not be readable")
-	}
-	if !strings.Contains(a.Table(), "procurement") {
-		t.Fatal(a.Table())
 	}
 }

@@ -7,9 +7,10 @@ services, and UI. Resolve relevant contract gaps before extending independent
 parsers or app packages.
 
 1. Create `apps/<app>/manifest.yaml`, `workflows/*.yaml`, and `knowledge/*.md`.
-   Declare capabilities, the roles the app owns, domain fields and foreign keys,
-   per-role access with a scope (own, department, organization), state machine,
-   attachment bindings, workflows, and UI metadata.
+   Declare capabilities, the roles the app owns, and its tables: for each one
+   the fields and foreign keys, per-role access with a scope (own, department,
+   organization), UI metadata, and for a process table its state machine and
+   attachment bindings. Declare workflows on the commands of those tables.
 2. Put thresholds and business handling in declared workflows. Map standard OT
    events to those flows; adding an app must not add an app-name branch to shared
    capabilities, UI, or bootstrap DDL.

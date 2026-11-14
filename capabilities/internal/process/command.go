@@ -80,12 +80,7 @@ func (e *Engine) Execute(ctx context.Context, id *auth.Identity, app, command, k
 	if err != nil {
 		return fail(503)
 	}
-	var cmd *registry.Command
-	for i := range a.Spec.StateMachine.Commands {
-		if a.Spec.StateMachine.Commands[i].Name == command {
-			cmd = &a.Spec.StateMachine.Commands[i]
-		}
-	}
+	table, cmd := a.Command(command)
 	if cmd == nil || !contains(cmd.AllowedRoles, id.Role) {
 		return fail(403)
 	}
@@ -101,7 +96,7 @@ func (e *Engine) Execute(ctx context.Context, id *auth.Identity, app, command, k
 	// Lock before checking current access and the receipt: a cached retry
 	// bypasses only a stale version or state, never a lost permission.
 	var raw []byte
-	err = tx.QueryRowContext(ctx, `SELECT to_jsonb(d) FROM `+a.Table()+` d WHERE id=$1 FOR UPDATE`, request.EntityID).Scan(&raw)
+	err = tx.QueryRowContext(ctx, `SELECT to_jsonb(d) FROM `+table.Name+` d WHERE id=$1 FOR UPDATE`, request.EntityID).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fail(404)
 	}
@@ -118,14 +113,14 @@ func (e *Engine) Execute(ctx context.Context, id *auth.Identity, app, command, k
 	if err != nil {
 		return fail(503)
 	}
-	readable, err := a.CanSee(viewer, row, "")
+	readable, err := a.CanSee(table, viewer, row, "")
 	if err != nil {
 		return fail(503)
 	}
 	if !readable {
 		return fail(404)
 	}
-	ok, err := registry.Matches(cmd.RecordFilter, row, user, a.ColumnTypes())
+	ok, err := registry.Matches(cmd.RecordFilter, row, user, a.ColumnTypes(table))
 	if err != nil {
 		return fail(503)
 	}
@@ -159,7 +154,7 @@ func (e *Engine) Execute(ctx context.Context, id *auth.Identity, app, command, k
 	if current.Version != req.ExpectedVersion || !contains(cmd.From, current.Status) {
 		return fail(409)
 	}
-	for _, att := range a.Spec.Attachments {
+	for _, att := range table.Attachments {
 		if !contains(att.RequireCleanOnCommands, command) {
 			continue
 		}
@@ -183,7 +178,7 @@ func (e *Engine) Execute(ctx context.Context, id *auth.Identity, app, command, k
 		return fail(503)
 	}
 	resp := &CommandResponse{EntityID: request.EntityID, Status: cmd.To, ExecutedAt: time.Now().UTC()}
-	err = tx.QueryRowContext(ctx, `UPDATE `+a.Table()+` SET status=$1 WHERE id=$2 RETURNING version`, cmd.To, request.EntityID).Scan(&resp.Version)
+	err = tx.QueryRowContext(ctx, `UPDATE `+table.Name+` SET status=$1 WHERE id=$2 RETURNING version`, cmd.To, request.EntityID).Scan(&resp.Version)
 	if err != nil {
 		return fail(503)
 	}
@@ -191,8 +186,8 @@ func (e *Engine) Execute(ctx context.Context, id *auth.Identity, app, command, k
 	if err != nil {
 		return fail(503)
 	}
-	event, _ := json.Marshal(map[string]any{"event_id": eventID, "event_type": "command.committed", "app_id": app, "entity_type": a.Table(), "entity_id": request.EntityID, "entity_version": resp.Version, "payload": map[string]any{"command": command, "actor_id": user, "acting_role": id.Role, "from_status": current.Status, "to_status": cmd.To, "executed_at": resp.ExecutedAt}})
-	if _, err = tx.ExecContext(ctx, `INSERT INTO core.outbox_events(id,app_id,event_type,entity_type,entity_id,entity_version,payload) VALUES($1,$2,'command.committed',$3,$4,$5,$6::jsonb)`, eventID, app, a.Table(), request.EntityID, resp.Version, string(event)); err != nil {
+	event, _ := json.Marshal(map[string]any{"event_id": eventID, "event_type": "command.committed", "app_id": app, "entity_type": table.Name, "entity_id": request.EntityID, "entity_version": resp.Version, "payload": map[string]any{"command": command, "actor_id": user, "acting_role": id.Role, "from_status": current.Status, "to_status": cmd.To, "executed_at": resp.ExecutedAt}})
+	if _, err = tx.ExecContext(ctx, `INSERT INTO core.outbox_events(id,app_id,event_type,entity_type,entity_id,entity_version,payload) VALUES($1,$2,'command.committed',$3,$4,$5,$6::jsonb)`, eventID, app, table.Name, request.EntityID, resp.Version, string(event)); err != nil {
 		return fail(503)
 	}
 	body, _ = json.Marshal(resp)

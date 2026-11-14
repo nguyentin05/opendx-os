@@ -238,3 +238,52 @@ func purchase(t *testing.T, p *testutil.Platform, owner, quote string) string {
 	}
 	return p.Insert(t, owner, "role_procurement_requester", values)
 }
+
+// An application has several tables (ADR 0008). A command belongs to the table
+// that declares it: it finds its record there, changes only that table, and its
+// audit row and event name that table.
+func TestCommandRunsOnTheTableThatDeclaresIt(t *testing.T) {
+	o := newOrg(t)
+	twins := o.p.AddTwin(t)
+	submit, approve := testutil.TwinPrefix+"submit", testutil.TwinPrefix+"approve"
+
+	first := o.request(t, o.alice)
+	second := o.p.InsertInto(t, twins, o.alice, "role_procurement_requester", map[string]any{
+		"vendor_name": "Acme", "item_description": "Laptop", "quoted_amount": 1200, "quote_file_id": o.p.File(t, o.alice, "CLEAN"),
+	})
+
+	// A record of one table is unknown to a command of the other.
+	if _, s := o.run(o.alice, "role_procurement_requester", "submit", second, "k1", 1); s != 404 {
+		t.Fatalf("first table's command on the twin's record: %d, want 404", s)
+	}
+	if _, s := o.run(o.alice, "role_procurement_requester", submit, first, "k2", 1); s != 404 {
+		t.Fatalf("twin's command on the first table's record: %d, want 404", s)
+	}
+
+	resp, s := o.run(o.alice, "role_procurement_requester", submit, second, "k3", 1)
+	if s != 200 || resp.Status != "SUBMITTED" || resp.Version != 2 {
+		t.Fatalf("submit on the twin: %d %+v", s, resp)
+	}
+	// Scopes and filters are those of the twin: the department manager approves,
+	// another department's manager does not see the record.
+	if _, s := o.run(o.dan, "role_procurement_manager", approve, second, "k4", 2); s != 404 {
+		t.Fatalf("other department on the twin: %d, want 404", s)
+	}
+	if resp, s := o.run(o.carol, "role_procurement_manager", approve, second, "k5", 2); s != 200 || resp.Status != "BUDGET_REVIEW" {
+		t.Fatalf("approve on the twin: %d %+v", s, resp)
+	}
+
+	var status string
+	if err := o.p.Admin.QueryRow(`SELECT status FROM `+o.p.Table+` WHERE id = $1`, first).Scan(&status); err != nil || status != "DRAFT" {
+		t.Fatalf("the first table's record must be untouched: %s %v", status, err)
+	}
+	if n := o.count(t, `SELECT count(*) FROM core.outbox_events WHERE entity_type = $1 AND entity_id = $2`, twins, second); n != 2 {
+		t.Fatalf("events naming the twin table: %d, want 2", n)
+	}
+	if n := o.count(t, `SELECT count(*) FROM core.outbox_events WHERE entity_type = $1`, o.p.Table); n != 0 {
+		t.Fatalf("events naming the first table: %d, want 0", n)
+	}
+	if n := o.count(t, `SELECT count(*) FROM core.audit_logs WHERE entity_type = $1 AND entity_id = $2 AND action IN ($3, $4)`, twins, second, submit, approve); n != 2 {
+		t.Fatalf("audit rows of the twin's commands: %d, want 2", n)
+	}
+}

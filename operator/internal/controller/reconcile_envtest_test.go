@@ -160,7 +160,7 @@ func TestReconcileLifecycle(t *testing.T) {
 	// 2. Breaking schema change: blocked, previous version keeps serving.
 	latest := get(cr.Name)
 	latest.Spec.Version = "0.3.0"
-	latest.Spec.DomainTable.Columns[0].Nullable = !latest.Spec.DomainTable.Columns[0].Nullable
+	latest.Spec.Tables[0].Columns[0].Nullable = !latest.Spec.Tables[0].Columns[0].Nullable
 	if err := k8s.Update(ctx, latest); err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestReconcileLifecycle(t *testing.T) {
 	// Revert: Ready again.
 	latest = get(cr.Name)
 	latest.Spec.Version = "0.2.0"
-	latest.Spec.DomainTable.Columns[0].Nullable = !latest.Spec.DomainTable.Columns[0].Nullable
+	latest.Spec.Tables[0].Columns[0].Nullable = !latest.Spec.Tables[0].Columns[0].Nullable
 	if err := k8s.Update(ctx, latest); err != nil {
 		t.Fatal(err)
 	}

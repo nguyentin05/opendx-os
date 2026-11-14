@@ -16,6 +16,12 @@
 // Package manifest defines, parses, and validates C0 v1 application manifests.
 package manifest
 
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+)
+
 // DXApplication defines the root C0 v1 manifest structure.
 type DXApplication struct {
 	APIVersion string      `yaml:"apiVersion" json:"apiVersion"`
@@ -41,12 +47,52 @@ type AppSpec struct {
 	// may declare or use them.
 	Roles        []RoleDef         `yaml:"roles" json:"roles"`
 	SharedAccess []SharedAccessDef `yaml:"sharedAccess,omitempty" json:"sharedAccess,omitempty"`
-	DomainTable  DomainTableDef    `yaml:"domainTable" json:"domainTable"`
-	DomainAccess DomainAccessDef   `yaml:"domainAccess" json:"domainAccess"`
-	StateMachine StateMachineDef   `yaml:"stateMachine" json:"stateMachine"`
-	Attachments  []AttachmentDef   `yaml:"attachments,omitempty" json:"attachments,omitempty"`
-	Workflows    []WorkflowDef     `yaml:"workflows,omitempty" json:"workflows,omitempty"`
-	UISchema     UISchemaDef       `yaml:"uiSchema" json:"uiSchema"`
+	// Tables are the application's domain tables (ADR 0008). A table with a
+	// state machine is a process table; one without is a plain table.
+	Tables    []TableDef    `yaml:"tables" json:"tables"`
+	Workflows []WorkflowDef `yaml:"workflows,omitempty" json:"workflows,omitempty"`
+}
+
+// TableDef declares one domain table with its access rules, lifecycle and UI.
+type TableDef struct {
+	Name        string          `yaml:"name" json:"name"`
+	Columns     []ColumnDef     `yaml:"columns" json:"columns"`
+	ForeignKeys []ForeignKeyDef `yaml:"foreignKeys,omitempty" json:"foreignKeys,omitempty"`
+	Access      AccessDef       `yaml:"access" json:"access"`
+	// StateMachine makes the table a process table: records carry a status that
+	// only cap-process commands change.
+	StateMachine *StateMachineDef `yaml:"stateMachine,omitempty" json:"stateMachine,omitempty"`
+	Attachments  []AttachmentDef  `yaml:"attachments,omitempty" json:"attachments,omitempty"`
+	UI           UISchemaDef      `yaml:"ui" json:"ui"`
+}
+
+// Clone returns a deep copy, so a caller can change one application's tables
+// without touching another's.
+func (app *DXApplication) Clone() *DXApplication {
+	raw, err := json.Marshal(app)
+	if err != nil {
+		panic(fmt.Sprintf("clone manifest: %v", err)) // Manifests hold only JSON values.
+	}
+	out := new(DXApplication)
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	if err := dec.Decode(out); err != nil {
+		panic(fmt.Sprintf("clone manifest: %v", err))
+	}
+	return out
+}
+
+// IsProcess reports whether the table has a state machine.
+func (t *TableDef) IsProcess() bool { return t.StateMachine != nil }
+
+// Table returns the application's table with the given name, or nil.
+func (app *DXApplication) Table(name string) *TableDef {
+	for i := range app.Spec.Tables {
+		if app.Spec.Tables[i].Name == name {
+			return &app.Spec.Tables[i]
+		}
+	}
+	return nil
 }
 
 // RoleDef declares one application role (core.roles).
@@ -63,13 +109,6 @@ type SharedAccessDef struct {
 	Columns []string `yaml:"columns" json:"columns"`
 }
 
-// DomainTableDef defines the domain table specification.
-type DomainTableDef struct {
-	Name        string          `yaml:"name" json:"name"`
-	Columns     []ColumnDef     `yaml:"columns" json:"columns"`
-	ForeignKeys []ForeignKeyDef `yaml:"foreignKeys,omitempty" json:"foreignKeys,omitempty"`
-}
-
 // ColumnDef defines a business column in a domain table.
 type ColumnDef struct {
 	Name     string `yaml:"name" json:"name"`
@@ -78,14 +117,15 @@ type ColumnDef struct {
 	Check    string `yaml:"check,omitempty" json:"check,omitempty"`
 }
 
-// ForeignKeyDef links a business uuid column to the id of a shared table.
+// ForeignKeyDef links a business uuid column to the id of a shared table or of
+// another table of the same application.
 type ForeignKeyDef struct {
 	Column     string `yaml:"column" json:"column"`
 	References string `yaml:"references" json:"references"`
 }
 
-// DomainAccessDef defines CRUD permissions on the domain table.
-type DomainAccessDef struct {
+// AccessDef defines the permissions on one domain table.
+type AccessDef struct {
 	Select []AccessRule `yaml:"select" json:"select"`
 	Insert []AccessRule `yaml:"insert" json:"insert"`
 	Update []AccessRule `yaml:"update,omitempty" json:"update,omitempty"`
@@ -113,7 +153,7 @@ type AccessRule struct {
 	Presets      map[string]string `yaml:"presets,omitempty" json:"presets,omitempty"`
 }
 
-// StateMachineDef defines allowed states and transitions.
+// StateMachineDef defines allowed states and transitions of a process table.
 type StateMachineDef struct {
 	Initial        string       `yaml:"initial" json:"initial"`
 	EditableStates []string     `yaml:"editableStates" json:"editableStates"`
@@ -161,11 +201,11 @@ type EffectFieldsDef struct {
 	AssigneeID  string `yaml:"assigneeId,omitempty" json:"assigneeId,omitempty"`
 }
 
-// UISchemaDef defines the schema-driven UI metadata.
+// UISchemaDef defines the schema-driven UI metadata of one table.
 type UISchemaDef struct {
 	ListColumns []string       `yaml:"listColumns" json:"listColumns"`
 	FormFields  []FormFieldDef `yaml:"formFields" json:"formFields"`
-	Actions     []string       `yaml:"actions" json:"actions"`
+	Actions     []string       `yaml:"actions,omitempty" json:"actions,omitempty"`
 }
 
 // FormFieldDef defines a form input field in the dynamic UI shell.

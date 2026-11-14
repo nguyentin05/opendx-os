@@ -170,8 +170,8 @@ demo() {
     done
 
     local table role
-    table="$(kc get dxapplication "$name" -o jsonpath='{.spec.domainTable.name}')"
-    role="$(kc get dxapplication "$name" -o jsonpath='{.spec.domainAccess.insert[0].role}')"
+    table="$(kc get dxapplication "$name" -o jsonpath='{.spec.tables[0].name}')"
+    role="$(kc get dxapplication "$name" -o jsonpath='{.spec.tables[0].access.insert[0].role}')"
     log "simulating drift: dropping insert permission of ${role} on ${table}"
     hasura_metadata "$admin" "{\"type\":\"pg_drop_insert_permission\",\"args\":{\"source\":\"default\",\"table\":{\"schema\":\"${table%%.*}\",\"name\":\"${table#*.}\"},\"role\":\"${role}\"}}" >/dev/null
     local deadline=$((SECONDS + 120))

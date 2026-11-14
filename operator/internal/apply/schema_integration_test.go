@@ -76,10 +76,9 @@ func TestApplyConvergesAdditiveSchemaAndRefusesBreakingChanges(t *testing.T) {
 	}
 
 	// v2 adds a nullable column: converged with ALTER TABLE and published.
-	v2 := *v1
+	v2 := *v1.Clone()
 	v2.Metadata.Version = "0.3.0"
-	v2.Spec.DomainTable.Columns = append(append([]manifest.ColumnDef(nil), v1.Spec.DomainTable.Columns...),
-		manifest.ColumnDef{Name: "note", Type: "text", Nullable: true})
+	v2.Spec.Tables[0].Columns = append(v2.Spec.Tables[0].Columns, manifest.ColumnDef{Name: "note", Type: "text", Nullable: true})
 	if err := apply(v2, planner.ManagedState{ActiveApps: []manifest.DXApplication{*v1}}); err != nil {
 		t.Fatalf("v2: %v", err)
 	}
@@ -91,10 +90,9 @@ func TestApplyConvergesAdditiveSchemaAndRefusesBreakingChanges(t *testing.T) {
 	}
 
 	// v3 makes a column optional: not convergeable, blocked before any side effect.
-	v3 := v2
+	v3 := *v2.Clone()
 	v3.Metadata.Version = "0.4.0"
-	v3.Spec.DomainTable.Columns = append([]manifest.ColumnDef(nil), v2.Spec.DomainTable.Columns...)
-	v3.Spec.DomainTable.Columns[0].Nullable = true
+	v3.Spec.Tables[0].Columns[0].Nullable = true
 	before := metadataCalls.Load()
 	err = apply(v3, planner.ManagedState{ActiveApps: []manifest.DXApplication{v2}})
 	if err == nil || !strings.Contains(err.Error(), "cannot be converged") {
@@ -149,13 +147,12 @@ func TestApplyRefusesRemovingAStateStillInUse(t *testing.T) {
 	}
 
 	// v2 drops the initial state OPEN, which the record above still uses.
-	v2 := *app
+	v2 := *app.Clone()
 	v2.Metadata.Version = "0.3.0"
-	v2.Spec.StateMachine.Initial = "DRAFT"
-	v2.Spec.StateMachine.EditableStates = []string{"DRAFT"}
-	v2.Spec.StateMachine.Commands = append([]manifest.CommandDef(nil), app.Spec.StateMachine.Commands...)
-	v2.Spec.StateMachine.Commands[0].From = []string{"DRAFT"}
-	v2.Spec.StateMachine.Commands[3].From = []string{"DRAFT", "IN_REVIEW"}
+	v2.Spec.Tables[0].StateMachine.Initial = "DRAFT"
+	v2.Spec.Tables[0].StateMachine.EditableStates = []string{"DRAFT"}
+	v2.Spec.Tables[0].StateMachine.Commands[0].From = []string{"DRAFT"}
+	v2.Spec.Tables[0].StateMachine.Commands[3].From = []string{"DRAFT", "IN_REVIEW"}
 	plan2, err := planner.BuildPlan([]manifest.DXApplication{v2}, planner.ManagedState{ActiveApps: []manifest.DXApplication{*app}})
 	if err != nil {
 		t.Fatal(err)

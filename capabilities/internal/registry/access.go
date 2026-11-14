@@ -47,12 +47,12 @@ func InScope(scope string, row map[string]any, v Viewer) bool {
 	}
 }
 
-// CanSee reports whether one of the select rules for v.Role admits row: its
-// scope and its record filter both hold. With column set, the rule must also
-// expose that column.
-func (a *AppDefinition) CanSee(v Viewer, row map[string]any, column string) (bool, error) {
-	types := a.ColumnTypes()
-	for _, p := range a.Spec.DomainAccess.Select {
+// CanSee reports whether one of the table's select rules for v.Role admits
+// row: its scope and its record filter both hold. With column set, the rule
+// must also expose that column.
+func (a *AppDefinition) CanSee(t *Table, v Viewer, row map[string]any, column string) (bool, error) {
+	types := a.ColumnTypes(t)
+	for _, p := range t.Access.Select {
 		if p.Role != v.Role || (column != "" && !oneOf(column, p.Columns...)) || !InScope(p.Scope, row, v) {
 			continue
 		}
@@ -67,12 +67,14 @@ func (a *AppDefinition) CanSee(v Viewer, row map[string]any, column string) (boo
 	return false, nil
 }
 
-// UsesDepartmentScope reports whether a select rule for role is department
-// scoped, so the caller's department must be looked up.
-func (a *AppDefinition) UsesDepartmentScope(role string) bool {
-	for _, p := range a.Spec.DomainAccess.Select {
-		if p.Role == role && p.Scope == ScopeDepartment {
-			return true
+// usesDepartmentScope reports whether a select rule for role on any table is
+// department scoped, so the caller's department must be looked up.
+func (a *AppDefinition) usesDepartmentScope(role string) bool {
+	for i := range a.Spec.Tables {
+		for _, p := range a.Spec.Tables[i].Access.Select {
+			if p.Role == role && p.Scope == ScopeDepartment {
+				return true
+			}
 		}
 	}
 	return false
@@ -80,10 +82,13 @@ func (a *AppDefinition) UsesDepartmentScope(role string) bool {
 
 // HasRole reports whether role belongs to any access rule of the application.
 func (a *AppDefinition) HasRole(role string) bool {
-	for _, rules := range [][]Permission{a.Spec.DomainAccess.Select, a.Spec.DomainAccess.Insert, a.Spec.DomainAccess.Update} {
-		for _, p := range rules {
-			if p.Role == role {
-				return true
+	for i := range a.Spec.Tables {
+		acc := a.Spec.Tables[i].Access
+		for _, rules := range [][]Permission{acc.Select, acc.Insert, acc.Update} {
+			for _, p := range rules {
+				if p.Role == role {
+					return true
+				}
 			}
 		}
 	}
@@ -98,7 +103,7 @@ type rowQuerier interface {
 // department only when a rule for role needs it.
 func (a *AppDefinition) Viewer(ctx context.Context, q rowQuerier, userID, role string) (Viewer, error) {
 	v := Viewer{UserID: userID, Role: role}
-	if !a.UsesDepartmentScope(role) {
+	if !a.usesDepartmentScope(role) {
 		return v, nil
 	}
 	err := q.QueryRowContext(ctx, `SELECT org_unit_id::text FROM cap_hr.staff WHERE user_id = $1`, userID).Scan(&v.OrgUnit)

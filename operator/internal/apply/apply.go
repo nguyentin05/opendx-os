@@ -128,21 +128,26 @@ func (r *Runner) Run(ctx context.Context, plan planner.Plan, targets []string) e
 			if err := checkRegistry(ctx, r.db, app); err != nil {
 				return markFailed(err)
 			}
-			live, err := r.liveColumns(ctx, app.Spec.DomainTable.Name)
-			if err != nil {
-				return markFailed(err)
-			}
-			var states []string
-			if hasColumn(live, "status") {
-				if states, err = r.statesInUse(ctx, app.Spec.DomainTable.Name); err != nil {
+			var alter strings.Builder
+			for t := range app.Spec.Tables {
+				tbl := &app.Spec.Tables[t]
+				live, err := r.liveColumns(ctx, tbl.Name)
+				if err != nil {
 					return markFailed(err)
 				}
+				var states []string
+				if hasColumn(live, "status") {
+					if states, err = r.statesInUse(ctx, tbl.Name); err != nil {
+						return markFailed(err)
+					}
+				}
+				diff, err := planner.DiffSchema(live, states, app, tbl)
+				if err != nil {
+					return markFailed(err)
+				}
+				alter.WriteString(diff.DDL(tbl.Name))
 			}
-			diff, err := planner.DiffSchema(live, states, app)
-			if err != nil {
-				return markFailed(err)
-			}
-			alterDDL[app.Metadata.Name] = diff.DDL(app.Spec.DomainTable.Name)
+			alterDDL[app.Metadata.Name] = alter.String()
 		}
 	}
 

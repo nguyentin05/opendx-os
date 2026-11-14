@@ -9,10 +9,10 @@ identity and authorization follow
 | --- | --- |
 | `runtime-v1.openapi.yaml` | cap-process HTTP boundary: commands, workflow effects, file upload and download |
 | `events-v1.schema.json` | the `command.committed` event envelope |
-| `manifest-v1.schema.json` | structural schema of the application manifest, derived from the `DXApplication` CRD; the operator's validator enforces the semantic rules ([data contracts, section 7](../docs/contracts/data-contracts.md#7-dxapplication-manifest-contract)) |
+| `manifest-v1.schema.json` | structural schema of the application manifest, generated from the `DXApplication` CRD by `scripts/gen-manifest-schema.py`; the operator's validator enforces the semantic rules ([data contracts, section 7](../docs/contracts/data-contracts.md#7-dxapplication-manifest-contract)) |
 | `fixtures/procurement.yaml` | equals `apps/procurement/manifest.yaml` |
 | `fixtures/app-ready.json` | its `core.apps` row (status `Ready`), as cap-process reads it |
-| `fixtures/procurement-ddl.sql` | its domain-table DDL as the operator generates it; capability integration tests install it, and an operator test fails when it is stale |
+| `fixtures/procurement-ddl.sql` | the DDL of its domain tables as the operator generates it; capability integration tests install it, and an operator test fails when it is stale |
 
 ## Runtime rules the services enforce
 
@@ -21,9 +21,12 @@ The operator validates the whole manifest before an application becomes
 enabled, and re-checks what reaches SQL or decides access, failing closed on a
 corrupted row:
 
-- the domain table is `domain.<identifier>`; columns are identifiers with a
-  supported type and never redefine system columns (`id`, `created_by`,
-  `org_unit_id` with cap-hr, `status`, `version`, `created_at`, `updated_at`);
+- every table is `domain.<identifier>`, declared once; columns are identifiers
+  with a supported type and never redefine system columns (`id`, `created_by`,
+  `org_unit_id` with cap-hr, `status` on a process table, `version`,
+  `created_at`, `updated_at`);
+- a command name is declared by exactly one table, and the command runs on that
+  table;
 - every access rule and command names a declared role; a scope is `own`,
   `department` (requires cap-hr) or `organization`;
 - `recordFilter` uses only `_and`, `_or` and declared columns compared by

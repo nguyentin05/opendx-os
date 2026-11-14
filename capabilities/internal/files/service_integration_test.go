@@ -378,3 +378,38 @@ func TestCannotAttachSomeoneElsesFile(t *testing.T) {
 		t.Fatalf("alice attaching her own file: %v", err)
 	}
 }
+
+// A file attached to a record of any table of the application follows that
+// record's access rules.
+func TestAttachedReadableAccessOnAnotherTable(t *testing.T) {
+	s, _, id, _, _ := fileFixture(t)
+	p := platforms[id]
+	twins := p.AddTwin(t)
+	f := upload(t, s, id)
+	if e := s.ScanPending(context.Background(), 10); e != nil {
+		t.Fatal(e)
+	}
+	var deptA string
+	if e := p.Admin.QueryRow(`SELECT org_unit_id::text FROM cap_hr.staff WHERE user_id = $1`, id.UserID).Scan(&deptA); e != nil {
+		t.Fatal(e)
+	}
+	carol := &auth.Identity{UserID: p.User(t, "carol", deptA, "role_procurement_manager"), Role: "role_procurement_manager"}
+	dan := &auth.Identity{UserID: p.User(t, "dan", p.OrgUnit(t, "B"), "role_procurement_manager"), Role: "role_procurement_manager"}
+	can := func(who *auth.Identity) bool {
+		r, e := s.Download(context.Background(), who, f.ID)
+		if e == nil {
+			_ = r.Close()
+		}
+		return e == nil
+	}
+	entity := p.InsertInto(t, twins, id.UserID, id.Role, map[string]any{
+		"vendor_name": "Acme", "item_description": "Laptop", "quoted_amount": 1200, "quote_file_id": f.ID,
+	})
+	if can(carol) {
+		t.Fatal("a draft's quote must stay private to the requester")
+	}
+	p.SetStatusIn(t, twins, entity, id.UserID, "SUBMITTED")
+	if !can(carol) || can(dan) {
+		t.Fatalf("submitted: carol %v, dan %v; want true, false", can(carol), can(dan))
+	}
+}

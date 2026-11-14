@@ -56,15 +56,14 @@ func TestInSync(t *testing.T) {
 		}
 	}
 
-	upgraded := *app
+	upgraded := *app.Clone()
 	upgraded.Metadata.Version = "0.3.0"
 	if inSync(&upgraded, ready) {
 		t.Fatal("a version change must trigger reconcile")
 	}
 
-	changed := *app
-	changed.Spec.DomainTable.Columns = append([]manifest.ColumnDef(nil), app.Spec.DomainTable.Columns...)
-	changed.Spec.DomainTable.Columns[0].Nullable = !changed.Spec.DomainTable.Columns[0].Nullable
+	changed := *app.Clone()
+	changed.Spec.Tables[0].Columns[0].Nullable = !changed.Spec.Tables[0].Columns[0].Nullable
 	if inSync(&changed, ready) {
 		t.Fatal("a spec change at the same version must trigger reconcile")
 	}
