@@ -28,6 +28,7 @@ import (
 	"github.com/opendx-os/opendx-os/capabilities/internal/testutil"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -345,4 +346,35 @@ func purchase(t *testing.T, p *testutil.Platform, owner, quote string) string {
 		values["quote_file_id"] = quote
 	}
 	return p.Insert(t, owner, "role_procurement_requester", values)
+}
+
+// QA finding: a requester must not attach a file someone else uploaded (and so
+// gain read access to it, or submit it as their own quote).
+func TestCannotAttachSomeoneElsesFile(t *testing.T) {
+	s, _, alice, _, _ := fileFixture(t)
+	p := platforms[alice]
+	f := upload(t, s, alice)
+	if e := s.ScanPending(context.Background(), 10); e != nil {
+		t.Fatal(e)
+	}
+	bob := &auth.Identity{UserID: p.User(t, "bob", p.OrgUnit(t, "B"), "role_procurement_requester"), Role: "role_procurement_requester"}
+	if _, err := p.TryInsert(bob.UserID, bob.Role, map[string]any{"vendor_name": "Acme", "item_description": "Laptop", "quoted_amount": 1200, "quote_file_id": f.ID}); err == nil || !strings.Contains(err.Error(), "only a file you uploaded") {
+		t.Fatalf("bob attached alice's file: %v", err)
+	}
+	// Nor by moving an existing record onto it.
+	own := purchase(t, p, bob.UserID, "")
+	if _, err := p.Admin.Exec(`DO $$ BEGIN
+	  SET LOCAL SESSION AUTHORIZATION dxos_hasura;
+	  PERFORM set_config('hasura.user', json_build_object('x-hasura-user-id', '` + bob.UserID + `', 'x-hasura-role', 'role_procurement_requester')::text, true);
+	  UPDATE ` + p.Table + ` SET quote_file_id = '` + f.ID + `' WHERE id = '` + own + `';
+	END $$`); err == nil || !strings.Contains(err.Error(), "only a file you uploaded") {
+		t.Fatalf("bob re-pointed his request at alice's file: %v", err)
+	}
+	if _, err := s.Download(context.Background(), bob, f.ID); !errors.Is(err, ErrDenied) {
+		t.Fatalf("bob downloads alice's file: %v", err)
+	}
+	// Alice attaches her own file.
+	if _, err := p.TryInsert(alice.UserID, alice.Role, map[string]any{"vendor_name": "Acme", "item_description": "Laptop", "quoted_amount": 1200, "quote_file_id": f.ID}); err != nil {
+		t.Fatalf("alice attaching her own file: %v", err)
+	}
 }

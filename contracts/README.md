@@ -31,7 +31,14 @@ corrupted row:
   Null `_eq` means IS NULL, null `_neq` means IS NOT NULL; ordinary SQL NULL
   comparisons do not match;
 - attachments are `uuid` columns with a foreign key to `core.files`; workflow
-  effects are `create_work_item` steps on declared commands.
+  effects are `create_work_item` steps on declared commands;
+- role names start with `role_`, so no role can take a name Hasura treats as
+  privileged (`admin`); `dxos-authz` never hands one out.
+
+An attachment may point only at a file of the same application that the acting
+user uploaded (`core.enforce_attachments`, a trigger on every generated domain
+table). A role reads a file's metadata only if its user uploaded it or it is
+attached to a record the role may read.
 
 ## Identity, roles and commands
 

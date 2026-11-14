@@ -311,7 +311,7 @@
                 "type": "string"
               },
               "name": {
-                "pattern": "^[a-z][a-z0-9_]*$",
+                "pattern": "^role_[a-z0-9_]+$",
                 "type": "string"
               }
             },

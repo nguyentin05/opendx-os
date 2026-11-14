@@ -43,6 +43,10 @@ const (
 
 var knownCapabilities = []string{CapProcess, CapHR, CapWork, CapData, CapAI}
 
+// RoleName is the shape of every role name. The role_ prefix keeps
+// application roles away from names Hasura treats as privileged (admin).
+var RoleName = regexp.MustCompile(`^role_[a-z0-9_]+$`)
+
 // ReservedRoles belong to the platform (core.roles rows without an owner).
 var ReservedRoles = []string{"role_operator", "role_auditor", "role_workflow"}
 
@@ -160,8 +164,8 @@ func Validate(app *DXApplication) error {
 	}
 	roles := map[string]bool{}
 	for _, r := range s.Roles {
-		if !identifier.MatchString(r.Name) || roles[r.Name] {
-			return fmt.Errorf("invalid or duplicate role %q", r.Name)
+		if !RoleName.MatchString(r.Name) || roles[r.Name] {
+			return fmt.Errorf("invalid or duplicate role %q (role names start with role_)", r.Name)
 		}
 		if oneOf(r.Name, ReservedRoles...) {
 			return fmt.Errorf("role %q is reserved for the platform", r.Name)

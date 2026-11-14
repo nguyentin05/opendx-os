@@ -80,7 +80,11 @@ func TestRejectUnsafeDefinitions(t *testing.T) {
 		"session variable": func(m map[string]any) {
 			firstSelect(m)["recordFilter"] = map[string]any{"created_by": map[string]any{"_eq": "X-Hasura-Role"}}
 		},
-		"undeclared role":     func(m map[string]any) { firstSelect(m)["role"] = "role_admin" },
+		"undeclared role": func(m map[string]any) { firstSelect(m)["role"] = "role_admin" },
+		"privileged role": func(m map[string]any) {
+			spec(m)["roles"].([]any)[0].(map[string]any)["name"] = "admin"
+			firstSelect(m)["role"] = "admin"
+		},
 		"unknown scope":       func(m map[string]any) { firstSelect(m)["scope"] = "everyone" },
 		"department, no hr":   func(m map[string]any) { spec(m)["capabilities"] = []any{"cap-process", "cap-work"} },
 		"attachment not file": func(m map[string]any) { spec(m)["domainTable"].(map[string]any)["foreignKeys"] = []any{} },

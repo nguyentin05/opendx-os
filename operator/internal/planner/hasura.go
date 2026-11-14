@@ -18,6 +18,7 @@ package planner
 import (
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 
 	"github.com/opendx-os/opendx-os/operator/internal/manifest"
@@ -103,7 +104,7 @@ func GenerateHasuraOperations(app *manifest.DXApplication) ([]HasuraMetadataPayl
 	for _, sel := range app.Spec.DomainAccess.Select {
 		ops = append(ops, permission("pg_create_select_permission", domainTableRef, sel.Role, map[string]any{
 			"columns":            sel.Columns,
-			"filter":             nonNil(conjoinFilters(ScopeFilter(sel.Scope), sel.RecordFilter)),
+			"filter":             nonNil(selectFilter(sel)),
 			"allow_aggregations": false,
 		}))
 	}
@@ -134,14 +135,10 @@ func GenerateHasuraOperations(app *manifest.DXApplication) ([]HasuraMetadataPayl
 	// 6. Shared tables SELECT permissions. Rows of app-scoped tables are limited
 	// to the application's own rows.
 	for _, shared := range app.Spec.SharedAccess {
-		filter := map[string]any{}
-		if manifest.SharedTables[shared.Table].AppScoped {
-			filter = map[string]any{"app_id": map[string]any{"_eq": app.Metadata.Name}}
-		}
 		for _, role := range shared.Roles {
 			ops = append(ops, permission("pg_create_select_permission", ParseTableRef(shared.Table), role, map[string]any{
 				"columns":            shared.Columns,
-				"filter":             filter,
+				"filter":             nonNil(sharedFilter(app, shared.Table, role)),
 				"allow_aggregations": false,
 			}))
 		}
@@ -152,6 +149,40 @@ func GenerateHasuraOperations(app *manifest.DXApplication) ([]HasuraMetadataPayl
 
 func trackTable(t TableRef) HasuraMetadataPayload {
 	return HasuraMetadataPayload{Type: "pg_track_table", Args: map[string]any{"source": "default", "table": t}}
+}
+
+// selectFilter is the row filter of a domain select rule: its scope narrowed
+// by its record filter.
+func selectFilter(rule manifest.AccessRule) map[string]any {
+	return conjoinFilters(ScopeFilter(rule.Scope), rule.RecordFilter)
+}
+
+// sharedFilter limits what role reads of a shared table. App-scoped tables
+// show only the application's rows. Files are narrower still: a role sees the
+// files its user uploaded, and files attached to domain records the role may
+// read (through the array relationship from core.files to the domain table),
+// so knowing the application is not enough to list other people's files.
+func sharedFilter(app *manifest.DXApplication, table, role string) map[string]any {
+	if !manifest.SharedTables[table].AppScoped {
+		return nil
+	}
+	filter := map[string]any{"app_id": map[string]any{"_eq": app.Metadata.Name}}
+	if table != "core.files" {
+		return filter
+	}
+	visible := []any{map[string]any{"uploaded_by": map[string]any{"_eq": "X-Hasura-User-Id"}}}
+	domain := ParseTableRef(app.Spec.DomainTable.Name)
+	for _, fk := range app.Spec.DomainTable.ForeignKeys {
+		if fk.References != "core.files" {
+			continue
+		}
+		for _, sel := range app.Spec.DomainAccess.Select {
+			if sel.Role == role && slices.Contains(sel.Columns, fk.Column) {
+				visible = append(visible, map[string]any{domain.Name + "_by_" + fk.Column: nonNil(selectFilter(sel))})
+			}
+		}
+	}
+	return conjoinFilters(filter, map[string]any{"_or": visible})
 }
 
 func relationship(kind string, table TableRef, name string, remote TableRef, mapping map[string]string) HasuraMetadataPayload {

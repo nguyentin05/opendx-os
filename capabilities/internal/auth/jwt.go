@@ -44,6 +44,7 @@ type jwtVerifier struct {
 	keys        map[string]*rsa.PublicKey
 	lastRefresh time.Time
 	lastAttempt time.Time
+	refreshing  bool
 }
 
 var uuid = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -67,36 +68,107 @@ func NewAuthenticator(ctx context.Context, cfg VerifierConfig) (Authenticator, e
 	return v, nil
 }
 
-// Signing-key snapshots are trusted for at most five minutes. Expired snapshots
-// fail closed if refresh fails; no stale key grace period is permitted.
+// WaitForAuthenticator is NewAuthenticator retried every two seconds for up to
+// wait, for services that start before the identity provider is ready.
+func WaitForAuthenticator(ctx context.Context, cfg VerifierConfig, wait time.Duration, logf func(string, ...any)) (Authenticator, error) {
+	deadline := time.Now().Add(wait)
+	for {
+		a, err := NewAuthenticator(ctx, cfg)
+		if err == nil || time.Now().After(deadline) || ctx.Err() != nil {
+			return a, err
+		}
+		if logf != nil {
+			logf("waiting for identity provider: %v", err)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
+// Signing keys are refreshed after five minutes, or at once for an unknown key
+// ID, at most once per second and without holding the lock during the fetch.
+// An answer from the issuer is authoritative: a key it no longer lists is
+// dropped. If the issuer cannot be reached, the last keys stay in use for up to
+// an hour, so a short identity-provider outage does not reject every valid
+// token; after that verification fails closed.
 const jwksCacheLifetime = 5 * time.Minute
 const jwksRefreshBackoff = time.Second
+const jwksMaxStaleness = time.Hour
 
+// refresh loads the keys at start-up, when there must be at least one.
 func (v *jwtVerifier) refresh(ctx context.Context) error {
-	req, e := http.NewRequestWithContext(ctx, "GET", v.cfg.JWKSURL, nil)
+	keys, e := v.fetch(ctx)
 	if e != nil {
 		return e
+	}
+	if len(keys) == 0 {
+		return errors.New("no signing keys")
+	}
+	v.keys = keys
+	v.lastRefresh = time.Now()
+	return nil
+}
+
+// signingKey returns the key for kid, refreshing the set when it is old or
+// lacks kid.
+func (v *jwtVerifier) signingKey(ctx context.Context, kid string) (*rsa.PublicKey, error) {
+	v.mu.Lock()
+	key := v.keys[kid]
+	fresh := time.Since(v.lastRefresh) < jwksCacheLifetime
+	if (key == nil || !fresh) && !v.refreshing && time.Since(v.lastAttempt) >= jwksRefreshBackoff {
+		v.refreshing = true
+		v.lastAttempt = time.Now()
+		v.mu.Unlock()
+		keys, err := v.fetch(ctx)
+		v.mu.Lock()
+		v.refreshing = false
+		if err == nil {
+			v.keys = keys
+			v.lastRefresh = time.Now()
+		}
+		key = v.keys[kid]
+	}
+	age := time.Since(v.lastRefresh)
+	v.mu.Unlock()
+	if key == nil {
+		return nil, errors.New("unknown signing key")
+	}
+	if age >= jwksMaxStaleness {
+		return nil, errors.New("signing keys are stale and the issuer is unreachable")
+	}
+	return key, nil
+}
+
+// fetch downloads and validates the issuer's key set. An empty set is a valid
+// answer (every key revoked).
+func (v *jwtVerifier) fetch(ctx context.Context) (map[string]*rsa.PublicKey, error) {
+	req, e := http.NewRequestWithContext(ctx, "GET", v.cfg.JWKSURL, nil)
+	if e != nil {
+		return nil, e
 	}
 	res, e := v.client.Do(req)
 	if e != nil {
-		return e
+		return nil, e
 	}
 	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode != 200 {
-		return fmt.Errorf("JWKS status %d", res.StatusCode)
+		return nil, fmt.Errorf("JWKS status %d", res.StatusCode)
 	}
 	var doc struct {
 		Keys []struct{ Kty, Kid, N, E, Alg, Use string }
 	}
 	body, e := io.ReadAll(io.LimitReader(res.Body, (1<<20)+1))
 	if e != nil {
-		return e
+		return nil, e
 	}
 	if len(body) > 1<<20 {
-		return errors.New("oversized JWKS")
+		return nil, errors.New("oversized JWKS")
 	}
 	if e = json.Unmarshal(body, &doc); e != nil {
-		return e
+		return nil, e
 	}
 	keys := map[string]*rsa.PublicKey{}
 	for _, k := range doc.Keys {
@@ -105,28 +177,23 @@ func (v *jwtVerifier) refresh(ctx context.Context) error {
 		}
 		n, e := base64.RawURLEncoding.DecodeString(k.N)
 		if e != nil {
-			return e
+			return nil, e
 		}
 		b, e := base64.RawURLEncoding.DecodeString(k.E)
 		if e != nil || len(b) > 4 {
-			return errors.New("invalid exponent")
+			return nil, errors.New("invalid exponent")
 		}
 		exp := new(big.Int).SetBytes(b).Int64()
 		mod := new(big.Int).SetBytes(n)
 		if exp < 3 || exp%2 == 0 || mod.BitLen() < 2048 {
-			return errors.New("unsafe RSA key")
+			return nil, errors.New("unsafe RSA key")
 		}
 		if keys[k.Kid] != nil {
-			return errors.New("duplicate key ID")
+			return nil, errors.New("duplicate key ID")
 		}
 		keys[k.Kid] = &rsa.PublicKey{N: mod, E: int(exp)}
 	}
-	if len(keys) == 0 {
-		return errors.New("no signing keys")
-	}
-	v.keys = keys
-	v.lastRefresh = time.Now()
-	return nil
+	return keys, nil
 }
 
 // verifiedPayload checks the token's header and RS256 signature against the
@@ -150,26 +217,9 @@ func (v *jwtVerifier) verifiedPayload(ctx context.Context, token string) ([]byte
 	if json.Unmarshal(h, &header) != nil || header.Alg != "RS256" || header.Kid == "" || len(header.Crit) > 0 {
 		return nil, errors.New("unsupported JWT header")
 	}
-	v.mu.Lock()
-	key := v.keys[header.Kid]
-	expired := time.Since(v.lastRefresh) >= jwksCacheLifetime
-	if key == nil || expired {
-		// A miss or expired snapshot may trigger one serialized fetch per second.
-		// Backoff never authorizes an expired key, including after fetch failure.
-		if time.Since(v.lastAttempt) < jwksRefreshBackoff {
-			v.mu.Unlock()
-			return nil, errors.New("signing keys unavailable during refresh backoff")
-		}
-		v.lastAttempt = time.Now()
-		e = v.refresh(ctx)
-		key = v.keys[header.Kid]
-	}
-	v.mu.Unlock()
+	key, e := v.signingKey(ctx, header.Kid)
 	if e != nil {
 		return nil, e
-	}
-	if key == nil {
-		return nil, errors.New("unknown signing key")
 	}
 	sig, e := base64.RawURLEncoding.DecodeString(parts[2])
 	if e != nil {

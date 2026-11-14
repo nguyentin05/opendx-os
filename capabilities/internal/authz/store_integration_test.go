@@ -92,16 +92,35 @@ func TestPostgresStoreMirrorsIdentityIntegration(t *testing.T) {
 		if _, err := store.Mirror(ctx, p); err != nil {
 			t.Fatal(err)
 		}
-		// Another account cannot take an email that is in use.
-		other := auth.Principal{Subject: "33333333-3333-4333-8333-333333333333", Email: "ALICE@example.test", Name: "Mallory"}
-		if _, err := store.Mirror(ctx, other); err == nil {
-			t.Fatal("a second account with the same email must be refused")
+	})
+
+	// QA finding: an account recreated in Keycloak with the same email gets a
+	// new subject. It must not be locked out by the stale row: that row
+	// releases the address.
+	recreated := auth.Principal{Subject: "33333333-3333-4333-8333-333333333333", Email: "ALICE@example.test", Name: "Alice"}
+	asAuthz(t, db, func(store PostgresStore) {
+		if status, err := store.Mirror(ctx, recreated); err != nil || status != "ACTIVE" {
+			t.Fatalf("recreated account: %q, %v", status, err)
 		}
 	})
+	var released string
+	if err := db.QueryRow(`SELECT email FROM core.users WHERE id = $1`, p.Subject).Scan(&released); err != nil || !strings.HasSuffix(released, "@released.invalid") {
+		t.Fatalf("stale row kept the address: %q, %v", released, err)
+	}
+	// The old account, if it were still live, takes its address back.
+	asAuthz(t, db, func(store PostgresStore) {
+		if _, err := store.Mirror(ctx, p); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if err := db.QueryRow(`SELECT email FROM core.users WHERE id = $1`, recreated.Subject).Scan(&released); err != nil || !strings.HasSuffix(released, "@released.invalid") {
+		t.Fatalf("addresses must move with the latest sign-in: %q, %v", released, err)
+	}
 	var name string
 	if err := db.QueryRow(`SELECT display_name FROM core.users WHERE id = $1`, p.Subject).Scan(&name); err != nil || name != "Alice Tran" {
 		t.Fatalf("display_name = %q, %v", name, err)
 	}
+	p.Name = "Alice Tran"
 
 	// Disabling is Keycloak's decision, mirrored by an administrator or sync;
 	// the webhook only reads it and never re-enables the account.

@@ -109,6 +109,14 @@ func GenerateDDL(app *manifest.DXApplication) (string, error) {
 	if hasHR {
 		triggers = append(triggers, trigger{"trg_" + safeTbl + "_20_stamp_org_unit", "BEFORE INSERT", "cap_hr.stamp_record_org_unit()"})
 	}
+	if len(app.Spec.Attachments) > 0 {
+		// Only files the acting user uploaded to this application may be attached.
+		args := []string{quoteLiteral(app.Metadata.Name)}
+		for _, at := range app.Spec.Attachments {
+			args = append(args, quoteLiteral(at.Column))
+		}
+		triggers = append(triggers, trigger{"trg_" + safeTbl + "_25_attachments", "BEFORE INSERT OR UPDATE", "core.enforce_attachments(" + strings.Join(args, ", ") + ")"})
+	}
 	triggers = append(triggers,
 		trigger{"trg_" + safeTbl + "_30_bump_version", "BEFORE UPDATE", "core.bump_domain_record_version()"},
 		trigger{"trg_" + safeTbl + "_90_audit", "AFTER INSERT OR UPDATE", "core.record_domain_audit(" + quoteLiteral(app.Metadata.Name) + ")"},

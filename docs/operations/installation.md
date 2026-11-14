@@ -34,7 +34,7 @@ registry discovery and beta automatic-workflow readiness remain open.
 3. Configure environment variables and start services:
    ```bash
    cd /opt/opendx-os
-   cp .env.example .env
+   scripts/init-env.sh      # .env with random secrets
    docker compose up -d
    scripts/test-compose.sh
    ```

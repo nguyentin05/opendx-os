@@ -55,7 +55,7 @@ func main() {
 	defer func() { _ = db.Close() }()
 
 	cfg := auth.VerifierConfig{IssuerURL: os.Getenv("OIDC_ISSUER_URL"), JWKSURL: os.Getenv("OIDC_JWKS_URL"), Audience: os.Getenv("OIDC_AUDIENCE")}
-	authn, err := connect(ctx, cfg)
+	authn, err := auth.WaitForAuthenticator(ctx, cfg, time.Minute, log.Printf)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -74,20 +74,6 @@ func main() {
 	log.Printf("dxos-authz listening on :%s (role cache %s)", port, ttl)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
-	}
-}
-
-// connect fetches the issuer's signing keys, waiting up to a minute for the
-// identity provider to come up.
-func connect(ctx context.Context, cfg auth.VerifierConfig) (auth.Authenticator, error) {
-	deadline := time.Now().Add(time.Minute)
-	for {
-		a, err := auth.NewAuthenticator(ctx, cfg)
-		if err == nil || time.Now().After(deadline) || ctx.Err() != nil {
-			return a, err
-		}
-		log.Printf("waiting for identity provider: %v", err)
-		time.Sleep(2 * time.Second)
 	}
 }
 
