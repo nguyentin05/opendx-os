@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS core.files (
     scan_status TEXT NOT NULL DEFAULT 'QUARANTINED' CHECK (scan_status IN ('QUARANTINED', 'CLEAN', 'INFECTED')),
     sha256_hash TEXT NOT NULL CHECK (length(trim(sha256_hash)) = 64),
     uploaded_by UUID NOT NULL REFERENCES core.users(id),
-    mime_type TEXT NOT NULL CHECK (mime_type IN ('application/pdf', 'image/png', 'image/jpeg')),
+    mime_type TEXT NOT NULL CONSTRAINT files_mime_type_check CHECK (mime_type IN ('application/pdf', 'image/png', 'image/jpeg') OR (mime_type='text/markdown' AND read_policy='OWNER_ONLY')),
     size_bytes BIGINT NOT NULL CHECK (size_bytes BETWEEN 1 AND 20971520),
     scan_attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (scan_attempt_count >= 0),
     scan_next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),

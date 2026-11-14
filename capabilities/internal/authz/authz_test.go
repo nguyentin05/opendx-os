@@ -233,3 +233,15 @@ func TestAppsListsApplicationsOfHeldRoles(t *testing.T) {
 		t.Fatalf("a caller without application roles: %d %v, want an empty list", code, body)
 	}
 }
+
+func TestAppsIncludesCapabilityOnlyKnowledge(t *testing.T) {
+	store := &fakeStore{status: "ACTIVE", grants: []Grant{{Role: "role_library_user", AppID: "library"}}, apps: []App{{AppID: "library", DisplayName: "Library", Version: "1", Spec: json.RawMessage(`{"capabilities":["cap-process","cap-ai"],"roles":[{"name":"role_library_user"}],"tables":[],"knowledge":{"version":1,"personalLibrary":{"enabled":true,"allowedRoles":["role_library_user"]}}}`)}}}
+	code, body := call(t, Handler(NewResolver(&fakeAuthn{}, store, 0)), "/api/auth/apps", "good", "")
+	apps, _ := body["apps"].([]any)
+	if code != 200 || len(apps) != 1 {
+		t.Fatal("capability-only library not discoverable", code, body)
+	}
+	if apps[0].(map[string]any)["knowledge"] == nil {
+		t.Fatal("knowledge metadata lost")
+	}
+}

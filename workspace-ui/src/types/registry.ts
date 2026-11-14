@@ -76,3 +76,16 @@ export interface UserContext {
   workspaceId: string;
   role: string;
 }
+
+// Current registry/session contracts. Legacy single-table fixtures above are
+// retained for compatibility; live callers use these ADR0007/0008 shapes.
+export interface RoleGrant { name: string; app_id?: string; cap_id?: string; description?: string }
+export interface CurrentUser { id: string; email: string; display_name: string; roles: RoleGrant[] }
+export interface InstalledTable {
+  name: string;
+  access: { select: Array<{ role: string; columns: string[] }> };
+  ui: { listColumns: string[]; formFields?: Array<{name: string; label: string; type: string}> };
+  stateMachine?: { commands: Array<{ name: string; from: string[]; to: string; allowedRoles: string[] }> };
+  belongsTo?: { table: string; column: string };
+}
+export interface InstalledApp { app_id: string; display_name: string; version: string; capabilities: string[]; roles: RoleGrant[]; tables: InstalledTable[]; knowledge?: KnowledgeSpec }

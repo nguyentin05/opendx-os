@@ -42,10 +42,6 @@ func (s *Store) Checkpoint(ctx context.Context, lease Lease, now time.Time, chec
 	var ok bool
 	return dbErrorOrNil(s.db.QueryRowContext(ctx, `SELECT cap_ai.checkpoint_job($1,$2,$3,$4,$5,$6::jsonb)`, lease.JobID, lease.WorkerID, lease.Fence, lease.RunID, now, string(checkpoint)).Scan(&ok))
 }
-func (s *Store) Activate(ctx context.Context, lease Lease, now time.Time) error {
-	var ok bool
-	return dbErrorOrNil(s.db.QueryRowContext(ctx, `SELECT cap_ai.activate_job($1,$2,$3,$4,$5)`, lease.JobID, lease.WorkerID, lease.Fence, lease.RunID, now).Scan(&ok))
-}
 func (s *Store) Retry(ctx context.Context, lease Lease, now time.Time, attempt int, safeCode string, permanent bool) error {
 	if attempt < 1 || attempt > 5 {
 		return ErrInvalid

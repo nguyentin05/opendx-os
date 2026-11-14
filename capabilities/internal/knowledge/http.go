@@ -21,6 +21,11 @@ func (s *Store) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/cap/ai/documents/{id}", s.deleteHTTP)
 	mux.HandleFunc("GET /api/cap/ai/collections", s.collectionsHTTP)
 	mux.HandleFunc("GET /api/cap/ai/ingestions/{id}", s.ingestionHTTP)
+	mux.HandleFunc("POST /api/cap/ai/search", s.personal(s.searchHTTP))
+	mux.HandleFunc("POST /api/cap/ai/answers", s.personal(s.answersHTTP))
+	mux.HandleFunc("GET /api/cap/ai/documents/{id}/citations/{chunk}", s.personal(s.citationHTTP))
+	mux.HandleFunc("GET /api/cap/ai/documents/{id}/original", s.personal(s.originalHTTP))
+	mux.HandleFunc("GET /api/cap/ai/documents/{id}/assets/{asset}", s.personal(s.assetHTTP))
 	return mux
 }
 func writeJSON(w http.ResponseWriter, status int, value any) {
@@ -207,4 +212,106 @@ func (s *Store) ingestionHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, job)
+}
+
+func (s *Store) personal(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.personalEnabled {
+			httpError(w, ErrAuthorityUnavailable)
+			return
+		}
+		next(w, r)
+	}
+}
+func (s *Store) searchHTTP(w http.ResponseWriter, r *http.Request) {
+	var req SearchRequest
+	if err := decodeRequest(w, r, &req); err != nil {
+		httpError(w, err)
+		return
+	}
+	actor, err := auth.ExtractIdentity(r)
+	if err != nil {
+		httpError(w, ErrNotFound)
+		return
+	}
+	result, err := s.Search(r.Context(), actor, req)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, 200, result)
+}
+func (s *Store) answersHTTP(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Scope             Scope  `json:"scope"`
+		Query             string `json:"query"`
+		MaxCitations      int    `json:"max_citations,omitempty"`
+		RequireGeneration bool   `json:"require_generation,omitempty"`
+	}
+	if err := decodeRequest(w, r, &req); err != nil {
+		httpError(w, err)
+		return
+	}
+	if req.RequireGeneration {
+		writeJSON(w, 403, map[string]any{"error": map[string]string{"code": "POLICY_BLOCKED", "message": "Personal generation is unavailable"}})
+		return
+	}
+	actor, err := auth.ExtractIdentity(r)
+	if err != nil {
+		httpError(w, ErrNotFound)
+		return
+	}
+	result, err := s.Search(r.Context(), actor, SearchRequest{Scope: req.Scope, Query: req.Query, Limit: req.MaxCitations, Retrieval: "LEXICAL"})
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	result.Status = "SEARCH_ONLY"
+	writeJSON(w, 200, result)
+}
+func (s *Store) citationHTTP(w http.ResponseWriter, r *http.Request) {
+	actor, err := auth.ExtractIdentity(r)
+	if err != nil {
+		httpError(w, ErrNotFound)
+		return
+	}
+	citation, err := s.Citation(r.Context(), actor, r.PathValue("id"), r.URL.Query().Get("version_id"), r.PathValue("chunk"))
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, 200, citation)
+}
+func binaryResponse(w http.ResponseWriter, data []byte) {
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", "attachment")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
+}
+func (s *Store) originalHTTP(w http.ResponseWriter, r *http.Request) {
+	actor, err := auth.ExtractIdentity(r)
+	if err != nil {
+		httpError(w, ErrNotFound)
+		return
+	}
+	data, err := s.Original(r.Context(), actor, r.PathValue("id"), r.Header.Get("Authorization"))
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	binaryResponse(w, data)
+}
+func (s *Store) assetHTTP(w http.ResponseWriter, r *http.Request) {
+	actor, err := auth.ExtractIdentity(r)
+	if err != nil {
+		httpError(w, ErrNotFound)
+		return
+	}
+	data, err := s.Asset(r.Context(), actor, r.PathValue("id"), r.PathValue("asset"))
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	binaryResponse(w, data)
 }

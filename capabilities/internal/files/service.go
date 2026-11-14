@@ -27,7 +27,9 @@ import (
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
 
 func readContent(r io.Reader) ([]byte, string, error) {
@@ -74,7 +76,14 @@ func (s *Service) upload(ctx context.Context, actor *auth.Identity, appID, fileN
 	if strings.TrimSpace(fileName) == "" || len(fileName) > 1024 {
 		return nil, ErrContent
 	}
-	b, m, e := readContent(content)
+	var b []byte
+	var m string
+	var e error
+	if policy == "OWNER_ONLY" {
+		b, m, e = readPrivateContent(fileName, content)
+	} else {
+		b, m, e = readContent(content)
+	}
 	if e != nil {
 		return nil, e
 	}
@@ -183,4 +192,25 @@ RETURNING f.id::text,f.object_key,f.sha256_hash,
 		}
 	}
 	return failure
+}
+
+// Private Markdown admission is textual content validation plus an explicit MIME;
+// the ordinary attachment upload path retains its existing media allowlist.
+func readPrivateContent(fileName string, r io.Reader) ([]byte, string, error) {
+	if !strings.EqualFold(filepath.Ext(fileName), ".md") {
+		return readContent(r)
+	}
+	b, e := io.ReadAll(io.LimitReader(r, MaxSize+1))
+	if e != nil {
+		return nil, "", e
+	}
+	if len(b) < 1 || len(b) > MaxSize || !utf8.Valid(b) {
+		return nil, "", ErrContent
+	}
+	for _, ch := range string(b) {
+		if ch < 32 && ch != '\n' && ch != '\r' && ch != '\t' {
+			return nil, "", ErrContent
+		}
+	}
+	return b, "text/markdown", nil
 }

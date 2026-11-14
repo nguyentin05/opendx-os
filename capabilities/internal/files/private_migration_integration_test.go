@@ -22,7 +22,8 @@ func TestPrivatePolicyUpgradePreservesAttachments(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Remove the additive policy from bootstrap to represent the legacy schema.
-	legacy := strings.Replace(string(bootstrap), "    read_policy TEXT NOT NULL DEFAULT 'APP_ATTACHMENT' CHECK (read_policy IN ('APP_ATTACHMENT', 'OWNER_ONLY')),\n", "", 1)
+	legacyBase := strings.ReplaceAll(string(bootstrap), " OR (mime_type='text/markdown' AND read_policy='OWNER_ONLY')", "")
+	legacy := strings.Replace(legacyBase, "    read_policy TEXT NOT NULL DEFAULT 'APP_ATTACHMENT' CHECK (read_policy IN ('APP_ATTACHMENT', 'OWNER_ONLY')),\n", "", 1)
 	legacy = strings.Replace(legacy, "       OR NEW.read_policy IS DISTINCT FROM OLD.read_policy\n", "", 1)
 	if _, err = db.Exec(legacy); err != nil {
 		t.Fatal(err)
@@ -105,7 +106,8 @@ func TestPrivatePolicyBootstrapMatchesUpgrade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy := strings.Replace(string(bootstrap), "    read_policy TEXT NOT NULL DEFAULT 'APP_ATTACHMENT' CHECK (read_policy IN ('APP_ATTACHMENT', 'OWNER_ONLY')),\n", "", 1)
+	legacyBase := strings.ReplaceAll(string(bootstrap), " OR (mime_type='text/markdown' AND read_policy='OWNER_ONLY')", "")
+	legacy := strings.Replace(legacyBase, "    read_policy TEXT NOT NULL DEFAULT 'APP_ATTACHMENT' CHECK (read_policy IN ('APP_ATTACHMENT', 'OWNER_ONLY')),\n", "", 1)
 	legacy = strings.Replace(legacy, "       OR NEW.read_policy IS DISTINCT FROM OLD.read_policy\n", "", 1)
 	if _, err = upgraded.Exec(legacy); err != nil {
 		t.Fatal(err)
@@ -115,6 +117,13 @@ func TestPrivatePolicyBootstrapMatchesUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err = upgraded.Exec(string(migration)); err != nil {
+		t.Fatal(err)
+	}
+	core2, err := os.ReadFile("../../../platform/postgres/migrations/core/0002_private_markdown.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = upgraded.Exec(string(core2)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = fresh.Exec(string(bootstrap)); err != nil {

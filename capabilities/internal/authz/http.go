@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
 )
 
 // Handler serves:
@@ -108,12 +109,22 @@ func Handler(r *Resolver) http.Handler {
 		out := []map[string]any{}
 		for _, a := range apps {
 			var spec struct {
-				Capabilities []string        `json:"capabilities"`
-				Tables       json.RawMessage `json:"tables"`
+				Capabilities []string               `json:"capabilities"`
+				Knowledge    *registry.KnowledgeDef `json:"knowledge,omitempty"`
+				Tables       json.RawMessage        `json:"tables"`
 			}
 			// A definition stored before spec.tables has nothing the UI can show.
 			if json.Unmarshal(a.Spec, &spec) != nil || len(spec.Tables) == 0 {
 				continue
+			}
+			var tables []json.RawMessage
+			if json.Unmarshal(spec.Tables, &tables) != nil {
+				continue
+			}
+			if len(tables) == 0 {
+				if _, err := registry.Decode(a.AppID, a.DisplayName, a.Version, a.Spec); err != nil {
+					continue
+				}
 			}
 			out = append(out, map[string]any{
 				"app_id":       a.AppID,
@@ -122,6 +133,7 @@ func Handler(r *Resolver) http.Handler {
 				"capabilities": spec.Capabilities,
 				"roles":        held[a.AppID],
 				"tables":       spec.Tables,
+				"knowledge":    spec.Knowledge,
 			})
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"apps": out})

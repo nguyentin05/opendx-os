@@ -84,7 +84,11 @@ func (s *Service) uploadHTTP(w http.ResponseWriter, r *http.Request) {
 			app = string(b)
 		} else {
 			var e error
-			content, _, e = readContent(p)
+			if r.URL.Path == "/api/cap/process/files/private/upload" {
+				content, _, e = readPrivateContent(p.FileName(), p)
+			} else {
+				content, _, e = readContent(p)
+			}
 			if e != nil {
 				_ = p.Close()
 				fileError(w, 400)

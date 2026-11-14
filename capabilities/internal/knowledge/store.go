@@ -10,7 +10,11 @@ import (
 	"github.com/lib/pq"
 )
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db                    *sql.DB
+	personalEnabled       bool
+	fileURL, artifactRoot string
+}
 
 func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 func decodeRow(row *sql.Row, out any) error {

@@ -48,7 +48,7 @@ func TestExpiredLeaseCannotWriteOrPublish(t *testing.T) {
 	if e = s.Checkpoint(context.Background(), forged, now.Add(62*time.Second), []byte(`{"stage":"bad"}`)); e == nil {
 		t.Fatal("old lease updated successor")
 	}
-	if e = s.Activate(context.Background(), *one, now.Add(62*time.Second)); e == nil {
+	if e = s.Activate(context.Background(), *one, one.RunID); e == nil {
 		t.Fatal("stale activation")
 	}
 }

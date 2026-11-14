@@ -75,7 +75,9 @@ checks; infected-source denial; anonymous bucket-object denial; and revocation
 with the same JWT and an already-open metadata subscription. A revoke before the
 final file check blocks bytes, while bytes already emitted cannot be recalled.
 Keep private upload disabled outside qualification until these live negatives
-pass. Later runner modes are reserved and fail NOT_RUN until implemented.
+pass. The personal mode also requires parser/worker and browser qualification; see the
+[personal library guide](../development/personal-library.md). Package/model modes
+remain reserved and fail NOT_RUN until implemented.
 
 ### Metadata and internal service qualification
 

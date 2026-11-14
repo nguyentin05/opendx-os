@@ -79,7 +79,12 @@ func main() {
 			log.Fatal("invalid internal knowledge service configuration")
 		}
 	}
-	server := &http.Server{Addr: ":" + c.Port, Handler: newHandlerWithKnowledge(access.Authenticator{Authority: knowledge.NewAuthority(verifier, db)}, knowledge.NewStore(db), os.Getenv("RAG_METADATA_ENABLED") == "true" && os.Getenv("RAG_SOURCE_QUALIFIED") == "true"), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
+	store := knowledge.NewStore(db)
+	personal := os.Getenv("RAG_PERSONAL_ENABLED") == "true" && os.Getenv("RAG_SOURCE_QUALIFIED") == "true" && os.Getenv("RAG_METADATA_QUALIFIED") == "true" && os.Getenv("RAG_PARSER_QUALIFIED") == "true"
+	if err = store.ConfigurePersonal(personal, os.Getenv("RAG_FILE_API_URL"), os.Getenv("KNOWLEDGE_ARTIFACT_ROOT")); err != nil {
+		log.Fatal("invalid personal-source configuration")
+	}
+	server := &http.Server{Addr: ":" + c.Port, Handler: newHandlerWithKnowledge(access.Authenticator{Authority: knowledge.NewAuthority(verifier, db)}, store, os.Getenv("RAG_METADATA_ENABLED") == "true" && os.Getenv("RAG_SOURCE_QUALIFIED") == "true"), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
 	log.Printf("cap-ai listening on port %s", c.Port)
 	if err = server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal("cap-ai listener failed")
