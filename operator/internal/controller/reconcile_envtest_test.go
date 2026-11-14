@@ -69,11 +69,16 @@ func count(t *testing.T, db *sql.DB, query string, args ...any) int {
 	return n
 }
 
-func TestReconcileLifecycle(t *testing.T) {
-	db := testutil.NewDatabase(t)
-	if _, err := db.Exec(`INSERT INTO core.workspaces (id, code, name) VALUES ($1, 'ws-a', 'A'), ($2, 'ws-b', 'B')`, wsA, wsB); err != nil {
+func appRow(t *testing.T, db *sql.DB, app string) (version, status string) {
+	t.Helper()
+	if err := db.QueryRow(`SELECT version, status FROM core.apps WHERE app_id = $1`, app).Scan(&version, &status); err != nil && err != sql.ErrNoRows {
 		t.Fatal(err)
 	}
+	return version, status
+}
+
+func TestReconcileLifecycle(t *testing.T) {
+	db := testutil.NewDatabase(t)
 	hasura := testutil.NewFakeHasura()
 	srv := httptest.NewServer(hasura)
 	defer srv.Close()
@@ -87,9 +92,9 @@ func TestReconcileLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := &DXApplicationReconciler{
-		Client:          mgr.GetClient(),
-		Scheme:          mgr.GetScheme(),
-		Applier:         apply.NewRunner(db, apply.Config{HasuraURL: srv.URL}, srv.Client()),
+		Client:  mgr.GetClient(),
+		Scheme:  mgr.GetScheme(),
+		Applier: apply.NewRunner(db, apply.Config{HasuraURL: srv.URL}, srv.Client()),
 		// Short period so the test observes drift repair and the absence of churn.
 		RequeueInterval: 300 * time.Millisecond,
 	}
@@ -114,10 +119,10 @@ func TestReconcileLifecycle(t *testing.T) {
 		}
 		return &app
 	}
-	const insertPerm = "insert:domain.procurement_requests:role_procurement"
+	const insertPerm = "insert:domain.procurement_requests:role_procurement_requester"
 
-	// 1. Create: becomes Ready, published to A, definition recorded, grants created.
-	cr, err := crdconv.FromPackage(filepath.Join("..", "..", "..", "apps", "procurement"), []string{wsA})
+	// 1. Create: Ready, registered with its roles and capabilities, grants created.
+	cr, err := crdconv.FromPackage(filepath.Join("..", "..", "..", "apps", "procurement"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,17 +130,20 @@ func TestReconcileLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "Ready after create", func() bool { return observed(get(cr.Name), dxosv1alpha1.ConditionReady, metav1.ConditionTrue) })
-	if n := count(t, db, `SELECT count(*) FROM core.app_registry WHERE app_id = 'procurement' AND status = 'Ready' AND version = '0.1.0'`); n != 1 {
-		t.Fatalf("registry rows = %d, want 1", n)
+	if v, st := appRow(t, db, "procurement"); v != "0.2.0" || st != "Ready" {
+		t.Fatalf("core.apps = %s %s, want 0.2.0 Ready", v, st)
 	}
-	if n := count(t, db, `SELECT count(*) FROM core.app_definitions WHERE app_id = 'procurement'`); n != 1 {
-		t.Fatalf("definitions = %d, want 1", n)
+	if n := count(t, db, `SELECT count(*) FROM core.roles WHERE app_id = 'procurement'`); n != 3 {
+		t.Fatalf("roles = %d, want 3", n)
+	}
+	if n := count(t, db, `SELECT count(*) FROM core.app_capabilities WHERE app_id = 'procurement'`); n != 3 {
+		t.Fatalf("capabilities = %d, want 3", n)
 	}
 	if !hasura.Has(insertPerm) {
 		t.Fatal("Hasura permission not created")
 	}
-	if got := get(cr.Name); len(got.Status.Workspaces) != 1 || got.Status.Workspaces[0].ID != wsA || !got.Status.Workspaces[0].Published {
-		t.Fatalf("status.workspaces = %+v", got.Status.Workspaces)
+	if got := get(cr.Name); got.Status.ActiveVersion != "0.2.0" {
+		t.Fatalf("status.activeVersion = %q", got.Status.ActiveVersion)
 	}
 
 	// 1a. In sync: several requeues later no metadata was rewritten.
@@ -149,24 +157,10 @@ func TestReconcileLifecycle(t *testing.T) {
 	hasura.Drop(insertPerm)
 	waitFor(t, "drift repaired", func() bool { return hasura.Has(insertPerm) })
 
-	// 2. Add workspace B: republished without touching A.
+	// 2. Breaking schema change: blocked, previous version keeps serving.
 	latest := get(cr.Name)
-	latest.Spec.Workspaces = []string{wsA, wsB}
-	if err := k8s.Update(ctx, latest); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, "Ready after adding workspace", func() bool {
-		got := get(cr.Name)
-		return observed(got, dxosv1alpha1.ConditionReady, metav1.ConditionTrue) && len(got.Status.Workspaces) == 2
-	})
-	if n := count(t, db, `SELECT count(*) FROM core.app_registry WHERE app_id = 'procurement' AND status = 'Ready'`); n != 2 {
-		t.Fatalf("registry rows = %d, want 2", n)
-	}
-
-	// 3. Breaking schema change: blocked, previous version keeps serving.
-	latest = get(cr.Name)
-	latest.Spec.Version = "0.2.0"
-	latest.Spec.DomainTable.Columns[1].Nullable = !latest.Spec.DomainTable.Columns[1].Nullable
+	latest.Spec.Version = "0.3.0"
+	latest.Spec.DomainTable.Columns[0].Nullable = !latest.Spec.DomainTable.Columns[0].Nullable
 	if err := k8s.Update(ctx, latest); err != nil {
 		t.Fatal(err)
 	}
@@ -180,21 +174,21 @@ func TestReconcileLifecycle(t *testing.T) {
 	if c := condition(got, dxosv1alpha1.ConditionSchemaInSync); c.Reason != ReasonSchemaBlocked || !strings.Contains(c.Message, "vendor_name") {
 		t.Fatalf("SchemaInSync condition = %+v", c)
 	}
-	if n := count(t, db, `SELECT count(*) FROM core.app_registry WHERE app_id = 'procurement' AND version = '0.1.0' AND status = 'Ready'`); n != 2 {
-		t.Fatalf("prior publication not preserved: %d rows at 0.1.0", n)
+	if v, st := appRow(t, db, "procurement"); v != "0.2.0" || st != "Ready" {
+		t.Fatalf("prior version not preserved: %s %s", v, st)
 	}
 
 	// Revert: Ready again.
 	latest = get(cr.Name)
-	latest.Spec.Version = "0.1.0"
-	latest.Spec.DomainTable.Columns[1].Nullable = !latest.Spec.DomainTable.Columns[1].Nullable
+	latest.Spec.Version = "0.2.0"
+	latest.Spec.DomainTable.Columns[0].Nullable = !latest.Spec.DomainTable.Columns[0].Nullable
 	if err := k8s.Update(ctx, latest); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "Ready after revert", func() bool { return observed(get(cr.Name), dxosv1alpha1.ConditionReady, metav1.ConditionTrue) })
 
-	// 4. Invalid spec on another resource: reported, zero side effects.
-	bad, err := crdconv.FromPackage(filepath.Join("..", "..", "..", "apps", "process-fixture"), []string{wsA})
+	// 3. Invalid spec on another resource: reported, zero side effects.
+	bad, err := crdconv.FromPackage(filepath.Join("..", "..", "..", "apps", "process-fixture"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,36 +197,52 @@ func TestReconcileLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "Valid=False", func() bool { return observed(get(bad.Name), dxosv1alpha1.ConditionValid, metav1.ConditionFalse) })
-	if n := count(t, db, `SELECT count(*) FROM core.app_definitions`); n != 1 {
-		t.Fatalf("invalid resource must not create a definition; definitions = %d", n)
+	if n := count(t, db, `SELECT count(*) FROM core.apps WHERE app_id <> 'procurement'`); n != 0 {
+		t.Fatalf("invalid resource must not be registered; rows = %d", n)
 	}
-	if n := count(t, db, `SELECT count(*) FROM core.app_registry WHERE app_id <> 'procurement'`); n != 0 {
-		t.Fatalf("invalid resource must not publish; rows = %d", n)
-	}
-	if err := k8s.Delete(ctx, bad); err != nil {
+
+	// 4. Registry conflict: the resource becomes valid but needs a disabled
+	// capability; it installs once the capability is enabled.
+	latestBad := get(bad.Name)
+	latestBad.Spec.Capabilities = []string{"cap-process", "cap-work", "cap-data"}
+	if _, err := db.Exec(`UPDATE core.capabilities SET enabled = false WHERE cap_id = 'cap-data'`); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "invalid resource deleted", func() bool {
+	if err := k8s.Update(ctx, latestBad); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "RegistryConflict", func() bool {
+		c := condition(get(bad.Name), dxosv1alpha1.ConditionValid)
+		return c != nil && c.Reason == ReasonRegistryConflict && strings.Contains(c.Message, "cap-data is not enabled")
+	})
+	if _, err := db.Exec(`UPDATE core.capabilities SET enabled = true WHERE cap_id = 'cap-data'`); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "Ready after enabling cap-data", func() bool { return observed(get(bad.Name), dxosv1alpha1.ConditionReady, metav1.ConditionTrue) })
+	if err := k8s.Delete(ctx, get(bad.Name)); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "second resource deleted", func() bool {
 		return apierrors.IsNotFound(k8s.Get(ctx, client.ObjectKey{Name: bad.Name}, &dxosv1alpha1.DXApplication{}))
 	})
 
-	// 5. Delete: grants revoked, registry and definition removed, data retained.
+	// 5. Delete: grants revoked, core.apps marked Removed, data and roles retained.
 	if err := k8s.Delete(ctx, get(cr.Name)); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "resource deleted", func() bool {
 		return apierrors.IsNotFound(k8s.Get(ctx, client.ObjectKey{Name: cr.Name}, &dxosv1alpha1.DXApplication{}))
 	})
-	if n := count(t, db, `SELECT count(*) FROM core.app_registry WHERE app_id = 'procurement'`); n != 0 {
-		t.Fatalf("registry rows after delete = %d", n)
-	}
-	if n := count(t, db, `SELECT count(*) FROM core.app_definitions WHERE app_id = 'procurement'`); n != 0 {
-		t.Fatalf("definition after delete = %d", n)
+	if _, st := appRow(t, db, "procurement"); st != "Removed" {
+		t.Fatalf("core.apps status after delete = %s, want Removed", st)
 	}
 	if hasura.Has(insertPerm) {
 		t.Fatal("Hasura permission must be revoked on delete")
 	}
 	if n := count(t, db, `SELECT count(*) FROM information_schema.tables WHERE table_schema = 'domain' AND table_name = 'procurement_requests'`); n != 1 {
 		t.Fatal("domain table must be retained after delete")
+	}
+	if n := count(t, db, `SELECT count(*) FROM core.roles WHERE app_id = 'procurement'`); n != 3 {
+		t.Fatal("roles must be retained after delete")
 	}
 }

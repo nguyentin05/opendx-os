@@ -44,8 +44,11 @@ func NewRunner(db *sql.DB, applier *apply.Runner) *Runner {
 	}
 }
 
-// Run validates all manifests in appsDir, builds a desired/live plan, and applies it.
-func (r *Runner) Run(ctx context.Context, workspaceID, appsDir string) error {
+// Run validates all manifests in appsDir, builds a desired/live plan, and applies
+// it. The directory is the exact set of installed applications: an installed
+// application without a package in appsDir is uninstalled (status Removed; its
+// data is kept).
+func (r *Runner) Run(ctx context.Context, appsDir string) error {
 	if r.applier == nil {
 		return errors.New("applier runner is required")
 	}
@@ -79,18 +82,9 @@ func (r *Runner) Run(ctx context.Context, workspaceID, appsDir string) error {
 	if err != nil {
 		return err
 	}
-	published, err := r.applier.ReadPublications(ctx)
+	plan, err := planner.BuildPlan(apps, live)
 	if err != nil {
 		return err
 	}
-
-	// The directory is the exact application set of this workspace. Global
-	// definitions still used by other workspaces are kept with their grants.
-	scope := planner.ScopeWorkspace(live, published, workspaceID, apps, true)
-	plan, err := planner.BuildPlan(scope.Desired, live)
-	if err != nil {
-		return err
-	}
-
-	return r.applier.Run(ctx, plan, apply.Publication{Upsert: scope.Upsert, Remove: scope.Remove})
+	return r.applier.Run(ctx, plan, planner.Changed(apps, live))
 }

@@ -32,7 +32,7 @@ func TestReconcileValidAppPackageAndRejectMissingWorkflow(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(appDir, "workflows"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	fixtureBytes, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "fixtures", "procurement.yaml"))
+	fixtureBytes, err := os.ReadFile(filepath.Join("..", "..", "..", "apps", "procurement", "manifest.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestReconcileValidAppPackageAndRejectMissingWorkflow(t *testing.T) {
 	rec := NewRunner(nil, applier)
 
 	// 1. Missing workflow file must fail before any Hasura calls
-	if err := rec.Run(context.Background(), "11111111-1111-4111-8111-111111111111", tmp); err == nil {
+	if err := rec.Run(context.Background(), tmp); err == nil {
 		t.Fatal("expected error when referenced workflow file is missing")
 	}
 	if requests != 0 {
@@ -63,7 +63,7 @@ func TestReconcileValidAppPackageAndRejectMissingWorkflow(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(appDir, "workflows", "procurement_flow.yaml"), []byte("id: procurement_approval_flow\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := rec.Run(context.Background(), "11111111-1111-4111-8111-111111111111", tmp); err != nil {
+	if err := rec.Run(context.Background(), tmp); err != nil {
 		t.Fatalf("expected reconcile success, got: %v", err)
 	}
 	if requests == 0 {

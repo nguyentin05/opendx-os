@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/opendx-os/opendx-os/operator/internal/manifest"
@@ -32,12 +33,8 @@ import (
 
 func TestApplyPreservesPriorActiveVersionOnFailure(t *testing.T) {
 	db := testutil.NewDatabase(t)
-	wsID := "11111111-1111-4111-8111-111111111111"
-	if _, err := db.Exec(`INSERT INTO core.workspaces (id, code, name) VALUES ($1, 'ws-a', 'Workspace A')`, wsID); err != nil {
-		t.Fatal(err)
-	}
 
-	path := filepath.Join("..", "..", "..", "contracts", "fixtures", "procurement.yaml")
+	path := filepath.Join("..", "..", "..", "apps", "procurement", "manifest.yaml")
 	appV1, err := manifest.ParseFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -59,32 +56,51 @@ func TestApplyPreservesPriorActiveVersionOnFailure(t *testing.T) {
 
 	runner := NewRunner(db, Config{HasuraURL: srv.URL}, srv.Client())
 
-	// 1. Apply v0.1.0 succeeds
+	// 1. Apply v0.2.0 succeeds
 	planV1, err := planner.BuildPlan([]manifest.DXApplication{*appV1}, planner.ManagedState{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := runner.Run(context.Background(), planV1, PublishTo(wsID, planV1)); err != nil {
+	if err := runner.Run(context.Background(), planV1, []string{"procurement"}); err != nil {
 		t.Fatalf("initial apply failed: %v", err)
 	}
 
-	// 2. Apply v0.2.0 with injected metadata failure preserves v0.1.0 Ready in core.app_registry
+	// 2. Apply v0.3.0 with injected metadata failure keeps v0.2.0 Ready in core.apps
 	failMetadata = true
 	appV2 := *appV1
-	appV2.Metadata.Version = "0.2.0"
+	appV2.Metadata.Version = "0.3.0"
 	planV2, err := planner.BuildPlan([]manifest.DXApplication{appV2}, planner.ManagedState{ActiveApps: []manifest.DXApplication{*appV1}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := runner.Run(context.Background(), planV2, PublishTo(wsID, planV2)); err == nil {
-		t.Fatal("expected v0.2.0 apply to fail")
+	if err := runner.Run(context.Background(), planV2, []string{"procurement"}); err == nil {
+		t.Fatal("expected v0.3.0 apply to fail")
 	}
 
-	var activeVersion, activeStatus string
-	if err := db.QueryRow(`SELECT version, status FROM core.app_registry WHERE workspace_id = $1 AND app_id = 'procurement'`, wsID).Scan(&activeVersion, &activeStatus); err != nil {
+	var activeVersion, activeStatus, lastError string
+	if err := db.QueryRow(`SELECT version, status, coalesce(last_error, '') FROM core.apps WHERE app_id = 'procurement'`).Scan(&activeVersion, &activeStatus, &lastError); err != nil {
 		t.Fatal(err)
 	}
-	if activeVersion != "0.1.0" || activeStatus != "Ready" {
-		t.Fatalf("expected prior active version 0.1.0 Ready preserved, got %s %s", activeVersion, activeStatus)
+	if activeVersion != "0.2.0" || activeStatus != "Ready" || !strings.Contains(lastError, "injected failure") {
+		t.Fatalf("expected prior version 0.2.0 Ready with the error recorded, got %s %s %q", activeVersion, activeStatus, lastError)
+	}
+
+	// 3. A new application whose first apply fails is recorded as Failed.
+	review, err := manifest.ParseFile(filepath.Join("..", "..", "..", "apps", "process-fixture", "manifest.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	planReview, err := planner.BuildApplyPlan(*review, planner.ManagedState{ActiveApps: []manifest.DXApplication{*appV1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.Run(context.Background(), planReview, []string{"process_fixture"}); err == nil {
+		t.Fatal("expected the first apply of process_fixture to fail")
+	}
+	if err := db.QueryRow(`SELECT status FROM core.apps WHERE app_id = 'process_fixture'`).Scan(&activeStatus); err != nil {
+		t.Fatal(err)
+	}
+	if activeStatus != "Failed" {
+		t.Fatalf("new application status = %s, want Failed", activeStatus)
 	}
 }

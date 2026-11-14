@@ -1,0 +1,350 @@
+{
+  "app_id": "procurement",
+  "display_name": "Material Procurement",
+  "version": "0.2.0",
+  "spec": {
+    "capabilities": [
+      "cap-process",
+      "cap-hr",
+      "cap-work"
+    ],
+    "roles": [
+      {
+        "name": "role_procurement_requester",
+        "description": "Creates and submits purchase requests"
+      },
+      {
+        "name": "role_procurement_manager",
+        "description": "Approves the purchase requests of their own department"
+      },
+      {
+        "name": "role_procurement_finance",
+        "description": "Reviews the budget of requests approved by a department"
+      }
+    ],
+    "sharedAccess": [
+      {
+        "table": "core.users",
+        "roles": [
+          "role_procurement_requester",
+          "role_procurement_manager",
+          "role_procurement_finance"
+        ],
+        "columns": [
+          "id",
+          "display_name",
+          "email"
+        ]
+      },
+      {
+        "table": "cap_hr.org_units",
+        "roles": [
+          "role_procurement_requester",
+          "role_procurement_manager",
+          "role_procurement_finance"
+        ],
+        "columns": [
+          "id",
+          "code",
+          "name"
+        ]
+      },
+      {
+        "table": "core.files",
+        "roles": [
+          "role_procurement_requester",
+          "role_procurement_manager",
+          "role_procurement_finance"
+        ],
+        "columns": [
+          "id",
+          "file_name",
+          "scan_status",
+          "sha256_hash",
+          "scanned_at"
+        ]
+      }
+    ],
+    "domainTable": {
+      "name": "domain.procurement_requests",
+      "columns": [
+        {
+          "name": "vendor_name",
+          "type": "text",
+          "nullable": false,
+          "check": "length(trim(vendor_name)) > 0"
+        },
+        {
+          "name": "item_description",
+          "type": "text",
+          "nullable": false,
+          "check": "length(trim(item_description)) > 0"
+        },
+        {
+          "name": "quoted_amount",
+          "type": "numeric(14,2)",
+          "nullable": false,
+          "check": "quoted_amount > 0"
+        },
+        {
+          "name": "quote_file_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "rejection_reason",
+          "type": "text",
+          "nullable": true
+        }
+      ],
+      "foreignKeys": [
+        {
+          "column": "quote_file_id",
+          "references": "core.files"
+        }
+      ]
+    },
+    "domainAccess": {
+      "select": [
+        {
+          "role": "role_procurement_requester",
+          "scope": "own",
+          "columns": [
+            "id",
+            "created_by",
+            "org_unit_id",
+            "vendor_name",
+            "item_description",
+            "quoted_amount",
+            "quote_file_id",
+            "rejection_reason",
+            "status",
+            "version",
+            "created_at",
+            "updated_at"
+          ]
+        },
+        {
+          "role": "role_procurement_manager",
+          "scope": "department",
+          "columns": [
+            "id",
+            "created_by",
+            "org_unit_id",
+            "vendor_name",
+            "item_description",
+            "quoted_amount",
+            "quote_file_id",
+            "rejection_reason",
+            "status",
+            "version",
+            "created_at",
+            "updated_at"
+          ]
+        },
+        {
+          "role": "role_procurement_finance",
+          "scope": "organization",
+          "columns": [
+            "id",
+            "created_by",
+            "org_unit_id",
+            "vendor_name",
+            "item_description",
+            "quoted_amount",
+            "quote_file_id",
+            "rejection_reason",
+            "status",
+            "version",
+            "created_at",
+            "updated_at"
+          ],
+          "recordFilter": {
+            "status": {
+              "_neq": "DRAFT"
+            }
+          }
+        }
+      ],
+      "insert": [
+        {
+          "role": "role_procurement_requester",
+          "columns": [
+            "vendor_name",
+            "item_description",
+            "quoted_amount",
+            "quote_file_id"
+          ]
+        }
+      ],
+      "update": [
+        {
+          "role": "role_procurement_requester",
+          "scope": "own",
+          "columns": [
+            "vendor_name",
+            "item_description",
+            "quoted_amount",
+            "quote_file_id"
+          ]
+        }
+      ]
+    },
+    "stateMachine": {
+      "initial": "DRAFT",
+      "editableStates": [
+        "DRAFT"
+      ],
+      "terminalStates": [
+        "APPROVED",
+        "REJECTED",
+        "CANCELLED"
+      ],
+      "commands": [
+        {
+          "name": "submit",
+          "from": [
+            "DRAFT"
+          ],
+          "to": "SUBMITTED",
+          "allowedRoles": [
+            "role_procurement_requester"
+          ]
+        },
+        {
+          "name": "approve",
+          "from": [
+            "SUBMITTED"
+          ],
+          "to": "BUDGET_REVIEW",
+          "allowedRoles": [
+            "role_procurement_manager"
+          ],
+          "recordFilter": {
+            "created_by": {
+              "_neq": "X-Hasura-User-Id"
+            }
+          }
+        },
+        {
+          "name": "approve_budget",
+          "from": [
+            "BUDGET_REVIEW"
+          ],
+          "to": "APPROVED",
+          "allowedRoles": [
+            "role_procurement_finance"
+          ],
+          "recordFilter": {
+            "created_by": {
+              "_neq": "X-Hasura-User-Id"
+            }
+          }
+        },
+        {
+          "name": "reject",
+          "from": [
+            "SUBMITTED",
+            "BUDGET_REVIEW"
+          ],
+          "to": "REJECTED",
+          "allowedRoles": [
+            "role_procurement_manager",
+            "role_procurement_finance"
+          ]
+        },
+        {
+          "name": "cancel",
+          "from": [
+            "DRAFT",
+            "SUBMITTED"
+          ],
+          "to": "CANCELLED",
+          "allowedRoles": [
+            "role_procurement_requester"
+          ]
+        }
+      ]
+    },
+    "attachments": [
+      {
+        "column": "quote_file_id",
+        "requireCleanOnCommands": [
+          "submit",
+          "approve",
+          "approve_budget"
+        ]
+      }
+    ],
+    "workflows": [
+      {
+        "id": "procurement_approval_flow",
+        "file": "workflows/procurement_flow.yaml",
+        "subscribedEvents": [
+          "command.committed"
+        ],
+        "effects": [
+          {
+            "stepName": "create_review",
+            "kind": "create_work_item",
+            "whenCommands": [
+              "submit"
+            ],
+            "fields": {
+              "title": "Review procurement request",
+              "description": "Review the submitted request in its source application.",
+              "priority": "MEDIUM"
+            }
+          }
+        ]
+      }
+    ],
+    "uiSchema": {
+      "listColumns": [
+        "vendor_name",
+        "item_description",
+        "quoted_amount",
+        "quote_file_id",
+        "status",
+        "version",
+        "updated_at"
+      ],
+      "formFields": [
+        {
+          "name": "vendor_name",
+          "label": "Vendor Name",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "item_description",
+          "label": "Item Description",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "quoted_amount",
+          "label": "Quoted Amount",
+          "type": "number",
+          "required": true
+        },
+        {
+          "name": "quote_file_id",
+          "label": "Supplier Quote File",
+          "type": "file",
+          "required": false
+        }
+      ],
+      "actions": [
+        "submit",
+        "approve",
+        "approve_budget",
+        "reject",
+        "cancel"
+      ]
+    }
+  },
+  "status": "Ready",
+  "last_error": null,
+  "updated_at": "2026-11-13T00:00:00Z"
+}

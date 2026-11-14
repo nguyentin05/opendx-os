@@ -33,7 +33,6 @@ PLATFORM_NS="dxos-platform"
 OPERATOR_NS="dxos-operator-system"
 IMAGE="dxos-operator:dev"
 DEMO_APP="${DXOS_DEMO_APP:-procurement}"
-DEMO_WORKSPACE="${DXOS_DEMO_WORKSPACE:-11111111-1111-4111-8111-111111111111}"
 
 log() { echo "[dev-cluster] $*"; }
 die() { echo "[dev-cluster] ERROR: $*" >&2; exit 1; }
@@ -152,14 +151,12 @@ demo() {
     require
     command -v curl >/dev/null || die "curl is required"
     local name="${DEMO_APP//_/-}"
-    log "seeding workspace $DEMO_WORKSPACE"
-    psql_query "INSERT INTO core.workspaces (id, code, name) VALUES ('${DEMO_WORKSPACE}', 'demo', 'Demo') ON CONFLICT DO NOTHING" >/dev/null
-
     log "applying apps/${DEMO_APP} as a DXApplication"
-    (cd "$ROOT/operator" && go run ./cmd/dxos-operator export-crd -workspace "$DEMO_WORKSPACE" "../apps/${DEMO_APP}") | kc apply -f -
+    (cd "$ROOT/operator" && go run ./cmd/dxos-operator export-crd "../apps/${DEMO_APP}") | kc apply -f -
     kc wait "dxapplication/${name}" --for=condition=Ready --timeout=180s
     kc get dxapplication "$name" -o wide
-    log "registry: $(psql_query "SELECT app_id || ' ' || version || ' ' || status FROM core.app_registry WHERE workspace_id = '${DEMO_WORKSPACE}'")"
+    log "registry: $(psql_query "SELECT app_id || ' ' || version || ' ' || status FROM core.apps WHERE app_id = '${DEMO_APP}'")"
+    log "roles: $(psql_query "SELECT string_agg(name, ', ' ORDER BY name) FROM core.roles WHERE app_id = '${DEMO_APP}'")"
 
     local admin pf_pid
     admin="$(secret_value "$PLATFORM_NS" dxos-platform-credentials hasura-admin-secret)"

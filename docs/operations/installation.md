@@ -62,18 +62,18 @@ The CLI above keeps working without a cluster.
    `dxos-operator-config`); data lives in an `emptyDir` and is lost with the pod.
 2. Publish an application package as a resource and wait until it is ready:
    ```bash
-   go -C operator run ./cmd/dxos-operator export-crd \
-     -workspace 11111111-1111-4111-8111-111111111111 ../apps/procurement \
+   go -C operator run ./cmd/dxos-operator export-crd ../apps/procurement \
      | kubectl --context kind-dxos-dev apply -f -
    kubectl --context kind-dxos-dev wait dxapplication/procurement --for=condition=Ready
    kubectl --context kind-dxos-dev get dxapplications
    ```
-   The workspace row must exist in `core.workspaces`; `scripts/k8s/dev-cluster.sh demo`
-   seeds it, applies the package and demonstrates drift repair.
+   The capabilities the package declares (procurement: cap-process, cap-hr,
+   cap-work) must be enabled; `scripts/k8s/dev-cluster.sh demo` applies the
+   package and demonstrates drift repair.
 3. Status conditions: `Valid`, `SchemaInSync`, `PermissionsInSync`, `Published`,
-   `Ready`, plus `status.workspaces`. A blocked schema change keeps the previous
-   version serving. Deleting the resource revokes its grants and registry rows but
-   keeps the domain table and data.
+   `Ready`, plus `status.activeVersion`. A blocked schema change keeps the previous
+   version serving. Deleting the resource revokes its grants and marks the
+   `core.apps` row `Removed`; the domain table, data and roles are kept.
 4. Remove the cluster with `scripts/k8s/dev-cluster.sh down`.
 
 For another cluster, create the `dxos-operator-config` Secret (keys `DATABASE_URL`,

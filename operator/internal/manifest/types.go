@@ -24,7 +24,8 @@ type DXApplication struct {
 	Spec       AppSpec     `yaml:"spec" json:"spec"`
 }
 
-// AppMetadata defines metadata for the manifest.
+// AppMetadata defines metadata for the manifest. Name is the application id
+// (core.apps.app_id).
 type AppMetadata struct {
 	Name        string `yaml:"name" json:"name"`
 	DisplayName string `yaml:"displayName" json:"displayName"`
@@ -33,18 +34,29 @@ type AppMetadata struct {
 
 // AppSpec defines the full specification of a DXApplication.
 type AppSpec struct {
-	Role         string            `yaml:"role" json:"role"`
-	SharedAccess []SharedAccessDef `yaml:"sharedAccess" json:"sharedAccess"`
+	// Capabilities lists the Tier 2 capabilities the application uses. cap-process
+	// is required because every application runs commands through it.
+	Capabilities []string `yaml:"capabilities" json:"capabilities"`
+	// Roles are owned by this application. No other application or capability
+	// may declare or use them.
+	Roles        []RoleDef         `yaml:"roles" json:"roles"`
+	SharedAccess []SharedAccessDef `yaml:"sharedAccess,omitempty" json:"sharedAccess,omitempty"`
 	DomainTable  DomainTableDef    `yaml:"domainTable" json:"domainTable"`
 	DomainAccess DomainAccessDef   `yaml:"domainAccess" json:"domainAccess"`
 	StateMachine StateMachineDef   `yaml:"stateMachine" json:"stateMachine"`
-	Attachments  []AttachmentDef   `yaml:"attachments" json:"attachments"`
-	Workflows    []WorkflowDef     `yaml:"workflows" json:"workflows"`
-	Capabilities []string          `yaml:"capabilities" json:"capabilities"`
+	Attachments  []AttachmentDef   `yaml:"attachments,omitempty" json:"attachments,omitempty"`
+	Workflows    []WorkflowDef     `yaml:"workflows,omitempty" json:"workflows,omitempty"`
 	UISchema     UISchemaDef       `yaml:"uiSchema" json:"uiSchema"`
 }
 
-// SharedAccessDef defines how app roles access shared core entities.
+// RoleDef declares one application role (core.roles).
+type RoleDef struct {
+	Name        string `yaml:"name" json:"name"`
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+}
+
+// SharedAccessDef grants application roles read access to a shared Tier 1 or
+// Tier 2 table.
 type SharedAccessDef struct {
 	Table   string   `yaml:"table" json:"table"`
 	Roles   []string `yaml:"roles" json:"roles"`
@@ -53,9 +65,9 @@ type SharedAccessDef struct {
 
 // DomainTableDef defines the domain table specification.
 type DomainTableDef struct {
-	Name                 string          `yaml:"name" json:"name"`
-	Columns              []ColumnDef     `yaml:"columns" json:"columns"`
-	CompositeForeignKeys []ForeignKeyDef `yaml:"compositeForeignKeys" json:"compositeForeignKeys"`
+	Name        string          `yaml:"name" json:"name"`
+	Columns     []ColumnDef     `yaml:"columns" json:"columns"`
+	ForeignKeys []ForeignKeyDef `yaml:"foreignKeys,omitempty" json:"foreignKeys,omitempty"`
 }
 
 // ColumnDef defines a business column in a domain table.
@@ -66,23 +78,36 @@ type ColumnDef struct {
 	Check    string `yaml:"check,omitempty" json:"check,omitempty"`
 }
 
-// ForeignKeyDef defines a same-workspace composite foreign key.
+// ForeignKeyDef links a business uuid column to the id of a shared table.
 type ForeignKeyDef struct {
-	Columns           []string `yaml:"columns" json:"columns"`
-	ReferencesTable   string   `yaml:"referencesTable" json:"referencesTable"`
-	ReferencesColumns []string `yaml:"referencesColumns" json:"referencesColumns"`
+	Column     string `yaml:"column" json:"column"`
+	References string `yaml:"references" json:"references"`
 }
 
 // DomainAccessDef defines CRUD permissions on the domain table.
 type DomainAccessDef struct {
 	Select []AccessRule `yaml:"select" json:"select"`
 	Insert []AccessRule `yaml:"insert" json:"insert"`
-	Update []AccessRule `yaml:"update" json:"update"`
+	Update []AccessRule `yaml:"update,omitempty" json:"update,omitempty"`
 }
 
+// Role scopes. A scope decides which records a role reaches; RecordFilter can
+// narrow it further.
+const (
+	// ScopeOwn: records the caller created.
+	ScopeOwn = "own"
+	// ScopeDepartment: records of the caller's department (requires cap-hr).
+	ScopeDepartment = "department"
+	// ScopeOrganization: every record of the application.
+	ScopeOrganization = "organization"
+)
+
 // AccessRule defines role-scoped permissions for select, insert, or update.
+// Scope is required on select and update and not allowed on insert, where the
+// creator and department are stamped by the database.
 type AccessRule struct {
 	Role         string            `yaml:"role" json:"role"`
+	Scope        string            `yaml:"scope,omitempty" json:"scope,omitempty"`
 	Columns      []string          `yaml:"columns" json:"columns"`
 	RecordFilter map[string]any    `yaml:"recordFilter,omitempty" json:"recordFilter,omitempty"`
 	Presets      map[string]string `yaml:"presets,omitempty" json:"presets,omitempty"`
@@ -127,12 +152,13 @@ type EffectDef struct {
 	Fields       EffectFieldsDef `yaml:"fields" json:"fields"`
 }
 
-// EffectFieldsDef defines literal parameters for a create_work_item effect.
+// EffectFieldsDef defines literal parameters for a create_work_item effect
+// (a cap_work.work_items row).
 type EffectFieldsDef struct {
-	Title              string `yaml:"title" json:"title"`
-	Description        string `yaml:"description" json:"description"`
-	Priority           string `yaml:"priority" json:"priority"`
-	AssignedEmployeeID string `yaml:"assignedEmployeeId,omitempty" json:"assignedEmployeeId,omitempty"`
+	Title       string `yaml:"title" json:"title"`
+	Description string `yaml:"description" json:"description"`
+	Priority    string `yaml:"priority" json:"priority"`
+	AssigneeID  string `yaml:"assigneeId,omitempty" json:"assigneeId,omitempty"`
 }
 
 // UISchemaDef defines the schema-driven UI metadata.

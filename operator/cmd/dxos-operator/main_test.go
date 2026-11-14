@@ -29,7 +29,7 @@ import (
 )
 
 func TestCLIValidateAndPlan(t *testing.T) {
-	fixture := filepath.Join("..", "..", "..", "contracts", "fixtures", "procurement.yaml")
+	fixture := filepath.Join("..", "..", "..", "apps", "procurement", "manifest.yaml")
 
 	var out, errOut bytes.Buffer
 	code := runCLI([]string{"validate", fixture}, &out, &errOut, nil, nil)
@@ -68,7 +68,7 @@ func TestCLIValidateAndPlan(t *testing.T) {
 }
 
 func TestCLIApplyWithInjectedRunner(t *testing.T) {
-	fixture := filepath.Join("..", "..", "..", "contracts", "fixtures", "procurement.yaml")
+	fixture := filepath.Join("..", "..", "..", "apps", "procurement", "manifest.yaml")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"version":3,"sources":[]}`))

@@ -8,11 +8,14 @@ and runtime scaffolds are not migrated by this handoff. UI implementation is def
 The rationale remains in [data contracts](../docs/contracts/data-contracts.md).
 `runtime-v1.openapi.yaml` defines the process HTTP boundary;
 `events-v1.schema.json` defines the process event envelope;
-`manifest-v1.schema.json` proposes the supported core manifest serialization for
-B's validator. `fixtures/procurement.yaml` is a proposal, not the deployed app.
-`fixtures/registry-ready.json` uses the exact SQL column names, with unchanged
-lowerCamelCase manifest JSON. Its duplicate state/UI/capability snapshots must
-match `manifest_spec`. Only a Ready active snapshot is consumed.
+`manifest-v1.schema.json` is the structural schema of the application manifest,
+derived from the `DXApplication` CRD; the operator's validator enforces the
+semantic rules ([data contracts, section 7](../docs/contracts/data-contracts.md#7-dxapplication-manifest-contract)).
+`fixtures/procurement.yaml` equals `apps/procurement/manifest.yaml`, and
+`fixtures/app-ready.json` is its `core.apps` row (status `Ready`).
+`fixtures/registry-ready.json` is the previous per-workspace registry snapshot,
+kept only until cap-process moves to `core.apps` (issue #29); the semantic rules
+below that mention workspaces describe that previous shape.
 
 ## Mandatory semantic validation before side effects
 
