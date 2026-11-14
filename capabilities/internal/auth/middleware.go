@@ -16,44 +16,38 @@
 package auth
 
 import (
-	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 )
 
-func Middleware(v Verifier, next http.Handler) http.Handler {
+// Middleware admits a request only with a bearer token whose caller holds the
+// role named in X-Hasura-Role (or holds exactly one role, when none is named).
+func Middleware(a Authorizer, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fields := strings.Fields(r.Header.Get("Authorization"))
-		if v == nil || len(fields) != 2 || !strings.EqualFold(fields[0], "Bearer") {
+		if a == nil || len(fields) != 2 || !strings.EqualFold(fields[0], "Bearer") {
 			writeAuthenticationError(w, http.StatusUnauthorized)
 			return
 		}
-		id, e := v.Verify(r.Context(), fields[1])
-		if e != nil || id == nil {
+		id, err := a.Authorize(r.Context(), fields[1], strings.TrimSpace(r.Header.Get("X-Hasura-Role")))
+		switch {
+		case errors.Is(err, ErrUnauthenticated):
 			writeAuthenticationError(w, http.StatusUnauthorized)
 			return
-		}
-		selected := r.Header.Get("X-Hasura-Role")
-		if selected == "" {
-			selected = id.Role
-		}
-		granted := false
-		for _, role := range id.AllowedRoles {
-			granted = granted || selected == role
-		}
-		if !granted {
+		case errors.Is(err, ErrForbidden):
 			writeAuthenticationError(w, http.StatusForbidden)
 			return
+		case err != nil || id == nil:
+			writeAuthenticationError(w, http.StatusServiceUnavailable)
+			return
 		}
-		copy := *id
-		copy.Role = selected
-		copy.AllowedRoles = append([]string(nil), id.AllowedRoles...)
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), identityKey{}, &copy)))
+		next.ServeHTTP(w, r.WithContext(WithIdentity(r.Context(), id)))
 	})
 }
 
-// writeAuthenticationError preserves the C0 envelope without exposing verifier details.
+// writeAuthenticationError preserves the C0 envelope without exposing details.
 func writeAuthenticationError(w http.ResponseWriter, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

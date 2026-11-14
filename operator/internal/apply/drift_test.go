@@ -42,39 +42,39 @@ func TestMetadataDrift(t *testing.T) {
 		t.Fatal("empty Hasura must report the whole plan as drift")
 	}
 
-	if err := runner.Run(ctx, plan, Publication{}); err != nil {
+	if err := runner.Run(ctx, plan, nil); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	if drift, err = runner.MetadataDrift(ctx, plan); err != nil || len(drift) != 0 {
 		t.Fatalf("after apply drift = %v (err=%v), want none", drift, err)
 	}
 
-	insert := testutil.PermKey("insert", "domain", "procurement_requests", "role_procurement")
+	insert := testutil.PermKey("insert", "domain", "procurement_requests", "role_procurement_requester")
 	hasura.Drop(insert)
 	drift, err = runner.MetadataDrift(ctx, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(drift) != 1 || !strings.Contains(drift[0], "insert permission for role_procurement on domain.procurement_requests is missing") {
+	if len(drift) != 1 || !strings.Contains(drift[0], "insert permission for role_procurement_requester on domain.procurement_requests is missing") {
 		t.Fatalf("drift = %v", drift)
 	}
 
 	// A changed column allowlist is drift even when the permission exists.
 	app := plan.Apps[0]
-	app.Spec.DomainAccess.Insert = append([]manifest.AccessRule(nil), app.Spec.DomainAccess.Insert...)
-	app.Spec.DomainAccess.Insert[0].Columns = app.Spec.DomainAccess.Insert[0].Columns[:len(app.Spec.DomainAccess.Insert[0].Columns)-1]
+	app.Spec.Tables[0].Access.Insert = append([]manifest.AccessRule(nil), app.Spec.Tables[0].Access.Insert...)
+	app.Spec.Tables[0].Access.Insert[0].Columns = app.Spec.Tables[0].Access.Insert[0].Columns[:len(app.Spec.Tables[0].Access.Insert[0].Columns)-1]
 	narrowed, err := planner.BuildPlan([]manifest.DXApplication{app}, planner.ManagedState{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := runner.Run(ctx, plan, Publication{}); err != nil {
+	if err := runner.Run(ctx, plan, nil); err != nil {
 		t.Fatal(err)
 	}
 	drift, err = runner.MetadataDrift(ctx, narrowed)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(drift) != 1 || !strings.Contains(drift[0], "insert permission for role_procurement on domain.procurement_requests differs") {
+	if len(drift) != 1 || !strings.Contains(drift[0], "insert permission for role_procurement_requester on domain.procurement_requests differs") {
 		t.Fatalf("drift = %v", drift)
 	}
 

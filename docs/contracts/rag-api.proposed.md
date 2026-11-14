@@ -1,6 +1,6 @@
 # Native RAG canonical contracts (proposed)
 
-**Status:** contract specification, not implemented API/schema. [ADR 0007](../adr/0007-native-rag-identity-and-source-boundaries.md) records decisions; [authorization](../architecture/rag-authorization-proposal.md) alone defines access predicates. Historical design packages and implementation plans are user-local and do not override this contract. Formal ADR 0005 alignment is required before identity/FK-dependent implementation.
+**Status:** contract specification, not implemented API/schema. [ADR 0009](../adr/0009-native-rag-identity-and-source-boundaries.md) records decisions; [authorization](../architecture/rag-authorization-proposal.md) alone defines access predicates. Historical design packages and implementation plans are user-local and do not override this contract. Formal ADR 0005 alignment is required before identity/FK-dependent implementation.
 
 ## Knowledge manifest serialization
 

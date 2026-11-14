@@ -68,11 +68,11 @@ func (s *Service) Upload(ctx context.Context, actor *auth.Identity, appID, fileN
 	if e != nil {
 		return nil, e
 	}
-	key := actor.WorkspaceID + "/" + appID + "/" + id
+	key := appID + "/" + id
 	if e = s.storage.Put(ctx, key, bytes.NewReader(b)); e != nil {
 		return nil, e
 	}
-	_, e = s.db.ExecContext(ctx, `INSERT INTO core.file_objects(id,workspace_id,app_id,bucket,object_key,file_name,scan_status,sha256_hash,uploaded_by,mime_type,size_bytes) VALUES($1,$2,$3,$4,$5,$6,'QUARANTINED',$7,$8,$9,$10)`, id, actor.WorkspaceID, appID, s.bucket, key, fileName, digest(b), actor.UserID, m, len(b))
+	_, e = s.db.ExecContext(ctx, `INSERT INTO core.files(id,app_id,bucket,object_key,file_name,scan_status,sha256_hash,uploaded_by,mime_type,size_bytes) VALUES($1,$2,$3,$4,$5,'QUARANTINED',$6,$7,$8,$9)`, id, appID, s.bucket, key, fileName, digest(b), actor.UserID, m, len(b))
 	if e != nil {
 		return nil, e
 	}
@@ -112,11 +112,11 @@ func (s *Service) ScanPending(ctx context.Context, limit int) error {
 	// interrupted batches move behind other due uploads, including after restart.
 	// SKIP LOCKED prevents simultaneous workers from claiming the same due rows.
 	rows, e := s.db.QueryContext(ctx, `WITH due AS (
- SELECT id FROM core.file_objects
+ SELECT id FROM core.files
  WHERE scan_status='QUARANTINED' AND bucket=$1 AND scan_next_attempt_at<=now()
  ORDER BY scan_next_attempt_at,created_at,id
  LIMIT $2 FOR UPDATE SKIP LOCKED
-) UPDATE core.file_objects f
+) UPDATE core.files f
 SET scan_attempt_count=LEAST(f.scan_attempt_count,1000000)+1,
  scan_next_attempt_at=now()+power(2,LEAST(f.scan_attempt_count+1,8))*interval '1 second'
 FROM due WHERE f.id=due.id
@@ -155,7 +155,7 @@ RETURNING f.id::text,f.object_key,f.sha256_hash,
 			failure = ErrUnclean
 			continue
 		}
-		_, e = s.db.ExecContext(ctx, `UPDATE core.file_objects f SET scan_status=$1,scanned_at=now() WHERE id=$2 AND object_key=$3 AND sha256_hash=$4 AND scan_status='QUARANTINED' AND bucket=$5 AND (to_jsonb(f)-'scan_status'-'scanned_at'-'scan_attempt_count'-'scan_next_attempt_at')=$6::jsonb`, string(result), f.id, f.key, f.hash, s.bucket, string(f.snapshot))
+		_, e = s.db.ExecContext(ctx, `UPDATE core.files f SET scan_status=$1,scanned_at=now() WHERE id=$2 AND object_key=$3 AND sha256_hash=$4 AND scan_status='QUARANTINED' AND bucket=$5 AND (to_jsonb(f)-'scan_status'-'scanned_at'-'scan_attempt_count'-'scan_next_attempt_at')=$6::jsonb`, string(result), f.id, f.key, f.hash, s.bucket, string(f.snapshot))
 		if e != nil {
 			failure = e
 		}

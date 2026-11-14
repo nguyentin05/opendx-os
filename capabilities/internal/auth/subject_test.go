@@ -123,3 +123,30 @@ func TestSubjectUnknownKey(t *testing.T) {
 		t.Fatalf("unknown key accepted: %+v %v", got, err)
 	}
 }
+
+// A key selected while another request refreshes must use its own snapshot age.
+func TestSubjectRejectsStaleSnapshotDuringConcurrentRefresh(t *testing.T) {
+	v, _ := subjectFixture(t)
+	raw := v.(*jwtVerifier)
+	entered, release := make(chan struct{}), make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(entered)
+		<-release
+		_, _ = w.Write([]byte(`{"keys":[]}`))
+	}))
+	defer server.Close()
+	raw.mu.Lock()
+	raw.cfg.JWKSURL = server.URL
+	raw.lastRefresh = time.Now().Add(-6 * time.Minute)
+	raw.lastAttempt = time.Time{}
+	raw.mu.Unlock()
+	done := make(chan struct{})
+	go func() { defer close(done); _, _ = raw.signingKey(context.Background(), "subject", jwksMaxStaleness) }()
+	<-entered
+	key, err := raw.signingKey(context.Background(), "subject", jwksCacheLifetime)
+	close(release)
+	<-done
+	if err == nil || key != nil {
+		t.Fatal("expired signing key escaped during concurrent refresh")
+	}
+}

@@ -8,8 +8,8 @@ import (
 )
 
 func TestRouteRejectsStaleAndAmbiguousDeclarations(t *testing.T) {
-	app := &registry.AppDefinition{WorkspaceID: "w", AppID: "example", Version: "1", Status: "Ready", ManifestSpec: registry.Spec{Workflows: []registry.Workflow{{ID: "review", SubscribedEvents: []string{"command.committed"}}}}}
-	routes := []Route{{WorkspaceID: "w", AppID: "example", Version: "1", WorkflowID: "review", Endpoint: "http://kestra:8080/api/v1/executions/webhook/example/review/key"}}
+	app := &registry.AppDefinition{AppID: "example", Version: "1", Spec: registry.Spec{Workflows: []registry.Workflow{{ID: "review", SubscribedEvents: []string{"command.committed"}}}}}
+	routes := []Route{{AppID: "example", Version: "1", WorkflowID: "review", Endpoint: "http://kestra:8080/api/v1/executions/webhook/example/review/key"}}
 	if got, err := selectRoute(routes, app, "command.committed"); err != nil || got != routes[0].Endpoint {
 		t.Fatal("declared route unavailable", err)
 	}
@@ -18,7 +18,7 @@ func TestRouteRejectsStaleAndAmbiguousDeclarations(t *testing.T) {
 		t.Fatal("stale route accepted")
 	}
 	app.Version = "1"
-	app.ManifestSpec.Workflows = append(app.ManifestSpec.Workflows, registry.Workflow{ID: "another", SubscribedEvents: []string{"command.committed"}})
+	app.Spec.Workflows = append(app.Spec.Workflows, registry.Workflow{ID: "another", SubscribedEvents: []string{"command.committed"}})
 	if _, err := selectRoute(routes, app, "command.committed"); err == nil {
 		t.Fatal("ambiguous workflow silently dropped")
 	}

@@ -23,7 +23,7 @@ type SubjectVerifier interface {
 
 // NewSubjectVerifier shares the existing signature and JWKS implementation.
 func NewSubjectVerifier(ctx context.Context, cfg VerifierConfig) (SubjectVerifier, error) {
-	v, err := NewVerifier(ctx, cfg)
+	v, err := NewAuthenticator(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +31,7 @@ func NewSubjectVerifier(ctx context.Context, cfg VerifierConfig) (SubjectVerifie
 }
 
 func (v *jwtVerifier) VerifySubject(ctx context.Context, token string) (Subject, error) {
-	payload, err := v.verifiedPayload(ctx, token)
+	payload, err := v.verifiedPayloadWithMaxAge(ctx, token, jwksCacheLifetime)
 	if err != nil {
 		return Subject{}, err
 	}

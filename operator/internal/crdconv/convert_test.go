@@ -25,11 +25,6 @@ import (
 	"github.com/opendx-os/opendx-os/operator/internal/manifest"
 )
 
-const (
-	wsA = "11111111-1111-4111-8111-111111111111"
-	wsB = "22222222-2222-4222-8222-222222222222"
-)
-
 func canonical(t *testing.T, v any) string {
 	t.Helper()
 	b, err := json.Marshal(v)
@@ -40,7 +35,7 @@ func canonical(t *testing.T, v any) string {
 }
 
 func TestRoundTripSupportedPackages(t *testing.T) {
-	for _, pkg := range []string{"procurement", "process-fixture"} {
+	for _, pkg := range []string{"procurement", "process-fixture", "maintenance", "timesheet"} {
 		t.Run(pkg, func(t *testing.T) {
 			dir := filepath.Join("..", "..", "..", "apps", pkg)
 			want, err := manifest.ParseFile(filepath.Join(dir, "manifest.yaml"))
@@ -48,7 +43,7 @@ func TestRoundTripSupportedPackages(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			cr, err := FromPackage(dir, []string{wsA, wsB})
+			cr, err := FromPackage(dir)
 			if err != nil {
 				t.Fatalf("FromPackage: %v", err)
 			}
@@ -80,41 +75,33 @@ func TestRoundTripSupportedPackages(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, needle := range []string{"apiVersion: dxos.io/v1alpha1", "kind: DXApplication", "name: " + cr.Name, "- " + wsA, "definition: |"} {
+			needles := []string{"apiVersion: dxos.io/v1alpha1", "kind: DXApplication", "name: " + cr.Name, "scope: "}
+			if len(want.Spec.Workflows) > 0 {
+				needles = append(needles, "definition: |")
+			}
+			for _, needle := range needles {
 				if !strings.Contains(string(out), needle) {
 					t.Fatalf("YAML missing %q:\n%s", needle, out)
 				}
 			}
-			if strings.Contains(string(out), "status:") {
+			if strings.Contains(string(out), "\nstatus:") {
 				t.Fatal("exported resource must not carry status")
 			}
 		})
 	}
 }
 
-func TestFromPackageRejectsBadWorkspaces(t *testing.T) {
-	dir := filepath.Join("..", "..", "..", "apps", "procurement")
-	for name, ws := range map[string][]string{
-		"none":      nil,
-		"not uuid":  {"alpha"},
-		"duplicate": {wsA, strings.ToUpper(wsA)},
-	} {
-		if _, err := FromPackage(dir, ws); err == nil {
-			t.Errorf("%s: expected error", name)
-		}
-	}
-}
-
 func TestToManifestRunsSemanticValidation(t *testing.T) {
-	cr, err := FromPackage(filepath.Join("..", "..", "..", "apps", "procurement"), []string{wsA})
+	cr, err := FromPackage(filepath.Join("..", "..", "..", "apps", "procurement"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	declared := cr.Spec.Capabilities
 	cr.Spec.Capabilities = []string{"cap-ai"}
 	if _, _, err := ToManifest(cr); err == nil || !strings.Contains(err.Error(), "capabilities") {
 		t.Fatalf("expected validator rejection, got %v", err)
 	}
-	cr.Spec.Capabilities = []string{"cap-process"}
+	cr.Spec.Capabilities = declared
 	cr.Name = "has.dots"
 	if _, _, err := ToManifest(cr); err == nil {
 		t.Fatal("a resource name that is not a manifest identifier must be rejected")
@@ -122,7 +109,7 @@ func TestToManifestRunsSemanticValidation(t *testing.T) {
 }
 
 func TestToManifestSynthesizesWorkflowFileWhenAbsent(t *testing.T) {
-	cr, err := FromPackage(filepath.Join("..", "..", "..", "apps", "procurement"), []string{wsA})
+	cr, err := FromPackage(filepath.Join("..", "..", "..", "apps", "procurement"))
 	if err != nil {
 		t.Fatal(err)
 	}

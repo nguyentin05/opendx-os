@@ -1,6 +1,6 @@
 # RAG authorization and source trust
 
-**Status:** canonical proposed policy for [ADR 0007](../adr/0007-native-rag-identity-and-source-boundaries.md); approved conversation decisions are recorded there. No runtime enforcement claimed.
+**Status:** canonical proposed policy for [ADR 0009](../adr/0009-native-rag-identity-and-source-boundaries.md); approved conversation decisions are recorded there. No runtime enforcement claimed.
 
 ## Document access
 

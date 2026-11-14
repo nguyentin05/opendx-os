@@ -16,6 +16,7 @@
 package planner
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
@@ -51,7 +52,8 @@ func BuildPlan(apps []manifest.DXApplication, live ManagedState) (Plan, error) {
 	copy(plan.Apps, apps)
 
 	seenNames := map[string]bool{}
-	seenTables := map[string]bool{}
+	seenTables := map[string]string{}
+	roleOwner := map[string]string{}
 	desiredSharedGrants := map[sharedGrantKey][]string{}
 
 	for i := range apps {
@@ -62,11 +64,19 @@ func BuildPlan(apps []manifest.DXApplication, live ManagedState) (Plan, error) {
 		if seenNames[app.Metadata.Name] {
 			return Plan{}, fmt.Errorf("duplicate application name %q", app.Metadata.Name)
 		}
-		if seenTables[app.Spec.DomainTable.Name] {
-			return Plan{}, fmt.Errorf("duplicate domain table %q", app.Spec.DomainTable.Name)
+		for _, t := range app.Spec.Tables {
+			if owner, taken := seenTables[t.Name]; taken {
+				return Plan{}, fmt.Errorf("domain table %q is declared by both %s and %s", t.Name, owner, app.Metadata.Name)
+			}
+			seenTables[t.Name] = app.Metadata.Name
 		}
 		seenNames[app.Metadata.Name] = true
-		seenTables[app.Spec.DomainTable.Name] = true
+		for _, role := range app.RoleNames() {
+			if owner, taken := roleOwner[role]; taken {
+				return Plan{}, fmt.Errorf("role %q is declared by both %s and %s; a role belongs to one application", role, owner, app.Metadata.Name)
+			}
+			roleOwner[role] = app.Metadata.Name
+		}
 
 		ddl, err := GenerateDDL(app)
 		if err != nil {
@@ -97,17 +107,16 @@ func BuildPlan(apps []manifest.DXApplication, live ManagedState) (Plan, error) {
 	}
 
 	// Calculate excess managed permissions from live state that are no longer desired
+	plan.HasuraOps = orderOperations(plan.HasuraOps)
+
 	desiredDomainPerm := map[string]bool{}
 	for _, app := range apps {
-		tbl := app.Spec.DomainTable.Name
-		for _, r := range app.Spec.DomainAccess.Select {
-			desiredDomainPerm["select:"+tbl+":"+r.Role] = true
-		}
-		for _, r := range app.Spec.DomainAccess.Insert {
-			desiredDomainPerm["insert:"+tbl+":"+r.Role] = true
-		}
-		for _, r := range app.Spec.DomainAccess.Update {
-			desiredDomainPerm["update:"+tbl+":"+r.Role] = true
+		for _, t := range app.Spec.Tables {
+			for op, roles := range tableRoles(t) {
+				for _, role := range roles {
+					desiredDomainPerm[op+":"+t.Name+":"+role] = true
+				}
+			}
 		}
 	}
 
@@ -116,22 +125,16 @@ func BuildPlan(apps []manifest.DXApplication, live ManagedState) (Plan, error) {
 		if !seenNames[oldApp.Metadata.Name] {
 			plan.RemovedApps = append(plan.RemovedApps, oldApp.Metadata.Name)
 		}
-		oldTbl := oldApp.Spec.DomainTable.Name
-		oldRef := ParseTableRef(oldTbl)
-
-		for _, r := range oldApp.Spec.DomainAccess.Select {
-			if !desiredDomainPerm["select:"+oldTbl+":"+r.Role] {
-				plan.DropOps = append(plan.DropOps, dropPermOp("pg_drop_select_permission", oldRef, r.Role))
-			}
-		}
-		for _, r := range oldApp.Spec.DomainAccess.Insert {
-			if !desiredDomainPerm["insert:"+oldTbl+":"+r.Role] {
-				plan.DropOps = append(plan.DropOps, dropPermOp("pg_drop_insert_permission", oldRef, r.Role))
-			}
-		}
-		for _, r := range oldApp.Spec.DomainAccess.Update {
-			if !desiredDomainPerm["update:"+oldTbl+":"+r.Role] {
-				plan.DropOps = append(plan.DropOps, dropPermOp("pg_drop_update_permission", oldRef, r.Role))
+		// Permissions of a table or rule that is no longer declared are dropped;
+		// the table and its data stay.
+		for _, t := range oldApp.Spec.Tables {
+			ref := ParseTableRef(t.Name)
+			for _, op := range []string{"select", "insert", "update", "delete"} {
+				for _, role := range tableRoles(t)[op] {
+					if !desiredDomainPerm[op+":"+t.Name+":"+role] {
+						plan.DropOps = append(plan.DropOps, dropPermOp("pg_drop_"+op+"_permission", ref, role))
+					}
+				}
 			}
 		}
 
@@ -149,6 +152,54 @@ func BuildPlan(apps []manifest.DXApplication, live ManagedState) (Plan, error) {
 	return plan, nil
 }
 
+// orderOperations puts every table tracking first, then every relationship,
+// then every permission, keeping plan order within a phase and dropping exact
+// duplicates. Applications share relationships (cap_hr.org_units.staff serves
+// every department-scoped application), and a permission filter depends on the
+// relationships it traverses, so all of them must exist before any permission.
+func orderOperations(ops []HasuraMetadataPayload) []HasuraMetadataPayload {
+	phase := func(op HasuraMetadataPayload) int {
+		switch op.Type {
+		case "pg_track_table":
+			return 0
+		case "pg_create_object_relationship", "pg_create_array_relationship":
+			return 1
+		default:
+			return 2
+		}
+	}
+	seen := map[string]bool{}
+	out := make([]HasuraMetadataPayload, 0, len(ops))
+	for want := 0; want <= 2; want++ {
+		for _, op := range ops {
+			if phase(op) != want {
+				continue
+			}
+			key, ok := Canonical(op)
+			if ok && seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, op)
+		}
+	}
+	return out
+}
+
+// tableRoles returns the roles that hold a permission on the table, by operation.
+func tableRoles(t manifest.TableDef) map[string][]string {
+	out := map[string][]string{}
+	for op, rules := range map[string][]manifest.AccessRule{"select": t.Access.Select, "insert": t.Access.Insert, "update": t.Access.Update} {
+		for _, r := range rules {
+			out[op] = append(out[op], r.Role)
+		}
+	}
+	for _, r := range t.Access.Delete {
+		out["delete"] = append(out["delete"], r.Role)
+	}
+	return out
+}
+
 func dropPermOp(opType string, table TableRef, role string) HasuraMetadataPayload {
 	return HasuraMetadataPayload{
 		Type: opType,
@@ -160,15 +211,75 @@ func dropPermOp(opType string, table TableRef, role string) HasuraMetadataPayloa
 	}
 }
 
-// BuildApplyPlan updates one package while retaining the other active packages.
-// Only explicit full-set reconcile removes packages and their managed grants.
+// BuildApplyPlan installs or upgrades one application and keeps every other
+// installed application at its installed definition. Planning one change at a
+// time against the live set means an application that is refused cannot hold
+// back another.
 func BuildApplyPlan(app manifest.DXApplication, live ManagedState) (Plan, error) {
-	desired := make([]manifest.DXApplication, 0, len(live.ActiveApps)+1)
-	for _, active := range live.ActiveApps {
-		if active.Metadata.Name != app.Metadata.Name {
-			desired = append(desired, active)
-		}
-	}
+	desired := live.without(app.Metadata.Name)
 	desired = append(desired, app)
 	return BuildPlan(desired, live)
+}
+
+// BuildRemovePlan uninstalls one application and keeps every other installed
+// application at its installed definition.
+func BuildRemovePlan(name string, live ManagedState) (Plan, error) {
+	return BuildPlan(live.without(name), live)
+}
+
+// Has reports whether the named application is installed.
+func (s ManagedState) Has(name string) bool {
+	for _, a := range s.ActiveApps {
+		if a.Metadata.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (s ManagedState) without(name string) []manifest.DXApplication {
+	out := make([]manifest.DXApplication, 0, len(s.ActiveApps)+1)
+	for _, a := range s.ActiveApps {
+		if a.Metadata.Name != name {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// Changed returns, in input order, the applications of apps that are not
+// installed or whose definition differs from the installed one.
+func Changed(apps []manifest.DXApplication, live ManagedState) []string {
+	installed := make(map[string]string, len(live.ActiveApps))
+	for _, a := range live.ActiveApps {
+		if c, ok := Canonical(a); ok {
+			installed[a.Metadata.Name] = c
+		}
+	}
+	var out []string
+	for _, a := range apps {
+		c, ok := Canonical(a)
+		if !ok || installed[a.Metadata.Name] != c {
+			out = append(out, a.Metadata.Name)
+		}
+	}
+	return out
+}
+
+// Canonical renders a value as JSON with sorted keys and normalized numbers, so
+// a manifest parsed from YAML compares equal to one decoded from the database.
+func Canonical(v any) (string, bool) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return "", false
+	}
+	var generic any
+	if err := json.Unmarshal(raw, &generic); err != nil {
+		return "", false
+	}
+	out, err := json.Marshal(generic)
+	if err != nil {
+		return "", false
+	}
+	return string(out), true
 }

@@ -29,7 +29,7 @@ import (
 
 func loadTestPlan(t *testing.T) planner.Plan {
 	t.Helper()
-	path := filepath.Join("..", "..", "..", "contracts", "fixtures", "procurement.yaml")
+	path := filepath.Join("..", "..", "..", "apps", "procurement", "manifest.yaml")
 	app, err := manifest.ParseFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +71,7 @@ func TestApplyRestoresMetadataSnapshotOnFailure(t *testing.T) {
 	runner := NewRunner(nil, Config{HasuraURL: srv.URL, HasuraAdminSecret: "test-secret"}, srv.Client())
 	plan := loadTestPlan(t)
 
-	err := runner.Run(context.Background(), plan, PublishTo("11111111-1111-4111-8111-111111111111", plan))
+	err := runner.Run(context.Background(), plan, []string{"procurement"})
 	if err == nil {
 		t.Fatal("expected error when metadata operation fails")
 	}

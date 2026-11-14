@@ -32,6 +32,108 @@ var (
 	workflowPath = regexp.MustCompile(`^workflows/[a-z][a-z0-9_]*\.yaml$`)
 )
 
+// Capability identifiers an application may declare.
+const (
+	CapProcess = "cap-process"
+	CapHR      = "cap-hr"
+	CapWork    = "cap-work"
+	CapData    = "cap-data"
+	CapAI      = "cap-ai"
+)
+
+var knownCapabilities = []string{CapProcess, CapHR, CapWork, CapData, CapAI}
+
+// RoleName is the shape of every role name. The role_ prefix keeps
+// application roles away from names Hasura treats as privileged (admin).
+var RoleName = regexp.MustCompile(`^role_[a-z0-9_]+$`)
+
+// ReservedRoles belong to the platform (core.roles rows without an owner).
+var ReservedRoles = []string{"role_operator", "role_auditor", "role_workflow"}
+
+// SharedTable describes a Tier 1 or Tier 2 table that applications may read
+// through sharedAccess or reference from a foreign key.
+type SharedTable struct {
+	// Capability that owns the table; empty for Tier 1.
+	Capability string
+	// Columns application roles may read.
+	Columns []string
+	// AppScoped tables carry app_id; an application's roles see only its rows.
+	AppScoped bool
+	// Referenceable tables have an id primary key that domain columns may reference.
+	Referenceable bool
+}
+
+// SharedTables is the closed set of shared tables visible to applications.
+var SharedTables = map[string]SharedTable{
+	"core.users": {
+		Columns:       []string{"id", "email", "display_name", "status"},
+		Referenceable: true,
+	},
+	"core.files": {
+		Columns:       []string{"id", "file_name", "mime_type", "size_bytes", "scan_status", "sha256_hash", "uploaded_by", "scanned_at", "created_at"},
+		AppScoped:     true,
+		Referenceable: true,
+	},
+	"cap_hr.org_units": {
+		Capability:    CapHR,
+		Columns:       []string{"id", "parent_id", "code", "name"},
+		Referenceable: true,
+	},
+	"cap_hr.staff": {
+		Capability: CapHR,
+		Columns:    []string{"user_id", "org_unit_id", "position", "joined_at"},
+	},
+	"cap_data.devices": {
+		Capability:    CapData,
+		Columns:       []string{"id", "device_code", "name", "location", "status", "last_reading"},
+		Referenceable: true,
+	},
+	"cap_work.work_items": {
+		Capability:    CapWork,
+		Columns:       []string{"id", "title", "description", "priority", "board_column", "assignee_id", "source_type", "source_id", "created_by", "created_at", "updated_at"},
+		AppScoped:     true,
+		Referenceable: true,
+	},
+}
+
+// SystemColumns returns the operator-managed columns of one of the
+// application's tables and their manifest types. org_unit_id exists only when
+// the application declares cap-hr and the table is not a child table, status
+// only on a process table, and the parent column only on a child table.
+func SystemColumns(app *DXApplication, t *TableDef) map[string]string {
+	cols := map[string]string{
+		"id":         "uuid",
+		"created_by": "uuid",
+		"version":    "integer",
+		"created_at": "timestamp",
+		"updated_at": "timestamp",
+	}
+	if t.IsProcess() {
+		cols["status"] = "text"
+	}
+	if t.IsChild() {
+		// A child row belongs to its parent's department; it holds the parent's id.
+		cols[t.BelongsTo.Column] = "uuid"
+	} else if app.UsesCapability(CapHR) {
+		cols["org_unit_id"] = "uuid"
+	}
+	return cols
+}
+
+// UsesCapability reports whether the application declares capability id.
+func (app *DXApplication) UsesCapability(id string) bool {
+	return oneOf(id, app.Spec.Capabilities...)
+}
+
+// RoleNames returns the names of the roles the application owns.
+func (app *DXApplication) RoleNames() []string {
+	names := make([]string, 0, len(app.Spec.Roles))
+	for _, r := range app.Spec.Roles {
+		names = append(names, r.Name)
+	}
+	return names
+}
+
 // Validate checks a DXApplication against all C0 v1 structural and semantic invariants.
 func Validate(app *DXApplication) error {
 	if app == nil {
@@ -48,171 +150,89 @@ func Validate(app *DXApplication) error {
 	}
 
 	s := &app.Spec
-	if !identifier.MatchString(s.Role) {
-		return errors.New("invalid spec.role identifier")
-	}
-	if !strings.HasPrefix(s.DomainTable.Name, "domain.") || !identifier.MatchString(strings.TrimPrefix(s.DomainTable.Name, "domain.")) {
-		return errors.New("invalid spec.domainTable.name: must be domain.<identifier>")
-	}
-	if len(s.SharedAccess) == 0 || len(s.DomainTable.Columns) == 0 || len(s.DomainTable.CompositeForeignKeys) == 0 || len(s.Capabilities) == 0 || len(s.Workflows) == 0 || len(s.Attachments) == 0 {
-		return errors.New("missing required core specification sections")
-	}
 
-	cols := map[string]string{
-		"id":           "uuid",
-		"workspace_id": "uuid",
-		"work_item_id": "uuid",
-		"status":       "text",
-		"version":      "integer",
-		"updated_at":   "timestamp",
+	// Capabilities.
+	if len(s.Capabilities) == 0 || !uniqueNames(s.Capabilities, regexp.MustCompile(`^cap-[a-z]+$`)) {
+		return errors.New("invalid spec.capabilities: a non-empty list of unique capability ids is required")
 	}
-	for _, c := range s.DomainTable.Columns {
-		if !identifier.MatchString(c.Name) || cols[c.Name] != "" || !oneOf(c.Type, "uuid", "text", "date", "numeric(14,2)", "numeric(4,2)") {
-			return fmt.Errorf("invalid or duplicate domain column %q", c.Name)
-		}
-		cols[c.Name] = c.Type
-		if c.Check != "" {
-			valid := c.Type == "text" && c.Check == "length(trim("+c.Name+")) > 0"
-			valid = valid || (strings.HasPrefix(c.Type, "numeric(") && (c.Check == c.Name+" > 0" || c.Check == c.Name+" > 0 AND "+c.Check+" <= 24" || c.Check == c.Name+" > 0 AND "+c.Name+" <= 24"))
-			if c.Check == c.Name+" > 0 AND "+c.Check+" <= 24" {
-				valid = false
-			}
-			if !valid {
-				return fmt.Errorf("unsupported check expression on column %q", c.Name)
-			}
+	for _, c := range s.Capabilities {
+		if !oneOf(c, knownCapabilities...) {
+			return fmt.Errorf("unknown capability %q", c)
 		}
 	}
-
-	shared := map[string][]string{
-		"core.employees":    {"id", "workspace_id", "full_name", "email", "department", "created_at"},
-		"core.work_items":   {"id", "workspace_id", "title", "description", "priority", "assigned_employee_id", "created_at"},
-		"core.file_objects": {"id", "workspace_id", "bucket", "object_key", "file_name", "scan_status", "sha256_hash", "uploaded_by", "scanned_at"},
+	if !app.UsesCapability(CapProcess) {
+		return errors.New("spec.capabilities must include cap-process, which runs the application's commands")
 	}
+
+	// Roles owned by the application.
+	if len(s.Roles) == 0 {
+		return errors.New("spec.roles must declare at least one role")
+	}
+	roles := map[string]bool{}
+	for _, r := range s.Roles {
+		if !RoleName.MatchString(r.Name) || roles[r.Name] {
+			return fmt.Errorf("invalid or duplicate role %q (role names start with role_)", r.Name)
+		}
+		if oneOf(r.Name, ReservedRoles...) {
+			return fmt.Errorf("role %q is reserved for the platform", r.Name)
+		}
+		roles[r.Name] = true
+	}
+	requireRole := func(where, role string) error {
+		if !roles[role] {
+			return fmt.Errorf("%s uses role %q, which is not declared in spec.roles", where, role)
+		}
+		return nil
+	}
+
+	// Shared tables.
 	seenTables := map[string]bool{}
 	for _, g := range s.SharedAccess {
-		if shared[g.Table] == nil || seenTables[g.Table] || !uniqueNames(g.Roles, identifier) || !uniqueNames(g.Columns, identifier) {
+		table, ok := SharedTables[g.Table]
+		if !ok || seenTables[g.Table] || !uniqueNames(g.Roles, identifier) || !uniqueNames(g.Columns, identifier) {
 			return fmt.Errorf("invalid sharedAccess entry for table %q", g.Table)
 		}
+		if table.Capability != "" && !app.UsesCapability(table.Capability) {
+			return fmt.Errorf("sharedAccess on %s requires capability %s", g.Table, table.Capability)
+		}
 		seenTables[g.Table] = true
+		for _, r := range g.Roles {
+			if err := requireRole("sharedAccess on "+g.Table, r); err != nil {
+				return err
+			}
+		}
 		for _, c := range g.Columns {
-			if !oneOf(c, shared[g.Table]...) {
+			if !oneOf(c, table.Columns...) {
 				return fmt.Errorf("unknown shared column %q on %s", c, g.Table)
 			}
 		}
 	}
 
-	foreign := map[string]string{}
-	for _, f := range s.DomainTable.CompositeForeignKeys {
-		if len(f.Columns) != 2 || f.Columns[0] != "workspace_id" || cols[f.Columns[1]] != "uuid" || shared[f.ReferencesTable] == nil || !reflect.DeepEqual(f.ReferencesColumns, []string{"workspace_id", "id"}) || foreign[f.Columns[1]] != "" {
-			return errors.New("invalid compositeForeignKeys declaration")
+	// Domain tables.
+	if len(s.Tables) == 0 {
+		return errors.New("spec.tables must declare at least one table")
+	}
+	tables := map[string]bool{}
+	for i := range s.Tables {
+		name := s.Tables[i].Name
+		if !strings.HasPrefix(name, "domain.") || !identifier.MatchString(strings.TrimPrefix(name, "domain.")) {
+			return fmt.Errorf("invalid table name %q: must be domain.<identifier>", name)
 		}
-		foreign[f.Columns[1]] = f.ReferencesTable
-	}
-	if foreign["work_item_id"] != "core.work_items" {
-		return errors.New("missing composite foreign key for work_item_id -> core.work_items")
-	}
-	if cols["requester_id"] != "" && foreign["requester_id"] != "core.employees" {
-		return errors.New("missing composite foreign key for requester_id -> core.employees")
-	}
-
-	roles := map[string]bool{}
-	for op, grants := range map[string][]AccessRule{
-		"select": s.DomainAccess.Select,
-		"insert": s.DomainAccess.Insert,
-		"update": s.DomainAccess.Update,
-	} {
-		if len(grants) == 0 {
-			return fmt.Errorf("missing domainAccess.%s rules", op)
+		if tables[name] {
+			return fmt.Errorf("duplicate table %q", name)
 		}
-		seen := map[string]bool{}
-		for _, p := range grants {
-			if op == "insert" && cols["requester_id"] != "" && p.Presets["requester_id"] != "X-Hasura-User-Id" {
-				return errors.New("requester_id must be preset from X-Hasura-User-Id on insert")
-			}
-			if !identifier.MatchString(p.Role) || seen[p.Role] || !uniqueNames(p.Columns, identifier) {
-				return fmt.Errorf("invalid permission rule for role %q in %s", p.Role, op)
-			}
-			seen[p.Role] = true
-			roles[p.Role] = true
-			for _, c := range p.Columns {
-				if cols[c] == "" {
-					return fmt.Errorf("unknown permission column %q", c)
-				}
-				if op != "select" && (oneOf(c, "id", "workspace_id", "status", "version", "updated_at", "requester_id") || (op == "update" && c == "work_item_id")) {
-					return fmt.Errorf("system or immutable column %q cannot be writable in %s", c, op)
-				}
-				if _, ok := p.Presets[c]; ok {
-					return fmt.Errorf("preset column %q cannot also be in writable columns", c)
-				}
-			}
-			if op != "insert" && len(p.Presets) > 0 {
-				return errors.New("presets are only supported on insert")
-			}
-			for c, v := range p.Presets {
-				if cols[c] != "uuid" || !oneOf(v, "X-Hasura-User-Id", "X-Hasura-Workspace-Id") || oneOf(c, "id", "work_item_id") {
-					return fmt.Errorf("unsupported preset on column %q", c)
-				}
-			}
-			if err := validateFilter(p.RecordFilter, cols, 0); err != nil {
-				return err
-			}
-		}
+		tables[name] = true
 	}
-	if !roles[s.Role] {
-		return errors.New("primary spec.role has no domainAccess grants")
-	}
-
-	sm := s.StateMachine
-	if !statePattern.MatchString(sm.Initial) || !uniqueNames(sm.EditableStates, statePattern) || !uniqueNames(sm.TerminalStates, statePattern) || len(sm.Commands) == 0 {
-		return errors.New("invalid stateMachine definition")
-	}
-	states := map[string]bool{sm.Initial: true}
+	// Command names are unique in the application: a command is addressed by
+	// application and name alone.
 	commands := map[string]bool{}
-	for _, c := range sm.Commands {
-		if !identifier.MatchString(c.Name) || commands[c.Name] || !statePattern.MatchString(c.To) || !uniqueNames(c.From, statePattern) || !uniqueNames(c.AllowedRoles, identifier) {
-			return fmt.Errorf("invalid command %q", c.Name)
-		}
-		commands[c.Name] = true
-		states[c.To] = true
-		for _, st := range c.From {
-			states[st] = true
-			if oneOf(st, sm.TerminalStates...) {
-				return fmt.Errorf("terminal state %q cannot have outgoing command %q", st, c.Name)
-			}
-		}
-		for _, r := range c.AllowedRoles {
-			if !roles[r] {
-				return fmt.Errorf("command %q references undeclared role %q", c.Name, r)
-			}
-		}
-		if err := validateFilter(c.RecordFilter, cols, 0); err != nil {
-			return err
-		}
-	}
-	for _, st := range append(append([]string{}, sm.EditableStates...), sm.TerminalStates...) {
-		if !states[st] {
-			return fmt.Errorf("undeclared state %q in editableStates or terminalStates", st)
-		}
-	}
-	for _, st := range sm.EditableStates {
-		if oneOf(st, sm.TerminalStates...) {
-			return fmt.Errorf("state %q cannot be both editable and terminal", st)
+	for i := range s.Tables {
+		if err := validateTable(app, &s.Tables[i], tables, commands, requireRole); err != nil {
+			return fmt.Errorf("table %s: %w", s.Tables[i].Name, err)
 		}
 	}
 
-	attachments := map[string]bool{}
-	for _, at := range s.Attachments {
-		if cols[at.Column] != "uuid" || foreign[at.Column] != "core.file_objects" || attachments[at.Column] || !uniqueNames(at.RequireCleanOnCommands, identifier) {
-			return fmt.Errorf("invalid attachment declaration on column %q", at.Column)
-		}
-		attachments[at.Column] = true
-		for _, c := range at.RequireCleanOnCommands {
-			if !commands[c] {
-				return fmt.Errorf("attachment %q references unknown command %q", at.Column, c)
-			}
-		}
-	}
-
+	// Workflows.
 	flows := map[string]bool{}
 	steps := map[string]bool{}
 	for _, f := range s.Workflows {
@@ -221,8 +241,11 @@ func Validate(app *DXApplication) error {
 		}
 		flows[f.ID] = true
 		for _, e := range f.Effects {
-			if !identifier.MatchString(e.StepName) || steps[e.StepName] || e.Kind != "create_work_item" || !uniqueNames(e.WhenCommands, identifier) || strings.TrimSpace(e.Fields.Title) == "" || strings.TrimSpace(e.Fields.Description) == "" || !oneOf(e.Fields.Priority, "LOW", "MEDIUM", "HIGH", "CRITICAL") || (e.Fields.AssignedEmployeeID != "" && !uuidPattern.MatchString(e.Fields.AssignedEmployeeID)) {
+			if !identifier.MatchString(e.StepName) || steps[e.StepName] || e.Kind != "create_work_item" || !uniqueNames(e.WhenCommands, identifier) || strings.TrimSpace(e.Fields.Title) == "" || strings.TrimSpace(e.Fields.Description) == "" || !oneOf(e.Fields.Priority, "LOW", "MEDIUM", "HIGH", "CRITICAL") || (e.Fields.AssigneeID != "" && !uuidPattern.MatchString(e.Fields.AssigneeID)) {
 				return fmt.Errorf("invalid workflow effect %q", e.StepName)
+			}
+			if !app.UsesCapability(CapWork) {
+				return fmt.Errorf("workflow effect %q creates a work item, which requires capability cap-work", e.StepName)
 			}
 			steps[e.StepName] = true
 			for _, c := range e.WhenCommands {
@@ -233,33 +256,296 @@ func Validate(app *DXApplication) error {
 		}
 	}
 
-	if !reflect.DeepEqual(s.Capabilities, []string{"cap-process"}) {
-		return errors.New("unsupported capabilities: only [cap-process] is supported in core")
+	return nil
+}
+
+// validateTable checks one domain table. tables holds every table name of the
+// application; commands collects command names across tables.
+func validateTable(app *DXApplication, t *TableDef, tables, commands map[string]bool, requireRole func(where, role string) error) error {
+	if len(t.Columns) == 0 {
+		return errors.New("columns must declare at least one business column")
+	}
+	// A child table's rows belong to a record of another table of the
+	// application, one level deep.
+	var parent *TableDef
+	if t.IsChild() {
+		parent = app.Table(t.BelongsTo.Table)
+		if parent == nil || parent == t || parent.IsChild() {
+			return fmt.Errorf("belongsTo names %q, which must be another table of the application that is not a child table", t.BelongsTo.Table)
+		}
+		if !identifier.MatchString(t.BelongsTo.Column) || oneOf(t.BelongsTo.Column, "id", "created_by", "org_unit_id", "status", "version", "created_at", "updated_at") {
+			return fmt.Errorf("invalid belongsTo column %q", t.BelongsTo.Column)
+		}
+		if t.IsProcess() || len(t.Attachments) > 0 {
+			return errors.New("a child table has no stateMachine or attachments; it follows its parent record")
+		}
+	}
+	system := SystemColumns(app, t)
+	cols := map[string]string{}
+	for name, typ := range system {
+		cols[name] = typ
+	}
+	for _, c := range t.Columns {
+		// status and org_unit_id stay reserved on every table, so adding a
+		// state machine or cap-hr later cannot collide with a business column.
+		if !identifier.MatchString(c.Name) || cols[c.Name] != "" || c.Name == "org_unit_id" || c.Name == "status" || !oneOf(c.Type, "uuid", "text", "date", "numeric(14,2)", "numeric(4,2)") {
+			return fmt.Errorf("invalid, duplicate or system column %q", c.Name)
+		}
+		cols[c.Name] = c.Type
+		if c.Check != "" && !validCheck(c) {
+			return fmt.Errorf("unsupported check expression on column %q", c.Name)
+		}
 	}
 
-	ui := s.UISchema
-	if !uniqueNames(ui.ListColumns, identifier) || !uniqueNames(ui.Actions, identifier) || len(ui.FormFields) == 0 {
-		return errors.New("invalid uiSchema")
+	// A foreign key references a shared table or another table of this
+	// application, never a table of another application.
+	foreign := map[string]string{}
+	for _, f := range t.ForeignKeys {
+		if system[f.Column] != "" || cols[f.Column] != "uuid" || foreign[f.Column] != "" {
+			return fmt.Errorf("invalid foreign key column %q: must be a business uuid column referenced once", f.Column)
+		}
+		if target, ok := SharedTables[f.References]; ok && target.Referenceable {
+			if target.Capability != "" && !app.UsesCapability(target.Capability) {
+				return fmt.Errorf("foreign key %q references %s, which requires capability %s", f.Column, f.References, target.Capability)
+			}
+		} else if !tables[f.References] {
+			return fmt.Errorf("foreign key on %q references unsupported table %q", f.Column, f.References)
+		}
+		foreign[f.Column] = f.References
+	}
+
+	// Access rules.
+	for _, group := range []struct {
+		op     string
+		grants []AccessRule
+	}{{"select", t.Access.Select}, {"insert", t.Access.Insert}, {"update", t.Access.Update}} {
+		op := group.op
+		if len(group.grants) == 0 && op != "update" {
+			return fmt.Errorf("missing access.%s rules", op)
+		}
+		seen := map[string]bool{}
+		for _, p := range group.grants {
+			if !identifier.MatchString(p.Role) || seen[p.Role] || !uniqueNames(p.Columns, identifier) {
+				return fmt.Errorf("invalid permission rule for role %q in %s", p.Role, op)
+			}
+			if err := requireRole("access."+op, p.Role); err != nil {
+				return err
+			}
+			seen[p.Role] = true
+			if parent != nil {
+				// A child rule names a role and columns; which rows it reaches
+				// is decided by the parent record.
+				if p.Scope != "" || p.RecordFilter != nil || len(p.Presets) > 0 {
+					return fmt.Errorf("access.%s rule for %q on a child table cannot declare a scope, recordFilter or presets", op, p.Role)
+				}
+				if err := requireParentRule(parent, op, p.Role); err != nil {
+					return err
+				}
+			} else if err := validateScope(app, op, p); err != nil {
+				return err
+			}
+			for _, c := range p.Columns {
+				if cols[c] == "" {
+					return fmt.Errorf("unknown permission column %q", c)
+				}
+				if op != "select" && system[c] != "" {
+					return fmt.Errorf("system column %q cannot be writable in %s", c, op)
+				}
+				if _, ok := p.Presets[c]; ok {
+					return fmt.Errorf("preset column %q cannot also be in writable columns", c)
+				}
+			}
+			if op != "insert" && len(p.Presets) > 0 {
+				return errors.New("presets are only supported on insert")
+			}
+			for c, v := range p.Presets {
+				if system[c] != "" || cols[c] != "uuid" || v != "X-Hasura-User-Id" {
+					return fmt.Errorf("unsupported preset on column %q", c)
+				}
+			}
+			if err := validateFilter(p.RecordFilter, cols, 0); err != nil {
+				return err
+			}
+		}
+	}
+
+	seenDelete := map[string]bool{}
+	for _, d := range t.Access.Delete {
+		if parent == nil {
+			return errors.New("access.delete is allowed on child tables only")
+		}
+		if seenDelete[d.Role] {
+			return fmt.Errorf("duplicate access.delete rule for role %q", d.Role)
+		}
+		seenDelete[d.Role] = true
+		if err := requireRole("access.delete", d.Role); err != nil {
+			return err
+		}
+		if err := requireParentRule(parent, "delete", d.Role); err != nil {
+			return err
+		}
+	}
+
+	// State machine: only a process table has one.
+	own := map[string]bool{}
+	if sm := t.StateMachine; sm != nil {
+		if !statePattern.MatchString(sm.Initial) || !uniqueNames(sm.EditableStates, statePattern) || !uniqueNames(sm.TerminalStates, statePattern) || len(sm.Commands) == 0 {
+			return errors.New("invalid stateMachine definition")
+		}
+		for _, c := range sm.Commands {
+			if !identifier.MatchString(c.Name) || !statePattern.MatchString(c.To) || !uniqueNames(c.From, statePattern) || !uniqueNames(c.AllowedRoles, identifier) {
+				return fmt.Errorf("invalid command %q", c.Name)
+			}
+			if commands[c.Name] {
+				return fmt.Errorf("duplicate command %q: command names are unique within an application", c.Name)
+			}
+			commands[c.Name] = true
+			own[c.Name] = true
+			for _, st := range c.From {
+				if oneOf(st, sm.TerminalStates...) {
+					return fmt.Errorf("terminal state %q cannot have outgoing command %q", st, c.Name)
+				}
+			}
+			for _, r := range c.AllowedRoles {
+				if err := requireRole(fmt.Sprintf("command %q", c.Name), r); err != nil {
+					return err
+				}
+			}
+			if err := validateFilter(c.RecordFilter, cols, 0); err != nil {
+				return err
+			}
+		}
+		states := map[string]bool{}
+		for _, st := range States(*sm) {
+			states[st] = true
+		}
+		for _, st := range append(append([]string{}, sm.EditableStates...), sm.TerminalStates...) {
+			if !states[st] {
+				return fmt.Errorf("undeclared state %q in editableStates or terminalStates", st)
+			}
+		}
+		for _, st := range sm.EditableStates {
+			if oneOf(st, sm.TerminalStates...) {
+				return fmt.Errorf("state %q cannot be both editable and terminal", st)
+			}
+		}
+	}
+
+	// Attachments must be clean for commands, so only a process table has them.
+	attachments := map[string]bool{}
+	for _, at := range t.Attachments {
+		if foreign[at.Column] != "core.files" || attachments[at.Column] || !uniqueNames(at.RequireCleanOnCommands, identifier) {
+			return fmt.Errorf("invalid attachment declaration on column %q: it must be a foreign key to core.files", at.Column)
+		}
+		attachments[at.Column] = true
+		for _, c := range at.RequireCleanOnCommands {
+			if !own[c] {
+				return fmt.Errorf("attachment %q references unknown command %q", at.Column, c)
+			}
+		}
+	}
+	for column, target := range foreign {
+		if target == "core.files" && !attachments[column] {
+			return fmt.Errorf("file column %q must be declared in attachments", column)
+		}
+	}
+
+	// UI metadata.
+	ui := t.UI
+	if !uniqueNames(ui.ListColumns, identifier) || len(ui.FormFields) == 0 {
+		return errors.New("invalid ui: listColumns and formFields are required")
+	}
+	if t.IsProcess() != (len(ui.Actions) > 0) || (len(ui.Actions) > 0 && !uniqueNames(ui.Actions, identifier)) {
+		return errors.New("invalid ui.actions: a process table lists its commands, other tables list none")
 	}
 	for _, c := range ui.ListColumns {
 		if cols[c] == "" {
-			return fmt.Errorf("unknown uiSchema.listColumns column %q", c)
+			return fmt.Errorf("unknown ui.listColumns column %q", c)
 		}
 	}
 	for _, c := range ui.Actions {
-		if !commands[c] {
-			return fmt.Errorf("unknown uiSchema.actions command %q", c)
+		if !own[c] {
+			return fmt.Errorf("unknown ui.actions command %q", c)
 		}
 	}
 	fields := map[string]bool{}
 	for _, f := range ui.FormFields {
-		if cols[f.Name] == "" || fields[f.Name] || strings.TrimSpace(f.Label) == "" || !oneOf(f.Type, "uuid", "text", "number", "file", "date") || (f.Type == "file" && !attachments[f.Name]) {
-			return fmt.Errorf("invalid uiSchema.formFields entry %q", f.Name)
+		if cols[f.Name] == "" || system[f.Name] != "" || fields[f.Name] || strings.TrimSpace(f.Label) == "" || !oneOf(f.Type, "uuid", "text", "number", "file", "date") || (f.Type == "file" && !attachments[f.Name]) {
+			return fmt.Errorf("invalid ui.formFields entry %q", f.Name)
 		}
 		fields[f.Name] = true
 	}
-
 	return nil
+}
+
+// States returns every state of the state machine: the initial state followed
+// by the targets and sources of the commands, without duplicates.
+func States(sm StateMachineDef) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(st string) {
+		if !seen[st] {
+			seen[st] = true
+			out = append(out, st)
+		}
+	}
+	add(sm.Initial)
+	for _, c := range sm.Commands {
+		for _, st := range c.From {
+			add(st)
+		}
+		add(c.To)
+	}
+	return out
+}
+
+// requireParentRule checks that role can reach the parent records its child
+// rule depends on: reading a child row needs a select rule on the parent,
+// changing one needs an update rule.
+func requireParentRule(parent *TableDef, op, role string) error {
+	rules, need := parent.Access.Update, "update"
+	if op == "select" {
+		rules, need = parent.Access.Select, "select"
+	}
+	for _, r := range rules {
+		if r.Role == role {
+			return nil
+		}
+	}
+	return fmt.Errorf("access.%s rule for %q needs an access.%s rule for that role on the parent table %s", op, role, need, parent.Name)
+}
+
+func validateScope(app *DXApplication, op string, p AccessRule) error {
+	if op == "insert" {
+		if p.Scope != "" {
+			return fmt.Errorf("access.insert rule for %q cannot declare a scope; the creator and department are stamped by the database", p.Role)
+		}
+		return nil
+	}
+	switch p.Scope {
+	case ScopeOwn, ScopeOrganization:
+		return nil
+	case ScopeDepartment:
+		if !app.UsesCapability(CapHR) {
+			return fmt.Errorf("access.%s rule for %q uses scope department, which requires capability cap-hr", op, p.Role)
+		}
+		return nil
+	case "":
+		return fmt.Errorf("access.%s rule for %q must declare a scope (own, department or organization)", op, p.Role)
+	default:
+		return fmt.Errorf("access.%s rule for %q has unknown scope %q", op, p.Role, p.Scope)
+	}
+}
+
+func validCheck(c ColumnDef) bool {
+	switch {
+	case c.Type == "text":
+		return c.Check == "length(trim("+c.Name+")) > 0"
+	case strings.HasPrefix(c.Type, "numeric("):
+		return c.Check == c.Name+" > 0" || c.Check == c.Name+" > 0 AND "+c.Name+" <= 24"
+	default:
+		return false
+	}
 }
 
 func oneOf(s string, values ...string) bool {
@@ -337,7 +623,7 @@ func validateFilter(f map[string]any, cols map[string]string, depth int) error {
 			switch x := v.(type) {
 			case string:
 				if strings.HasPrefix(x, "X-Hasura-") {
-					if typ != "uuid" || !oneOf(x, "X-Hasura-User-Id", "X-Hasura-Workspace-Id") {
+					if typ != "uuid" || x != "X-Hasura-User-Id" {
 						return errors.New("unsupported session variable comparison")
 					}
 				} else if typ == "uuid" {

@@ -17,9 +17,10 @@ apisix:
   node_listen: 9080
   # Docker service addresses can change after a retained-volume restart.
   dns_resolver_valid: 5
+  # The control API answers inside the container only; it is not published.
   enable_control: true
   control:
-    ip: "0.0.0.0"
+    ip: "127.0.0.1"
     port: 9092
 
 deployment:

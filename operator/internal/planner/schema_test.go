@@ -24,10 +24,11 @@ import (
 
 func liveFor(app *manifest.DXApplication) []LiveColumn {
 	live := []LiveColumn{
-		{"id", "uuid", false}, {"workspace_id", "uuid", false}, {"work_item_id", "uuid", false},
-		{"status", "text", false}, {"version", "bigint", false}, {"updated_at", "timestamp with time zone", false},
+		{"id", "uuid", false}, {"created_by", "uuid", false}, {"org_unit_id", "uuid", false},
+		{"status", "text", false}, {"version", "bigint", false},
+		{"created_at", "timestamp with time zone", false}, {"updated_at", "timestamp with time zone", false},
 	}
-	for _, c := range app.Spec.DomainTable.Columns {
+	for _, c := range app.Spec.Tables[0].Columns {
 		live = append(live, LiveColumn{c.Name, c.Type, c.Nullable})
 	}
 	return live
@@ -36,36 +37,38 @@ func liveFor(app *manifest.DXApplication) []LiveColumn {
 func TestDiffSchema(t *testing.T) {
 	base := loadFixtureApp(t)
 	cases := []struct {
-		name    string
-		live    func() []LiveColumn
-		mutate  func(*manifest.DXApplication)
-		wantAdd int
-		wantErr string
+		name       string
+		live       func() []LiveColumn
+		states     []string
+		mutate     func(*manifest.DXApplication)
+		wantAdd    int
+		wantSystem int
+		wantErr    string
 	}{
 		{name: "table absent", live: func() []LiveColumn { return nil }},
 		{name: "in sync", live: func() []LiveColumn { return liveFor(base) }},
 		{
 			name: "add nullable column", live: func() []LiveColumn { return liveFor(base) },
 			mutate: func(a *manifest.DXApplication) {
-				a.Spec.DomainTable.Columns = append(a.Spec.DomainTable.Columns, manifest.ColumnDef{Name: "note", Type: "text", Nullable: true})
+				a.Spec.Tables[0].Columns = append(a.Spec.Tables[0].Columns, manifest.ColumnDef{Name: "note", Type: "text", Nullable: true})
 			},
 			wantAdd: 1,
 		},
 		{
 			name: "add required column", live: func() []LiveColumn { return liveFor(base) },
 			mutate: func(a *manifest.DXApplication) {
-				a.Spec.DomainTable.Columns = append(a.Spec.DomainTable.Columns, manifest.ColumnDef{Name: "note", Type: "text"})
+				a.Spec.Tables[0].Columns = append(a.Spec.Tables[0].Columns, manifest.ColumnDef{Name: "note", Type: "text"})
 			},
 			wantErr: `"note" is NOT NULL`,
 		},
 		{
 			name: "nullability change", live: func() []LiveColumn { return liveFor(base) },
-			mutate: func(a *manifest.DXApplication) { a.Spec.DomainTable.Columns[1].Nullable = true },
+			mutate:  func(a *manifest.DXApplication) { a.Spec.Tables[0].Columns[0].Nullable = true },
 			wantErr: "nullable=false, manifest declares nullable=true",
 		},
 		{
 			name: "type change", live: func() []LiveColumn { return liveFor(base) },
-			mutate: func(a *manifest.DXApplication) { a.Spec.DomainTable.Columns[3].Type = "numeric(4,2)" },
+			mutate:  func(a *manifest.DXApplication) { a.Spec.Tables[0].Columns[2].Type = "numeric(4,2)" },
 			wantErr: "has type numeric(14,2), manifest declares numeric(4,2)",
 		},
 		{
@@ -78,15 +81,34 @@ func TestDiffSchema(t *testing.T) {
 			name: "missing system column", live: func() []LiveColumn { return liveFor(base)[1:] },
 			wantErr: `system column "id" is missing`,
 		},
+		{
+			name: "missing creator", live: func() []LiveColumn { return dropColumn(liveFor(base), "created_by") },
+			wantErr: `system column "created_by" is missing and needs a data migration`,
+		},
+		{
+			name: "missing timestamps are added", live: func() []LiveColumn { return dropColumn(dropColumn(liveFor(base), "created_at"), "version") },
+			wantSystem: 2,
+		},
+		{
+			name: "department column left over after cap-hr is dropped", live: func() []LiveColumn { return liveFor(base) },
+			mutate: func(a *manifest.DXApplication) {
+				a.Spec.Capabilities = []string{manifest.CapProcess, manifest.CapWork}
+			},
+			wantErr: `"org_unit_id" exists but is not declared`,
+		},
+		{name: "states in use are declared", live: func() []LiveColumn { return liveFor(base) }, states: []string{"DRAFT", "APPROVED"}},
+		{
+			name: "state removed while in use", live: func() []LiveColumn { return liveFor(base) }, states: []string{"DRAFT", "ON_HOLD"},
+			wantErr: `state "ON_HOLD" is still used`,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			app := *base
-			app.Spec.DomainTable.Columns = append([]manifest.ColumnDef(nil), base.Spec.DomainTable.Columns...)
+			app := *base.Clone()
 			if tc.mutate != nil {
 				tc.mutate(&app)
 			}
-			diff, err := DiffSchema(tc.live(), &app)
+			diff, err := DiffSchema(tc.live(), tc.states, &app, &app.Spec.Tables[0])
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("want error containing %q, got %v", tc.wantErr, err)
@@ -96,8 +118,8 @@ func TestDiffSchema(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if len(diff.AddColumns) != tc.wantAdd {
-				t.Fatalf("AddColumns = %d, want %d", len(diff.AddColumns), tc.wantAdd)
+			if len(diff.AddColumns) != tc.wantAdd || len(diff.AddSystem) != tc.wantSystem {
+				t.Fatalf("AddColumns = %d, AddSystem = %d, want %d and %d", len(diff.AddColumns), len(diff.AddSystem), tc.wantAdd, tc.wantSystem)
 			}
 		})
 	}
@@ -110,7 +132,21 @@ func TestSchemaDiffDDL(t *testing.T) {
 	if got != want {
 		t.Fatalf("DDL = %q, want %q", got, want)
 	}
+	sys := SchemaDiff{AddSystem: []string{`"created_at" timestamptz NOT NULL DEFAULT now()`}}
+	if got := sys.DDL("domain.x"); got != `ALTER TABLE "domain"."x" ADD COLUMN IF NOT EXISTS "created_at" timestamptz NOT NULL DEFAULT now();`+"\n" {
+		t.Fatalf("system DDL = %q", got)
+	}
 	if (SchemaDiff{}).DDL("domain.x") != "" {
 		t.Fatal("empty diff must render no DDL")
 	}
+}
+
+func dropColumn(cols []LiveColumn, name string) []LiveColumn {
+	var out []LiveColumn
+	for _, c := range cols {
+		if c.Name != name {
+			out = append(out, c)
+		}
+	}
+	return out
 }

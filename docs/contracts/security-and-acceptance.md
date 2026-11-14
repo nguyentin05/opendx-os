@@ -12,6 +12,7 @@ passing static checks alone does not establish runtime enforcement.
 ## Security invariants
 
 - The backend authenticates identity and effective permissions; the UI or a role in the request does not grant permissions by itself. Use least privilege for users and service identities.
+- Keycloak tokens carry identity only. The roles a caller may act as are read from `core.user_roles` on each request ([ADR 0007](../adr/0007-keycloak-authenticates-platform-authorizes.md)); a role named in a header or token claim is a request, never a grant.
 - Runtime database connections use least-privilege roles, not `superuser` or `BYPASSRLS`.
 - Enforce application, record-owner and department scopes in rows and links through both CRUD and service paths. Current DB membership is authoritative; Keycloak verifies identity and JWT role claims cannot override a DB revoke.
 - State transitions, version checks, and audit must be atomic. Every record edit participates in the version mechanism; an insert must not bypass the initial state.

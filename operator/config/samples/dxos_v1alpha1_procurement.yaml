@@ -22,30 +22,25 @@ spec:
     requireCleanOnCommands:
     - submit
     - approve
+    - approve_budget
   capabilities:
   - cap-process
+  - cap-hr
+  - cap-work
   displayName: Material Procurement
   domainAccess:
     insert:
     - columns:
-      - work_item_id
       - vendor_name
       - item_description
       - quoted_amount
       - quote_file_id
-      presets:
-        requester_id: X-Hasura-User-Id
-        workspace_id: X-Hasura-Workspace-Id
-      recordFilter:
-        workspace_id:
-          _eq: X-Hasura-Workspace-Id
-      role: role_procurement
+      role: role_procurement_requester
     select:
     - columns:
       - id
-      - workspace_id
-      - work_item_id
-      - requester_id
+      - created_by
+      - org_unit_id
       - vendor_name
       - item_description
       - quoted_amount
@@ -53,16 +48,14 @@ spec:
       - rejection_reason
       - status
       - version
+      - created_at
       - updated_at
-      recordFilter:
-        workspace_id:
-          _eq: X-Hasura-Workspace-Id
-      role: role_procurement
+      role: role_procurement_requester
+      scope: own
     - columns:
       - id
-      - workspace_id
-      - work_item_id
-      - requester_id
+      - created_by
+      - org_unit_id
       - vendor_name
       - item_description
       - quoted_amount
@@ -70,26 +63,38 @@ spec:
       - rejection_reason
       - status
       - version
+      - created_at
+      - updated_at
+      role: role_procurement_manager
+      scope: department
+    - columns:
+      - id
+      - created_by
+      - org_unit_id
+      - vendor_name
+      - item_description
+      - quoted_amount
+      - quote_file_id
+      - rejection_reason
+      - status
+      - version
+      - created_at
       - updated_at
       recordFilter:
-        workspace_id:
-          _eq: X-Hasura-Workspace-Id
-      role: role_manager_procurement
+        status:
+          _neq: DRAFT
+      role: role_procurement_finance
+      scope: organization
     update:
     - columns:
       - vendor_name
       - item_description
       - quoted_amount
       - quote_file_id
-      recordFilter:
-        workspace_id:
-          _eq: X-Hasura-Workspace-Id
-      role: role_procurement
+      role: role_procurement_requester
+      scope: own
   domainTable:
     columns:
-    - name: requester_id
-      nullable: false
-      type: uuid
     - check: length(trim(vendor_name)) > 0
       name: vendor_name
       nullable: false
@@ -108,89 +113,83 @@ spec:
     - name: rejection_reason
       nullable: true
       type: text
-    compositeForeignKeys:
-    - columns:
-      - workspace_id
-      - work_item_id
-      referencesColumns:
-      - workspace_id
-      - id
-      referencesTable: core.work_items
-    - columns:
-      - workspace_id
-      - requester_id
-      referencesColumns:
-      - workspace_id
-      - id
-      referencesTable: core.employees
-    - columns:
-      - workspace_id
-      - quote_file_id
-      referencesColumns:
-      - workspace_id
-      - id
-      referencesTable: core.file_objects
+    foreignKeys:
+    - column: quote_file_id
+      references: core.files
     name: domain.procurement_requests
-  role: role_procurement
+  roles:
+  - description: Creates and submits purchase requests
+    name: role_procurement_requester
+  - description: Approves the purchase requests of their own department
+    name: role_procurement_manager
+  - description: Reviews the budget of requests approved by a department
+    name: role_procurement_finance
   sharedAccess:
   - columns:
     - id
-    - workspace_id
-    - full_name
+    - display_name
     - email
-    - department
     roles:
-    - role_procurement
-    - role_manager_procurement
-    table: core.employees
+    - role_procurement_requester
+    - role_procurement_manager
+    - role_procurement_finance
+    table: core.users
   - columns:
     - id
-    - workspace_id
-    - title
-    - description
-    - priority
-    - created_at
+    - code
+    - name
     roles:
-    - role_procurement
-    - role_manager_procurement
-    table: core.work_items
+    - role_procurement_requester
+    - role_procurement_manager
+    - role_procurement_finance
+    table: cap_hr.org_units
   - columns:
     - id
-    - workspace_id
     - file_name
     - scan_status
     - sha256_hash
     - scanned_at
     roles:
-    - role_procurement
-    - role_manager_procurement
-    table: core.file_objects
+    - role_procurement_requester
+    - role_procurement_manager
+    - role_procurement_finance
+    table: core.files
   stateMachine:
     commands:
     - allowedRoles:
-      - role_procurement
+      - role_procurement_requester
       from:
       - DRAFT
       name: submit
       to: SUBMITTED
     - allowedRoles:
-      - role_manager_procurement
+      - role_procurement_manager
       from:
       - SUBMITTED
       name: approve
       recordFilter:
-        requester_id:
+        created_by:
+          _neq: X-Hasura-User-Id
+      to: BUDGET_REVIEW
+    - allowedRoles:
+      - role_procurement_finance
+      from:
+      - BUDGET_REVIEW
+      name: approve_budget
+      recordFilter:
+        created_by:
           _neq: X-Hasura-User-Id
       to: APPROVED
     - allowedRoles:
-      - role_manager_procurement
+      - role_procurement_manager
+      - role_procurement_finance
       from:
       - SUBMITTED
+      - BUDGET_REVIEW
       name: reject
       to: REJECTED
     - allowedRoles:
-      - role_procurement
-      - role_manager_procurement
+      - role_procurement_requester
       from:
       - DRAFT
       - SUBMITTED
@@ -207,13 +206,10 @@ spec:
     actions:
     - submit
     - approve
+    - approve_budget
     - reject
     - cancel
     formFields:
-    - label: Work Item
-      name: work_item_id
-      required: true
-      type: uuid
     - label: Vendor Name
       name: vendor_name
       required: true
@@ -238,7 +234,7 @@ spec:
     - status
     - version
     - updated_at
-  version: 0.1.0
+  version: 0.2.0
   workflows:
   - definition: |
       # SPDX-License-Identifier: Apache-2.0
@@ -279,5 +275,3 @@ spec:
     id: procurement_approval_flow
     subscribedEvents:
     - command.committed
-  workspaces:
-  - 11111111-1111-4111-8111-111111111111

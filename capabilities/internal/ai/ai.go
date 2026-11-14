@@ -51,11 +51,11 @@ type ExtractionResult struct {
 }
 
 // ExtractDocument performs schema-driven OCR only on verified CLEAN files.
-func (e *AIEngine) ExtractDocument(ctx context.Context, workspaceID, fileID string) (*ExtractionResult, int, error) {
+func (e *AIEngine) ExtractDocument(ctx context.Context, fileID string) (*ExtractionResult, int, error) {
 	var fileName, scanStatus string
 	err := e.db.QueryRowContext(ctx,
-		`SELECT file_name, scan_status FROM core.file_objects WHERE workspace_id = $1 AND id = $2`,
-		workspaceID, fileID,
+		`SELECT file_name, scan_status FROM core.files WHERE id = $1`,
+		fileID,
 	).Scan(&fileName, &scanStatus)
 
 	if errors.Is(err, sql.ErrNoRows) {

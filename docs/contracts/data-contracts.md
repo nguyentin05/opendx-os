@@ -6,117 +6,227 @@ partial; existing Go types and sample YAML are not evidence that every requireme
 below is enforced. See [architecture and decision changes](../architecture/README.md#decisions-and-contract-changes)
 and [security acceptance criteria](security-and-acceptance.md).
 
-## 1. Identity, application and department boundaries
+## 1. Identity, roles and scope
 
-[ADR 0005](../adr/0005-department-and-application-data-model.md) supersedes the workspace model. One installation serves one organization; no workspace claim or row column is part of the target contract. `app_id` identifies application provenance; `org_unit_id` identifies a department in `cap_hr`. They are independent dimensions, not substitutes for one another.
+- One installation serves one organization. Keycloak authenticates; tokens
+  carry identity only (`sub`, email, name). The role a caller acts as is named
+  in `X-Hasura-Role` and accepted only when `core.user_roles` grants it now
+  ([ADR 0007](../adr/0007-keycloak-authenticates-platform-authorizes.md)). Role
+  names in a body, header or token never create permissions by themselves.
+- Every role is owned by one application, one capability or the platform
+  (`core.roles`). An application declares, per role and operation, a **scope**:
+  `own` (records the caller created), `department` (records of the caller's
+  department in `cap_hr.staff`) or `organization`, plus an optional
+  `recordFilter`. Hasura permissions and cap-process commands apply the same
+  scope.
+- Data carries two independent labels: `app_id` (which application it belongs
+  to) and, for applications using cap-hr, `org_unit_id` (which department). Both
+  are stamped by the server and never change.
+- `created_by` and `org_unit_id` are set by triggers from the session (Hasura's
+  `hasura.user` or cap-process's `dxos.actor_id`), never from client input.
+- Nested inserts, upserts and relationships must not open an extra path around
+  permissions. If permissions for an operation have not been designed, do not
+  grant that operation.
 
-Keycloak verifies identity. An ACTIVE `core.users` row and current `core.user_roles` determine business membership. Requested roles are selectors checked against DB membership, ownership and authorized app/capability scope; JWT business-role claims do not grant permission. New DB grants must work without refreshing token business-role lists once the target cutover is complete. Current JWT-only middleware is partial implementation, not the target authority.
+## 2. Shared entities
 
-Application roles declare own-record, own-department or organization scope. Missing membership or an unavailable authority denies access. Department-dependent access requires enabled `cap_hr` and authoritative staff membership; organization scope still respects app/resource/column permissions and PRIVATE document ownership. Core never gains a foreign key to a capability/domain table to implement these scopes.
+Tier 1 (`core`) never references Tier 2 or Tier 3 tables. Entity IDs are UUIDs;
+audit IDs are BIGSERIAL.
 
-DB role administration is authorized and audited; its transaction commit is the membership-change authority. Hasura, service APIs, original-file routes and registry context must converge on this authority. Token verification alone does not establish current business access. Hasura session delivery and subscription revocation require their own verified mechanism before P1 is considered complete.
-
-Relationships and nested/upsert writes must preserve app, owner and department constraints; an installation-wide UUID reference alone is insufficient authorization. A service with higher DB privileges enforces the same resource predicates. Do not mechanically replace every legacy composite workspace FK with app_id: shared masters and app-produced records have different ownership.
-
-## 2. Kernel and optional capability ownership
-
-The following is the target logical inventory, not a claim that every runtime consumer uses these tables. IDs are UUID except stable app/capability/role identifiers and audit sequence identity. Exact migration mappings must be explicit and preserve retained data.
-
-| Owner | Data / constraints |
+| Table | Fields and constraints |
 | --- | --- |
-| `core.users` | Universal identity, Keycloak subject, ACTIVE/disabled status; no department foreign key |
-| `core.roles`, `core.user_roles` | Platform/app/capability role ownership and current membership; not per-document ACL |
-| `core.apps`, `core.capabilities`, `core.app_capabilities` | Kernel registry identities and declared dependencies, independent of app domain schemas |
-| `core.files` | app_id, immutable original identity/object key/checksum, uploaded_by, MIME/size, quarantine/scan result; real app registry reference required |
-| `core.audit_logs`, `core.outbox_events` | App/source/actor provenance, append-only audit and durable retryable events; no dependency on capability tables |
-| `cap_hr` | Shared organization departments/staff/positions; master data has no app_id |
-| `cap_work` | App-origin work items and their provenance; business lifecycle remains in the owning app domain record |
-| `cap_process` | Command receipts and processed workflow effects; atomic idempotency/concurrency |
-| `cap_data` | Optional physical master data, OT and export/lineage; distinguish shared master identity from app-produced records |
-| `cap_ai` | Proposed document collections/ACL/versions/jobs/chunks/model usage, defined by the [RAG contract](rag-api.proposed.md); not currently implemented storage |
+| `core.users` | `id` (= Keycloak `sub`), `email` (unique, case-insensitive), `display_name`, `status` (`ACTIVE`/`DISABLED`). A one-way mirror of Keycloak identity, written only by `dxos-authz` and the account sync; never deleted |
+| `core.roles` | `name`, owner `app_id` or `cap_id` (at most one; neither for platform roles), `description` |
+| `core.user_roles` | `(user_id, role_name)`, `granted_by`, `granted_at`: the only record of who holds which role |
+| `core.apps` | `app_id`, `display_name`, `version`, validated `spec`, `status` (`Pending`/`Applying`/`Ready`/`Failed`/`Removed`), `last_error`. Rows are never deleted |
+| `core.capabilities` | `cap_id`, `display_name`, `category_hpdi`, `base_route`, `enabled` |
+| `core.app_capabilities` | `(app_id, cap_id)`; a capability cannot be disabled while an installed app uses it |
+| `core.app_deployments` | one row per install or upgrade attempt |
+| `core.files` | `id`, `app_id`, `bucket`, `object_key`, `file_name`, `scan_status`, `sha256_hash`, `uploaded_by`, `mime_type`, `size_bytes`, scan scheduling; identity and content columns are immutable |
+| `core.audit_logs` | append-only, hash-chained per application (`chain` = `app_id`, or `core`): `actor_id`, `acting_role`, `action`, `entity_type`, `entity_id`, `entity_version`, `payload` |
+| `core.outbox_events` | durable events with `app_id`, entity identity and version, payload and delivery state |
 
-Applications use only declared, available capabilities. Capability data may reference Core identifiers; Core cannot depend on a capability or application table/service. References from `core.files` to `core.apps` are kernel registry references, not dependencies on app-owned domain tables. Disabling a capability or unpublishing an app does not authorize dropping retained data.
+Registry, audit and outbox tables are written by the operator or the assigned
+service; user roles read only what their application grants (`sharedAccess`).
 
-ADR 0002's domain-attribute ownership remains applicable: app business attributes belong in domain tables, and a shared identity does not grant unrelated relationship traversal. Its older employee/workspace example is superseded by ADR 0005.
+As established by [ADR 0002](../adr/0002-semantic-schema-governance-and-cross-app-data-sync.md),
+domain attributes such as `skill_level` and `work_shift` belong in application
+tables; a shared user does not grant cross-app traversal.
 
-## 3. Domain records and state
+### Capability storage
 
-Domain records retain independent app-owned lifecycle, version, server timestamps and authoritative creator. Work-item linkage, if declared, points to `cap_work`; department linkage, if declared, points to `cap_hr`. System-generated ownership and app/department constraints must be validated on insert and remain immutable except through an explicitly designed authorized operation. Exact manifest fields/presets are coordinated implementation work; old workspace-bearing sample manifests are legacy fixtures until migrated.
+[ADR 0003](../adr/0003-modular-capability-schema-separation-for-iot-data.md)
+separates the kernel from capability SQL in `platform/postgres/capabilities/`,
+loaded for the capabilities listed in `ENABLED_CAPABILITIES`. Each capability
+owns its schema and registers itself in `core.capabilities`.
 
-Initial state comes from `stateMachine.initial`, version starts at 1, and the server sets time. If the initial state is already submitted, create must enforce its corresponding business conditions atomically. Adding an app does not add a hardcoded app branch in shared runtime code.
+| Capability | Tables |
+| --- | --- |
+| `cap-hr` | `cap_hr.org_units` (departments, optional parent), `cap_hr.staff` (one department per user, `position`) |
+| `cap-work` | `cap_work.work_items`: `app_id`, `title`, `description`, `priority`, `board_column`, `assignee_id`, source record (`source_type`, `source_id`), `created_by` |
+| `cap-process` | `cap_process.command_receipts` (command idempotency), `cap_process.processed_workflow_steps` (effect deduplication) |
+| `cap-data` | `cap_data.devices` and telemetry tables |
+
+Apps that do not declare a capability get no permissions or relationships on its
+tables. Removing access or disabling a capability does not by itself authorize
+deleting its stored data.
+
+## 3. Domain tables and initial state
+
+An application declares one or more domain tables `domain.<name>`
+([ADR 0008](../adr/0008-an-application-declares-several-tables.md)); the
+operator generates each of them from the manifest. A table name belongs to one
+application.
+
+| Kind | Declares | System columns |
+| --- | --- | --- |
+| Process table | a `stateMachine` | `id`, `created_by`, `org_unit_id` (with cap-hr), `status` (checked against the state machine), `version`, `created_at`, `updated_at` |
+| Plain table | neither `stateMachine` nor `belongsTo` | the same without `status` |
+| Child table | `belongsTo: {table, column}` | `id`, `created_by`, `version`, `created_at`, `updated_at` and the parent column (NOT NULL, foreign key to the parent table) |
+
+A process record starts in `stateMachine.initial`, is edited through Hasura
+only in its editable states, and changes `status` only through cap-process
+commands. A plain record (an entry of a list the application maintains, for
+example) is read and written through Hasura under the table's access rules and
+has no state. `version` starts at `1` on every table.
+
+A child row is part of a record of its parent table (a line of a request, for
+example), one level deep:
+
+- a role reads it when one of its `select` rules on the parent admits the parent
+  record;
+- a role inserts, updates or deletes it when its `update` rule on the parent
+  admits the parent record and, for a process parent, the parent is in an
+  editable state;
+- every change increments the parent's `version` in the same transaction, so a
+  command sent with a version read before the change answers `409`;
+- the parent column never changes, and a child row has no department of its own.
+
+Hasura permissions and the triggers `core.enforce_parent` and
+`core.touch_parent` both enforce this; the trigger locks the parent record, so a
+child change and a command on the parent never interleave.
+
+The process tables of the sample applications:
+
+| Sample app | Business columns | Initial state |
+| --- | --- | --- |
+| Procurement | `vendor_name`, `item_description`, `quoted_amount NUMERIC(14,2) > 0`, `quote_file_id` → `core.files`, `rejection_reason` | `DRAFT` |
+| Maintenance | `device_id` → `cap_data.devices`, `issue_summary`, `resolution_note` | `OPEN` |
+| Timesheet | `work_date`, `logged_hours NUMERIC(4,2)` within `(0, 24]` | `SUBMITTED` |
+
+Procurement also declares a plain table, `domain.procurement_vendors` (a list
+finance maintains, referenced by a request's `vendor_id`), and a child table,
+`domain.procurement_items` (the lines of a request).
+
+This is declared data for the sample apps, not a fixed table list inside the
+platform. Tables of one application may reference each other by foreign key. If a record is created in an already-submitted state, as with
+timesheet, the create path must enforce the corresponding business conditions
+inside the transaction; CRUD may be opened only when those conditions are fully
+enforced.
 
 ## 4. Write matrix and field ownership
 
-| Operation | Caller may supply | Server responsibility |
+| Operation | User role | Server responsibility |
 | --- | --- | --- |
-| Create | Allowlisted business columns | derive actor/app scope/initial state/version/time; validate department/related-source access |
-| Edit | Allowlisted columns in editable states | current DB role/resource predicate, one version increment, atomic audit |
-| Transition | declared command and expected_version | validate authority, state/version, sources and effects in one transaction |
-| Upsert/nested | denied unless explicitly designed | enforce both create/edit constraints; cannot reset owner/scope/state/version |
-| Delete | denied by default | separate retention/audit policy and authorized scope |
+| Create record | Only business columns in the `insert` allowlist | Stamp creator and department, initial state, version `1`, timestamps; check FKs and initialization conditions |
+| Edit content | `update` allowlist, only within `editableStates` | Filter by scope and permissions, increment the version, record time and audit in the same transaction |
+| Transition state | Send a command with `expected_version` | Check role, current state, permissions on the record, related files, and write atomically |
+| Upsert/nested mutation | Denied by default; if granted, it must satisfy both the insert and update paths | Must not reset state/version, change creator or department, or bypass FKs |
+| Delete | Only rows of a child table, by a role that may edit the parent record | Refuse it once the parent leaves its editable states; increment the parent's version; audit the deleted row. Process and plain records are never deleted: use a `cancel` command |
 
-Clients cannot set ownership, scan status, hashes, version or privileged state through arbitrary insert/update fields. `core.files` scan metadata belongs to File Service/scanner. Hasura table/row/column/relationship permission is required in addition to SQL grants, and its session role must originate from current DB authority.
+Remove `status`, `version`, `created_by`, `org_unit_id` and timestamps from the columns a client may insert/update. Use server-side triggers and presets, not merely a declared SQL `DEFAULT`. For `core.files`, clients do not write `scan_status`, the verification hash, or scan results; the scanner/file service holds that permission.
 
-## Legacy consumer transition for sections 5–9
+Read permissions are declared per table, role, and column. For example, `role_maintenance` reads the employee columns needed for maintenance and the relationship to maintenance; `role_timesheet` reads the timesheet area and the relationship to timesheet. Grant a relationship only when the target table is also readable. Manager roles must have explicit grants per app; the name `role_manager` does not imply system-wide permissions.
 
-The invariants below concerning atomicity, idempotency, immutable originals, provenance and declarative interfaces remain required. Literal `workspace_id`, old `core.*` capability table names and registry keys describe legacy consumers only and are superseded by ADR 0005 and sections 1–4 above. They are not permission to add workspace fields to new APIs. Before changing the affected module, record its exact app/source/actor key and migration mapping in its implementation plan; do not infer an OT dedup key, audit-chain partition or BI lineage key by replacing workspace text mechanically. This documentation change does not migrate those unrelated consumers or claim their new serialization is settled.
+Hasura enforces permissions per table, operation, role, row, and column;
+PostgreSQL `GRANT` does not replace its metadata. Domain tables keep independent
+state and version even when they share an employee or work item.
 
 ## 5. Version, command, audit, and retry
 
 **Chosen mechanism:** a `BEFORE UPDATE` trigger on the domain table sets `NEW.version = OLD.version + 1` and `updated_at` for every successful UPDATE. The client and the Command API do not increment the version themselves; the Operator generates the trigger together with the table. A retry that has been recognized does not perform another UPDATE.
 
-A command compares `id`, workspace, permissions, state, and `expected_version` in the same transaction using a row lock or an equivalent conditional UPDATE. If the record is valid within the caller's scope but its version has changed, return `409`; do not write state, audit, or a business event for the failed attempt.
+A command compares `id`, the acting role's scope and permissions, state, and `expected_version` in the same transaction using a row lock or an equivalent conditional UPDATE. If the record is valid within the caller's scope but its version has changed, return `409`; do not write state, audit, or a business event for the failed attempt.
 
 Example: the approver reads `version=1`; the requester edits `quoted_amount` through CRUD, making the record `version=2`; an approval command carrying `expected_version=1` must be rejected. When two commands with the same version run concurrently, at most one state transition succeeds.
 
-Each command carries an idempotency key. The lock scope includes workspace, actor, app, entity, and command; the server stores the payload fingerprint and result in the same transaction. Retrying the same key/payload returns the recorded result after checking current permissions, before re-evaluating the old version; the same key with a different payload returns `409`. The receipt schema and its consumers must implement this full scope; storing the result only in memory is insufficient.
+Each command carries an idempotency key. The lock scope includes actor, app, entity, command and key; the server stores the payload fingerprint and result in the same transaction. Retrying the same key/payload returns the recorded result after checking current permissions, before re-evaluating the old version; the same key with a different payload returns `409`. The receipt schema and its consumers must implement this full scope; storing the result only in memory is insufficient.
 
 Write the change, audit, and durable event in the same transaction. Use Hasura Event Triggers or an equivalently durable outbox to deliver to Kestra; do not rely on an HTTP call to Kestra after commit as the sole delivery mechanism. The workflow deduplicates each effect by event identity and step; a retry after a crash does not create duplicate business effects.
 
-Audit serializes per workspace before reading the chain head and computing the hash; `pg_advisory_xact_lock(hashtext(workspace_id::text))` may be used within the transaction. Checkpoints are signed and stored outside PostgreSQL in OpenBao. Integrity is proven up to the anchored checkpoint; do not claim that the unanchored tail resists history rewriting by a DB superuser.
+Audit serializes per chain (one per application, plus `core`) before reading the chain head and computing the hash, with `pg_advisory_xact_lock(hashtext('dxos.audit:' || chain))` within the transaction. Checkpoints are signed and stored outside PostgreSQL in OpenBao. Integrity is proven up to the anchored checkpoint; do not claim that the unanchored tail resists history rewriting by a DB superuser.
 
 ## 6. Files, OT, and BI
 
-New files start as `QUARANTINED`; only the scanning service moves them to `CLEAN` or `INFECTED`. Download, OCR, and commands that use a file must check permission/workspace and `CLEAN` status. Scanned content must not be overwritten under the same file identity; replacing a file creates a new identity and requires a rescan. A scanner error keeps the file unclean.
+New files start as `QUARANTINED`; only the scanning service moves them to `CLEAN` or `INFECTED`. Download, OCR, and commands that use a file must check the caller's permission (role and scope) and `CLEAN` status. Scanned content must not be overwritten under the same file identity; replacing a file creates a new identity and requires a rescan. A scanner error keeps the file unclean.
 
-OT validates the device/workspace, stores a unique event per the key in section 2, and emits the standard event `ot.event.accepted`. The app's declared workflow evaluates thresholds and creates the appropriate work. The capability does not pre-select the maintenance app; duplicate delivery adds no further business effects.
+OT validates the device, stores a unique event per the key in section 2, and emits the standard event `ot.event.accepted`. The app's declared workflow evaluates thresholds and creates the appropriate work. The capability does not pre-select the maintenance app; duplicate delivery adds no further business effects.
 
-The full BI source key is `(workspace_id, entity_type, entity_id, entity_version)`. Export only records in the app-declared `terminalStates`, and read only successfully published batches. Re-exporting the same source version adds no contribution; choose the latest version by `(workspace_id, entity_type, entity_id)`. Two entity types with the same UUID remain two distinct sources. Two exports with the same version key but different content must be detected as a reconciliation error rather than arbitrarily choosing one.
+The full BI source key is `(app_id, entity_type, entity_id, entity_version)`. Export only records in the app-declared `terminalStates`, and read only successfully published batches. Re-exporting the same source version adds no contribution; choose the latest version by `(app_id, entity_type, entity_id)`. Two entity types with the same UUID remain two distinct sources. Two exports with the same version key but different content must be detected as a reconciliation error rather than arbitrarily choosing one.
 
 Lineage must preserve the full source record set behind each aggregate metric, not just one representative ID. Check the registry, batch, receipt, and lineage DDL against these requirements before connecting consumers; the presence of a table alone does not prove compliance.
 
 ## 7. `DXApplication` manifest contract
 
-This is the intended logical shape. Before extending parsers or app packages,
-agree on a versioned serialization, validator, and sample that consumers all use.
-The existing parser and app examples are partial implementations; differences
-from this table must be resolved explicitly rather than guessed independently.
+The operator's validator (`operator/internal/manifest`) is the reference
+implementation of this serialization; `apps/*/manifest.yaml` are validated
+samples and `contracts/fixtures/app-ready.json` is the matching `core.apps` row.
+One installation serves one organization, so a manifest names no workspace.
 
 | Field | Meaning and required data |
 | --- | --- |
-| `kind` | `DXApplication` |
-| `metadata` | `name`, `displayName`, `version` of the app package |
-| `spec.role` | The app's primary business role; other roles must be declared in the corresponding permissions |
-| `spec.sharedAccess` | Declared kernel/capability master reads, columns, roles and relationships; no implicit writes or capability access. Existing core-only serialization needs coordinated extension |
-| `spec.domainTable` | Table name, columns/data types, nullability, CHECK constraints, declared ownership/relationship constraints under ADR 0005; the system columns in section 3 are managed by the Operator |
-| `spec.domainAccess` | Allowlist of roles/columns for select, insert, and update; permission conditions on records. Deny undeclared operations by default |
-| `spec.stateMachine` | `initial`, `editableStates`, `terminalStates` eligible for export, and commands with `from`, `to`, `allowedRoles`; states not in `editableStates` disallow content-editing CRUD |
-| `spec.attachments` | File FK columns to check on download/OCR/command; do not infer them from domain column names |
-| `spec.workflows` | Flows with an identity, a YAML file in the package, and subscribed events; `ot.event.accepted` or `command.committed` carries workspace/app/entity/version and an event ID as applicable |
-| `spec.capabilities` | Capabilities required for the app/features to operate |
-| `spec.uiSchema` | `listColumns`, `formFields`, views/actions referencing declared fields and commands; creates no additional permissions |
+| `kind` | `DXApplication` (`apiVersion: dxos.io/v1alpha1`) |
+| `metadata` | `name` (the `app_id`), `displayName`, `version` of the app package |
+| `spec.capabilities` | Tier 2 capabilities the app uses. `cap-process` is required; `cap-hr` adds departments (`org_unit_id`, `department` scope); `cap-work` is required by `create_work_item` effects. Each must be enabled when the app is installed |
+| `spec.roles` | Roles the app owns (`name`, optional `description`). Every role used anywhere in the manifest must be declared here. A role belongs to exactly one app; `role_operator`, `role_auditor` and `role_workflow` are reserved |
+| `spec.sharedAccess` | Optional. Shared tables the app's roles read, from a closed catalog: `core.users`, `core.files`, `cap_hr.org_units`, `cap_hr.staff`, `cap_work.work_items`, `cap_data.devices`. Rows of `core.files` and `cap_work.work_items` are limited to the app's own `app_id`; a role sees only the files its user uploaded or that are attached to records it may read. No write access |
+| `spec.tables` | One or more domain tables; each entry has the fields below. Table names are unique, and a table belongs to one application |
+| `spec.workflows` | Optional. Flows with an identity, a YAML file in the package, `command.committed` subscription and literal `create_work_item` effects (`title`, `description`, `priority`, optional `assigneeId`) on commands of any table |
 
-A workflow is registered only in a deployed workspace/app and runs under a least-privilege service identity. Event content does not grant permissions beyond the workspace. Table names, columns, relationships, and declared expressions must pass validator checks before DDL/metadata generation.
+Each entry of `spec.tables`:
 
-### Implementation gaps
+| Field | Meaning and required data |
+| --- | --- |
+| `name` | `domain.<name>` |
+| `columns` | Business columns (type, nullability, allowlisted CHECK). System columns are managed by the operator: `id`, `created_by`, `version`, `created_at`, `updated_at`, plus `org_unit_id` for cap-hr apps and `status` on a process table. `status` and `org_unit_id` are reserved names on every table |
+| `foreignKeys` | Optional. `column` → `references`: a referenceable table of the shared catalog, or another table of the same application. A table of another application cannot be referenced. A foreign key to `core.files` must be declared in `attachments` |
+| `access` | Allowlist of roles and columns for `select`, `insert` and optional `update` (and `delete` on a child table). `select` and `update` rules declare a `scope`: `own` (`created_by` is the caller), `department` (the record's `org_unit_id` is the caller's department in `cap_hr.staff`; requires cap-hr) or `organization`. An optional `recordFilter` narrows the scope. Insert rules have no scope: the creator and department are stamped by database triggers. System columns are never writable |
+| `belongsTo` | Optional; makes the table a child table. `table` is another table of the application that is not itself a child; `column` is the parent column the operator adds. A child table has no `stateMachine` or `attachments`; its `select`, `insert` and `update` rules name a role and columns only (no `scope`, `recordFilter` or `presets`), and may add `delete` rules naming a role. A role in a `select` rule needs a `select` rule on the parent; a role in an `insert`, `update` or `delete` rule needs an `update` rule on the parent. The parent column is insertable and never updatable |
+| `stateMachine` | Optional; makes the table a process table. `initial`, `editableStates`, `terminalStates`, and commands with `from`, `to`, `allowedRoles` and an optional `recordFilter` (for example `created_by _neq X-Hasura-User-Id` forbids self-approval). The table's `status` CHECK lists exactly these states. Command names are unique within the application |
+| `attachments` | Optional, process tables only. File columns (foreign keys to `core.files`) that must be `CLEAN` for the listed commands of the table |
+| `ui` | `listColumns` and `formFields` referencing declared columns, and `actions` listing the table's commands (process tables only); creates no permissions |
 
-The current Go types use `stateMachine.initialState` and `transitions`; the logical
-contract above also needs editable/terminal states and command validation.
-Attachment-column bindings, constraint/FK declarations, per-role access rules, and
-workflow field names need one serialization shared by the parser, sample apps,
-validators, services, and UI. Resolve compatibility and migrations for existing
-data/manifests when changing that serialization. An example without matching
-validation remains illustrative.
+Filters use `_and`, `_or` and declared columns compared with `_eq`/`_neq`; the
+only session value is `X-Hasura-User-Id`.
+
+### Installation and registry
+
+Installing an application writes, in one transaction after its DDL and Hasura
+metadata succeed, the `core.apps` row (`Ready`), its roles in `core.roles` and
+its capabilities in `core.app_capabilities`. Each attempt is recorded in
+`core.app_deployments`; a failed upgrade keeps the previous version `Ready` and
+records `last_error`, a failed first install leaves the row `Failed`. A role
+owned by another app, a capability or the platform, or a capability that is not
+enabled, refuses the app before any change. Uninstalling marks the row `Removed`,
+drops its Hasura permissions and releases its capabilities; the domain tables,
+data, roles and role assignments are kept. Roles dropped from a manifest are
+deleted with their assignments.
+
+An upgrade may add a table, a nullable column or a state. A table that is no
+longer declared loses its Hasura permissions and keeps its rows. A changed type
+or nullability, a new required column, a column that is no longer declared, or
+a state removed while records use it refuses the upgrade, and the previous
+version keeps serving. A `core.apps` row written in the single-table shape that
+preceded ADR 0008 is refused by capability services until the application is
+reinstalled.
+
+### Consumers
+
+cap-process reads `Ready` rows of `core.apps` whose capabilities are all
+enabled ([runtime rules](../../contracts/README.md#runtime-rules-the-services-enforce)).
+A command runs on the table that declares it, and is accepted only on a record
+the acting role can read under that table's `select` scope and record filter, and records the acting role in the audit row
+and the event ([contracts](../../contracts/README.md#identity-roles-and-commands)).
 
 ## 8. Semantic concept ownership
 
@@ -139,7 +249,7 @@ records the accepted requirement without claiming that synchronization works.
 | --- | --- |
 | `cap-process` | `POST /api/cap/process/files/upload`, `POST /api/cap/process/commands/{app_id}/{command}` |
 | `cap-data` | `POST /api/cap/data/ot/events`, `POST /api/cap/data/lakehouse/export`, `GET /api/cap/data/lakehouse/analytics` |
-| `cap-ai` | Legacy `POST /api/cap/ai/extract`, `POST /api/cap/ai/rag`; proposed secure APIs in [RAG contract](rag-api.proposed.md). Legacy RAG is not an authorized fallback |
+| `cap-ai` | `POST /api/cap/ai/extract`, `POST /api/cap/ai/rag` |
 
 Inspect actual handlers and agree on request/response schemas and service
 identity before connecting callers. This logical route inventory includes work
@@ -149,8 +259,8 @@ still to implement; it is not an assertion that every endpoint is running.
 
 The process publisher supports a legacy full `KESTRA_URL` with Bearer
 `KESTRA_API_TOKEN`, or deployment-owned single-destination routing via
-`KESTRA_ROUTES_FILE`. The private JSON route array binds `workspace_id`, `app_id`,
-package `version`, `workflow_id`, and a complete `endpoint`. Deployment derives
+`KESTRA_ROUTES_FILE`. The private JSON route array binds `app_id`, package
+`version`, `workflow_id`, and a complete `endpoint`. Deployment derives
 namespace/flow identity from the manifest-referenced workflow YAML and supplies
 the private webhook key; event callers cannot supply a destination. Before each
 send, the publisher requires a validated Ready app snapshot and exactly one

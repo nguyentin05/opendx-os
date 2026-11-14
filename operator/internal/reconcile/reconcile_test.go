@@ -17,6 +17,7 @@ package reconcile
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -32,7 +33,7 @@ func TestReconcileValidAppPackageAndRejectMissingWorkflow(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(appDir, "workflows"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	fixtureBytes, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "fixtures", "procurement.yaml"))
+	fixtureBytes, err := os.ReadFile(filepath.Join("..", "..", "..", "apps", "procurement", "manifest.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,9 +41,16 @@ func TestReconcileValidAppPackageAndRejectMissingWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Count metadata writes; exports (reads) also serve the drift check.
 	var requests int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests++
+		var body struct {
+			Type string `json:"type"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body.Type != "export_metadata" {
+			requests++
+		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"version":3,"sources":[]}`))
 	}))
@@ -51,19 +59,19 @@ func TestReconcileValidAppPackageAndRejectMissingWorkflow(t *testing.T) {
 	applier := apply.NewRunner(nil, apply.Config{HasuraURL: srv.URL}, srv.Client())
 	rec := NewRunner(nil, applier)
 
-	// 1. Missing workflow file must fail before any Hasura calls
-	if err := rec.Run(context.Background(), "11111111-1111-4111-8111-111111111111", tmp); err == nil {
+	// 1. A missing workflow file leaves the package out: nothing is applied
+	if err := rec.Run(context.Background(), tmp); err == nil {
 		t.Fatal("expected error when referenced workflow file is missing")
 	}
 	if requests != 0 {
-		t.Fatalf("expected zero Hasura calls on failed preflight, got %d", requests)
+		t.Fatalf("expected no Hasura metadata writes for a rejected package, got %d", requests)
 	}
 
 	// 2. Create workflow file and verify reconcile succeeds
 	if err := os.WriteFile(filepath.Join(appDir, "workflows", "procurement_flow.yaml"), []byte("id: procurement_approval_flow\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := rec.Run(context.Background(), "11111111-1111-4111-8111-111111111111", tmp); err != nil {
+	if err := rec.Run(context.Background(), tmp); err != nil {
 		t.Fatalf("expected reconcile success, got: %v", err)
 	}
 	if requests == 0 {

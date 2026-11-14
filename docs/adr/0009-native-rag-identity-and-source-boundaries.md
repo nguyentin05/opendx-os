@@ -1,8 +1,10 @@
-# ADR 0007: Native RAG identity and source boundaries
+# ADR 0009: Native RAG identity and source boundaries
 
 - **Status:** Proposed — conversation decisions recorded; RAG decisions recorded; ADR 0005 is accepted locally, while shared-contract/runtime convergence remains partial.
 - **Date:** 2026-11-13
 - **Decision owner:** repository/product owner; issue owner `nguyentin05` is the proposed responsible owner, pending identity/assignment confirmation.
+
+The accepted [ADR 0007](0007-keycloak-authenticates-platform-authorizes.md) owns platform identity and authorization. This RAG proposal was renumbered from 0007 to 0009 during integration to avoid colliding with that decision.
 
 ## Context and dependencies
 

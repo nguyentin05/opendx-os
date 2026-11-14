@@ -8,10 +8,6 @@
     "event_type": {
       "const": "command.committed"
     },
-    "workspace_id": {
-      "type": "string",
-      "format": "uuid"
-    },
     "app_id": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9_]*$"
@@ -39,6 +35,10 @@
           "type": "string",
           "format": "uuid"
         },
+        "acting_role": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
         "from_status": {
           "type": "string",
           "minLength": 1
@@ -55,6 +55,7 @@
       "required": [
         "command",
         "actor_id",
+        "acting_role",
         "from_status",
         "to_status",
         "executed_at"
@@ -65,7 +66,6 @@
   "required": [
     "event_id",
     "event_type",
-    "workspace_id",
     "app_id",
     "entity_type",
     "entity_id",

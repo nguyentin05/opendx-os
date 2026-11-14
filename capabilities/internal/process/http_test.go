@@ -18,7 +18,6 @@ package process
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/files"
 	"net/http"
@@ -39,11 +38,14 @@ func TestSafeErrorEnvelope(t *testing.T) {
 
 type envelopeVerifier struct{}
 
-func (envelopeVerifier) Verify(_ context.Context, token string) (*auth.Identity, error) {
+func (envelopeVerifier) Authorize(_ context.Context, token, role string) (*auth.Identity, error) {
 	if token != "valid" {
-		return nil, errors.New("invalid token")
+		return nil, auth.ErrUnauthenticated
 	}
-	return &auth.Identity{Role: "user", AllowedRoles: []string{"user"}}, nil
+	if role != "user" {
+		return nil, auth.ErrForbidden
+	}
+	return &auth.Identity{Role: "user"}, nil
 }
 func TestRouteAuthenticationEnvelopes(t *testing.T) {
 	e := NewEngine(nil, nil)

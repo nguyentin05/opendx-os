@@ -13,69 +13,82 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package registry consumes the proposed C0 active application contract.
+// Package registry reads installed applications from core.apps, where the
+// operator records each application's definition once it is Ready.
 package registry
 
 import "time"
 
+// AppDefinition is one installed application.
 type AppDefinition struct {
-	WorkspaceID           string       `json:"workspace_id"`
-	AppID                 string       `json:"app_id"`
-	DisplayName           string       `json:"display_name"`
-	Version               string       `json:"version"`
-	RoleName              string       `json:"role_name"`
-	DomainTable           string       `json:"domain_table"`
-	ManifestSpec          Spec         `json:"manifest_spec"`
-	UISchema              UISchema     `json:"ui_schema"`
-	StateMachine          StateMachine `json:"state_machine"`
-	DependentCapabilities []string     `json:"dependent_capabilities"`
-	Status                string       `json:"status"`
-	LastError             *string      `json:"last_error"`
-	UpdatedAt             time.Time    `json:"updated_at"`
+	AppID       string
+	DisplayName string
+	Version     string
+	Spec        Spec
+	UpdatedAt   time.Time
 }
+
+// Spec is the part of the manifest's spec that capability services act on.
+// Fields the services do not use (ui, sharedAccess) are ignored.
 type Spec struct {
-	Role         string         `json:"role"`
-	SharedAccess []SharedAccess `json:"sharedAccess"`
-	DomainTable  DomainTable    `json:"domainTable"`
-	DomainAccess DomainAccess   `json:"domainAccess"`
-	StateMachine StateMachine   `json:"stateMachine"`
-	Attachments  []Attachment   `json:"attachments"`
-	Workflows    []Workflow     `json:"workflows"`
-	Capabilities []string       `json:"capabilities"`
-	UISchema     UISchema       `json:"uiSchema"`
+	Capabilities []string   `json:"capabilities"`
+	Roles        []Role     `json:"roles"`
+	Tables       []Table    `json:"tables"`
+	Workflows    []Workflow `json:"workflows"`
 }
-type SharedAccess struct {
-	Table   string   `json:"table"`
-	Roles   []string `json:"roles"`
-	Columns []string `json:"columns"`
+
+type Role struct {
+	Name string `json:"name"`
 }
-type DomainTable struct {
-	Name                 string       `json:"name"`
-	Columns              []Column     `json:"columns"`
-	CompositeForeignKeys []ForeignKey `json:"compositeForeignKeys"`
+
+// Table is one domain table of the application (ADR 0008). A table with a
+// state machine is a process table: its commands run through cap-process.
+type Table struct {
+	Name         string        `json:"name"`
+	Columns      []Column      `json:"columns"`
+	ForeignKeys  []ForeignKey  `json:"foreignKeys"`
+	Access       Access        `json:"access"`
+	StateMachine *StateMachine `json:"stateMachine"`
+	Attachments  []Attachment  `json:"attachments"`
+	// BelongsTo makes the table a child table: its rows follow a record of
+	// the parent table and are written through Hasura only.
+	BelongsTo *BelongsTo `json:"belongsTo"`
 }
+
+// BelongsTo names a child table's parent and the column holding the parent
+// record's id.
+type BelongsTo struct {
+	Table  string `json:"table"`
+	Column string `json:"column"`
+}
+
 type Column struct {
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Nullable bool   `json:"nullable"`
-	Check    string `json:"check,omitempty"`
+	Name string `json:"name"`
+	Type string `json:"type"`
 }
 type ForeignKey struct {
-	Columns           []string `json:"columns"`
-	ReferencesTable   string   `json:"referencesTable"`
-	ReferencesColumns []string `json:"referencesColumns"`
+	Column     string `json:"column"`
+	References string `json:"references"`
 }
-type DomainAccess struct {
+type Access struct {
 	Select []Permission `json:"select"`
 	Insert []Permission `json:"insert"`
 	Update []Permission `json:"update"`
 }
 type Filter map[string]any
+
+// Scopes of an access rule (manifest field scope).
+const (
+	ScopeOwn          = "own"
+	ScopeDepartment   = "department"
+	ScopeOrganization = "organization"
+)
+
 type Permission struct {
-	Role         string            `json:"role"`
-	Columns      []string          `json:"columns"`
-	RecordFilter Filter            `json:"recordFilter,omitempty"`
-	Presets      map[string]string `json:"presets,omitempty"`
+	Role         string   `json:"role"`
+	Scope        string   `json:"scope"`
+	Columns      []string `json:"columns"`
+	RecordFilter Filter   `json:"recordFilter"`
 }
 type StateMachine struct {
 	Initial        string    `json:"initial"`
@@ -88,7 +101,7 @@ type Command struct {
 	From         []string `json:"from"`
 	To           string   `json:"to"`
 	AllowedRoles []string `json:"allowedRoles"`
-	RecordFilter Filter   `json:"recordFilter,omitempty"`
+	RecordFilter Filter   `json:"recordFilter"`
 }
 type Attachment struct {
 	Column                 string   `json:"column"`
@@ -107,19 +120,8 @@ type Effect struct {
 	Fields       EffectFields `json:"fields"`
 }
 type EffectFields struct {
-	Title              string `json:"title"`
-	Description        string `json:"description"`
-	Priority           string `json:"priority"`
-	AssignedEmployeeID string `json:"assignedEmployeeId,omitempty"`
-}
-type UISchema struct {
-	ListColumns []string    `json:"listColumns"`
-	FormFields  []FormField `json:"formFields"`
-	Actions     []string    `json:"actions"`
-}
-type FormField struct {
-	Name     string `json:"name"`
-	Label    string `json:"label"`
-	Type     string `json:"type"`
-	Required bool   `json:"required"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Priority    string `json:"priority"`
+	AssigneeID  string `json:"assigneeId"`
 }

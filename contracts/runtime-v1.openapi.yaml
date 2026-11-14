@@ -11,8 +11,10 @@ paths:
   /api/cap/process/commands/{app_id}/{command}:
     post:
       operationId: executeCommand
-      description: Resolve table/state/actor/workspace from verified identity and
-        active Ready manifest. Recheck current permission before returning any receipt.
+      description: Resolve table and state from the Ready manifest, the actor from
+        the verified token and the acting role (X-Hasura-Role) from core.user_roles.
+        The record must be readable under the role's scope. Recheck current
+        permission before returning any receipt.
         Empty payload is the supported core command payload.
       parameters:
       - name: app_id
@@ -63,7 +65,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '404':
-          description: Absent or outside workspace
+          description: Absent or outside the role's scope
           content:
             application/json:
               schema:
@@ -124,7 +126,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '404':
-          description: Absent or outside workspace
+          description: Absent or outside the role's scope
           content:
             application/json:
               schema:
@@ -193,7 +195,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '404':
-          description: Absent or outside workspace
+          description: Absent or outside the role's scope
           content:
             application/json:
               schema:
@@ -219,8 +221,8 @@ paths:
   /api/cap/process/files/{file_id}:
     get:
       operationId: downloadFile
-      description: Authorize caller workspace/app and ownership or readable attachment
-        before exposing scan state. Only CLEAN immutable content is downloadable.
+      description: Authorize the caller's role in the app and ownership or a readable
+        attachment (role scope included) before exposing scan state. Only CLEAN immutable content is downloadable.
       parameters:
       - name: file_id
         in: path
@@ -248,7 +250,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '404':
-          description: Absent or outside workspace
+          description: Absent or outside the role's scope
           content:
             application/json:
               schema:

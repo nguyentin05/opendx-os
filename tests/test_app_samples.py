@@ -20,8 +20,8 @@ class AppSamples(unittest.TestCase):
         app = yaml.safe_load((ROOT / 'apps/process-fixture/manifest.yaml').read_text())
         self.assertEqual(app['metadata']['name'], 'process_fixture')
         spec = app['spec']
-        self.assertEqual(spec['capabilities'], ['cap-process'])
-        self.assertEqual(spec['stateMachine']['initial'], 'OPEN')
+        self.assertEqual(spec['capabilities'], ['cap-process', 'cap-work'])
+        self.assertEqual(spec['tables'][0]['stateMachine']['initial'], 'OPEN')
         effect = spec['workflows'][0]['effects'][0]
         self.assertEqual(effect['stepName'], 'create_review')
         self.assertEqual(effect['whenCommands'], ['submit'])

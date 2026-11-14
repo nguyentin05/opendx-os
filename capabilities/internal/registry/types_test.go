@@ -21,124 +21,154 @@ import (
 	"testing"
 )
 
-func fixture(t *testing.T) []byte {
+// readyRow is contracts/fixtures/app-ready.json: the core.apps row the
+// operator writes for the procurement sample.
+func readyRow(t *testing.T) map[string]any {
 	t.Helper()
-	b, e := os.ReadFile("../../../contracts/fixtures/registry-ready.json")
-	if e != nil {
-		t.Fatal(e)
-	}
-	return b
-}
-func TestDecodeActiveFixture(t *testing.T) {
-	a, e := Decode(fixture(t))
-	if e != nil {
-		t.Fatal(e)
-	}
-	if a.ManifestSpec.DomainTable.Name != "domain.procurement_requests" || len(a.ManifestSpec.Workflows) != 1 || len(a.ManifestSpec.Attachments) != 1 || a.ManifestSpec.StateMachine.Initial != "DRAFT" {
-		t.Fatalf("incomplete typed fixture: %+v", a)
-	}
-}
-func TestRejectUnsafeRegistry(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		mutate func(map[string]any)
-	}{
-		{"unknown", func(m map[string]any) { m["manifest_spec"].(map[string]any)["semanticType"] = "x" }},
-		{"identifier", func(m map[string]any) { m["domain_table"] = "domain.x;DROP TABLE core.employees" }},
-		{"nested_unknown", func(m map[string]any) {
-			m["manifest_spec"].(map[string]any)["domainTable"].(map[string]any)["columns"].([]any)[0].(map[string]any)["semanticType"] = "x"
-		}},
-		{"filter_operator", func(m map[string]any) {
-			m["manifest_spec"].(map[string]any)["domainAccess"].(map[string]any)["select"].([]any)[0].(map[string]any)["recordFilter"] = map[string]any{"workspace_id": map[string]any{"_sql": "true"}}
-		}},
-		{"filter_type", func(m map[string]any) {
-			m["manifest_spec"].(map[string]any)["domainAccess"].(map[string]any)["select"].([]any)[0].(map[string]any)["recordFilter"] = map[string]any{"quoted_amount": map[string]any{"_eq": "oops"}}
-		}},
-		{"non_ready", func(m map[string]any) { m["status"] = "Applying" }},
-		{"incoherent", func(m map[string]any) { m["state_machine"].(map[string]any)["initial"] = "APPROVED" }},
-		{"missing", func(m map[string]any) { delete(m["manifest_spec"].(map[string]any), "domainAccess") }},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var m map[string]any
-			if err := json.Unmarshal(fixture(t), &m); err != nil {
-				t.Fatal(err)
-			}
-			tc.mutate(m)
-			b, _ := json.Marshal(m)
-			if _, e := Decode(b); e == nil {
-				t.Fatal("unsafe configuration accepted")
-			}
-		})
-	}
-}
-func TestStrictJSONShape(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		mutate func(map[string]any)
-	}{
-		{"case", func(m map[string]any) {
-			s := m["manifest_spec"].(map[string]any)
-			s["Role"] = s["role"]
-			delete(s, "role")
-		}},
-		{"missing_bool", func(m map[string]any) {
-			delete(m["manifest_spec"].(map[string]any)["domainTable"].(map[string]any)["columns"].([]any)[0].(map[string]any), "nullable")
-		}},
-		{"null_bool", func(m map[string]any) {
-			m["manifest_spec"].(map[string]any)["domainTable"].(map[string]any)["columns"].([]any)[0].(map[string]any)["nullable"] = nil
-		}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var m map[string]any
-			if err := json.Unmarshal(fixture(t), &m); err != nil {
-				t.Fatal(err)
-			}
-			tc.mutate(m)
-			b, _ := json.Marshal(m)
-			if _, e := Decode(b); e == nil {
-				t.Fatal("malformed JSON shape accepted")
-			}
-		})
-	}
-}
-
-func TestRequesterInsertPresetRequiresSignedUser(t *testing.T) {
-	for _, value := range []string{"", "X-Hasura-Workspace-Id"} {
-		t.Run(value, func(t *testing.T) {
-			var m map[string]any
-			if err := json.Unmarshal(fixture(t), &m); err != nil {
-				t.Fatal(err)
-			}
-			p := m["manifest_spec"].(map[string]any)["domainAccess"].(map[string]any)["insert"].([]any)[0].(map[string]any)["presets"].(map[string]any)
-			if value == "" {
-				delete(p, "requester_id")
-			} else {
-				p["requester_id"] = value
-			}
-			b, _ := json.Marshal(m)
-			if _, err := Decode(b); err == nil {
-				t.Fatal("requester ownership not bound to signed user")
-			}
-		})
-	}
-}
-
-func TestWorkflowStepsUniqueAcrossApp(t *testing.T) {
-	a, err := Decode(fixture(t))
+	b, err := os.ReadFile("../../../contracts/fixtures/app-ready.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second := a.ManifestSpec.Workflows[0]
-	second.ID = "second_workflow"
-	second.File = "workflows/second_workflow.yaml"
-	second.Effects = append([]Effect(nil), second.Effects...)
-	second.Effects[0].StepName = "second_step"
-	a.ManifestSpec.Workflows = append(a.ManifestSpec.Workflows, second)
-	if err := a.Validate(); err != nil {
-		t.Fatalf("valid two workflows: %v", err)
+	var row map[string]any
+	if err := json.Unmarshal(b, &row); err != nil {
+		t.Fatal(err)
 	}
-	a.ManifestSpec.Workflows[1].Effects[0].StepName = a.ManifestSpec.Workflows[0].Effects[0].StepName
-	if err := a.Validate(); err == nil {
-		t.Fatal("ambiguous app-wide step accepted")
+	return row
+}
+
+func decodeRow(row map[string]any) (*AppDefinition, error) {
+	spec, _ := json.Marshal(row["spec"])
+	return Decode(row["app_id"].(string), row["display_name"].(string), row["version"].(string), spec)
+}
+
+func TestDecodeReadyApplication(t *testing.T) {
+	a, err := decodeRow(readyRow(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := a.Table("domain.procurement_requests")
+	if table == nil || len(a.Spec.Workflows) != 1 || len(table.Attachments) != 1 || table.StateMachine.Initial != "DRAFT" {
+		t.Fatalf("incomplete definition: %+v", a)
+	}
+	if owner, cmd := a.Command("approve_budget"); owner != table || cmd == nil || cmd.To != "APPROVED" {
+		t.Fatal("a command must resolve to its table")
+	}
+	items := a.Table("domain.procurement_items")
+	if items == nil || items.BelongsTo == nil || a.ColumnTypes(items)["request_id"] != "uuid" || a.ColumnTypes(items)["org_unit_id"] != "" {
+		t.Fatal("the child table must carry its parent column and no department")
+	}
+	if owner, cmd := a.Command("no_such_command"); owner != nil || cmd != nil {
+		t.Fatal("unknown command resolved")
+	}
+	if a.ColumnTypes(table)["org_unit_id"] != "uuid" || !a.usesDepartmentScope("role_procurement_manager") || a.usesDepartmentScope("role_procurement_finance") {
+		t.Fatal("cap-hr columns and scopes not recognized")
+	}
+}
+
+func TestRejectUnsafeDefinitions(t *testing.T) {
+	spec := func(m map[string]any) map[string]any { return m["spec"].(map[string]any) }
+	table := func(m map[string]any) map[string]any { return spec(m)["tables"].([]any)[0].(map[string]any) }
+	firstSelect := func(m map[string]any) map[string]any {
+		return table(m)["access"].(map[string]any)["select"].([]any)[0].(map[string]any)
+	}
+	for name, mutate := range map[string]func(map[string]any){
+		"table injection": func(m map[string]any) {
+			table(m)["name"] = "domain.x;DROP TABLE core.users"
+		},
+		"non-domain table": func(m map[string]any) { table(m)["name"] = "core.users" },
+		"column injection": func(m map[string]any) {
+			table(m)["columns"].([]any)[0].(map[string]any)["name"] = "x = x OR true"
+		},
+		"reserved column": func(m map[string]any) {
+			table(m)["columns"].([]any)[0].(map[string]any)["name"] = "created_by"
+		},
+		"filter operator": func(m map[string]any) {
+			firstSelect(m)["recordFilter"] = map[string]any{"status": map[string]any{"_sql": "true"}}
+		},
+		"filter type": func(m map[string]any) {
+			firstSelect(m)["recordFilter"] = map[string]any{"quoted_amount": map[string]any{"_eq": "oops"}}
+		},
+		"session variable": func(m map[string]any) {
+			firstSelect(m)["recordFilter"] = map[string]any{"created_by": map[string]any{"_eq": "X-Hasura-Role"}}
+		},
+		"undeclared role": func(m map[string]any) { firstSelect(m)["role"] = "role_admin" },
+		"privileged role": func(m map[string]any) {
+			spec(m)["roles"].([]any)[0].(map[string]any)["name"] = "admin"
+			firstSelect(m)["role"] = "admin"
+		},
+		"unknown scope":       func(m map[string]any) { firstSelect(m)["scope"] = "everyone" },
+		"department, no hr":   func(m map[string]any) { spec(m)["capabilities"] = []any{"cap-process", "cap-work"} },
+		"attachment not file": func(m map[string]any) { table(m)["foreignKeys"] = []any{} },
+		// Command names are unique within an application.
+		"same command on two tables": func(m map[string]any) {
+			second := map[string]any{}
+			raw, _ := json.Marshal(table(m))
+			_ = json.Unmarshal(raw, &second)
+			second["name"] = "domain.second_records"
+			spec(m)["tables"] = append(spec(m)["tables"].([]any), second)
+		},
+		"duplicate table": func(m map[string]any) {
+			spec(m)["tables"] = append(spec(m)["tables"].([]any), table(m))
+		},
+		// A row stored before spec.tables is refused until it is reinstalled.
+		"single-table shape": func(m map[string]any) {
+			spec(m)["domainTable"] = map[string]any{"name": table(m)["name"], "columns": table(m)["columns"]}
+			delete(spec(m), "tables")
+		},
+		"child with commands": func(m map[string]any) {
+			tables := spec(m)["tables"].([]any)
+			tables[2].(map[string]any)["stateMachine"] = map[string]any{"initial": "OPEN"}
+		},
+		"child of a missing table": func(m map[string]any) {
+			tables := spec(m)["tables"].([]any)
+			tables[2].(map[string]any)["belongsTo"].(map[string]any)["table"] = "domain.other_records"
+		},
+		"bad effect": func(m map[string]any) {
+			spec(m)["workflows"].([]any)[0].(map[string]any)["effects"].([]any)[0].(map[string]any)["kind"] = "run_sql"
+		},
+	} {
+		row := readyRow(t)
+		mutate(row)
+		if _, err := decodeRow(row); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+func TestCanSeeAppliesScopeAndRecordFilter(t *testing.T) {
+	a, err := decodeRow(readyRow(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := &a.Spec.Tables[0]
+	const alice, carol, deptA, deptB = "22222222-2222-4222-8222-222222222222", "44444444-4444-4444-8444-444444444444",
+		"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	row := func(status string) map[string]any {
+		return map[string]any{"id": "33333333-3333-4333-8333-333333333333", "created_by": alice, "org_unit_id": deptA, "status": status}
+	}
+	for _, tc := range []struct {
+		name string
+		v    Viewer
+		row  map[string]any
+		want bool
+	}{
+		{"requester, own", Viewer{UserID: alice, Role: "role_procurement_requester"}, row("DRAFT"), true},
+		{"requester, other's", Viewer{UserID: carol, Role: "role_procurement_requester"}, row("SUBMITTED"), false},
+		{"manager, same department", Viewer{UserID: carol, Role: "role_procurement_manager", OrgUnit: deptA}, row("SUBMITTED"), true},
+		{"manager, other department", Viewer{UserID: carol, Role: "role_procurement_manager", OrgUnit: deptB}, row("SUBMITTED"), false},
+		{"manager, no department", Viewer{UserID: carol, Role: "role_procurement_manager"}, row("SUBMITTED"), false},
+		{"manager, draft", Viewer{UserID: carol, Role: "role_procurement_manager", OrgUnit: deptA}, row("DRAFT"), false},
+		{"finance, organization", Viewer{UserID: carol, Role: "role_procurement_finance"}, row("BUDGET_REVIEW"), true},
+		{"finance, draft", Viewer{UserID: carol, Role: "role_procurement_finance"}, row("DRAFT"), false},
+		{"no rule for role", Viewer{UserID: alice, Role: "role_review"}, row("DRAFT"), false},
+	} {
+		got, err := a.CanSee(table, tc.v, tc.row, "")
+		if err != nil || got != tc.want {
+			t.Errorf("%s: got %v (%v), want %v", tc.name, got, err, tc.want)
+		}
+	}
+	// The attachment column must be among the rule's visible columns.
+	if ok, _ := a.CanSee(table, Viewer{UserID: alice, Role: "role_procurement_requester"}, row("DRAFT"), "not_a_column"); ok {
+		t.Error("a column the rule does not expose must not be readable")
 	}
 }

@@ -18,14 +18,14 @@ package registry
 import (
 	"encoding/json"
 	"errors"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"math/big"
 	"reflect"
 	"strings"
 )
 
-// Matches evaluates the validated core filter grammar with SQL NULL semantics.
-func Matches(f map[string]any, row map[string]any, id *auth.Identity, types ...map[string]string) (bool, error) {
+// Matches evaluates the validated filter grammar with SQL NULL semantics;
+// X-Hasura-User-Id stands for userID.
+func Matches(f map[string]any, row map[string]any, userID string, types ...map[string]string) (bool, error) {
 	for k, v := range f {
 		if k == "_and" || k == "_or" {
 			a, ok := v.([]any)
@@ -38,7 +38,7 @@ func Matches(f map[string]any, row map[string]any, id *auth.Identity, types ...m
 				if !ok {
 					return false, errors.New("unsupported filter")
 				}
-				b, e := Matches(m, row, id, types...)
+				b, e := Matches(m, row, userID, types...)
 				if e != nil {
 					return false, e
 				}
@@ -62,13 +62,8 @@ func Matches(f map[string]any, row map[string]any, id *auth.Identity, types ...m
 			return false, errors.New("unsupported filter")
 		}
 		for op, want := range ops {
-			if s, ok := want.(string); ok && id != nil {
-				if s == "X-Hasura-User-Id" {
-					want = id.UserID
-				}
-				if s == "X-Hasura-Workspace-Id" {
-					want = id.WorkspaceID
-				}
+			if s, ok := want.(string); ok && s == "X-Hasura-User-Id" {
+				want = userID
 			}
 			if op != "_eq" && op != "_neq" {
 				return false, errors.New("unsupported operator")

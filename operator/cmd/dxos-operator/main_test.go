@@ -29,7 +29,7 @@ import (
 )
 
 func TestCLIValidateAndPlan(t *testing.T) {
-	fixture := filepath.Join("..", "..", "..", "contracts", "fixtures", "procurement.yaml")
+	fixture := filepath.Join("..", "..", "..", "apps", "procurement", "manifest.yaml")
 
 	var out, errOut bytes.Buffer
 	code := runCLI([]string{"validate", fixture}, &out, &errOut, nil, nil)
@@ -68,7 +68,7 @@ func TestCLIValidateAndPlan(t *testing.T) {
 }
 
 func TestCLIApplyWithInjectedRunner(t *testing.T) {
-	fixture := filepath.Join("..", "..", "..", "contracts", "fixtures", "procurement.yaml")
+	fixture := filepath.Join("..", "..", "..", "apps", "procurement", "manifest.yaml")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"version":3,"sources":[]}`))
@@ -81,5 +81,40 @@ func TestCLIApplyWithInjectedRunner(t *testing.T) {
 	var out, errOut bytes.Buffer
 	if code := runCLI([]string{"apply", fixture}, &out, &errOut, applier, reconciler); code != 0 {
 		t.Fatalf("expected apply exit 0, got %d: %s", code, errOut.String())
+	}
+}
+
+func TestCLIReconcileArguments(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"version":3,"sources":[]}`))
+	}))
+	defer srv.Close()
+	applier := apply.NewRunner(nil, apply.Config{HasuraURL: srv.URL}, srv.Client())
+	reconciler := reconcile.NewRunner(nil, applier)
+	dir := t.TempDir()
+
+	for _, args := range [][]string{
+		{"reconcile"},
+		{"reconcile", "--dir", dir, dir},
+		{"reconcile", "--interval", "-1s", "--dir", dir},
+	} {
+		var out, errOut bytes.Buffer
+		if code := runCLI(args, &out, &errOut, applier, reconciler); code == 0 {
+			t.Fatalf("%v: expected a usage error", args)
+		}
+	}
+	for _, args := range [][]string{
+		{"reconcile", dir},
+		{"reconcile", "--dir", dir},
+	} {
+		var out, errOut bytes.Buffer
+		if code := runCLI(args, &out, &errOut, applier, reconciler); code != 0 {
+			t.Fatalf("%v: exit %d: %s", args, code, errOut.String())
+		}
+	}
+	var out, errOut bytes.Buffer
+	if code := runCLI([]string{"reconcile", "--dir", filepath.Join(dir, "missing")}, &out, &errOut, applier, reconciler); code == 0 {
+		t.Fatal("a missing apps directory must fail")
 	}
 }

@@ -19,196 +19,117 @@ package process
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
-	"time"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
-func TestEffectRetryReturnsSameWorkItem(t *testing.T) {
-	e, db, id := commandFixture(t)
-	if _, _, err := execute(e, id, "effect", 1); err != nil {
+// submitted files and submits a request, and returns it with its event.
+func (o *org) submitted(t *testing.T) (entity, event string) {
+	t.Helper()
+	entity = o.request(t, o.alice)
+	if _, s := o.run(o.alice, "role_procurement_requester", "submit", entity, "k", 1); s != 200 {
+		t.Fatal(s)
+	}
+	if err := o.p.Admin.QueryRow(`SELECT id::text FROM core.outbox_events WHERE entity_id = $1`, entity).Scan(&event); err != nil {
 		t.Fatal(err)
 	}
-	var event string
-	if err := db.QueryRow(`SELECT id::text FROM core.outbox_events`).Scan(&event); err != nil {
-		t.Fatal(err)
-	}
-	id.Role = "workflow_service"
-	id.AllowedRoles = []string{id.Role}
-	if err := e.ConfigureWorkflowService(id.UserID, id.Role); err != nil {
-		t.Fatal(err)
-	}
-	var wg sync.WaitGroup
-	results := make(chan string, 2)
-	errs := make(chan error, 2)
-	for i := 0; i < 2; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			v, err := e.ExecuteWorkItemEffect(context.Background(), id, event, "create_review")
-			results <- v
-			errs <- err
-		}()
-	}
-	wg.Wait()
-	close(errs)
-	for err := range errs {
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	if a, b := <-results, <-results; a == "" || a != b {
-		t.Fatalf("different results %s %s", a, b)
-	}
-	for _, table := range []string{"work_items", "processed_workflow_steps"} {
-		var n int
-		if err := db.QueryRow(`SELECT count(*) FROM core.` + table).Scan(&n); err != nil || n != 1 {
-			t.Fatalf("%s=%d %v", table, n, err)
-		}
-	}
-	if _, err := e.ExecuteWorkItemEffect(context.Background(), id, event, "undeclared"); err == nil {
-		t.Fatal("undeclared step")
-	}
-	id.WorkspaceID = "99999999-9999-4999-8999-999999999999"
-	if _, err := e.ExecuteWorkItemEffect(context.Background(), id, event, "create_review"); err == nil {
-		t.Fatal("wrong workspace")
-	}
+	return entity, event
 }
 
-func TestEffectCurrentGrantAndRollback(t *testing.T) {
-	e, db, id := commandFixture(t)
-	if _, _, err := execute(e, id, "effect", 1); err != nil {
+// workflow configures and returns the workflow service principal: a platform
+// user holding role_workflow.
+func (o *org) workflow(t *testing.T) *auth.Identity {
+	t.Helper()
+	user := o.p.User(t, "kestra", "", "role_workflow")
+	if err := o.engine.ConfigureWorkflowService(user, "role_workflow"); err != nil {
 		t.Fatal(err)
 	}
-	var event string
-	if err := db.QueryRow(`SELECT id::text FROM core.outbox_events`).Scan(&event); err != nil {
-		t.Fatal(err)
-	}
-	id.Role = "workflow_service"
-	id.AllowedRoles = []string{id.Role}
-	if err := e.ConfigureWorkflowService(id.UserID, id.Role); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`ALTER TABLE core.processed_workflow_steps ADD CHECK (step_name <> 'create_review')`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.ExecuteWorkItemEffect(context.Background(), id, event, "create_review"); err == nil {
-		t.Fatal("expected receipt failure")
-	}
-	var n int
-	if err := db.QueryRow(`SELECT count(*) FROM core.work_items`).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	if n != 0 {
-		t.Fatal("work item escaped rollback")
-	}
-	if _, err := db.Exec(`UPDATE core.capability_registry SET enabled=false`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.ExecuteWorkItemEffect(context.Background(), id, event, "create_review"); err == nil {
-		t.Fatal("disabled dependency")
-	}
+	return &auth.Identity{UserID: user, Role: "role_workflow"}
 }
 
-func TestEffectWrongCommandAndCurrentAuthorization(t *testing.T) {
-	e, db, id := commandFixture(t)
-	if _, status, err := execute(e, id, "effect", 1); err != nil || status != 200 {
-		t.Fatalf("setup command: status=%d err=%v", status, err)
-	}
-	var event string
-	if err := db.QueryRow(`SELECT id::text FROM core.outbox_events`).Scan(&event); err != nil {
-		t.Fatal(err)
-	}
-	id.Role = "workflow_service"
-	id.AllowedRoles = []string{id.Role}
-	if err := e.ConfigureWorkflowService(id.UserID, id.Role); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`UPDATE core.outbox_events SET payload=jsonb_set(payload,'{payload,command}','"cancel"')`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.ExecuteWorkItemEffect(context.Background(), id, event, "create_review"); err == nil {
-		t.Fatal("wrong command")
-	}
-	if _, err := db.Exec(`UPDATE core.outbox_events SET payload=jsonb_set(payload,'{payload,command}','"submit"')`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.ExecuteWorkItemEffect(context.Background(), id, event, "create_review"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`UPDATE core.capability_registry SET enabled=false`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.ExecuteWorkItemEffect(context.Background(), id, event, "create_review"); err == nil {
-		t.Fatal("cached result bypassed current dependency")
-	}
-	id.Role = "role_procurement"
-	if _, err := e.ExecuteWorkItemEffect(context.Background(), id, event, "create_review"); err == nil {
-		t.Fatal("ordinary user")
-	}
-}
+func TestEffectCreatesOneWorkItemPerStep(t *testing.T) {
+	o := newOrg(t)
+	service := o.workflow(t)
+	entity, event := o.submitted(t)
 
-func TestEffectConcurrentMixedCaseEventUUID(t *testing.T) {
-	e, db, id := commandFixture(t)
-	if _, _, err := execute(e, id, "mixed", 1); err != nil {
-		t.Fatal(err)
-	}
-	var event string
-	if err := db.QueryRow(`SELECT id::text FROM core.outbox_events`).Scan(&event); err != nil {
-		t.Fatal(err)
-	}
-	id.Role = "workflow_service"
-	id.AllowedRoles = []string{id.Role}
-	id.UserID = "abcdefab-cdef-4abc-8def-abcdefabcdef"
-	if err := e.ConfigureWorkflowService(strings.ToUpper(id.UserID), id.Role); err != nil {
-		t.Fatal(err)
-	}
-	blocker, err := db.Begin()
+	first, err := o.engine.ExecuteWorkItemEffect(context.Background(), service, event, "create_review")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = blocker.Rollback() }() // Best-effort cleanup; a committed transaction is already closed.
-	if _, err = blocker.Exec(`LOCK TABLE core.work_items IN SHARE MODE`); err != nil {
+	again, err := o.engine.ExecuteWorkItemEffect(context.Background(), service, strings.ToUpper(event), "create_review")
+	if err != nil || again != first {
+		t.Fatalf("retry: %q %v, want %q", again, err, first)
+	}
+	var app, sourceType, sourceID, title, createdBy string
+	if err := o.p.Admin.QueryRow(`SELECT app_id, source_type, source_id::text, title, created_by::text FROM cap_work.work_items WHERE id = $1`, first).
+		Scan(&app, &sourceType, &sourceID, &title, &createdBy); err != nil {
 		t.Fatal(err)
 	}
-	type result struct {
-		id  string
-		err error
+	if app != "procurement" || sourceType != "domain.procurement_requests" || sourceID != entity || title != "Review procurement request" || createdBy != service.UserID {
+		t.Fatalf("work item: %s %s %s %q %s", app, sourceType, sourceID, title, createdBy)
 	}
-	results := make(chan result, 2)
-	for _, spelling := range []string{strings.ToLower(event), strings.ToUpper(event)} {
-		go func(value string) {
-			v, err := e.ExecuteWorkItemEffect(context.Background(), id, value, "create_review")
-			results <- result{v, err}
-		}(spelling)
+	if n := o.count(t, `SELECT count(*) FROM cap_work.work_items`); n != 1 {
+		t.Fatalf("work items = %d, want 1", n)
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		var waiting int
-		err = db.QueryRow(`SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock'`).Scan(&waiting)
-		if err != nil {
-			t.Fatal(err)
+}
+
+func TestEffectConcurrentRetriesCreateOne(t *testing.T) {
+	o := newOrg(t)
+	service := o.workflow(t)
+	_, event := o.submitted(t)
+	var wg sync.WaitGroup
+	ids := make(chan string, 4)
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			id, err := o.engine.ExecuteWorkItemEffect(context.Background(), service, event, "create_review")
+			if err != nil {
+				t.Error(err)
+			}
+			ids <- id
+		}()
+	}
+	wg.Wait()
+	close(ids)
+	seen := map[string]bool{}
+	for id := range ids {
+		seen[id] = true
+	}
+	if len(seen) != 1 || o.count(t, `SELECT count(*) FROM cap_work.work_items`) != 1 {
+		t.Fatalf("concurrent retries produced %v", seen)
+	}
+}
+
+func TestEffectDeniedOutsideTheWorkflowPrincipalAndSteps(t *testing.T) {
+	o := newOrg(t)
+	service := o.workflow(t)
+	_, event := o.submitted(t)
+	ctx := context.Background()
+	for name, call := range map[string]func() error{
+		"ordinary user": func() error {
+			_, err := o.engine.ExecuteWorkItemEffect(ctx, &auth.Identity{UserID: o.alice, Role: "role_workflow"}, event, "create_review")
+			return err
+		},
+		"wrong role": func() error {
+			_, err := o.engine.ExecuteWorkItemEffect(ctx, &auth.Identity{UserID: service.UserID, Role: "role_operator"}, event, "create_review")
+			return err
+		},
+		"unknown step": func() error { _, err := o.engine.ExecuteWorkItemEffect(ctx, service, event, "drop_tables"); return err },
+		"unknown event": func() error {
+			_, err := o.engine.ExecuteWorkItemEffect(ctx, service, "99999999-9999-4999-8999-999999999999", "create_review")
+			return err
+		},
+	} {
+		if err := call(); !errors.Is(err, ErrEffectDenied) {
+			t.Errorf("%s: %v, want ErrEffectDenied", name, err)
 		}
-		if waiting >= 2 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("concurrent requests did not reach database locks")
-		}
-		time.Sleep(10 * time.Millisecond)
 	}
-	if err = blocker.Commit(); err != nil {
-		t.Fatal(err)
-	}
-	a, b := <-results, <-results
-	if a.err != nil || b.err != nil || a.id == "" || a.id != b.id {
-		t.Fatalf("mixed UUID retries: %+v %+v", a, b)
-	}
-	for _, table := range []string{"work_items", "processed_workflow_steps"} {
-		var n int
-		if err = db.QueryRow(`SELECT count(*) FROM core.` + table).Scan(&n); err != nil || n != 1 {
-			t.Fatalf("%s=%d: %v", table, n, err)
-		}
+	if n := o.count(t, `SELECT count(*) FROM cap_work.work_items`); n != 0 {
+		t.Fatalf("work items = %d, want 0", n)
 	}
 }
