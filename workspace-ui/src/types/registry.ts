@@ -39,7 +39,21 @@ export interface StateMachineSpec {
   transitions: TransitionSpec[];
 }
 
+export interface KnowledgeSpec {
+  version: 1;
+  personalLibrary?: { enabled: boolean; allowedRoles: string[] };
+  grantPolicies?: Record<string, { allowedRoles: string[] }>;
+  sources?: Array<{
+    id: string;
+    path: string;
+    mediaType: 'text/markdown' | 'application/pdf';
+    indexingProfile: 'standard-text-v1';
+    access: { mode: 'ROLE' | 'RESTRICTED'; allowedRoles: string[]; grantsManagedBy?: string };
+  }>;
+}
+
 export interface ManifestSpec {
+  knowledge?: KnowledgeSpec;
   role: string;
   domainTable: {
     name: string;

@@ -23,10 +23,12 @@ func membershipFixture(t *testing.T) (*sql.DB, *DBMembership, auth.Subject) {
 	db := testutil.Database(t)
 	_, err := db.Exec(`CREATE SCHEMA core;
  CREATE TABLE core.users(id uuid PRIMARY KEY, status text NOT NULL CHECK(status IN ('ACTIVE','DISABLED')));
- CREATE TABLE core.roles(name text PRIMARY KEY);
+ CREATE TABLE core.apps(app_id text PRIMARY KEY,status text);
+ CREATE TABLE core.capabilities(cap_id text PRIMARY KEY,enabled boolean);
+ CREATE TABLE core.roles(name text PRIMARY KEY,app_id text,cap_id text,description text DEFAULT '');
  CREATE TABLE core.user_roles(user_id uuid REFERENCES core.users(id),role_name text REFERENCES core.roles(name),PRIMARY KEY(user_id,role_name));
  INSERT INTO core.users VALUES('22222222-2222-4222-8222-222222222222','ACTIVE');
- INSERT INTO core.roles VALUES('role_reader'),('role_new');
+ INSERT INTO core.roles(name) VALUES('role_reader'),('role_new');
  INSERT INTO core.user_roles VALUES('22222222-2222-4222-8222-222222222222','role_reader');`)
 	if err != nil {
 		t.Fatal(err)

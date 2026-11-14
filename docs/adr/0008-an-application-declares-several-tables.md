@@ -162,3 +162,14 @@ Not decided here, and not supported until decided:
 - **Add the table name to the command path.** It allows the same command name on
   two tables, but changes the HTTP contract for every client. Unique command
   names cost only a naming convention. Rejected for now.
+
+## Accepted refinement: capability-only knowledge applications (2026-11-15)
+
+A package may declare `tables: []` when its validated `knowledge.version: 1`
+declares an enabled personal library or package sources. It must declare its own
+roles and cap-process/cap-ai dependencies and cannot declare table commands or
+workflows without tables. No dummy domain table is required. There may be only
+one enabled personal library in the installation, checked at managed-set planning
+and under the registry publication lock. Existing table-bearing applications keep
+their access rules. The [knowledge contract](../contracts/data-contracts.md#knowledge-v1)
+defines the single nested serialization consumed by manifest, CRD, registry and UI.

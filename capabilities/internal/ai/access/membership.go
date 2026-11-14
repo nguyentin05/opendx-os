@@ -8,8 +8,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/opendx-os/opendx-os/capabilities/internal/authz"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
@@ -41,16 +41,22 @@ func (m *DBMembership) Resolve(ctx context.Context, s auth.Subject, role string)
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	var p Principal
-	err := m.db.QueryRowContext(queryCtx, `SELECT u.id::text,r.name FROM core.users u JOIN core.user_roles ur ON ur.user_id=u.id JOIN core.roles r ON r.name=ur.role_name WHERE u.id=$1 AND u.status='ACTIVE' AND r.name=$2`, strings.ToLower(s.UserID), role).Scan(&p.UserID, &p.Role)
+	resolver := authz.NewResolver(subjectAuthenticator{s.UserID}, authz.PostgresStore{DB: m.db, ReadOnly: true}, 0)
+	id, err := resolver.Authorize(queryCtx, "", role)
 	if ctx.Err() != nil || !s.ExpiresAt.After(time.Now()) {
 		return Principal{}, ErrDenied
 	}
-	if errors.Is(err, sql.ErrNoRows) {
+	if errors.Is(err, auth.ErrUnauthenticated) || errors.Is(err, auth.ErrForbidden) {
 		return Principal{}, ErrDenied
 	}
 	if err != nil {
 		return Principal{}, ErrUnavailable
 	}
-	return p, nil
+	return Principal{UserID: id.UserID, Role: id.Role}, nil
+}
+
+type subjectAuthenticator struct{ subject string }
+
+func (a subjectAuthenticator) Authenticate(context.Context, string) (*auth.Principal, error) {
+	return &auth.Principal{Subject: a.subject}, nil
 }

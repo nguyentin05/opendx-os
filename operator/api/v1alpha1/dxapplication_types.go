@@ -47,6 +47,7 @@ const UUIDPattern = `^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4
 // (docs/contracts/data-contracts.md). JSON field names are identical to the
 // manifest so that both forms convert losslessly.
 type DXApplicationSpec struct {
+	Knowledge *KnowledgeDef `yaml:"knowledge,omitempty" json:"knowledge,omitempty"`
 	// DisplayName is shown by the App Shell.
 	// +kubebuilder:validation:MinLength=1
 	DisplayName string `json:"displayName"`
@@ -73,7 +74,7 @@ type DXApplicationSpec struct {
 	// Tables declares the application's domain tables (ADR 0008). The Operator
 	// generates each of them. A table with a state machine is a process table;
 	// one without is a plain table.
-	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MinItems=0
 	Tables []Table `json:"tables"`
 
 	// Workflows declares the automation flows and their business effects.

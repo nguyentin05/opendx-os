@@ -288,7 +288,11 @@ type Authenticator interface {
 }
 
 func (v *jwtVerifier) Authenticate(ctx context.Context, token string) (*Principal, error) {
-	payload, e := v.verifiedPayload(ctx, token)
+	return v.authenticateWithMaxAge(ctx, token, jwksMaxStaleness)
+}
+
+func (v *jwtVerifier) authenticateWithMaxAge(ctx context.Context, token string, maxAge time.Duration) (*Principal, error) {
+	payload, e := v.verifiedPayloadWithMaxAge(ctx, token, maxAge)
 	if e != nil {
 		return nil, e
 	}

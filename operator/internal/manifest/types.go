@@ -40,6 +40,7 @@ type AppMetadata struct {
 
 // AppSpec defines the full specification of a DXApplication.
 type AppSpec struct {
+	Knowledge *KnowledgeDef `yaml:"knowledge,omitempty" json:"knowledge,omitempty"`
 	// Capabilities lists the Tier 2 capabilities the application uses. cap-process
 	// is required because every application runs commands through it.
 	Capabilities []string `yaml:"capabilities" json:"capabilities"`

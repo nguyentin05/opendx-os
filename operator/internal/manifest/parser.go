@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 
 	"gopkg.in/yaml.v3"
@@ -78,5 +79,12 @@ func ParseFile(path string) (*DXApplication, error) {
 		return nil, fmt.Errorf("open manifest file: %w", err)
 	}
 	defer func() { _ = f.Close() }()
-	return Parse(f)
+	app, err := Parse(f)
+	if err != nil {
+		return nil, err
+	}
+	if err = ValidateKnowledgePaths(filepath.Dir(path), app.Spec.Knowledge); err != nil {
+		return nil, err
+	}
+	return app, nil
 }

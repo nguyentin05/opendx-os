@@ -67,3 +67,18 @@ func (v *jwtVerifier) VerifySubject(ctx context.Context, token string) (Subject,
 	}
 	return Subject{UserID: strings.ToLower(c.Sub), ExpiresAt: time.Unix(c.Exp, 0)}, nil
 }
+
+// strictAuthenticator shares signature and platform identity claim validation,
+// but permits no stale key grace period on protected source routes.
+type strictAuthenticator struct{ v *jwtVerifier }
+
+func NewStrictAuthenticator(ctx context.Context, cfg VerifierConfig) (Authenticator, error) {
+	a, err := NewAuthenticator(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return strictAuthenticator{v: a.(*jwtVerifier)}, nil
+}
+func (s strictAuthenticator) Authenticate(ctx context.Context, token string) (*Principal, error) {
+	return s.v.authenticateWithMaxAge(ctx, token, jwksCacheLifetime)
+}

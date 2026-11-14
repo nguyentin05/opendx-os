@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS core.files (
     bucket TEXT NOT NULL CHECK (length(trim(bucket)) > 0),
     object_key TEXT NOT NULL CHECK (length(trim(object_key)) > 0),
     file_name TEXT NOT NULL CHECK (length(trim(file_name)) > 0),
+    read_policy TEXT NOT NULL DEFAULT 'APP_ATTACHMENT' CHECK (read_policy IN ('APP_ATTACHMENT', 'OWNER_ONLY')),
     scan_status TEXT NOT NULL DEFAULT 'QUARANTINED' CHECK (scan_status IN ('QUARANTINED', 'CLEAN', 'INFECTED')),
     sha256_hash TEXT NOT NULL CHECK (length(trim(sha256_hash)) = 64),
     uploaded_by UUID NOT NULL REFERENCES core.users(id),
@@ -118,6 +119,7 @@ BEGIN
        OR NEW.object_key IS DISTINCT FROM OLD.object_key
        OR NEW.file_name IS DISTINCT FROM OLD.file_name
        OR NEW.sha256_hash IS DISTINCT FROM OLD.sha256_hash
+       OR NEW.read_policy IS DISTINCT FROM OLD.read_policy
        OR NEW.uploaded_by IS DISTINCT FROM OLD.uploaded_by
        OR NEW.mime_type IS DISTINCT FROM OLD.mime_type
        OR NEW.size_bytes IS DISTINCT FROM OLD.size_bytes

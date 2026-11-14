@@ -24,6 +24,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 	"io"
 	"net/http"
 	"strings"
@@ -54,6 +55,19 @@ func newID() (string, error) {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[:4], b[4:6], b[6:8], b[8:10], b[10:]), nil
 }
 func (s *Service) Upload(ctx context.Context, actor *auth.Identity, appID, fileName string, content io.Reader) (*FileObject, error) {
+	return s.upload(ctx, actor, appID, fileName, content, "APP_ATTACHMENT")
+}
+func (s *Service) UploadPrivate(ctx context.Context, actor *auth.Identity, appID, fileName string, content io.Reader) (*FileObject, error) {
+	if err := knowledge.CheckIdentity(ctx, s.db, actor); err != nil {
+		return nil, privateAuthorityError(err)
+	}
+	a, err := s.apps.Load(ctx, appID)
+	if err != nil || !a.AllowsPersonalLibrary(actor.Role) {
+		return nil, ErrDenied
+	}
+	return s.upload(ctx, actor, appID, fileName, content, "OWNER_ONLY")
+}
+func (s *Service) upload(ctx context.Context, actor *auth.Identity, appID, fileName string, content io.Reader, policy string) (*FileObject, error) {
 	if _, e := s.application(ctx, actor, appID); e != nil {
 		return nil, ErrDenied
 	}
@@ -72,11 +86,11 @@ func (s *Service) Upload(ctx context.Context, actor *auth.Identity, appID, fileN
 	if e = s.storage.Put(ctx, key, bytes.NewReader(b)); e != nil {
 		return nil, e
 	}
-	_, e = s.db.ExecContext(ctx, `INSERT INTO core.files(id,app_id,bucket,object_key,file_name,scan_status,sha256_hash,uploaded_by,mime_type,size_bytes) VALUES($1,$2,$3,$4,$5,'QUARANTINED',$6,$7,$8,$9)`, id, appID, s.bucket, key, fileName, digest(b), actor.UserID, m, len(b))
+	_, e = s.db.ExecContext(ctx, `INSERT INTO core.files(id,app_id,bucket,object_key,file_name,scan_status,sha256_hash,uploaded_by,mime_type,size_bytes,read_policy) VALUES($1,$2,$3,$4,$5,'QUARANTINED',$6,$7,$8,$9,$10)`, id, appID, s.bucket, key, fileName, digest(b), actor.UserID, m, len(b), policy)
 	if e != nil {
 		return nil, e
 	}
-	return &FileObject{id, "QUARANTINED"}, nil
+	return &FileObject{ID: id, ScanStatus: "QUARANTINED"}, nil
 }
 func (s *Service) verified(ctx context.Context, key, hash string) ([]byte, error) {
 	r, e := s.storage.Get(ctx, key)
@@ -93,7 +107,7 @@ func (s *Service) verified(ctx context.Context, key, hash string) ([]byte, error
 func (s *Service) Download(ctx context.Context, actor *auth.Identity, fileID string) (io.ReadCloser, error) {
 	key, hash, status, e := s.readable(ctx, actor, fileID)
 	if e != nil {
-		return nil, ErrDenied
+		return nil, e
 	}
 	if status != "CLEAN" {
 		return nil, ErrUnclean
@@ -101,6 +115,14 @@ func (s *Service) Download(ctx context.Context, actor *auth.Identity, fileID str
 	b, e := s.verified(ctx, key, hash)
 	if e != nil {
 		return nil, e
+	}
+	// A fresh statement after bounded object retrieval observes revocation.
+	key2, hash2, status2, err := s.readable(ctx, actor, fileID)
+	if err != nil {
+		return nil, err
+	}
+	if key2 != key || hash2 != hash || status2 != "CLEAN" {
+		return nil, ErrDenied
 	}
 	return io.NopCloser(bytes.NewReader(b)), nil
 }

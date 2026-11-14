@@ -18,6 +18,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/capabilities/internal/ai/access"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 )
 
 type config struct{ DatabaseURL, IssuerURL, JWKSURL, Audience, Port string }
@@ -54,11 +55,11 @@ func main() {
 	if err != nil {
 		log.Fatal("database unavailable")
 	}
-	verifier, err := auth.NewSubjectVerifier(context.Background(), auth.VerifierConfig{IssuerURL: c.IssuerURL, JWKSURL: c.JWKSURL, Audience: c.Audience})
+	verifier, err := auth.NewStrictAuthenticator(context.Background(), auth.VerifierConfig{IssuerURL: c.IssuerURL, JWKSURL: c.JWKSURL, Audience: c.Audience})
 	if err != nil {
 		log.Fatal("identity verification unavailable or invalid configuration")
 	}
-	server := &http.Server{Addr: ":" + c.Port, Handler: newHandler(access.Authenticator{Verifier: verifier, Membership: access.NewDBMembership(db)}), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
+	server := &http.Server{Addr: ":" + c.Port, Handler: newHandler(access.Authenticator{Authority: knowledge.NewAuthority(verifier, db)}), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
 	log.Printf("cap-ai listening on port %s", c.Port)
 	if err = server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal("cap-ai listener failed")

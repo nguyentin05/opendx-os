@@ -49,13 +49,17 @@ type FileObject struct {
 	ScanStatus string `json:"scan_status"`
 }
 type Service struct {
-	db      *sql.DB
-	apps    *registry.Store
-	storage Storage
-	scanner Scanner
-	bucket  string
+	db                    *sql.DB
+	apps                  *registry.Store
+	storage               Storage
+	scanner               Scanner
+	bucket                string
+	privateUploadsEnabled bool
 }
 
 func NewService(db *sql.DB, apps *registry.Store, storage Storage, scanner Scanner, bucket string) *Service {
-	return &Service{db, apps, storage, scanner, bucket}
+	return &Service{db: db, apps: apps, storage: storage, scanner: scanner, bucket: bucket}
 }
+
+// EnablePrivateUploads is deployment-owned; leave false until live source isolation is qualified.
+func (s *Service) EnablePrivateUploads(enabled bool) { s.privateUploadsEnabled = enabled }

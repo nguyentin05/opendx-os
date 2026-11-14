@@ -180,7 +180,7 @@ One installation serves one organization, so a manifest names no workspace.
 | `spec.capabilities` | Tier 2 capabilities the app uses. `cap-process` is required; `cap-hr` adds departments (`org_unit_id`, `department` scope); `cap-work` is required by `create_work_item` effects. Each must be enabled when the app is installed |
 | `spec.roles` | Roles the app owns (`name`, optional `description`). Every role used anywhere in the manifest must be declared here. A role belongs to exactly one app; `role_operator`, `role_auditor` and `role_workflow` are reserved |
 | `spec.sharedAccess` | Optional. Shared tables the app's roles read, from a closed catalog: `core.users`, `core.files`, `cap_hr.org_units`, `cap_hr.staff`, `cap_work.work_items`, `cap_data.devices`. Rows of `core.files` and `cap_work.work_items` are limited to the app's own `app_id`; a role sees only the files its user uploaded or that are attached to records it may read. No write access |
-| `spec.tables` | One or more domain tables; each entry has the fields below. Table names are unique, and a table belongs to one application |
+| `spec.tables` | Domain tables, or an empty list for a validated capability-only knowledge application (see Knowledge v1); each entry has the fields below. Table names are unique, and a table belongs to one application |
 | `spec.workflows` | Optional. Flows with an identity, a YAML file in the package, `command.committed` subscription and literal `create_work_item` effects (`title`, `description`, `priority`, optional `assigneeId`) on commands of any table |
 
 Each entry of `spec.tables`:
@@ -273,3 +273,40 @@ designed delivery contract; they are not silently reduced to one.
 are separate from the signed effect service token. Routes/auth are loaded on
 process startup; deployment changes require process recreation. The disposable
 integration helper provides that lifecycle and renews private Kestra secrets.
+
+### Knowledge v1
+
+`spec.knowledge` is optional and explicitly versioned (`version: 1`). It requires
+cap-ai. `personalLibrary` declares `enabled` and nonempty `allowedRoles` drawn
+from the app-owned roles. A single enabled library is permitted per installation.
+A validated enabled library or nonempty `sources` permits `tables: []`, with no
+table commands/workflows. This refines ADR 0008; a library owns no dummy table.
+
+`sources` entries declare `id`, safe relative `path` under `knowledge/`,
+`mediaType` (`text/markdown` or `application/pdf`), `indexingProfile`
+(`standard-text-v1`), and nested `access`. Paths may not traverse or resolve
+symlinks outside the package root. `access.mode` is ROLE or RESTRICTED;
+`access.allowedRoles` is nonempty and app-owned. RESTRICTED requires
+`access.grantsManagedBy` naming a `grantPolicies` map entry whose nonempty
+`allowedRoles` lists app-owned manager roles. Management does not grant READ.
+ROLE has no manager policy. Flat aliases, unknown fields/versions and cross-app
+roles are invalid. Package ingestion/publication remains a later delivery gate.
+
+`core.files.read_policy` is immutable: APP_ATTACHMENT (default, including legacy
+rows) or OWNER_ONLY. Original identity, owner, app, content hash and policy cannot
+be relabelled. `POST /api/cap/process/files/private/upload` accepts only `app_id`
+and `file` multipart fields; the server stamps OWNER_ONLY and verified owner.
+It requires current DB membership in a Ready library's declared allowedRoles and
+enabled dependencies, with no admin bypass. Ordinary upload keeps APP_ATTACHMENT.
+Downloads independently enforce policy, CLEAN status and hash, and repeat current
+private authorization after bounded object retrieval before emitting bytes.
+Protected file routes use strict JWT verification and uncached shared authz;
+identity mirroring remains a sign-in responsibility. Tokens require platform email
+claims; legacy identity-only tokens are incompatible with these protected routes.
+
+Hasura file permission branches constrain OWNER_ONLY to the owner, current ACTIVE
+user, current role membership, Ready app and enabled dependencies. Attachment
+relationships cannot widen the private branch. No cap_ai table is tracked.
+Private upload defaults off (`RAG_PRIVATE_UPLOAD_ENABLED` absent/false); enable
+only in a disposable qualified installation after the live source gate below.
+Disablement preserves originals and private guards; no destructive rollback.

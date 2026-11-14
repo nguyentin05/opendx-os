@@ -150,3 +150,29 @@ func TestSubjectRejectsStaleSnapshotDuringConcurrentRefresh(t *testing.T) {
 		t.Fatal("expired signing key escaped during concurrent refresh")
 	}
 }
+
+func TestStrictAdapterRejectsStaleSnapshotDuringRefresh(t *testing.T) {
+	verifier, sign := subjectFixture(t)
+	v := verifier.(*jwtVerifier)
+	strict := strictAuthenticator{v: v}
+	c := subjectClaims()
+	c["email"] = "test@example.test"
+	if _, err := strict.Authenticate(context.Background(), sign(c)); err != nil {
+		t.Fatal(err)
+	}
+	v.mu.Lock()
+	v.lastRefresh = time.Now().Add(-jwksCacheLifetime - time.Second)
+	v.refreshing = true
+	v.mu.Unlock()
+	if _, err := strict.Authenticate(context.Background(), sign(c)); err == nil {
+		t.Fatal("stale snapshot accepted while refresh in flight")
+	}
+	v.mu.Lock()
+	v.refreshing = false
+	v.lastRefresh = time.Now()
+	v.mu.Unlock()
+	delete(c, "email")
+	if _, err := strict.Authenticate(context.Background(), sign(c)); err == nil {
+		t.Fatal("missing platform email accepted")
+	}
+}

@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+apiVersion: dxos.io/v1alpha1
+kind: DXApplication
+metadata:
+  name: personal_library
+  displayName: Personal library
+  version: 1.0.0
+spec:
+  capabilities: [cap-process, cap-ai]
+  roles:
+    - name: role_library_user
+      description: Access to the user's owner-only personal library
+  sharedAccess:
+    - table: core.files
+      roles: [role_library_user]
+      columns: [id, file_name, scan_status, scanned_at]
+  tables: []
+  knowledge:
+    version: 1
+    personalLibrary:
+      enabled: true
+      allowedRoles: [role_library_user]

@@ -45,6 +45,9 @@ type sharedGrantKey struct {
 
 // BuildPlan compiles a pure desired/live diff plan across the active manifest set.
 func BuildPlan(apps []manifest.DXApplication, live ManagedState) (Plan, error) {
+	if err := manifest.ValidateKnowledgeSet(apps); err != nil {
+		return Plan{}, err
+	}
 	plan := Plan{
 		Apps: make([]manifest.DXApplication, len(apps)),
 		DDLs: make(map[string]string, len(apps)),

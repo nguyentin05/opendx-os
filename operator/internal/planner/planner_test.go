@@ -155,9 +155,9 @@ func TestGenerateHasuraOperations(t *testing.T) {
 	// A role sees the app's files it uploaded or that are attached to records
 	// it may read; the application alone is not enough.
 	files := perms["pg_create_select_permission:core.files:role_procurement_manager"]
-	assertJSON(t, "manager files filter", files["filter"], `{"_and":[{"app_id":{"_eq":"procurement"}},{"_or":[{"uploaded_by":{"_eq":"X-Hasura-User-Id"}},{"procurement_requests_by_quote_file_id":{"_and":[{"org_unit":{"staff":{"user_id":{"_eq":"X-Hasura-User-Id"}}}},{"status":{"_neq":"DRAFT"}}]}}]}]}`)
+	assertJSON(t, "manager files filter", files["filter"], `{"_and":[{"app_id":{"_eq":"procurement"}},{"_or":[{"_and":[{"read_policy":{"_eq":"APP_ATTACHMENT"}},{"_or":[{"uploaded_by":{"_eq":"X-Hasura-User-Id"}},{"procurement_requests_by_quote_file_id":{"_and":[{"org_unit":{"staff":{"user_id":{"_eq":"X-Hasura-User-Id"}}}},{"status":{"_neq":"DRAFT"}}]}}]}]}]}]}`)
 	ownFiles := perms["pg_create_select_permission:core.files:role_procurement_requester"]
-	assertJSON(t, "requester files filter", ownFiles["filter"], `{"_and":[{"app_id":{"_eq":"procurement"}},{"_or":[{"uploaded_by":{"_eq":"X-Hasura-User-Id"}},{"procurement_requests_by_quote_file_id":{"created_by":{"_eq":"X-Hasura-User-Id"}}}]}]}`)
+	assertJSON(t, "requester files filter", ownFiles["filter"], `{"_and":[{"app_id":{"_eq":"procurement"}},{"_or":[{"_and":[{"read_policy":{"_eq":"APP_ATTACHMENT"}},{"_or":[{"uploaded_by":{"_eq":"X-Hasura-User-Id"}},{"procurement_requests_by_quote_file_id":{"created_by":{"_eq":"X-Hasura-User-Id"}}}]}]}]}]}`)
 	users := perms["pg_create_select_permission:core.users:role_procurement_manager"]
 	assertJSON(t, "users filter", users["filter"], `{}`)
 }

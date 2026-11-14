@@ -53,3 +53,26 @@ checkpointed history. Describe each finding with its location, reproducible
 scenario, impact, and fix direction.
 
 Reference sources for Hasura behavior: [row permissions](https://hasura.io/docs/2.0/auth/authorization/permissions/row-level-permissions/), [GraphQL HTTP errors](https://hasura.io/docs/2.0/deployment/graphql-engine-flags/reference/#preserve-401-errors). When the deployed version changes, check the documentation for that version.
+
+### Native private source qualification
+
+Source-foundation unit/SQL checks do not establish private-library release
+readiness. Run `scripts/test-rag.sh source` against disposable PostgreSQL 17,
+Hasura, File Service, private S3 storage and scanner. Required environment:
+`TEST_DATABASE_URL`, `RAG_TEST_HASURA_URL`, `RAG_TEST_HASURA_ADMIN_SECRET`,
+`RAG_TEST_FILE_API_URL`, `RAG_TEST_S3_ENDPOINT`, `RAG_TEST_S3_BUCKET`, and
+`RAG_TEST_OIDC_TOKEN_A`, `RAG_TEST_OIDC_TOKEN_B`, `RAG_TEST_OIDC_TOKEN_ADMIN`.
+The installation must contain a Ready knowledge-v1 personal library, with its
+private-upload flag enabled only for qualification. Use disposable identities;
+the runner seeds memberships and revokes/restores A's membership. Tokens and DSNs
+stay in the environment and are never printed. Python websocket-client is needed
+for the stale-session subscription probe. Missing prerequisites are NOT_RUN and
+nonzero, never PASS. No knowledge routes or hosted models are enabled by this gate.
+
+R01/R02/R04/R13 require same-byte uploads by A/B with distinct file IDs; other
+owner/admin original and metadata denial; immutable private policy; CLEAN/hash
+checks; infected-source denial; anonymous bucket-object denial; and revocation
+with the same JWT and an already-open metadata subscription. A revoke before the
+final file check blocks bytes, while bytes already emitted cannot be recalled.
+Keep private upload disabled outside qualification until these live negatives
+pass. Later runner modes are reserved and fail NOT_RUN until implemented.

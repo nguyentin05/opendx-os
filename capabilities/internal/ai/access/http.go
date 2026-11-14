@@ -15,6 +15,7 @@ import (
 
 type principalKey struct{}
 type Authenticator struct {
+	Authority  auth.Authorizer
 	Verifier   auth.SubjectVerifier
 	Membership Membership
 }
@@ -29,6 +30,29 @@ func authError(w http.ResponseWriter, status int) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": http.StatusText(status), "message": http.StatusText(status)}})
 }
 func (a Authenticator) Middleware(next http.Handler) http.Handler {
+	if a.Authority != nil {
+		protected := auth.Middleware(a.Authority, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id, err := auth.ExtractIdentity(r)
+			if err != nil {
+				authError(w, 401)
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, Principal{UserID: id.UserID, Role: id.Role})))
+		}))
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if len(r.Header.Values("Authorization")) != 1 {
+				authError(w, 401)
+				return
+			}
+			roles := r.Header.Values("X-Hasura-Role")
+			if len(roles) != 1 || !selectedRole.MatchString(roles[0]) {
+				authError(w, 403)
+				return
+			}
+			protected.ServeHTTP(w, r)
+		})
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if a.Verifier == nil || a.Membership == nil {
 			authError(w, 503)

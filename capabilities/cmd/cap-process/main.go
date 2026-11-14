@@ -33,6 +33,7 @@ import (
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/authz"
 	"github.com/opendx-os/opendx-os/capabilities/internal/files"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 	"github.com/opendx-os/opendx-os/capabilities/internal/process"
 	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
 )
@@ -89,6 +90,12 @@ func main() {
 		log.Fatal("invalid scanner configuration")
 	}
 	fileService := files.NewService(db, registry.NewStore(db), storage, scanner, os.Getenv("S3_BUCKET"))
+	fileService.EnablePrivateUploads(os.Getenv("RAG_PRIVATE_UPLOAD_ENABLED") == "true")
+	strictAuthn, err := auth.NewStrictAuthenticator(ctx, auth.VerifierConfig{IssuerURL: os.Getenv("OIDC_ISSUER_URL"), JWKSURL: os.Getenv("OIDC_JWKS_URL"), Audience: os.Getenv("OIDC_AUDIENCE")})
+	if err != nil {
+		log.Fatal("strict identity unavailable")
+	}
+	fileAuthority := knowledge.NewAuthority(strictAuthn, db)
 	engine := process.NewEngine(db, registry.NewStore(db))
 	if err := engine.ConfigureWorkflowService(os.Getenv("WORKFLOW_SERVICE_USER_ID"), os.Getenv("WORKFLOW_SERVICE_ROLE")); err != nil {
 		log.Fatal("valid WORKFLOW_SERVICE_USER_ID and WORKFLOW_SERVICE_ROLE are required")
@@ -154,8 +161,7 @@ func main() {
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "service": "cap-process"}) // Best-effort response; the client may have disconnected.
 	})
 
-	mux.Handle("POST /api/cap/process/files/upload", fileService.AuthenticatedHandler(verifier))
-	mux.Handle("GET /api/cap/process/files/{file_id}", fileService.AuthenticatedHandler(verifier))
+	registerFileRoutes(mux, fileService.AuthenticatedHandler(fileAuthority))
 	mux.Handle("POST /api/cap/process/commands/{app_id}/{command}", engine.AuthenticatedHandler(verifier))
 	mux.Handle("POST /api/cap/process/effects/work-item", engine.AuthenticatedEffectHandler(verifier))
 
@@ -176,4 +182,10 @@ func main() {
 		<-scannerDone
 		log.Fatalf("HTTP server stopped unexpectedly: %v", err)
 	}
+}
+
+func registerFileRoutes(mux *http.ServeMux, handler http.Handler) {
+	mux.Handle("POST /api/cap/process/files/upload", handler)
+	mux.Handle("POST /api/cap/process/files/private/upload", handler)
+	mux.Handle("GET /api/cap/process/files/{file_id}", handler)
 }

@@ -198,6 +198,18 @@ func publishSnapshot(ctx context.Context, tx *sql.Tx, plan planner.Plan) error {
 			return fmt.Errorf("release capabilities of %s: %w", name, err)
 		}
 	}
+	return checkLibraryUniqueness(ctx, tx)
+}
+
+func checkLibraryUniqueness(ctx context.Context, tx *sql.Tx) error {
+	var n int
+	err := tx.QueryRowContext(ctx, `SELECT count(*) FROM core.apps WHERE status='Ready' AND spec#>>'{knowledge,personalLibrary,enabled}'='true'`).Scan(&n)
+	if err != nil {
+		return err
+	}
+	if n > 1 {
+		return fmt.Errorf("only one personal library may be enabled")
+	}
 	return nil
 }
 
