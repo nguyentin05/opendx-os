@@ -34,9 +34,8 @@ import (
 	"time"
 )
 
-type Verifier interface {
-	Verify(context.Context, string) (*Identity, error)
-}
+// VerifierConfig names the token issuer, the audience tokens must carry, and
+// where the issuer publishes its signing keys.
 type VerifierConfig struct{ IssuerURL, Audience, JWKSURL string }
 type jwtVerifier struct {
 	cfg         VerifierConfig
@@ -48,9 +47,10 @@ type jwtVerifier struct {
 }
 
 var uuid = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-var roleName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
-func NewVerifier(ctx context.Context, cfg VerifierConfig) (Verifier, error) {
+// NewAuthenticator fetches the issuer's signing keys and returns an
+// Authenticator for its tokens.
+func NewAuthenticator(ctx context.Context, cfg VerifierConfig) (Authenticator, error) {
 	for _, s := range []string{cfg.IssuerURL, cfg.JWKSURL} {
 		u, e := url.Parse(s)
 		if e != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil {
@@ -217,44 +217,6 @@ func (c standardClaims) check(cfg VerifierConfig) error {
 	return nil
 }
 
-func (v *jwtVerifier) Verify(ctx context.Context, token string) (*Identity, error) {
-	payload, e := v.verifiedPayload(ctx, token)
-	if e != nil {
-		return nil, e
-	}
-	var c struct {
-		standardClaims
-		Claims struct {
-			User      string   `json:"x-hasura-user-id"`
-			Workspace string   `json:"x-hasura-workspace-id"`
-			Default   string   `json:"x-hasura-default-role"`
-			Allowed   []string `json:"x-hasura-allowed-roles"`
-		} `json:"https://hasura.io/jwt/claims"`
-	}
-	if e = json.Unmarshal(payload, &c); e != nil {
-		return nil, e
-	}
-	if e = c.check(v.cfg); e != nil {
-		return nil, e
-	}
-	if !uuid.MatchString(c.Claims.User) || !uuid.MatchString(c.Claims.Workspace) || c.Sub != c.Claims.User {
-		return nil, errors.New("invalid signed identity")
-	}
-	found := false
-	seen := map[string]bool{}
-	for _, r := range c.Claims.Allowed {
-		if !roleName.MatchString(r) || seen[r] {
-			return nil, errors.New("invalid roles")
-		}
-		seen[r] = true
-		found = found || r == c.Claims.Default
-	}
-	if !found {
-		return nil, errors.New("default role not granted")
-	}
-	return &Identity{UserID: strings.ToLower(c.Sub), WorkspaceID: strings.ToLower(c.Claims.Workspace), Role: c.Claims.Default, AllowedRoles: c.Claims.Allowed}, nil
-}
-
 // Principal is who a token says the caller is. It carries no permissions:
 // roles are looked up in core.user_roles (ADR 0007).
 type Principal struct {
@@ -266,16 +228,6 @@ type Principal struct {
 // Authenticator verifies a Keycloak access token and returns its principal.
 type Authenticator interface {
 	Authenticate(ctx context.Context, token string) (*Principal, error)
-}
-
-// NewAuthenticator fetches the issuer's signing keys and returns an
-// Authenticator for its tokens.
-func NewAuthenticator(ctx context.Context, cfg VerifierConfig) (Authenticator, error) {
-	v, e := NewVerifier(ctx, cfg)
-	if e != nil {
-		return nil, e
-	}
-	return v.(*jwtVerifier), nil
 }
 
 func (v *jwtVerifier) Authenticate(ctx context.Context, token string) (*Principal, error) {
