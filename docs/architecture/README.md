@@ -89,6 +89,8 @@ ADR 0004 (proposed) separates global definitions from per-workspace publication
 and introduces the `DXApplication` CRD controller.
 ADR 0007 keeps authentication in Keycloak and authorization in the platform:
 roles are resolved from `core.user_roles` on each request by `dxos-authz`.
+ADR 0008 lets an application declare several tables (process, plain and child
+tables) instead of the single table of ADR 0001; its implementation is pending.
 
 For a proposed change, identify relevant accepted decisions and affected contracts,
 producers, consumers, examples, and data migrations. Record a replacement decision
@@ -169,6 +171,7 @@ implementation context pending coordinated follow-up; they do not override ADR 0
 - [ADR 0004: Kubernetes CRD Operator with a Cluster-Scoped Application Definition](../adr/0004-kubernetes-crd-operator.md) (proposed)
 - [ADR 0005: Department and application data model](../adr/0005-department-and-application-data-model.md) (accepted; runtime alignment pending)
 - [ADR 0007: Keycloak Authenticates, the Platform Authorizes](../adr/0007-keycloak-authenticates-platform-authorizes.md)
+- [ADR 0008: An Application Declares Several Tables](../adr/0008-an-application-declares-several-tables.md)
 
 ---
 

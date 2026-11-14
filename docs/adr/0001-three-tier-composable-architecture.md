@@ -1,6 +1,7 @@
 # ADR 0001: Three-Tier Composable Architecture with Shared Core and Isolated Domain Tables
 
-- **Status:** Accepted
+- **Status:** Accepted; the one-table-per-application rule of decision 2 is
+  superseded by [ADR 0008](0008-an-application-declares-several-tables.md)
 - **Date:** 2026-11-05
 
 > **Partially superseded:** [ADR 0005](0005-department-and-application-data-model.md)
