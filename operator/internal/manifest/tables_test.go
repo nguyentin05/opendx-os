@@ -110,7 +110,7 @@ spec:
 		t.Fatalf("a manifest in the single-table shape must be refused, got %v", err)
 	}
 
-	app := testutil.LoadApp(t, "procurement")
+	app := testutil.LoadApp(t, "process-fixture")
 	table := app.Spec.Tables[0]
 	stored, err := json.Marshal(map[string]any{
 		"capabilities": app.Spec.Capabilities,
@@ -144,5 +144,80 @@ spec:
 	spec, err = manifest.DecodeStoredSpec(current)
 	if err != nil || len(spec.Tables) != 1 || spec.Tables[0].Name != table.Name {
 		t.Fatalf("a spec stored in the tables shape must be read unchanged: %v", err)
+	}
+}
+
+// A child table's rows follow their parent record, so its rules name roles and
+// columns only, and each role must be able to reach the parent.
+func TestValidateChildTables(t *testing.T) {
+	app := testutil.LoadApp(t, "procurement")
+	items := app.Table("domain.procurement_items")
+	if items == nil || !items.IsChild() || items.IsProcess() {
+		t.Fatal("the sample application must declare a child table")
+	}
+	system := manifest.SystemColumns(app, items)
+	if system["request_id"] != "uuid" {
+		t.Fatal("the parent column is managed by the operator")
+	}
+	if _, ok := system["org_unit_id"]; ok {
+		t.Fatal("a child row has no department of its own")
+	}
+
+	child := func(a *manifest.DXApplication) *manifest.TableDef { return a.Table("domain.procurement_items") }
+	cases := []struct {
+		name   string
+		mutate func(*manifest.DXApplication)
+		want   string
+	}{
+		{"unknown parent", func(a *manifest.DXApplication) { child(a).BelongsTo.Table = "domain.other_records" }, "belongsTo names"},
+		{"parent of itself", func(a *manifest.DXApplication) { child(a).BelongsTo.Table = child(a).Name }, "belongsTo names"},
+		{"child of a child", func(a *manifest.DXApplication) {
+			grandchild := *child(a)
+			grandchild.Name = "domain.procurement_notes"
+			grandchild.BelongsTo = &manifest.BelongsToDef{Table: child(a).Name, Column: "item_id"}
+			a.Spec.Tables = append(a.Spec.Tables, grandchild)
+		}, "belongsTo names"},
+		{"parent column named like a system column", func(a *manifest.DXApplication) { child(a).BelongsTo.Column = "created_by" }, "invalid belongsTo column"},
+		{"parent column declared as a business column", func(a *manifest.DXApplication) {
+			child(a).Columns = append(child(a).Columns, manifest.ColumnDef{Name: "request_id", Type: "uuid"})
+		}, "system column"},
+		{"parent column writable", func(a *manifest.DXApplication) {
+			child(a).Access.Update[0].Columns = append(child(a).Access.Update[0].Columns, "request_id")
+		}, "cannot be writable"},
+		{"child with a state machine", func(a *manifest.DXApplication) {
+			child(a).StateMachine = &manifest.StateMachineDef{Initial: "OPEN"}
+		}, "no stateMachine"},
+		{"scope on a child rule", func(a *manifest.DXApplication) { child(a).Access.Select[0].Scope = manifest.ScopeOrganization }, "cannot declare a scope"},
+		{"record filter on a child rule", func(a *manifest.DXApplication) {
+			child(a).Access.Select[0].RecordFilter = map[string]any{"item": map[string]any{"_eq": "x"}}
+		}, "cannot declare a scope"},
+		// Finance reads requests but cannot edit them, so it cannot edit their lines.
+		{"insert by a role that cannot edit the parent", func(a *manifest.DXApplication) {
+			child(a).Access.Insert[0].Role = "role_procurement_finance"
+		}, "needs an access.update rule"},
+		{"delete by a role that cannot edit the parent", func(a *manifest.DXApplication) {
+			child(a).Access.Delete[0].Role = "role_procurement_finance"
+		}, "needs an access.update rule"},
+		{"select by a role that cannot read the parent", func(a *manifest.DXApplication) {
+			requests := a.Table("domain.procurement_requests")
+			requests.Access.Select = requests.Access.Select[:2]
+		}, "needs an access.select rule"},
+		{"delete on a table that is not a child", func(a *manifest.DXApplication) {
+			vendors := a.Table("domain.procurement_vendors")
+			vendors.Access.Delete = []manifest.DeleteRule{{Role: "role_procurement_finance"}}
+		}, "child tables only"},
+		{"duplicate delete rule", func(a *manifest.DXApplication) {
+			child(a).Access.Delete = append(child(a).Access.Delete, child(a).Access.Delete[0])
+		}, "duplicate access.delete"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app := testutil.LoadApp(t, "procurement")
+			tc.mutate(app)
+			err := manifest.Validate(app)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want an error containing %q, got %v", tc.want, err)
+			}
+		})
 	}
 }

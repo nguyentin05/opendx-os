@@ -63,8 +63,21 @@ type TableDef struct {
 	// only cap-process commands change.
 	StateMachine *StateMachineDef `yaml:"stateMachine,omitempty" json:"stateMachine,omitempty"`
 	Attachments  []AttachmentDef  `yaml:"attachments,omitempty" json:"attachments,omitempty"`
-	UI           UISchemaDef      `yaml:"ui" json:"ui"`
+	// BelongsTo makes the table a child table: its rows are part of a record of
+	// the parent table and follow that record's access, state and version.
+	BelongsTo *BelongsToDef `yaml:"belongsTo,omitempty" json:"belongsTo,omitempty"`
+	UI        UISchemaDef   `yaml:"ui" json:"ui"`
 }
+
+// BelongsToDef names the parent table of a child table and the child's column
+// that holds the parent record's id.
+type BelongsToDef struct {
+	Table  string `yaml:"table" json:"table"`
+	Column string `yaml:"column" json:"column"`
+}
+
+// IsChild reports whether the table's rows belong to a parent record.
+func (t *TableDef) IsChild() bool { return t.BelongsTo != nil }
 
 // Clone returns a deep copy, so a caller can change one application's tables
 // without touching another's.
@@ -129,6 +142,14 @@ type AccessDef struct {
 	Select []AccessRule `yaml:"select" json:"select"`
 	Insert []AccessRule `yaml:"insert" json:"insert"`
 	Update []AccessRule `yaml:"update,omitempty" json:"update,omitempty"`
+	// Delete is allowed on child tables only.
+	Delete []DeleteRule `yaml:"delete,omitempty" json:"delete,omitempty"`
+}
+
+// DeleteRule lets a role delete rows of a child table while it may edit their
+// parent record.
+type DeleteRule struct {
+	Role string `yaml:"role" json:"role"`
 }
 
 // Role scopes. A scope decides which records a role reaches; RecordFilter can

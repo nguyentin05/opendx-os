@@ -19,6 +19,7 @@ package process
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 
@@ -285,5 +286,37 @@ func TestCommandRunsOnTheTableThatDeclaresIt(t *testing.T) {
 	}
 	if n := o.count(t, `SELECT count(*) FROM core.audit_logs WHERE entity_type = $1 AND entity_id = $2 AND action IN ($3, $4)`, twins, second, submit, approve); n != 2 {
 		t.Fatalf("audit rows of the twin's commands: %d, want 2", n)
+	}
+}
+
+// A request's lines are rows of a child table. Changing one increments the
+// request's version, so an approval decided on the earlier content is refused
+// (S04), and once the request is submitted its lines cannot change.
+func TestChangingALineInvalidatesAnEarlierVersion(t *testing.T) {
+	o := newOrg(t)
+	const items = "domain.procurement_items"
+	request := o.request(t, o.alice)
+	line := map[string]any{"request_id": request, "item": "Laptop", "quantity": 2, "unit_price": 18000000}
+	o.p.InsertInto(t, items, o.alice, "role_procurement_requester", line)
+
+	if _, s := o.run(o.alice, "role_procurement_requester", "submit", request, "k1", 1); s != 409 {
+		t.Fatalf("submit with the version read before the line was added: %d, want 409", s)
+	}
+	resp, s := o.run(o.alice, "role_procurement_requester", "submit", request, "k2", 2)
+	if s != 200 || resp.Version != 3 {
+		t.Fatalf("submit with the current version: %d %+v", s, resp)
+	}
+
+	if _, err := o.p.TryInsertInto(items, o.alice, "role_procurement_requester", line); err == nil || !strings.Contains(err.Error(), "can no longer be changed") {
+		t.Fatalf("adding a line to a submitted request: got %v", err)
+	}
+	if _, s := o.run(o.carol, "role_procurement_manager", "approve", request, "k3", 3); s != 200 {
+		t.Fatalf("approve the unchanged request: %d", s)
+	}
+	// A request in a terminal state takes no lines either.
+	other := o.request(t, o.alice)
+	o.p.SetStatus(t, other, o.alice, "CANCELLED")
+	if _, err := o.p.TryInsertInto(items, o.alice, "role_procurement_requester", map[string]any{"request_id": other, "item": "Late", "quantity": 1, "unit_price": 1}); err == nil {
+		t.Fatal("a cancelled request must not take new lines")
 	}
 }

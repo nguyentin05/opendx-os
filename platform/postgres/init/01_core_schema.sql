@@ -292,8 +292,9 @@ BEGIN
 END;
 $$;
 
--- Writes one audit row per INSERT or UPDATE of a domain record. The operator
--- passes the application id as the trigger argument:
+-- Writes one audit row per INSERT, UPDATE or DELETE of a domain record (only
+-- rows of child tables can be deleted). The operator passes the application id
+-- as the trigger argument:
 --   EXECUTE FUNCTION core.record_domain_audit('<app_id>')
 -- Only the two runtime connections may write domain records; cap-process must
 -- also name the command in dxos.action.
@@ -302,6 +303,7 @@ RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, 
 DECLARE
     v_actor UUID;
     v_action TEXT;
+    v_row JSONB;
 BEGIN
     IF session_user NOT IN ('dxos_process', 'dxos_hasura') THEN
         RAISE EXCEPTION 'untrusted database connection for domain audit';
@@ -318,6 +320,12 @@ BEGIN
         RAISE EXCEPTION 'missing authenticated actor context for domain %', lower(TG_OP);
     END IF;
 
+    IF TG_OP = 'DELETE' THEN
+        v_row := to_jsonb(OLD);
+    ELSE
+        v_row := to_jsonb(NEW);
+    END IF;
+
     INSERT INTO core.audit_logs (
         app_id, actor_id, acting_role, action, entity_type, entity_id, entity_version, payload
     ) VALUES (
@@ -326,16 +334,82 @@ BEGIN
         core.session_acting_role(),
         v_action,
         TG_TABLE_SCHEMA || '.' || TG_TABLE_NAME,
-        NEW.id,
-        NEW.version,
-        to_jsonb(NEW)
+        (v_row ->> 'id')::uuid,
+        (v_row ->> 'version')::bigint,
+        v_row
     );
 
-    RETURN NEW;
+    RETURN NULL; -- AFTER trigger: the result is ignored.
 END;
 $$;
 
 REVOKE ALL ON FUNCTION core.record_domain_audit() FROM PUBLIC;
+
+-- Rows of a child table belong to a parent record (ADR 0008). Generated child
+-- tables call, before every change,
+--   EXECUTE FUNCTION core.enforce_parent('<parent table>', '<parent column>', '<editable state>', ...)
+-- It locks the parent record, so a child change and a command on the parent
+-- never run at the same time, and refuses the change when the parent is not in
+-- one of the editable states (no states: the parent is a plain table and is
+-- always editable). The parent column is immutable.
+CREATE OR REPLACE FUNCTION core.enforce_parent()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+    v_parent UUID;
+    v_status TEXT;
+    v_found BOOLEAN;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        v_parent := (to_jsonb(OLD) ->> TG_ARGV[1])::uuid;
+    ELSE
+        v_parent := (to_jsonb(NEW) ->> TG_ARGV[1])::uuid;
+        IF TG_OP = 'UPDATE' AND v_parent IS DISTINCT FROM (to_jsonb(OLD) ->> TG_ARGV[1])::uuid THEN
+            RAISE EXCEPTION 'a row cannot move to another parent record'
+                USING ERRCODE = 'insufficient_privilege';
+        END IF;
+    END IF;
+
+    EXECUTE format('SELECT true, to_jsonb(p) ->> ''status'' FROM %s p WHERE p.id = $1 FOR UPDATE', TG_ARGV[0]::regclass)
+        INTO v_found, v_status USING v_parent;
+    IF v_found IS NOT TRUE THEN
+        RAISE EXCEPTION 'parent record % not found', v_parent USING ERRCODE = 'foreign_key_violation';
+    END IF;
+    IF TG_NARGS > 2 THEN
+        v_found := false;
+        FOR i IN 2 .. TG_NARGS - 1 LOOP
+            v_found := v_found OR v_status = TG_ARGV[i];
+        END LOOP;
+        IF NOT v_found THEN
+            RAISE EXCEPTION 'the parent record is % and can no longer be changed', v_status
+                USING ERRCODE = 'insufficient_privilege';
+        END IF;
+    END IF;
+
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+-- After every change of a child row the parent record is touched, so its
+-- version increments and a command sent with the earlier version is refused
+-- (S04). Generated child tables call
+--   EXECUTE FUNCTION core.touch_parent('<parent table>', '<parent column>')
+CREATE OR REPLACE FUNCTION core.touch_parent()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+    v_parent UUID;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        v_parent := (to_jsonb(OLD) ->> TG_ARGV[1])::uuid;
+    ELSE
+        v_parent := (to_jsonb(NEW) ->> TG_ARGV[1])::uuid;
+    END IF;
+    EXECUTE format('UPDATE %s SET updated_at = now() WHERE id = $1', TG_ARGV[0]::regclass) USING v_parent;
+    RETURN NULL; -- AFTER trigger: the result is ignored.
+END;
+$$;
 
 -- An attachment column may point only at a file of the same application that
 -- the acting user uploaded, so nobody can attach (and then read, or submit as

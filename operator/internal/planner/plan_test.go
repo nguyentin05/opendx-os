@@ -88,7 +88,7 @@ func TestChangedReportsNewAndModifiedApps(t *testing.T) {
 		t.Fatalf("Changed = %v, want [process_fixture]", got)
 	}
 	upgraded := procurement
-	upgraded.Metadata.Version = "0.3.0"
+	upgraded.Metadata.Version = "0.4.0"
 	if got := Changed([]manifest.DXApplication{upgraded}, live); len(got) != 1 || got[0] != "procurement" {
 		t.Fatalf("Changed = %v, want [procurement]", got)
 	}

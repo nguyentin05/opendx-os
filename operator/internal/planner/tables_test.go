@@ -163,3 +163,83 @@ func TestBuildPlanRejectsATableOfAnotherApp(t *testing.T) {
 		t.Fatalf("two applications declaring one table must be refused, got %v", err)
 	}
 }
+
+func TestChildTableDDLAndPermissions(t *testing.T) {
+	app := loadFixtureApp(t)
+	ddl, err := GenerateDDL(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := `"domain"."procurement_items"`
+	create := ddl[strings.Index(ddl, "CREATE TABLE IF NOT EXISTS "+items):]
+	create = create[:strings.Index(create, ");")]
+	if !strings.Contains(create, `"request_id" uuid NOT NULL`) || strings.Contains(create, "org_unit_id") || strings.Contains(create, `"status"`) {
+		t.Errorf("a child table holds its parent's id and has no department or status:\n%s", create)
+	}
+	for _, want := range []string{
+		`FOREIGN KEY ("request_id") REFERENCES "domain"."procurement_requests"("id") ON DELETE RESTRICT`,
+		`CREATE INDEX IF NOT EXISTS "idx_procurement_items_request_id"`,
+		"BEFORE INSERT OR UPDATE OR DELETE ON " + items + "\nFOR EACH ROW EXECUTE FUNCTION core.enforce_parent('domain.procurement_requests', 'request_id', 'DRAFT');",
+		"AFTER INSERT OR UPDATE OR DELETE ON " + items + "\nFOR EACH ROW EXECUTE FUNCTION core.touch_parent('domain.procurement_requests', 'request_id');",
+		"AFTER INSERT OR UPDATE OR DELETE ON " + items + "\nFOR EACH ROW EXECUTE FUNCTION core.record_domain_audit('procurement');",
+		`GRANT SELECT, INSERT, UPDATE, DELETE ON ` + items + ` TO dxos_hasura;`,
+		`GRANT SELECT ON ` + items + ` TO dxos_process, dxos_reader;`,
+	} {
+		if !strings.Contains(ddl, want) {
+			t.Errorf("DDL missing %q", want)
+		}
+	}
+	// The parent is checked before the row changes and touched after it.
+	if strings.Index(ddl, `"trg_procurement_items_15_parent"`) > strings.Index(ddl, `"trg_procurement_items_80_touch_parent"`) {
+		t.Error("triggers must be created in firing order")
+	}
+	if strings.Contains(ddl, "DELETE ON "+`"domain"."procurement_requests"`) || strings.Contains(ddl, `DELETE ON "domain"."procurement_vendors"`) {
+		t.Error("only child rows can be deleted")
+	}
+
+	ops, err := GenerateHasuraOperations(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	perms := map[string]map[string]any{}
+	deletes := 0
+	for _, op := range ops {
+		args := op.Args.(map[string]any)
+		if !strings.HasSuffix(op.Type, "_permission") {
+			continue
+		}
+		if op.Type == "pg_create_delete_permission" {
+			deletes++
+		}
+		perms[op.Type+":"+args["table"].(TableRef).Name+":"+args["role"].(string)] = args["permission"].(map[string]any)
+	}
+	const own = `{"created_by":{"_eq":"X-Hasura-User-Id"}}`
+	const editable = `{"request":{"_and":[` + own + `,{"status":{"_in":["DRAFT"]}}]}}`
+	key := func(op, role string) string { return "pg_create_" + op + "_permission:procurement_items:" + role }
+
+	// Reading follows the role's select rule on the request.
+	assertJSON(t, "requester reads", perms[key("select", "role_procurement_requester")]["filter"], `{"request":`+own+`}`)
+	assertJSON(t, "manager reads", perms[key("select", "role_procurement_manager")]["filter"],
+		`{"request":{"_and":[{"org_unit":{"staff":{"user_id":{"_eq":"X-Hasura-User-Id"}}}},{"status":{"_neq":"DRAFT"}}]}}`)
+	assertJSON(t, "finance reads", perms[key("select", "role_procurement_finance")]["filter"], `{"request":{"status":{"_neq":"DRAFT"}}}`)
+
+	// Writing follows the role's update rule on the request and its editable states.
+	ins := perms[key("insert", "role_procurement_requester")]
+	assertJSON(t, "insert columns", ins["columns"], `["request_id","item","quantity","unit_price"]`)
+	assertJSON(t, "insert check", ins["check"], editable)
+	upd := perms[key("update", "role_procurement_requester")]
+	assertJSON(t, "update columns", upd["columns"], `["item","quantity","unit_price"]`)
+	assertJSON(t, "update filter", upd["filter"], editable)
+	assertJSON(t, "update check", upd["check"], editable)
+	assertJSON(t, "delete filter", perms[key("delete", "role_procurement_requester")]["filter"], editable)
+	if deletes != 1 {
+		t.Fatalf("delete permissions = %d, want only the requester's on the child table", deletes)
+	}
+	for _, role := range []string{"role_procurement_manager", "role_procurement_finance"} {
+		for _, op := range []string{"insert", "update", "delete"} {
+			if perms[key(op, role)] != nil {
+				t.Errorf("%s must not %s request lines", role, op)
+			}
+		}
+	}
+}

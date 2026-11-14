@@ -130,8 +130,8 @@ func TestReconcileLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "Ready after create", func() bool { return observed(get(cr.Name), dxosv1alpha1.ConditionReady, metav1.ConditionTrue) })
-	if v, st := appRow(t, db, "procurement"); v != "0.2.0" || st != "Ready" {
-		t.Fatalf("core.apps = %s %s, want 0.2.0 Ready", v, st)
+	if v, st := appRow(t, db, "procurement"); v != "0.3.0" || st != "Ready" {
+		t.Fatalf("core.apps = %s %s, want 0.3.0 Ready", v, st)
 	}
 	if n := count(t, db, `SELECT count(*) FROM core.roles WHERE app_id = 'procurement'`); n != 3 {
 		t.Fatalf("roles = %d, want 3", n)
@@ -142,7 +142,7 @@ func TestReconcileLifecycle(t *testing.T) {
 	if !hasura.Has(insertPerm) {
 		t.Fatal("Hasura permission not created")
 	}
-	if got := get(cr.Name); got.Status.ActiveVersion != "0.2.0" {
+	if got := get(cr.Name); got.Status.ActiveVersion != "0.3.0" {
 		t.Fatalf("status.activeVersion = %q", got.Status.ActiveVersion)
 	}
 
@@ -159,7 +159,7 @@ func TestReconcileLifecycle(t *testing.T) {
 
 	// 2. Breaking schema change: blocked, previous version keeps serving.
 	latest := get(cr.Name)
-	latest.Spec.Version = "0.3.0"
+	latest.Spec.Version = "0.4.0"
 	latest.Spec.Tables[0].Columns[0].Nullable = !latest.Spec.Tables[0].Columns[0].Nullable
 	if err := k8s.Update(ctx, latest); err != nil {
 		t.Fatal(err)
@@ -174,13 +174,13 @@ func TestReconcileLifecycle(t *testing.T) {
 	if c := condition(got, dxosv1alpha1.ConditionSchemaInSync); c.Reason != ReasonSchemaBlocked || !strings.Contains(c.Message, "vendor_name") {
 		t.Fatalf("SchemaInSync condition = %+v", c)
 	}
-	if v, st := appRow(t, db, "procurement"); v != "0.2.0" || st != "Ready" {
+	if v, st := appRow(t, db, "procurement"); v != "0.3.0" || st != "Ready" {
 		t.Fatalf("prior version not preserved: %s %s", v, st)
 	}
 
 	// Revert: Ready again.
 	latest = get(cr.Name)
-	latest.Spec.Version = "0.2.0"
+	latest.Spec.Version = "0.3.0"
 	latest.Spec.Tables[0].Columns[0].Nullable = !latest.Spec.Tables[0].Columns[0].Nullable
 	if err := k8s.Update(ctx, latest); err != nil {
 		t.Fatal(err)

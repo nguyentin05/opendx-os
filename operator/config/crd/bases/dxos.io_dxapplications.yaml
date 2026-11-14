@@ -149,6 +149,20 @@ spec:
                       description: Access declares per-role select/insert/update rules
                         on the table.
                       properties:
+                        delete:
+                          description: Delete is allowed on child tables only.
+                          items:
+                            description: |-
+                              DeleteRule lets a role delete rows of a child table while it may edit their
+                              parent record.
+                            properties:
+                              role:
+                                pattern: ^[a-z][a-z0-9_]*$
+                                type: string
+                            required:
+                            - role
+                            type: object
+                          type: array
                         insert:
                           items:
                             description: |-
@@ -176,7 +190,8 @@ spec:
                               scope:
                                 description: |-
                                   Scope is required on select and update: own records, own department
-                                  (requires cap-hr) or the whole organization. Not allowed on insert.
+                                  (requires cap-hr) or the whole organization. Not allowed on insert, nor
+                                  on a child table, whose rows follow their parent record.
                                 enum:
                                 - own
                                 - department
@@ -215,7 +230,8 @@ spec:
                               scope:
                                 description: |-
                                   Scope is required on select and update: own records, own department
-                                  (requires cap-hr) or the whole organization. Not allowed on insert.
+                                  (requires cap-hr) or the whole organization. Not allowed on insert, nor
+                                  on a child table, whose rows follow their parent record.
                                 enum:
                                 - own
                                 - department
@@ -254,7 +270,8 @@ spec:
                               scope:
                                 description: |-
                                   Scope is required on select and update: own records, own department
-                                  (requires cap-hr) or the whole organization. Not allowed on insert.
+                                  (requires cap-hr) or the whole organization. Not allowed on insert, nor
+                                  on a child table, whose rows follow their parent record.
                                 enum:
                                 - own
                                 - department
@@ -289,6 +306,21 @@ spec:
                         - requireCleanOnCommands
                         type: object
                       type: array
+                    belongsTo:
+                      description: |-
+                        BelongsTo makes the table a child table: its rows are part of a record
+                        of the parent table and follow that record's access, state and version.
+                      properties:
+                        column:
+                          pattern: ^[a-z][a-z0-9_]*$
+                          type: string
+                        table:
+                          pattern: ^domain\.[a-z][a-z0-9_]*$
+                          type: string
+                      required:
+                      - column
+                      - table
+                      type: object
                     columns:
                       items:
                         description: Column is a business column; system columns are

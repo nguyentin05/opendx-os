@@ -112,9 +112,9 @@ func BuildPlan(apps []manifest.DXApplication, live ManagedState) (Plan, error) {
 	desiredDomainPerm := map[string]bool{}
 	for _, app := range apps {
 		for _, t := range app.Spec.Tables {
-			for op, rules := range tableRules(t) {
-				for _, r := range rules {
-					desiredDomainPerm[op+":"+t.Name+":"+r.Role] = true
+			for op, roles := range tableRoles(t) {
+				for _, role := range roles {
+					desiredDomainPerm[op+":"+t.Name+":"+role] = true
 				}
 			}
 		}
@@ -129,10 +129,10 @@ func BuildPlan(apps []manifest.DXApplication, live ManagedState) (Plan, error) {
 		// the table and its data stay.
 		for _, t := range oldApp.Spec.Tables {
 			ref := ParseTableRef(t.Name)
-			for _, op := range []string{"select", "insert", "update"} {
-				for _, r := range tableRules(t)[op] {
-					if !desiredDomainPerm[op+":"+t.Name+":"+r.Role] {
-						plan.DropOps = append(plan.DropOps, dropPermOp("pg_drop_"+op+"_permission", ref, r.Role))
+			for _, op := range []string{"select", "insert", "update", "delete"} {
+				for _, role := range tableRoles(t)[op] {
+					if !desiredDomainPerm[op+":"+t.Name+":"+role] {
+						plan.DropOps = append(plan.DropOps, dropPermOp("pg_drop_"+op+"_permission", ref, role))
 					}
 				}
 			}
@@ -186,13 +186,18 @@ func orderOperations(ops []HasuraMetadataPayload) []HasuraMetadataPayload {
 	return out
 }
 
-// tableRules returns a table's access rules by operation.
-func tableRules(t manifest.TableDef) map[string][]manifest.AccessRule {
-	return map[string][]manifest.AccessRule{
-		"select": t.Access.Select,
-		"insert": t.Access.Insert,
-		"update": t.Access.Update,
+// tableRoles returns the roles that hold a permission on the table, by operation.
+func tableRoles(t manifest.TableDef) map[string][]string {
+	out := map[string][]string{}
+	for op, rules := range map[string][]manifest.AccessRule{"select": t.Access.Select, "insert": t.Access.Insert, "update": t.Access.Update} {
+		for _, r := range rules {
+			out[op] = append(out[op], r.Role)
+		}
 	}
+	for _, r := range t.Access.Delete {
+		out["delete"] = append(out["delete"], r.Role)
+	}
+	return out
 }
 
 func dropPermOp(opType string, table TableRef, role string) HasuraMetadataPayload {

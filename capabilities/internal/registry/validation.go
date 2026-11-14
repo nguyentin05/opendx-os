@@ -85,6 +85,13 @@ func (a *AppDefinition) Validate() error {
 // validateTable checks one table; commands collects command names, which are
 // unique across the application's tables.
 func (a *AppDefinition) validateTable(t *Table, roles, commands map[string]bool) error {
+	if b := t.BelongsTo; b != nil {
+		parent := a.Table(b.Table)
+		if parent == nil || parent == t || parent.BelongsTo != nil || !identifier.MatchString(b.Column) ||
+			t.StateMachine != nil || len(t.Attachments) > 0 {
+			return errors.New("invalid child table")
+		}
+	}
 	cols := a.ColumnTypes(t)
 	for _, c := range t.Columns {
 		if !identifier.MatchString(c.Name) || !oneOf(c.Type, "uuid", "text", "date", "numeric(14,2)", "numeric(4,2)") {
@@ -192,14 +199,17 @@ func (a *AppDefinition) Command(name string) (*Table, *Command) {
 }
 
 // systemColumns are the operator-managed columns of a table, with the
-// manifest's type names; org_unit_id exists only with cap-hr and status only
-// on a process table.
+// manifest's type names; org_unit_id exists only with cap-hr on a table that
+// is not a child, status only on a process table, the parent column only on a
+// child table.
 func (a *AppDefinition) systemColumns(t *Table) map[string]string {
 	cols := map[string]string{"id": "uuid", "created_by": "uuid", "version": "integer", "created_at": "timestamp", "updated_at": "timestamp"}
 	if t.StateMachine != nil {
 		cols["status"] = "text"
 	}
-	if a.UsesCapability("cap-hr") {
+	if t.BelongsTo != nil {
+		cols[t.BelongsTo.Column] = "uuid"
+	} else if a.UsesCapability("cap-hr") {
 		cols["org_unit_id"] = "uuid"
 	}
 	return cols

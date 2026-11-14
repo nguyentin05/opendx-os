@@ -53,6 +53,10 @@ func TestDecodeReadyApplication(t *testing.T) {
 	if owner, cmd := a.Command("approve_budget"); owner != table || cmd == nil || cmd.To != "APPROVED" {
 		t.Fatal("a command must resolve to its table")
 	}
+	items := a.Table("domain.procurement_items")
+	if items == nil || items.BelongsTo == nil || a.ColumnTypes(items)["request_id"] != "uuid" || a.ColumnTypes(items)["org_unit_id"] != "" {
+		t.Fatal("the child table must carry its parent column and no department")
+	}
 	if owner, cmd := a.Command("no_such_command"); owner != nil || cmd != nil {
 		t.Fatal("unknown command resolved")
 	}
@@ -110,6 +114,14 @@ func TestRejectUnsafeDefinitions(t *testing.T) {
 		"single-table shape": func(m map[string]any) {
 			spec(m)["domainTable"] = map[string]any{"name": table(m)["name"], "columns": table(m)["columns"]}
 			delete(spec(m), "tables")
+		},
+		"child with commands": func(m map[string]any) {
+			tables := spec(m)["tables"].([]any)
+			tables[2].(map[string]any)["stateMachine"] = map[string]any{"initial": "OPEN"}
+		},
+		"child of a missing table": func(m map[string]any) {
+			tables := spec(m)["tables"].([]any)
+			tables[2].(map[string]any)["belongsTo"].(map[string]any)["table"] = "domain.other_records"
 		},
 		"bad effect": func(m map[string]any) {
 			spec(m)["workflows"].([]any)[0].(map[string]any)["effects"].([]any)[0].(map[string]any)["kind"] = "run_sql"

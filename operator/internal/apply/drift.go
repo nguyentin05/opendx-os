@@ -40,6 +40,7 @@ type exportedTable struct {
 	SelectPermissions   []exportedPermission   `json:"select_permissions"`
 	InsertPermissions   []exportedPermission   `json:"insert_permissions"`
 	UpdatePermissions   []exportedPermission   `json:"update_permissions"`
+	DeletePermissions   []exportedPermission   `json:"delete_permissions"`
 	ObjectRelationships []exportedRelationship `json:"object_relationships"`
 	ArrayRelationships  []exportedRelationship `json:"array_relationships"`
 }
@@ -156,6 +157,8 @@ func findPermission(t exportedTable, kind, role string) (map[string]any, bool) {
 		list = t.InsertPermissions
 	case "update":
 		list = t.UpdatePermissions
+	case "delete":
+		list = t.DeletePermissions
 	}
 	for _, p := range list {
 		if p.Role == role {

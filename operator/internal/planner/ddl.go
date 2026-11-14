@@ -70,7 +70,9 @@ func writeCreateTable(sb *strings.Builder, app *manifest.DXApplication, tbl *man
 		`    "id" uuid PRIMARY KEY DEFAULT gen_random_uuid()`,
 		`    "created_by" uuid NOT NULL REFERENCES "core"."users"("id")`,
 	}
-	if app.UsesCapability(manifest.CapHR) {
+	if tbl.IsChild() {
+		colDefs = append(colDefs, fmt.Sprintf("    %s uuid NOT NULL", quoteIdent(tbl.BelongsTo.Column)))
+	} else if app.UsesCapability(manifest.CapHR) {
 		colDefs = append(colDefs, `    "org_unit_id" uuid NOT NULL REFERENCES "cap_hr"."org_units"("id")`)
 	}
 	if tbl.IsProcess() {
@@ -100,10 +102,10 @@ func writeCreateTable(sb *strings.Builder, app *manifest.DXApplication, tbl *man
 func writeTableRules(sb *strings.Builder, app *manifest.DXApplication, tbl *manifest.TableDef) {
 	table := quoteTable(tbl.Name)
 	safeTbl := sanitizeName(strings.TrimPrefix(tbl.Name, "domain."))
-	hasHR := app.UsesCapability(manifest.CapHR)
+	hasHR := app.UsesCapability(manifest.CapHR) && !tbl.IsChild()
 
 	// Foreign keys are added by name so that a column added by an upgrade gets one too.
-	for _, fk := range tbl.ForeignKeys {
+	for _, fk := range tableForeignKeys(tbl) {
 		name := quoteIdent("fk_" + safeTbl + "_" + fk.Column)
 		fmt.Fprintf(sb, "DO $$\nBEGIN\n    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '%s'::regclass AND conname = %s) THEN\n",
 			strings.ReplaceAll(table, "'", "''"), quoteLiteral("fk_"+safeTbl+"_"+fk.Column))
@@ -131,7 +133,7 @@ func writeTableRules(sb *strings.Builder, app *manifest.DXApplication, tbl *mani
 	if hasHR {
 		indexed = append(indexed, "org_unit_id")
 	}
-	for _, fk := range tbl.ForeignKeys {
+	for _, fk := range tableForeignKeys(tbl) {
 		if app.Table(fk.References) != nil {
 			indexed = append(indexed, fk.Column)
 		}
@@ -148,6 +150,23 @@ func writeTableRules(sb *strings.Builder, app *manifest.DXApplication, tbl *mani
 	if hasHR {
 		triggers = append(triggers, trigger{"trg_" + safeTbl + "_20_stamp_org_unit", "BEFORE INSERT", "cap_hr.stamp_record_org_unit()"})
 	}
+	auditEvents := "AFTER INSERT OR UPDATE"
+	if tbl.IsChild() {
+		// A child row changes only while its parent record is editable, and every
+		// change increments the parent's version (S04).
+		parent := app.Table(tbl.BelongsTo.Table)
+		args := []string{quoteLiteral(parent.Name), quoteLiteral(tbl.BelongsTo.Column)}
+		if parent.IsProcess() {
+			for _, st := range parent.StateMachine.EditableStates {
+				args = append(args, quoteLiteral(st))
+			}
+		}
+		triggers = append(triggers,
+			trigger{"trg_" + safeTbl + "_15_parent", "BEFORE INSERT OR UPDATE OR DELETE", "core.enforce_parent(" + strings.Join(args, ", ") + ")"},
+			trigger{"trg_" + safeTbl + "_80_touch_parent", "AFTER INSERT OR UPDATE OR DELETE", "core.touch_parent(" + strings.Join(args[:2], ", ") + ")"},
+		)
+		auditEvents = "AFTER INSERT OR UPDATE OR DELETE"
+	}
 	if len(tbl.Attachments) > 0 {
 		// Only files the acting user uploaded to this application may be attached.
 		args := []string{quoteLiteral(app.Metadata.Name)}
@@ -158,8 +177,9 @@ func writeTableRules(sb *strings.Builder, app *manifest.DXApplication, tbl *mani
 	}
 	triggers = append(triggers,
 		trigger{"trg_" + safeTbl + "_30_bump_version", "BEFORE UPDATE", "core.bump_domain_record_version()"},
-		trigger{"trg_" + safeTbl + "_90_audit", "AFTER INSERT OR UPDATE", "core.record_domain_audit(" + quoteLiteral(app.Metadata.Name) + ")"},
+		trigger{"trg_" + safeTbl + "_90_audit", auditEvents, "core.record_domain_audit(" + quoteLiteral(app.Metadata.Name) + ")"},
 	)
+	sort.SliceStable(triggers, func(i, j int) bool { return triggers[i].name < triggers[j].name })
 	for _, t := range triggers {
 		fmt.Fprintf(sb, "DROP TRIGGER IF EXISTS %s ON %s;\n", quoteIdent(t.name), table)
 		fmt.Fprintf(sb, "CREATE TRIGGER %s\n%s ON %s\nFOR EACH ROW EXECUTE FUNCTION %s;\n\n", quoteIdent(t.name), t.timing, table, t.fn)
@@ -167,8 +187,23 @@ func writeTableRules(sb *strings.Builder, app *manifest.DXApplication, tbl *mani
 
 	// Roles are provisioned by platform initialization. Do not grant to ordinary
 	// callers; Hasura enforces the manifest field and row permissions.
+	if tbl.IsChild() {
+		// Child rows are written through Hasura only; cap-process reads them.
+		fmt.Fprintf(sb, "GRANT SELECT, INSERT, UPDATE, DELETE ON %s TO dxos_hasura;\n", table)
+		fmt.Fprintf(sb, "GRANT SELECT ON %s TO dxos_process, dxos_reader;\n", table)
+		return
+	}
 	fmt.Fprintf(sb, "GRANT SELECT, INSERT, UPDATE ON %s TO dxos_hasura, dxos_process;\n", table)
 	fmt.Fprintf(sb, "GRANT SELECT ON %s TO dxos_reader;\n", table)
+}
+
+// tableForeignKeys returns the table's foreign keys, the link of a child table
+// to its parent first.
+func tableForeignKeys(tbl *manifest.TableDef) []manifest.ForeignKeyDef {
+	if !tbl.IsChild() {
+		return tbl.ForeignKeys
+	}
+	return append([]manifest.ForeignKeyDef{{Column: tbl.BelongsTo.Column, References: tbl.BelongsTo.Table}}, tbl.ForeignKeys...)
 }
 
 // SharedTablesRead lists, in a stable order, the shared tables Hasura reads for
@@ -180,7 +215,7 @@ func SharedTablesRead(app *manifest.DXApplication) []string {
 		set[s.Table] = true
 	}
 	for i := range app.Spec.Tables {
-		for _, fk := range app.Spec.Tables[i].ForeignKeys {
+		for _, fk := range tableForeignKeys(&app.Spec.Tables[i]) {
 			if app.Table(fk.References) == nil {
 				set[fk.References] = true
 			}

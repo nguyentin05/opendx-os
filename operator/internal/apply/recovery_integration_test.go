@@ -56,7 +56,7 @@ func TestApplyPreservesPriorActiveVersionOnFailure(t *testing.T) {
 
 	runner := NewRunner(db, Config{HasuraURL: srv.URL}, srv.Client())
 
-	// 1. Apply v0.2.0 succeeds
+	// 1. Apply v0.3.0 succeeds
 	planV1, err := planner.BuildPlan([]manifest.DXApplication{*appV1}, planner.ManagedState{})
 	if err != nil {
 		t.Fatal(err)
@@ -65,24 +65,24 @@ func TestApplyPreservesPriorActiveVersionOnFailure(t *testing.T) {
 		t.Fatalf("initial apply failed: %v", err)
 	}
 
-	// 2. Apply v0.3.0 with injected metadata failure keeps v0.2.0 Ready in core.apps
+	// 2. Apply v0.4.0 with injected metadata failure keeps v0.3.0 Ready in core.apps
 	failMetadata = true
 	appV2 := *appV1
-	appV2.Metadata.Version = "0.3.0"
+	appV2.Metadata.Version = "0.4.0"
 	planV2, err := planner.BuildPlan([]manifest.DXApplication{appV2}, planner.ManagedState{ActiveApps: []manifest.DXApplication{*appV1}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := runner.Run(context.Background(), planV2, []string{"procurement"}); err == nil {
-		t.Fatal("expected v0.3.0 apply to fail")
+		t.Fatal("expected v0.4.0 apply to fail")
 	}
 
 	var activeVersion, activeStatus, lastError string
 	if err := db.QueryRow(`SELECT version, status, coalesce(last_error, '') FROM core.apps WHERE app_id = 'procurement'`).Scan(&activeVersion, &activeStatus, &lastError); err != nil {
 		t.Fatal(err)
 	}
-	if activeVersion != "0.2.0" || activeStatus != "Ready" || !strings.Contains(lastError, "injected failure") {
-		t.Fatalf("expected prior version 0.2.0 Ready with the error recorded, got %s %s %q", activeVersion, activeStatus, lastError)
+	if activeVersion != "0.3.0" || activeStatus != "Ready" || !strings.Contains(lastError, "injected failure") {
+		t.Fatalf("expected prior version 0.3.0 Ready with the error recorded, got %s %s %q", activeVersion, activeStatus, lastError)
 	}
 
 	// 3. A new application whose first apply fails is recorded as Failed.

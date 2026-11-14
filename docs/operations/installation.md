@@ -63,7 +63,10 @@ registry discovery and beta automatic-workflow readiness remain open.
    with a quote uploaded to cap-process and scanned by ClamAV) and prints what each
    person sees through the gateway; `scripts/seed-demo.py flow` takes one request
    through submit, department approval and budget approval with cap-process
-   commands, including the refusals on the way. Use them on local stacks only.
+   commands, including the refusals on the way; `scripts/seed-demo.py lines` files
+   a request with a vendor from the application's vendor list and line items, and
+   shows who may read and change them before and after it is submitted. Use them
+   on local stacks only.
 
 4. The `operator` service installs exactly the application packages in
    `OPERATOR_APPS_DIR` (default `./apps`, mounted read-only), checking every

@@ -89,7 +89,7 @@ func GenerateHasuraOperations(app *manifest.DXApplication) ([]HasuraMetadataPayl
 	for i := range app.Spec.Tables {
 		tbl := &app.Spec.Tables[i]
 		ref := ParseTableRef(tbl.Name)
-		for _, fk := range tbl.ForeignKeys {
+		for _, fk := range tableForeignKeys(tbl) {
 			remote := ParseTableRef(fk.References)
 			ops = append(ops,
 				relationship("pg_create_object_relationship", ref, strings.TrimSuffix(fk.Column, "_id"), remote, map[string]string{fk.Column: "id"}),
@@ -108,6 +108,10 @@ func GenerateHasuraOperations(app *manifest.DXApplication) ([]HasuraMetadataPayl
 	for i := range app.Spec.Tables {
 		tbl := &app.Spec.Tables[i]
 		ref := ParseTableRef(tbl.Name)
+		if tbl.IsChild() {
+			ops = append(ops, childPermissions(app, tbl)...)
+			continue
+		}
 
 		// 3. SELECT permissions: the role scope narrowed by the rule's filter.
 		for _, sel := range tbl.Access.Select {
@@ -145,7 +149,7 @@ func GenerateHasuraOperations(app *manifest.DXApplication) ([]HasuraMetadataPayl
 			}
 			ops = append(ops, permission("pg_create_update_permission", ref, upd.Role, map[string]any{
 				"columns": upd.Columns,
-				"filter":  nonNil(conjoinFilters(conjoinFilters(ScopeFilter(upd.Scope), upd.RecordFilter), editable)),
+				"filter":  nonNil(updateFilter(tbl, upd)),
 				"check":   nonNil(editable),
 			}))
 		}
@@ -164,6 +168,76 @@ func GenerateHasuraOperations(app *manifest.DXApplication) ([]HasuraMetadataPayl
 	}
 
 	return ops, nil
+}
+
+// childPermissions are the permissions of a child table. Its rows follow
+// their parent record: a role reads a row when one of its select rules admits
+// the parent, and inserts, updates or deletes a row when its update rule admits
+// the parent, which for a process parent also means an editable state. The
+// filters traverse the relationship from the child to its parent.
+func childPermissions(app *manifest.DXApplication, tbl *manifest.TableDef) []HasuraMetadataPayload {
+	ref := ParseTableRef(tbl.Name)
+	parent := app.Table(tbl.BelongsTo.Table)
+	link := strings.TrimSuffix(tbl.BelongsTo.Column, "_id")
+	through := func(filter map[string]any) map[string]any {
+		return map[string]any{link: nonNil(filter)}
+	}
+	readable := func(role string) map[string]any {
+		for _, sel := range parent.Access.Select {
+			if sel.Role == role {
+				return through(selectFilter(sel))
+			}
+		}
+		return nil
+	}
+	editable := func(role string) map[string]any {
+		for _, upd := range parent.Access.Update {
+			if upd.Role == role {
+				return through(updateFilter(parent, upd))
+			}
+		}
+		return nil
+	}
+
+	var ops []HasuraMetadataPayload
+	for _, sel := range tbl.Access.Select {
+		ops = append(ops, permission("pg_create_select_permission", ref, sel.Role, map[string]any{
+			"columns":            sel.Columns,
+			"filter":             readable(sel.Role),
+			"allow_aggregations": false,
+		}))
+	}
+	for _, ins := range tbl.Access.Insert {
+		ops = append(ops, permission("pg_create_insert_permission", ref, ins.Role, map[string]any{
+			"columns":      append([]string{tbl.BelongsTo.Column}, ins.Columns...),
+			"check":        editable(ins.Role),
+			"set":          map[string]string{},
+			"backend_only": false,
+		}))
+	}
+	for _, upd := range tbl.Access.Update {
+		ops = append(ops, permission("pg_create_update_permission", ref, upd.Role, map[string]any{
+			"columns": upd.Columns,
+			"filter":  editable(upd.Role),
+			"check":   editable(upd.Role),
+		}))
+	}
+	for _, del := range tbl.Access.Delete {
+		ops = append(ops, permission("pg_create_delete_permission", ref, del.Role, map[string]any{
+			"filter": editable(del.Role),
+		}))
+	}
+	return ops
+}
+
+// updateFilter is the row filter of an update rule: its scope and record
+// filter, and for a process table an editable state.
+func updateFilter(tbl *manifest.TableDef, upd manifest.AccessRule) map[string]any {
+	filter := conjoinFilters(ScopeFilter(upd.Scope), upd.RecordFilter)
+	if tbl.IsProcess() {
+		filter = conjoinFilters(filter, map[string]any{"status": map[string]any{"_in": tbl.StateMachine.EditableStates}})
+	}
+	return filter
 }
 
 func trackTable(t TableRef) HasuraMetadataPayload {

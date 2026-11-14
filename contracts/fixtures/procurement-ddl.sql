@@ -17,7 +17,31 @@ CREATE TABLE IF NOT EXISTS "domain"."procurement_requests" (
     "item_description" text NOT NULL CHECK (length(trim(item_description)) > 0),
     "quoted_amount" numeric(14,2) NOT NULL CHECK (quoted_amount > 0),
     "quote_file_id" uuid,
-    "rejection_reason" text
+    "rejection_reason" text,
+    "vendor_id" uuid
+);
+
+CREATE TABLE IF NOT EXISTS "domain"."procurement_vendors" (
+    "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "created_by" uuid NOT NULL REFERENCES "core"."users"("id"),
+    "org_unit_id" uuid NOT NULL REFERENCES "cap_hr"."org_units"("id"),
+    "version" bigint NOT NULL DEFAULT 1 CHECK ("version" > 0),
+    "created_at" timestamptz NOT NULL DEFAULT now(),
+    "updated_at" timestamptz NOT NULL DEFAULT now(),
+    "name" text NOT NULL CHECK (length(trim(name)) > 0),
+    "tax_code" text
+);
+
+CREATE TABLE IF NOT EXISTS "domain"."procurement_items" (
+    "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "created_by" uuid NOT NULL REFERENCES "core"."users"("id"),
+    "request_id" uuid NOT NULL,
+    "version" bigint NOT NULL DEFAULT 1 CHECK ("version" > 0),
+    "created_at" timestamptz NOT NULL DEFAULT now(),
+    "updated_at" timestamptz NOT NULL DEFAULT now(),
+    "item" text NOT NULL CHECK (length(trim(item)) > 0),
+    "quantity" numeric(14,2) NOT NULL CHECK (quantity > 0),
+    "unit_price" numeric(14,2) NOT NULL CHECK (unit_price > 0)
 );
 
 DO $$
@@ -27,12 +51,20 @@ BEGIN
     END IF;
 END $$;
 
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '"domain"."procurement_requests"'::regclass AND conname = 'fk_procurement_requests_vendor_id') THEN
+        ALTER TABLE "domain"."procurement_requests" ADD CONSTRAINT "fk_procurement_requests_vendor_id" FOREIGN KEY ("vendor_id") REFERENCES "domain"."procurement_vendors"("id") ON DELETE RESTRICT;
+    END IF;
+END $$;
+
 ALTER TABLE "domain"."procurement_requests" DROP CONSTRAINT IF EXISTS "ck_procurement_requests_status";
 ALTER TABLE "domain"."procurement_requests" ADD CONSTRAINT "ck_procurement_requests_status" CHECK ("status" IN ('DRAFT', 'SUBMITTED', 'BUDGET_REVIEW', 'APPROVED', 'REJECTED', 'CANCELLED'));
 
 CREATE INDEX IF NOT EXISTS "idx_procurement_requests_created_by" ON "domain"."procurement_requests" ("created_by");
 CREATE INDEX IF NOT EXISTS "idx_procurement_requests_status" ON "domain"."procurement_requests" ("status");
 CREATE INDEX IF NOT EXISTS "idx_procurement_requests_org_unit_id" ON "domain"."procurement_requests" ("org_unit_id");
+CREATE INDEX IF NOT EXISTS "idx_procurement_requests_vendor_id" ON "domain"."procurement_requests" ("vendor_id");
 
 DROP TRIGGER IF EXISTS "trg_procurement_requests_10_stamp_owner" ON "domain"."procurement_requests";
 CREATE TRIGGER "trg_procurement_requests_10_stamp_owner"
@@ -61,6 +93,68 @@ FOR EACH ROW EXECUTE FUNCTION core.record_domain_audit('procurement');
 
 GRANT SELECT, INSERT, UPDATE ON "domain"."procurement_requests" TO dxos_hasura, dxos_process;
 GRANT SELECT ON "domain"."procurement_requests" TO dxos_reader;
+CREATE INDEX IF NOT EXISTS "idx_procurement_vendors_created_by" ON "domain"."procurement_vendors" ("created_by");
+CREATE INDEX IF NOT EXISTS "idx_procurement_vendors_org_unit_id" ON "domain"."procurement_vendors" ("org_unit_id");
+
+DROP TRIGGER IF EXISTS "trg_procurement_vendors_10_stamp_owner" ON "domain"."procurement_vendors";
+CREATE TRIGGER "trg_procurement_vendors_10_stamp_owner"
+BEFORE INSERT ON "domain"."procurement_vendors"
+FOR EACH ROW EXECUTE FUNCTION core.stamp_record_owner();
+
+DROP TRIGGER IF EXISTS "trg_procurement_vendors_20_stamp_org_unit" ON "domain"."procurement_vendors";
+CREATE TRIGGER "trg_procurement_vendors_20_stamp_org_unit"
+BEFORE INSERT ON "domain"."procurement_vendors"
+FOR EACH ROW EXECUTE FUNCTION cap_hr.stamp_record_org_unit();
+
+DROP TRIGGER IF EXISTS "trg_procurement_vendors_30_bump_version" ON "domain"."procurement_vendors";
+CREATE TRIGGER "trg_procurement_vendors_30_bump_version"
+BEFORE UPDATE ON "domain"."procurement_vendors"
+FOR EACH ROW EXECUTE FUNCTION core.bump_domain_record_version();
+
+DROP TRIGGER IF EXISTS "trg_procurement_vendors_90_audit" ON "domain"."procurement_vendors";
+CREATE TRIGGER "trg_procurement_vendors_90_audit"
+AFTER INSERT OR UPDATE ON "domain"."procurement_vendors"
+FOR EACH ROW EXECUTE FUNCTION core.record_domain_audit('procurement');
+
+GRANT SELECT, INSERT, UPDATE ON "domain"."procurement_vendors" TO dxos_hasura, dxos_process;
+GRANT SELECT ON "domain"."procurement_vendors" TO dxos_reader;
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '"domain"."procurement_items"'::regclass AND conname = 'fk_procurement_items_request_id') THEN
+        ALTER TABLE "domain"."procurement_items" ADD CONSTRAINT "fk_procurement_items_request_id" FOREIGN KEY ("request_id") REFERENCES "domain"."procurement_requests"("id") ON DELETE RESTRICT;
+    END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS "idx_procurement_items_created_by" ON "domain"."procurement_items" ("created_by");
+CREATE INDEX IF NOT EXISTS "idx_procurement_items_request_id" ON "domain"."procurement_items" ("request_id");
+
+DROP TRIGGER IF EXISTS "trg_procurement_items_10_stamp_owner" ON "domain"."procurement_items";
+CREATE TRIGGER "trg_procurement_items_10_stamp_owner"
+BEFORE INSERT ON "domain"."procurement_items"
+FOR EACH ROW EXECUTE FUNCTION core.stamp_record_owner();
+
+DROP TRIGGER IF EXISTS "trg_procurement_items_15_parent" ON "domain"."procurement_items";
+CREATE TRIGGER "trg_procurement_items_15_parent"
+BEFORE INSERT OR UPDATE OR DELETE ON "domain"."procurement_items"
+FOR EACH ROW EXECUTE FUNCTION core.enforce_parent('domain.procurement_requests', 'request_id', 'DRAFT');
+
+DROP TRIGGER IF EXISTS "trg_procurement_items_30_bump_version" ON "domain"."procurement_items";
+CREATE TRIGGER "trg_procurement_items_30_bump_version"
+BEFORE UPDATE ON "domain"."procurement_items"
+FOR EACH ROW EXECUTE FUNCTION core.bump_domain_record_version();
+
+DROP TRIGGER IF EXISTS "trg_procurement_items_80_touch_parent" ON "domain"."procurement_items";
+CREATE TRIGGER "trg_procurement_items_80_touch_parent"
+AFTER INSERT OR UPDATE OR DELETE ON "domain"."procurement_items"
+FOR EACH ROW EXECUTE FUNCTION core.touch_parent('domain.procurement_requests', 'request_id');
+
+DROP TRIGGER IF EXISTS "trg_procurement_items_90_audit" ON "domain"."procurement_items";
+CREATE TRIGGER "trg_procurement_items_90_audit"
+AFTER INSERT OR UPDATE OR DELETE ON "domain"."procurement_items"
+FOR EACH ROW EXECUTE FUNCTION core.record_domain_audit('procurement');
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON "domain"."procurement_items" TO dxos_hasura;
+GRANT SELECT ON "domain"."procurement_items" TO dxos_process, dxos_reader;
 GRANT USAGE ON SCHEMA "cap_hr" TO dxos_hasura;
 GRANT SELECT ON "cap_hr"."org_units" TO dxos_hasura;
 GRANT SELECT ON "cap_hr"."staff" TO dxos_hasura;

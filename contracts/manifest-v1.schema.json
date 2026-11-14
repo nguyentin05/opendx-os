@@ -120,6 +120,24 @@
               "access": {
                 "description": "Access declares per-role select/insert/update rules on the table.",
                 "properties": {
+                  "delete": {
+                    "description": "Delete is allowed on child tables only.",
+                    "items": {
+                      "description": "DeleteRule lets a role delete rows of a child table while it may edit their\nparent record.",
+                      "properties": {
+                        "role": {
+                          "pattern": "^[a-z][a-z0-9_]*$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "role"
+                      ],
+                      "type": "object",
+                      "additionalProperties": false
+                    },
+                    "type": "array"
+                  },
                   "insert": {
                     "items": {
                       "description": "AccessRule allows one role a set of columns within its scope, optionally\nnarrowed by a record filter.",
@@ -147,7 +165,7 @@
                           "type": "string"
                         },
                         "scope": {
-                          "description": "Scope is required on select and update: own records, own department\n(requires cap-hr) or the whole organization. Not allowed on insert.",
+                          "description": "Scope is required on select and update: own records, own department\n(requires cap-hr) or the whole organization. Not allowed on insert, nor\non a child table, whose rows follow their parent record.",
                           "enum": [
                             "own",
                             "department",
@@ -193,7 +211,7 @@
                           "type": "string"
                         },
                         "scope": {
-                          "description": "Scope is required on select and update: own records, own department\n(requires cap-hr) or the whole organization. Not allowed on insert.",
+                          "description": "Scope is required on select and update: own records, own department\n(requires cap-hr) or the whole organization. Not allowed on insert, nor\non a child table, whose rows follow their parent record.",
                           "enum": [
                             "own",
                             "department",
@@ -239,7 +257,7 @@
                           "type": "string"
                         },
                         "scope": {
-                          "description": "Scope is required on select and update: own records, own department\n(requires cap-hr) or the whole organization. Not allowed on insert.",
+                          "description": "Scope is required on select and update: own records, own department\n(requires cap-hr) or the whole organization. Not allowed on insert, nor\non a child table, whose rows follow their parent record.",
                           "enum": [
                             "own",
                             "department",
@@ -290,6 +308,25 @@
                   "additionalProperties": false
                 },
                 "type": "array"
+              },
+              "belongsTo": {
+                "description": "BelongsTo makes the table a child table: its rows are part of a record\nof the parent table and follow that record's access, state and version.",
+                "properties": {
+                  "column": {
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "type": "string"
+                  },
+                  "table": {
+                    "pattern": "^domain\\.[a-z][a-z0-9_]*$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "column",
+                  "table"
+                ],
+                "type": "object",
+                "additionalProperties": false
               },
               "columns": {
                 "items": {

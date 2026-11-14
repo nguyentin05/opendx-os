@@ -1,7 +1,7 @@
 {
   "app_id": "procurement",
   "display_name": "Material Procurement",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "spec": {
     "capabilities": [
       "cap-process",
@@ -96,12 +96,21 @@
             "name": "rejection_reason",
             "type": "text",
             "nullable": true
+          },
+          {
+            "name": "vendor_id",
+            "type": "uuid",
+            "nullable": true
           }
         ],
         "foreignKeys": [
           {
             "column": "quote_file_id",
             "references": "core.files"
+          },
+          {
+            "column": "vendor_id",
+            "references": "domain.procurement_vendors"
           }
         ],
         "access": {
@@ -118,6 +127,7 @@
                 "quoted_amount",
                 "quote_file_id",
                 "rejection_reason",
+                "vendor_id",
                 "status",
                 "version",
                 "created_at",
@@ -136,6 +146,7 @@
                 "quoted_amount",
                 "quote_file_id",
                 "rejection_reason",
+                "vendor_id",
                 "status",
                 "version",
                 "created_at",
@@ -159,6 +170,7 @@
                 "quoted_amount",
                 "quote_file_id",
                 "rejection_reason",
+                "vendor_id",
                 "status",
                 "version",
                 "created_at",
@@ -178,7 +190,8 @@
                 "vendor_name",
                 "item_description",
                 "quoted_amount",
-                "quote_file_id"
+                "quote_file_id",
+                "vendor_id"
               ]
             }
           ],
@@ -190,7 +203,8 @@
                 "vendor_name",
                 "item_description",
                 "quoted_amount",
-                "quote_file_id"
+                "quote_file_id",
+                "vendor_id"
               ]
             }
           ]
@@ -323,6 +337,217 @@
             "approve_budget",
             "reject",
             "cancel"
+          ]
+        }
+      },
+      {
+        "name": "domain.procurement_vendors",
+        "columns": [
+          {
+            "name": "name",
+            "type": "text",
+            "nullable": false,
+            "check": "length(trim(name)) > 0"
+          },
+          {
+            "name": "tax_code",
+            "type": "text",
+            "nullable": true
+          }
+        ],
+        "access": {
+          "select": [
+            {
+              "role": "role_procurement_requester",
+              "scope": "organization",
+              "columns": [
+                "id",
+                "name",
+                "tax_code",
+                "version",
+                "updated_at"
+              ]
+            },
+            {
+              "role": "role_procurement_manager",
+              "scope": "organization",
+              "columns": [
+                "id",
+                "name",
+                "tax_code",
+                "version",
+                "updated_at"
+              ]
+            },
+            {
+              "role": "role_procurement_finance",
+              "scope": "organization",
+              "columns": [
+                "id",
+                "name",
+                "tax_code",
+                "version",
+                "updated_at"
+              ]
+            }
+          ],
+          "insert": [
+            {
+              "role": "role_procurement_finance",
+              "columns": [
+                "name",
+                "tax_code"
+              ]
+            }
+          ],
+          "update": [
+            {
+              "role": "role_procurement_finance",
+              "scope": "organization",
+              "columns": [
+                "name",
+                "tax_code"
+              ]
+            }
+          ]
+        },
+        "ui": {
+          "listColumns": [
+            "name",
+            "tax_code"
+          ],
+          "formFields": [
+            {
+              "name": "name",
+              "label": "Vendor Name",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "tax_code",
+              "label": "Tax Code",
+              "type": "text",
+              "required": false
+            }
+          ]
+        }
+      },
+      {
+        "name": "domain.procurement_items",
+        "belongsTo": {
+          "table": "domain.procurement_requests",
+          "column": "request_id"
+        },
+        "columns": [
+          {
+            "name": "item",
+            "type": "text",
+            "nullable": false,
+            "check": "length(trim(item)) > 0"
+          },
+          {
+            "name": "quantity",
+            "type": "numeric(14,2)",
+            "nullable": false,
+            "check": "quantity > 0"
+          },
+          {
+            "name": "unit_price",
+            "type": "numeric(14,2)",
+            "nullable": false,
+            "check": "unit_price > 0"
+          }
+        ],
+        "access": {
+          "select": [
+            {
+              "role": "role_procurement_requester",
+              "columns": [
+                "id",
+                "request_id",
+                "item",
+                "quantity",
+                "unit_price",
+                "version",
+                "updated_at"
+              ]
+            },
+            {
+              "role": "role_procurement_manager",
+              "columns": [
+                "id",
+                "request_id",
+                "item",
+                "quantity",
+                "unit_price",
+                "version",
+                "updated_at"
+              ]
+            },
+            {
+              "role": "role_procurement_finance",
+              "columns": [
+                "id",
+                "request_id",
+                "item",
+                "quantity",
+                "unit_price",
+                "version",
+                "updated_at"
+              ]
+            }
+          ],
+          "insert": [
+            {
+              "role": "role_procurement_requester",
+              "columns": [
+                "item",
+                "quantity",
+                "unit_price"
+              ]
+            }
+          ],
+          "update": [
+            {
+              "role": "role_procurement_requester",
+              "columns": [
+                "item",
+                "quantity",
+                "unit_price"
+              ]
+            }
+          ],
+          "delete": [
+            {
+              "role": "role_procurement_requester"
+            }
+          ]
+        },
+        "ui": {
+          "listColumns": [
+            "item",
+            "quantity",
+            "unit_price"
+          ],
+          "formFields": [
+            {
+              "name": "item",
+              "label": "Item",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "quantity",
+              "label": "Quantity",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "unit_price",
+              "label": "Unit Price",
+              "type": "number",
+              "required": true
+            }
           ]
         }
       }

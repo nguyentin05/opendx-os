@@ -221,7 +221,7 @@ func (f *FakeHasura) exportLocked() string {
 	for _, k := range keys {
 		t := f.tables[k]
 		entry := map[string]any{"table": t.ref}
-		for _, op := range []string{"select", "insert", "update"} {
+		for _, op := range []string{"select", "insert", "update", "delete"} {
 			roles := make([]string, 0, len(t.perms[op]))
 			for role := range t.perms[op] {
 				roles = append(roles, role)

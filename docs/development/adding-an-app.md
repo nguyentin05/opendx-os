@@ -10,7 +10,8 @@ parsers or app packages.
    Declare capabilities, the roles the app owns, and its tables: for each one
    the fields and foreign keys, per-role access with a scope (own, department,
    organization), UI metadata, and for a process table its state machine and
-   attachment bindings. Declare workflows on the commands of those tables.
+   attachment bindings. Rows that are part of another record (lines of a
+   document) go in a child table (`belongsTo`). Declare workflows on the commands of those tables.
 2. Put thresholds and business handling in declared workflows. Map standard OT
    events to those flows; adding an app must not add an app-name branch to shared
    capabilities, UI, or bootstrap DDL.

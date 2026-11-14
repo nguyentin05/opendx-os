@@ -124,8 +124,22 @@ type Table struct {
 	// +optional
 	Attachments []Attachment `json:"attachments,omitempty"`
 
+	// BelongsTo makes the table a child table: its rows are part of a record
+	// of the parent table and follow that record's access, state and version.
+	// +optional
+	BelongsTo *BelongsTo `json:"belongsTo,omitempty"`
+
 	// UI configures the table's list and form in the App Shell.
 	UI UISchema `json:"ui"`
+}
+
+// BelongsTo names the parent table of a child table and the child's column
+// holding the parent record's id.
+type BelongsTo struct {
+	// +kubebuilder:validation:Pattern=`^domain\.[a-z][a-z0-9_]*$`
+	Table string `json:"table"`
+	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9_]*$`
+	Column string `json:"column"`
 }
 
 // Column is a business column; system columns are managed by the Operator.
@@ -158,6 +172,16 @@ type Access struct {
 	Insert []AccessRule `json:"insert"`
 	// +optional
 	Update []AccessRule `json:"update,omitempty"`
+	// Delete is allowed on child tables only.
+	// +optional
+	Delete []DeleteRule `json:"delete,omitempty"`
+}
+
+// DeleteRule lets a role delete rows of a child table while it may edit their
+// parent record.
+type DeleteRule struct {
+	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9_]*$`
+	Role string `json:"role"`
 }
 
 // AccessRule allows one role a set of columns within its scope, optionally
@@ -166,7 +190,8 @@ type AccessRule struct {
 	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9_]*$`
 	Role string `json:"role"`
 	// Scope is required on select and update: own records, own department
-	// (requires cap-hr) or the whole organization. Not allowed on insert.
+	// (requires cap-hr) or the whole organization. Not allowed on insert, nor
+	// on a child table, whose rows follow their parent record.
 	// +optional
 	// +kubebuilder:validation:Enum=own;department;organization
 	Scope string `json:"scope,omitempty"`
