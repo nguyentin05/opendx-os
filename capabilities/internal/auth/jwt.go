@@ -128,7 +128,10 @@ func (v *jwtVerifier) refresh(ctx context.Context) error {
 	v.lastRefresh = time.Now()
 	return nil
 }
-func (v *jwtVerifier) Verify(ctx context.Context, token string) (*Identity, error) {
+
+// verifiedPayload checks the token's header and RS256 signature against the
+// issuer's signing keys and returns the decoded payload.
+func (v *jwtVerifier) verifiedPayload(ctx context.Context, token string) ([]byte, error) {
 	if len(token) > 32768 {
 		return nil, errors.New("oversized token")
 	}
@@ -176,16 +179,51 @@ func (v *jwtVerifier) Verify(ctx context.Context, token string) (*Identity, erro
 	if e = rsa.VerifyPKCS1v15(key, crypto.SHA256, digest[:], sig); e != nil {
 		return nil, e
 	}
-	payload, e := base64.RawURLEncoding.DecodeString(parts[1])
+	return base64.RawURLEncoding.DecodeString(parts[1])
+}
+
+// standardClaims are the registered claims every accepted token must carry.
+type standardClaims struct {
+	Iss string          `json:"iss"`
+	Aud json.RawMessage `json:"aud"`
+	Sub string          `json:"sub"`
+	Exp int64           `json:"exp"`
+	Nbf int64           `json:"nbf"`
+}
+
+// check accepts only this issuer and audience, an unexpired token, and a UUID
+// subject.
+func (c standardClaims) check(cfg VerifierConfig) error {
+	now := time.Now().Unix()
+	if c.Iss != cfg.IssuerURL || c.Exp <= now || c.Nbf > now {
+		return errors.New("invalid issuer or validity")
+	}
+	var audience string
+	var audiences []string
+	match := false
+	if json.Unmarshal(c.Aud, &audience) == nil {
+		match = audience == cfg.Audience
+	} else if json.Unmarshal(c.Aud, &audiences) == nil {
+		for _, a := range audiences {
+			match = match || a == cfg.Audience
+		}
+	}
+	if !match {
+		return errors.New("invalid audience")
+	}
+	if !uuid.MatchString(c.Sub) {
+		return errors.New("invalid subject")
+	}
+	return nil
+}
+
+func (v *jwtVerifier) Verify(ctx context.Context, token string) (*Identity, error) {
+	payload, e := v.verifiedPayload(ctx, token)
 	if e != nil {
 		return nil, e
 	}
 	var c struct {
-		Iss    string          `json:"iss"`
-		Aud    json.RawMessage `json:"aud"`
-		Sub    string          `json:"sub"`
-		Exp    int64           `json:"exp"`
-		Nbf    int64           `json:"nbf"`
+		standardClaims
 		Claims struct {
 			User      string   `json:"x-hasura-user-id"`
 			Workspace string   `json:"x-hasura-workspace-id"`
@@ -196,24 +234,10 @@ func (v *jwtVerifier) Verify(ctx context.Context, token string) (*Identity, erro
 	if e = json.Unmarshal(payload, &c); e != nil {
 		return nil, e
 	}
-	now := time.Now().Unix()
-	if c.Iss != v.cfg.IssuerURL || c.Exp <= now || c.Nbf > now {
-		return nil, errors.New("invalid issuer or validity")
+	if e = c.check(v.cfg); e != nil {
+		return nil, e
 	}
-	var audience string
-	var audiences []string
-	match := false
-	if json.Unmarshal(c.Aud, &audience) == nil {
-		match = audience == v.cfg.Audience
-	} else if json.Unmarshal(c.Aud, &audiences) == nil {
-		for _, a := range audiences {
-			match = match || a == v.cfg.Audience
-		}
-	}
-	if !match {
-		return nil, errors.New("invalid audience")
-	}
-	if !uuid.MatchString(c.Sub) || !uuid.MatchString(c.Claims.User) || !uuid.MatchString(c.Claims.Workspace) || c.Sub != c.Claims.User {
+	if !uuid.MatchString(c.Claims.User) || !uuid.MatchString(c.Claims.Workspace) || c.Sub != c.Claims.User {
 		return nil, errors.New("invalid signed identity")
 	}
 	found := false
@@ -229,4 +253,57 @@ func (v *jwtVerifier) Verify(ctx context.Context, token string) (*Identity, erro
 		return nil, errors.New("default role not granted")
 	}
 	return &Identity{UserID: strings.ToLower(c.Sub), WorkspaceID: strings.ToLower(c.Claims.Workspace), Role: c.Claims.Default, AllowedRoles: c.Claims.Allowed}, nil
+}
+
+// Principal is who a token says the caller is. It carries no permissions:
+// roles are looked up in core.user_roles (ADR 0007).
+type Principal struct {
+	Subject string // Keycloak user ID, the core.users primary key
+	Email   string
+	Name    string
+}
+
+// Authenticator verifies a Keycloak access token and returns its principal.
+type Authenticator interface {
+	Authenticate(ctx context.Context, token string) (*Principal, error)
+}
+
+// NewAuthenticator fetches the issuer's signing keys and returns an
+// Authenticator for its tokens.
+func NewAuthenticator(ctx context.Context, cfg VerifierConfig) (Authenticator, error) {
+	v, e := NewVerifier(ctx, cfg)
+	if e != nil {
+		return nil, e
+	}
+	return v.(*jwtVerifier), nil
+}
+
+func (v *jwtVerifier) Authenticate(ctx context.Context, token string) (*Principal, error) {
+	payload, e := v.verifiedPayload(ctx, token)
+	if e != nil {
+		return nil, e
+	}
+	var c struct {
+		standardClaims
+		Email    string `json:"email"`
+		Name     string `json:"name"`
+		Username string `json:"preferred_username"`
+	}
+	if e = json.Unmarshal(payload, &c); e != nil {
+		return nil, e
+	}
+	if e = c.check(v.cfg); e != nil {
+		return nil, e
+	}
+	p := &Principal{Subject: strings.ToLower(c.Sub), Email: strings.TrimSpace(c.Email), Name: strings.TrimSpace(c.Name)}
+	if p.Name == "" {
+		p.Name = strings.TrimSpace(c.Username)
+	}
+	if p.Name == "" {
+		p.Name = p.Email
+	}
+	if p.Email == "" || len(p.Email) > 320 || len(p.Name) > 200 {
+		return nil, errors.New("token lacks a usable email")
+	}
+	return p, nil
 }
