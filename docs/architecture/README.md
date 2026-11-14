@@ -90,7 +90,8 @@ and introduces the `DXApplication` CRD controller.
 ADR 0007 keeps authentication in Keycloak and authorization in the platform:
 roles are resolved from `core.user_roles` on each request by `dxos-authz`.
 ADR 0008 lets an application declare several tables instead of the single table
-of ADR 0001: process and plain tables are implemented, child tables are pending.
+of ADR 0001: process tables, plain tables, and child tables whose rows follow a
+parent record.
 
 For a proposed change, identify relevant accepted decisions and affected contracts,
 producers, consumers, examples, and data migrations. Record a replacement decision

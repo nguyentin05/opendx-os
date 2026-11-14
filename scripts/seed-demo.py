@@ -21,6 +21,9 @@
                                   person sees through the gateway
     scripts/seed-demo.py flow     one request through the whole approval chain,
                                   including the refusals along the way
+    scripts/seed-demo.py lines    a request with line items and a vendor from
+                                  the application's vendor list: who may read
+                                  and change them, and when
 
 `seed` creates the Keycloak accounts below (password DEMO_PASSWORD), mirrors
 them into core.users, places them in departments (cap_hr) and grants roles
@@ -403,11 +406,124 @@ def flow() -> None:
     with_demo_client(run)
 
 
+def lines() -> None:
+    """Several tables of one application: a vendor list, a request and its lines."""
+    def run():
+        t = {p[0]: sign_in(p[0]) for p in PEOPLE if p[0] != "quan.tri"}
+        people = {p[0]: f"{p[1]} {p[2]}" for p in PEOPLE}
+        manager, finance = "role_procurement_manager", "role_procurement_finance"
+        rows = [("Step", "Who", "Acting as", "Result")]
+
+        def note(label, user, role, result, ok):
+            rows.append((label, people[user], role, f"{result}  [{'ok' if ok else 'UNEXPECTED'}]"))
+
+        def refused(err):
+            return "refused: " + str((err or [{}])[0].get("message", err))[:60]
+
+        # A plain table: finance maintains the vendor list, everyone reads it.
+        vendor_name = "Phong Vũ " + uuid.uuid4().hex[:6]
+        insert_vendor = ("mutation($o: domain_procurement_vendors_insert_input!) "
+                         "{ insert_domain_procurement_vendors_one(object: $o) { id name } }")
+        data, err = graphql(t["giang.vo"], finance, insert_vendor, {"o": {"name": vendor_name, "tax_code": "0304998358"}})
+        if err:
+            sys.exit(f"adding a vendor: {err}")
+        vendor = data["insert_domain_procurement_vendors_one"]["id"]
+        note("add a vendor to the list", "giang.vo", finance, vendor_name, True)
+        _, err = graphql(t["an.nguyen"], REQUESTER, insert_vendor, {"o": {"name": "Tự thêm"}})
+        note("add a vendor to the list", "an.nguyen", REQUESTER, refused(err) if err else "added", bool(err))
+        data, _ = graphql(t["an.nguyen"], REQUESTER, "query($id: uuid!) { domain_procurement_vendors(where: {id: {_eq: $id}}) { name } }", {"id": vendor})
+        seen = len((data or {}).get("domain_procurement_vendors", []))
+        note("read the vendor list", "an.nguyen", REQUESTER, f"{seen} vendor found", seen == 1)
+
+        # A process record referring to the list, and its lines in a child table.
+        quote = upload_quote(t["an.nguyen"], "bao-gia.pdf")
+        data, err = graphql(t["an.nguyen"], REQUESTER,
+                            "mutation($o: domain_procurement_requests_insert_input!) "
+                            f"{{ insert_domain_procurement_requests_one(object: $o) {{ {REQUEST_FIELDS} }} }}",
+                            {"o": {"vendor_name": vendor_name, "vendor_id": vendor, "item_description": "Thiết bị cho nhân viên mới",
+                                   "quoted_amount": 43250000, "quote_file_id": quote}})
+        if err:
+            sys.exit(f"filing a request: {err}")
+        record = data["insert_domain_procurement_requests_one"]
+        filed = dict(record)
+        note("file a request for that vendor", "an.nguyen", REQUESTER, f"{record['status']}, version {record['version']}", True)
+
+        insert_line = ("mutation($o: domain_procurement_items_insert_input!) "
+                       "{ insert_domain_procurement_items_one(object: $o) { id } }")
+
+        def add_line(user, role, item, quantity, price):
+            return graphql(t[user], role, insert_line,
+                           {"o": {"request_id": record["id"], "item": item, "quantity": quantity, "unit_price": price}})
+
+        def version():
+            data, _ = graphql(t["an.nguyen"], REQUESTER,
+                              "query($id: uuid!) { domain_procurement_requests_by_pk(id: $id) { version status } }", {"id": record["id"]})
+            return data["domain_procurement_requests_by_pk"]["version"]
+
+        def visible(user, role):
+            data, err = graphql(t[user], role, "query($id: uuid!) { domain_procurement_items(where: {request_id: {_eq: $id}}) { item } }",
+                                {"id": record["id"]})
+            return None if err else len(data["domain_procurement_items"])
+
+        ids = []
+        for item, quantity, price in (("Laptop Dell", 2, 18000000), ("Chuột không dây", 5, 250000), ("Màn hình 24 inch", 2, 3000000)):
+            data, err = add_line("an.nguyen", REQUESTER, item, quantity, price)
+            if err:
+                sys.exit(f"adding a line: {err}")
+            ids.append(data["insert_domain_procurement_items_one"]["id"])
+        note("add three lines", "an.nguyen", REQUESTER, f"request version {version()}", version() == 4)
+        data, err = graphql(t["an.nguyen"], REQUESTER,
+                            "mutation($id: uuid!) { delete_domain_procurement_items_by_pk(id: $id) { id } }", {"id": ids[1]})
+        deleted = bool(data and data["delete_domain_procurement_items_by_pk"])
+        note("remove one line", "an.nguyen", REQUESTER, f"request version {version()}" if deleted else refused(err), deleted and version() == 5)
+
+        n = visible("cuong.le", manager)
+        note("read the lines of a draft", "cuong.le", manager, f"{n} lines", n == 0)
+        _, err = add_line("cuong.le", manager, "Tự thêm", 1, 1)
+        note("add a line to someone's draft", "cuong.le", manager, refused(err) if err else "added", bool(err))
+
+        # The request changed after it was filed: a command with the old version is refused.
+        status, _ = command(t["an.nguyen"], REQUESTER, "submit", filed)
+        note("submit with the version before the lines", "an.nguyen", REQUESTER, f"HTTP {status}", status == 409)
+        record["version"] = version()
+        status, record = command(t["an.nguyen"], REQUESTER, "submit", record)
+        note("submit with the current version", "an.nguyen", REQUESTER, record["status"] if status == 200 else f"HTTP {status}", status == 200)
+
+        for user, role, want in (("cuong.le", manager, 2), ("dung.pham", manager, 0), ("giang.vo", finance, 2)):
+            n = visible(user, role)
+            note("read the lines once submitted", user, role, f"{n} lines", n == want)
+
+        # A submitted request's lines are frozen.
+        _, err = add_line("an.nguyen", REQUESTER, "Thêm sau khi nộp", 1, 1)
+        note("add a line after submitting", "an.nguyen", REQUESTER, refused(err) if err else "added", bool(err))
+        data, err = graphql(t["an.nguyen"], REQUESTER,
+                            "mutation($id: uuid!) { update_domain_procurement_items_by_pk(pk_columns: {id: $id}, _set: {quantity: 99}) { id } }",
+                            {"id": ids[0]})
+        changed = bool(data and data["update_domain_procurement_items_by_pk"])
+        note("change a line after submitting", "an.nguyen", REQUESTER, "changed" if changed else "not changed", not changed)
+        data, err = graphql(t["an.nguyen"], REQUESTER,
+                            "mutation($id: uuid!) { delete_domain_procurement_items_by_pk(id: $id) { id } }", {"id": ids[0]})
+        removed = bool(data and data["delete_domain_procurement_items_by_pk"])
+        note("remove a line after submitting", "an.nguyen", REQUESTER, "removed" if removed else "not removed", not removed)
+
+        print("One application, three tables (vendors, requests, request lines), through the gateway:")
+        print()
+        table(rows)
+        audit = psql("SELECT string_agg(action || ' ' || (payload ->> 'item'), ', ' ORDER BY seq) FROM core.audit_logs "
+                     f"WHERE entity_type = 'domain.procurement_items' AND payload ->> 'request_id' = {lit(record['id'])}")
+        print()
+        print("Audit trail of the lines:", audit)
+        if any("UNEXPECTED" in row[3] for row in rows):
+            sys.exit(1)
+
+    with_demo_client(run)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=["seed", "scopes", "flow"])
+    parser.add_argument("command", choices=["seed", "scopes", "flow", "lines"])
     args = parser.parse_args()
-    {"seed": seed, "scopes": scopes, "flow": flow}[args.command]()
+    {"seed": seed, "scopes": scopes, "flow": flow, "lines": lines}[args.command]()
 
 
 if __name__ == "__main__":

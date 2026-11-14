@@ -58,7 +58,9 @@ func systemColumns(app *manifest.DXApplication, tbl *manifest.TableDef) map[stri
 	if tbl.IsProcess() {
 		cols["status"] = systemColumn{Type: "text", Default: "DEFAULT " + quoteLiteral(tbl.StateMachine.Initial)}
 	}
-	if app.UsesCapability(manifest.CapHR) {
+	if tbl.IsChild() {
+		cols[tbl.BelongsTo.Column] = systemColumn{Type: "uuid"}
+	} else if app.UsesCapability(manifest.CapHR) {
 		cols["org_unit_id"] = systemColumn{Type: "uuid"}
 	}
 	return cols

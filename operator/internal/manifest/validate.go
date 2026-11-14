@@ -98,7 +98,8 @@ var SharedTables = map[string]SharedTable{
 
 // SystemColumns returns the operator-managed columns of one of the
 // application's tables and their manifest types. org_unit_id exists only when
-// the application declares cap-hr, and status only on a process table.
+// the application declares cap-hr and the table is not a child table, status
+// only on a process table, and the parent column only on a child table.
 func SystemColumns(app *DXApplication, t *TableDef) map[string]string {
 	cols := map[string]string{
 		"id":         "uuid",
@@ -110,7 +111,10 @@ func SystemColumns(app *DXApplication, t *TableDef) map[string]string {
 	if t.IsProcess() {
 		cols["status"] = "text"
 	}
-	if app.UsesCapability(CapHR) {
+	if t.IsChild() {
+		// A child row belongs to its parent's department; it holds the parent's id.
+		cols[t.BelongsTo.Column] = "uuid"
+	} else if app.UsesCapability(CapHR) {
 		cols["org_unit_id"] = "uuid"
 	}
 	return cols
@@ -261,6 +265,21 @@ func validateTable(app *DXApplication, t *TableDef, tables, commands map[string]
 	if len(t.Columns) == 0 {
 		return errors.New("columns must declare at least one business column")
 	}
+	// A child table's rows belong to a record of another table of the
+	// application, one level deep.
+	var parent *TableDef
+	if t.IsChild() {
+		parent = app.Table(t.BelongsTo.Table)
+		if parent == nil || parent == t || parent.IsChild() {
+			return fmt.Errorf("belongsTo names %q, which must be another table of the application that is not a child table", t.BelongsTo.Table)
+		}
+		if !identifier.MatchString(t.BelongsTo.Column) || oneOf(t.BelongsTo.Column, "id", "created_by", "org_unit_id", "status", "version", "created_at", "updated_at") {
+			return fmt.Errorf("invalid belongsTo column %q", t.BelongsTo.Column)
+		}
+		if t.IsProcess() || len(t.Attachments) > 0 {
+			return errors.New("a child table has no stateMachine or attachments; it follows its parent record")
+		}
+	}
 	system := SystemColumns(app, t)
 	cols := map[string]string{}
 	for name, typ := range system {
@@ -313,7 +332,16 @@ func validateTable(app *DXApplication, t *TableDef, tables, commands map[string]
 				return err
 			}
 			seen[p.Role] = true
-			if err := validateScope(app, op, p); err != nil {
+			if parent != nil {
+				// A child rule names a role and columns; which rows it reaches
+				// is decided by the parent record.
+				if p.Scope != "" || p.RecordFilter != nil || len(p.Presets) > 0 {
+					return fmt.Errorf("access.%s rule for %q on a child table cannot declare a scope, recordFilter or presets", op, p.Role)
+				}
+				if err := requireParentRule(parent, op, p.Role); err != nil {
+					return err
+				}
+			} else if err := validateScope(app, op, p); err != nil {
 				return err
 			}
 			for _, c := range p.Columns {
@@ -338,6 +366,23 @@ func validateTable(app *DXApplication, t *TableDef, tables, commands map[string]
 			if err := validateFilter(p.RecordFilter, cols, 0); err != nil {
 				return err
 			}
+		}
+	}
+
+	seenDelete := map[string]bool{}
+	for _, d := range t.Access.Delete {
+		if parent == nil {
+			return errors.New("access.delete is allowed on child tables only")
+		}
+		if seenDelete[d.Role] {
+			return fmt.Errorf("duplicate access.delete rule for role %q", d.Role)
+		}
+		seenDelete[d.Role] = true
+		if err := requireRole("access.delete", d.Role); err != nil {
+			return err
+		}
+		if err := requireParentRule(parent, "delete", d.Role); err != nil {
+			return err
 		}
 	}
 
@@ -452,6 +497,22 @@ func States(sm StateMachineDef) []string {
 		add(c.To)
 	}
 	return out
+}
+
+// requireParentRule checks that role can reach the parent records its child
+// rule depends on: reading a child row needs a select rule on the parent,
+// changing one needs an update rule.
+func requireParentRule(parent *TableDef, op, role string) error {
+	rules, need := parent.Access.Update, "update"
+	if op == "select" {
+		rules, need = parent.Access.Select, "select"
+	}
+	for _, r := range rules {
+		if r.Role == role {
+			return nil
+		}
+	}
+	return fmt.Errorf("access.%s rule for %q needs an access.%s rule for that role on the parent table %s", op, role, need, parent.Name)
 }
 
 func validateScope(app *DXApplication, op string, p AccessRule) error {

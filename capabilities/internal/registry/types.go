@@ -50,6 +50,16 @@ type Table struct {
 	Access       Access        `json:"access"`
 	StateMachine *StateMachine `json:"stateMachine"`
 	Attachments  []Attachment  `json:"attachments"`
+	// BelongsTo makes the table a child table: its rows follow a record of
+	// the parent table and are written through Hasura only.
+	BelongsTo *BelongsTo `json:"belongsTo"`
+}
+
+// BelongsTo names a child table's parent and the column holding the parent
+// record's id.
+type BelongsTo struct {
+	Table  string `json:"table"`
+	Column string `json:"column"`
 }
 
 type Column struct {

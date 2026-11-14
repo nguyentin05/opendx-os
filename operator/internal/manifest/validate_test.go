@@ -148,7 +148,7 @@ func TestValidateRolesScopesAndCapabilities(t *testing.T) {
 func TestValidateAcceptsOptionalSections(t *testing.T) {
 	app := loadFixture(t, "procurement")
 	app.Spec.SharedAccess = nil
-	app.Spec.Tables[0].Access.Update = nil
+	app.Spec.Tables[1].Access.Update = nil // the vendor list; the items table needs the requests' update rule
 	app.Spec.Workflows = nil
 	if err := Validate(app); err != nil {
 		t.Fatalf("optional sections must not be required: %v", err)

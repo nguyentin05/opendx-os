@@ -285,6 +285,11 @@ func correspondingDropOp(op planner.HasuraMetadataPayload) (planner.HasuraMetada
 			Type: "pg_drop_update_permission",
 			Args: map[string]any{"source": args["source"], "table": args["table"], "role": args["role"]},
 		}, true
+	case "pg_create_delete_permission":
+		return planner.HasuraMetadataPayload{
+			Type: "pg_drop_delete_permission",
+			Args: map[string]any{"source": args["source"], "table": args["table"], "role": args["role"]},
+		}, true
 	default:
 		return planner.HasuraMetadataPayload{}, false
 	}

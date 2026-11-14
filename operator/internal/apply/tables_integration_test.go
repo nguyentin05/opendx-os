@@ -67,7 +67,7 @@ func TestApplyAddsAndRetiresATable(t *testing.T) {
 
 	// v2 declares a second table and a nullable foreign key to it.
 	v2 := testutil.WithLabels(v1)
-	v2.Metadata.Version = "0.3.0"
+	v2.Metadata.Version = "0.4.0"
 	if err := install(v2); err != nil {
 		t.Fatalf("v2: %v", err)
 	}
@@ -85,8 +85,8 @@ func TestApplyAddsAndRetiresATable(t *testing.T) {
 		t.Fatal("permissions of both tables must be published")
 	}
 	live, err := runner.ReadManagedState(ctx)
-	if err != nil || len(live.ActiveApps) != 1 || len(live.ActiveApps[0].Spec.Tables) != 2 {
-		t.Fatalf("the registry must hold both tables: %+v %v", live.ActiveApps, err)
+	if err != nil || len(live.ActiveApps) != 1 || len(live.ActiveApps[0].Spec.Tables) != len(v2.Spec.Tables) {
+		t.Fatalf("the registry must hold every declared table: %v", err)
 	}
 
 	user := "22222222-2222-4222-8222-222222222222"
@@ -113,8 +113,8 @@ func TestApplyAddsAndRetiresATable(t *testing.T) {
 
 	// v3 no longer declares the table (the column stays, as a plain uuid).
 	v3 := v2.Clone()
-	v3.Metadata.Version = "0.4.0"
-	v3.Spec.Tables = v3.Spec.Tables[:1]
+	v3.Metadata.Version = "0.5.0"
+	v3.Spec.Tables = v3.Spec.Tables[:len(v3.Spec.Tables)-1]
 	fks := v3.Spec.Tables[0].ForeignKeys
 	v3.Spec.Tables[0].ForeignKeys = fks[:len(fks)-1]
 	if err := install(v3); err != nil {
@@ -133,7 +133,7 @@ func TestApplyAddsAndRetiresATable(t *testing.T) {
 
 	// Dropping the column itself is not additive and is refused.
 	v4 := v1.Clone()
-	v4.Metadata.Version = "0.5.0"
+	v4.Metadata.Version = "0.6.0"
 	err = install(v4)
 	if err == nil || !strings.Contains(err.Error(), `"label_id" exists but is not declared`) {
 		t.Fatalf("removing a column must be refused, got %v", err)

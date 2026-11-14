@@ -27,6 +27,9 @@ corrupted row:
   `created_at`, `updated_at`);
 - a command name is declared by exactly one table, and the command runs on that
   table;
+- a child table names a parent table of the same application that is not itself
+  a child, and has no state machine or attachments; cap-process only reads child
+  rows;
 - every access rule and command names a declared role; a scope is `own`,
   `department` (requires cap-hr) or `organization`;
 - `recordFilter` uses only `_and`, `_or` and declared columns compared by
@@ -65,6 +68,11 @@ A command is accepted when:
 5. every attachment the command requires is `CLEAN`.
 
 A record outside the role's scope answers 404, so its existence is not revealed.
+
+Rows of a child table (the lines of a request) are written through GraphQL.
+Each change increments the parent record's version, so a command carrying a
+version read before the change is a 409; once the parent leaves its editable
+states the database refuses further changes.
 
 The status change, its audit row (actor, acting role and command), the outbox
 event and the idempotency receipt commit in one transaction. A receipt is

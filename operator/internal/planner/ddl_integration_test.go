@@ -268,3 +268,123 @@ func TestDDLIntegrationSeveralTables(t *testing.T) {
 		t.Fatalf("audit chain = %s, want %s", entities, want)
 	}
 }
+
+// Rows of a child table follow their parent record (ADR 0008): every change
+// increments the parent's version (S04), is refused once the parent leaves its
+// editable states, cannot move to another parent, and is audited.
+func TestDDLIntegrationChildRowsFollowTheirParent(t *testing.T) {
+	db := testutil.NewDatabase(t)
+	installDomainTable(t, db, loadFixtureApp(t))
+
+	asAlice := func(fn func(*sql.Tx) error) error { return inTx(t, db, "dxos_hasura", alice, "", fn) }
+	newRequest := func() string {
+		var id string
+		if err := asAlice(func(tx *sql.Tx) error {
+			return tx.QueryRow(`INSERT INTO domain.procurement_requests (vendor_name, item_description, quoted_amount)
+				VALUES ('Acme', 'Office equipment', 100) RETURNING id`).Scan(&id)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	version := func(request string) int {
+		var v int
+		if err := db.QueryRow(`SELECT version FROM domain.procurement_requests WHERE id = $1`, request).Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	request, other := newRequest(), newRequest()
+
+	var item, createdBy string
+	if err := asAlice(func(tx *sql.Tx) error {
+		return tx.QueryRow(`INSERT INTO domain.procurement_items (request_id, item, quantity, unit_price)
+			VALUES ($1, 'Laptop', 2, 18000000) RETURNING id, created_by`, request).Scan(&item, &createdBy)
+	}); err != nil {
+		t.Fatalf("add a line to a draft: %v", err)
+	}
+	if createdBy != alice || version(request) != 2 {
+		t.Fatalf("after adding a line: creator %s, request version %d; want %s, 2", createdBy, version(request), alice)
+	}
+	if version(other) != 1 {
+		t.Fatal("a line must touch only its own request")
+	}
+
+	if err := asAlice(func(tx *sql.Tx) error {
+		_, err := tx.Exec(`UPDATE domain.procurement_items SET quantity = 3 WHERE id = $1`, item)
+		return err
+	}); err != nil || version(request) != 3 {
+		t.Fatalf("change a line: err %v, request version %d, want 3", err, version(request))
+	}
+
+	// A line stays with its request, and needs an existing one.
+	err := asAlice(func(tx *sql.Tx) error {
+		_, err := tx.Exec(`UPDATE domain.procurement_items SET request_id = $2 WHERE id = $1`, item, other)
+		return err
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot move to another parent") {
+		t.Fatalf("moving a line to another request: got %v", err)
+	}
+	err = asAlice(func(tx *sql.Tx) error {
+		_, err := tx.Exec(`INSERT INTO domain.procurement_items (request_id, item, quantity, unit_price) VALUES (gen_random_uuid(), 'Ghost', 1, 1)`)
+		return err
+	})
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("a line without a request: got %v", err)
+	}
+
+	var second string
+	if err := asAlice(func(tx *sql.Tx) error {
+		return tx.QueryRow(`INSERT INTO domain.procurement_items (request_id, item, quantity, unit_price)
+			VALUES ($1, 'Mouse', 5, 250000) RETURNING id`, request).Scan(&second)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := asAlice(func(tx *sql.Tx) error {
+		_, err := tx.Exec(`DELETE FROM domain.procurement_items WHERE id = $1`, second)
+		return err
+	}); err != nil || version(request) != 5 {
+		t.Fatalf("remove a line: err %v, request version %d, want 5", err, version(request))
+	}
+	var deletions int
+	if err := db.QueryRow(`SELECT count(*) FROM core.audit_logs WHERE entity_type = 'domain.procurement_items'
+		AND entity_id = $1 AND action = 'DELETE' AND payload ->> 'item' = 'Mouse'`, second).Scan(&deletions); err != nil || deletions != 1 {
+		t.Fatalf("a removed line must be audited with its content: count %d, err %v", deletions, err)
+	}
+
+	// Once the request is submitted its lines are frozen.
+	if err := inTx(t, db, "dxos_process", alice, "submit", func(tx *sql.Tx) error {
+		_, err := tx.Exec(`UPDATE domain.procurement_requests SET status = 'SUBMITTED' WHERE id = $1`, request)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	frozen := version(request)
+	for what, stmt := range map[string]string{
+		"add":    `INSERT INTO domain.procurement_items (request_id, item, quantity, unit_price) VALUES ('` + request + `', 'Late', 1, 1)`,
+		"change": `UPDATE domain.procurement_items SET quantity = 99 WHERE id = '` + item + `'`,
+		"remove": `DELETE FROM domain.procurement_items WHERE id = '` + item + `'`,
+	} {
+		err := asAlice(func(tx *sql.Tx) error {
+			_, err := tx.Exec(stmt)
+			return err
+		})
+		if err == nil || !strings.Contains(err.Error(), "can no longer be changed") {
+			t.Fatalf("%s a line of a submitted request: got %v", what, err)
+		}
+	}
+	var quantity string
+	if err := db.QueryRow(`SELECT quantity::text FROM domain.procurement_items WHERE id = $1`, item).Scan(&quantity); err != nil || quantity != "3.00" {
+		t.Fatalf("the line of a submitted request changed: %s %v", quantity, err)
+	}
+	if version(request) != frozen {
+		t.Fatal("a refused change must not touch the request")
+	}
+	// The other request is still a draft and unaffected.
+	if err := asAlice(func(tx *sql.Tx) error {
+		_, err := tx.Exec(`INSERT INTO domain.procurement_items (request_id, item, quantity, unit_price) VALUES ($1, 'Monitor', 1, 3500000)`, other)
+		return err
+	}); err != nil {
+		t.Fatalf("another draft must stay editable: %v", err)
+	}
+}

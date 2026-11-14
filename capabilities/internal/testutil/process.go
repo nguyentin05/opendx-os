@@ -343,11 +343,30 @@ func (p *Platform) AddTwin(t *testing.T) string {
 	if _, err := p.Admin.Exec(`UPDATE core.apps SET spec = $1 WHERE app_id = $2`, string(updated), AppID); err != nil {
 		t.Fatal(err)
 	}
-	// The twin's DDL is the first table's with every name derived from it renamed.
-	short := strings.TrimPrefix(p.Table, "domain.")
-	ddl := strings.ReplaceAll(readRepo(t, "contracts", "fixtures", AppID+"-ddl.sql"), short, short+"_twins")
-	if _, err := p.Admin.Exec(ddl); err != nil {
-		t.Fatalf("twin DDL: %v", err)
+	// The twin copies the first table's columns, checks and triggers.
+	if _, err := p.Admin.Exec(`CREATE TABLE ` + name + ` (LIKE ` + p.Table + ` INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING INDEXES)`); err != nil {
+		t.Fatalf("twin table: %v", err)
+	}
+	rows, err := p.Admin.Query(`SELECT pg_get_triggerdef(oid) FROM pg_trigger WHERE tgrelid = $1::regclass AND NOT tgisinternal`, p.Table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var triggers []string
+	for rows.Next() {
+		var def string
+		if err := rows.Scan(&def); err != nil {
+			t.Fatal(err)
+		}
+		triggers = append(triggers, strings.Replace(def, " ON "+p.Table+" ", " ON "+name+" ", 1))
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	_ = rows.Close()
+	for _, stmt := range append(triggers, `GRANT SELECT, INSERT, UPDATE ON `+name+` TO dxos_hasura, dxos_process`) {
+		if _, err := p.Admin.Exec(stmt); err != nil {
+			t.Fatalf("twin: %s: %v", stmt, err)
+		}
 	}
 	return name
 }

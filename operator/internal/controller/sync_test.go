@@ -57,7 +57,7 @@ func TestInSync(t *testing.T) {
 	}
 
 	upgraded := *app.Clone()
-	upgraded.Metadata.Version = "0.3.0"
+	upgraded.Metadata.Version = "0.4.0"
 	if inSync(&upgraded, ready) {
 		t.Fatal("a version change must trigger reconcile")
 	}

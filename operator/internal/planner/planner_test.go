@@ -120,8 +120,8 @@ func TestGenerateHasuraOperations(t *testing.T) {
 			ref := args["table"].(TableRef)
 			perms[op.Type+":"+ref.Schema+"."+ref.Name+":"+args["role"].(string)] = args["permission"].(map[string]any)
 		}
-		if op.Type == "pg_create_delete_permission" {
-			t.Fatal("delete permission must never be generated")
+		if op.Type == "pg_create_delete_permission" && args["table"].(TableRef).Name != "procurement_items" {
+			t.Fatal("only rows of a child table can be deleted")
 		}
 	}
 	if lastRelationship > firstPermission {
