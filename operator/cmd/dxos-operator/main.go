@@ -22,7 +22,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
+	"os/signal"
+	"strings"
+	"syscall"
 
 	_ "github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/operator/internal/apply"
@@ -89,7 +93,7 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  validate <manifest.yaml>                 Strictly validate a C0 v1 manifest")
 	_, _ = fmt.Fprintln(w, "  plan [-format sql|hasura] <manifest.yaml> Generate DDL or Hasura metadata plan")
 	_, _ = fmt.Fprintln(w, "  apply <manifest.yaml>                    Install or upgrade one application")
-	_, _ = fmt.Fprintln(w, "  reconcile <apps-dir>                     Install exactly the applications in a directory")
+	_, _ = fmt.Fprintln(w, "  reconcile [--interval 30s] <apps-dir>    Install exactly the applications in a directory")
 	_, _ = fmt.Fprintln(w, "  export-crd <app-dir>                     Print a DXApplication resource for an app package")
 	_, _ = fmt.Fprintln(w, "  controller [flags]                       Run the Kubernetes DXApplication controller")
 	_, _ = fmt.Fprintln(w, "  version                                  Print operator version")
@@ -238,8 +242,22 @@ func runApplyCmd(args []string, stdout, stderr io.Writer, applier *apply.Runner)
 func runReconcileCmd(args []string, stdout, stderr io.Writer, applier *apply.Runner, reconciler *reconcile.Runner) int {
 	fs := flag.NewFlagSet("reconcile", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	if err := fs.Parse(args); err != nil || fs.NArg() != 1 {
-		_, _ = fmt.Fprintln(stderr, "Usage: dxos-operator reconcile <apps-dir>")
+	dir := fs.String("dir", "", "directory holding one application package per subdirectory")
+	interval := fs.Duration("interval", 0, "reconcile repeatedly at this interval until stopped (0: once)")
+	usage := "Usage: dxos-operator reconcile [--interval 30s] (--dir <apps-dir> | <apps-dir>)"
+	if err := fs.Parse(args); err != nil {
+		_, _ = fmt.Fprintln(stderr, usage)
+		return 1
+	}
+	switch {
+	case *dir == "" && fs.NArg() == 1:
+		*dir = fs.Arg(0)
+	case *dir == "" || fs.NArg() != 0:
+		_, _ = fmt.Fprintln(stderr, usage)
+		return 1
+	}
+	if *interval < 0 {
+		_, _ = fmt.Fprintln(stderr, "--interval must not be negative")
 		return 1
 	}
 
@@ -259,10 +277,31 @@ func runReconcileCmd(args []string, stdout, stderr io.Writer, applier *apply.Run
 		}
 	}
 
-	if err := reconciler.Run(context.Background(), fs.Arg(0)); err != nil {
+	if *interval > 0 {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		log := slog.New(slog.NewTextHandler(stderr, nil))
+		if err := reconciler.Watch(ctx, *dir, *interval, log); err != nil {
+			_, _ = fmt.Fprintf(stderr, "Reconcile failed: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+
+	res, err := reconciler.Pass(context.Background(), *dir)
+	for _, name := range res.Installed {
+		_, _ = fmt.Fprintf(stdout, "Installed %s\n", name)
+	}
+	for _, name := range res.Removed {
+		_, _ = fmt.Fprintf(stdout, "Uninstalled %s\n", name)
+	}
+	if len(res.Repaired) > 0 {
+		_, _ = fmt.Fprintf(stdout, "Repaired Hasura metadata drift: %s\n", strings.Join(res.Repaired, "; "))
+	}
+	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "Reconcile failed: %v\n", err)
 		return 1
 	}
-	_, _ = fmt.Fprintf(stdout, "Reconciled applications in %s\n", fs.Arg(0))
+	_, _ = fmt.Fprintf(stdout, "Reconciled applications in %s\n", *dir)
 	return 0
 }

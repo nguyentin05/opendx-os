@@ -133,6 +133,27 @@ services:
       postgres:
         condition: service_healthy
 
+  # Installs exactly the application packages in ./apps and keeps them
+  # installed: copy a package directory in to install it, remove it to
+  # uninstall (its data is kept). No container needs recreating.
+  operator:
+    build:
+      context: ./operator
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["reconcile", "--dir", "/apps", "--interval", "${OPERATOR_RECONCILE_INTERVAL:-30s}"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-dxos_admin}:${POSTGRES_PASSWORD:-dxos_secret}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
+      HASURA_URL: http://hasura:8080
+      HASURA_ADMIN_SECRET: ${HASURA_ADMIN_SECRET:-dxos_admin_secret}
+    volumes:
+      - ${OPERATOR_APPS_DIR:-./apps}:/apps:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      hasura:
+        condition: service_healthy
+
   cap-process:
     build:
       context: ./capabilities

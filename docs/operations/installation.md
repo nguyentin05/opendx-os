@@ -48,7 +48,23 @@ registry discovery and beta automatic-workflow readiness remain open.
    `scripts/test-compose.sh` waits for every service, logs in as each runtime role
    from another container and probes each HTTP entry point.
 
-4. Validate and apply application manifests using `dxos-operator`:
+4. The `operator` service installs exactly the application packages in
+   `OPERATOR_APPS_DIR` (default `./apps`, mounted read-only), checking every
+   `OPERATOR_RECONCILE_INTERVAL` (default `30s`). It runs
+   `dxos-operator reconcile --dir /apps --interval 30s`, the same planner and
+   apply code as the Kubernetes controller. No container needs recreating:
+   - copy a package directory in to install it; edit it to upgrade;
+   - remove it to uninstall: the `core.apps` row becomes `Removed`, its Hasura
+     permissions are dropped, and the domain table, data and roles are kept;
+   - Hasura metadata changed by hand is repaired on the next pass.
+
+   Each new or changed package is installed on its own, so a refused one (for
+   example, a capability that is not enabled) does not hold back the others; it
+   is retried when its package changes, or after ten minutes. While any package
+   is invalid (for instance half-copied), nothing is uninstalled. Follow it with
+   `docker compose logs -f operator`.
+
+   Without Compose, validate and apply application manifests using `dxos-operator`:
    ```bash
    ./bin/dxos-operator validate contracts/fixtures/procurement.yaml
    HASURA_URL=http://localhost:8080 HASURA_ADMIN_SECRET=dxos_admin_secret \

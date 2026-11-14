@@ -16,7 +16,8 @@
 
 # Checks a running `docker compose up` stack: every service is up (and healthy
 # where it has a healthcheck), the runtime roles log in with their .env
-# passwords, Kestra uses its own database, and each HTTP entry point answers.
+# passwords, Kestra uses its own database, the operator has installed the
+# application packages, and each HTTP entry point answers.
 #
 #   docker compose up -d --build
 #   scripts/test-compose.sh            # waits up to WAIT_SECONDS (default 300)
@@ -35,7 +36,7 @@ if [ -f .env ]; then
 fi
 
 WAIT_SECONDS="${WAIT_SECONDS:-300}"
-SERVICES=(postgres hasura keycloak seaweedfs clamav kestra cap-process apisix workspace-ui)
+SERVICES=(postgres hasura keycloak seaweedfs clamav kestra operator cap-process apisix workspace-ui)
 failures=0
 
 pass() { echo "  PASS  $*"; }
@@ -103,6 +104,27 @@ fi
 out="$(docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA' \
     <<<"SELECT string_agg(cap_id, ',' ORDER BY cap_id) FROM core.capabilities WHERE enabled" 2>&1)" || true
 if [ -n "$out" ]; then pass "enabled capabilities: $out"; else fail "no capability registered"; fi
+
+echo "[test-compose] Applications"
+apps_dir="${OPERATOR_APPS_DIR:-./apps}"
+want="$(find "$apps_dir" -mindepth 2 -maxdepth 2 -name manifest.yaml | wc -l)"
+app_status() {
+    docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA' \
+        <<<"SELECT app_id || ' ' || status FROM core.apps WHERE status <> 'Removed' ORDER BY 1" 2>&1
+}
+# The operator's first pass may still be running.
+while :; do
+    ready="$(app_status | grep -c ' Ready$' || true)"
+    [ "$ready" -ge "$want" ] || [ $SECONDS -ge $deadline ] && break
+    sleep 5
+done
+while read -r app status; do
+    [ -z "$app" ] && continue
+    if [ "$status" = "Ready" ]; then pass "$app Ready"; else fail "$app $status"; fi
+done <<<"$(app_status)"
+if [ "$ready" -lt "$want" ]; then
+    fail "${ready} of ${want} packages in ${apps_dir} installed (see: docker compose logs operator)"
+fi
 
 echo "[test-compose] HTTP entry points"
 probe() {

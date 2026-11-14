@@ -49,8 +49,8 @@ for module commands, prerequisites, and coverage limits.
 
 ## Run locally
 
-Docker Compose starts the platform: PostgreSQL, Hasura, Keycloak, SeaweedFS,
-ClamAV, Kestra, cap-process, APISIX and the workspace UI.
+Docker Compose starts the platform: PostgreSQL, Hasura, the operator, Keycloak,
+SeaweedFS, ClamAV, Kestra, cap-process, APISIX and the workspace UI.
 
 ```bash
 cp .env.example .env    # optional: Compose has the same local defaults
@@ -61,8 +61,9 @@ scripts/test-compose.sh # waits for every service and checks it answers
 The defaults are for a local machine only; change every password in `.env`
 before exposing the stack. Database roles and passwords are set when the data
 volume is first initialised, so after changing them run `docker compose down -v`.
-Applications are installed with `dxos-operator` (see the
-[installation guide](docs/operations/installation.md)).
+The `operator` service installs every application package in `apps/`; copy a
+package in or remove it and the next pass (every 30 seconds) installs or
+uninstalls it (see the [installation guide](docs/operations/installation.md)).
 
 ## Documentation
 

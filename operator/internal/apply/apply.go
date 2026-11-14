@@ -181,8 +181,9 @@ func (r *Runner) Run(ctx context.Context, plan planner.Plan, targets []string) e
 		for _, dropOp := range plan.DropOps {
 			_ = r.callHasuraIdempotent(ctx, dropOp, true)
 		}
+		relationships := relationshipIndex(snapshot)
 		for _, op := range plan.HasuraOps {
-			if err := r.callHasuraIdempotent(ctx, op, false); err != nil {
+			if err := r.applyOperation(ctx, op, relationships); err != nil {
 				restore()
 				return markFailed(fmt.Errorf("apply Hasura metadata op %s: %w", op.Type, err))
 			}
@@ -217,8 +218,41 @@ func (r *Runner) Run(ctx context.Context, plan planner.Plan, targets []string) e
 	return nil
 }
 
+// applyOperation applies one desired metadata operation. A relationship that
+// Hasura already has with the same definition is left alone; permission
+// filters depend on it, and Hasura refuses to drop it from under them. One
+// whose definition changed is dropped with its dependent permissions, which the
+// plan recreates afterwards (permissions follow relationships in a plan).
+func (r *Runner) applyOperation(ctx context.Context, op planner.HasuraMetadataPayload, relationships map[string]string) error {
+	args, _ := op.Args.(map[string]any)
+	if op.Type != "pg_create_object_relationship" && op.Type != "pg_create_array_relationship" || args == nil {
+		return r.callHasuraIdempotent(ctx, op, false)
+	}
+	table, _ := args["table"].(planner.TableRef)
+	name, _ := args["name"].(string)
+	key := relationshipKey(op.Type, table, name)
+	want := relationshipDef(args["using"])
+	if have, exists := relationships[key]; exists {
+		if have == want {
+			return nil
+		}
+		drop := planner.HasuraMetadataPayload{
+			Type: "pg_drop_relationship",
+			Args: map[string]any{"source": args["source"], "table": table, "relationship": name, "cascade": true},
+		}
+		if err := r.postMetadata(ctx, drop, true); err != nil {
+			return err
+		}
+	}
+	if err := r.postMetadata(ctx, op, false); err != nil {
+		return err
+	}
+	relationships[key] = want
+	return nil
+}
+
 func (r *Runner) callHasuraIdempotent(ctx context.Context, op planner.HasuraMetadataPayload, ignoreNotFound bool) error {
-	// If creating a permission or relationship that may already exist on reapply, drop first ignoring not-found
+	// A permission that may already exist on reapply is dropped first, ignoring not-found.
 	if dropOp, ok := correspondingDropOp(op); ok {
 		_ = r.postMetadata(ctx, dropOp, true)
 	}
@@ -245,11 +279,6 @@ func correspondingDropOp(op planner.HasuraMetadataPayload) (planner.HasuraMetada
 		return planner.HasuraMetadataPayload{
 			Type: "pg_drop_update_permission",
 			Args: map[string]any{"source": args["source"], "table": args["table"], "role": args["role"]},
-		}, true
-	case "pg_create_object_relationship", "pg_create_array_relationship":
-		return planner.HasuraMetadataPayload{
-			Type: "pg_drop_relationship",
-			Args: map[string]any{"source": args["source"], "table": args["table"], "relationship": args["name"]},
 		}, true
 	default:
 		return planner.HasuraMetadataPayload{}, false
