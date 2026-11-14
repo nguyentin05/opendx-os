@@ -36,7 +36,17 @@ registry discovery and beta automatic-workflow readiness remain open.
    cd /opt/opendx-os
    cp .env.example .env
    docker compose up -d
+   scripts/test-compose.sh
    ```
+   At first start PostgreSQL loads the capabilities listed in
+   `ENABLED_CAPABILITIES` (default `cap-process,cap-hr,cap-work,cap-data`, which
+   the sample apps need), sets the runtime role passwords
+   (`HASURA_DATABASE_PASSWORD`, `PROCESS_DATABASE_PASSWORD`) and creates Kestra's
+   own `dxos_kestra` database (`KESTRA_DATABASE_PASSWORD`), all in
+   `platform/postgres/init/08_runtime_passwords.sh`. This happens once per data
+   volume: after changing these values, recreate it with `docker compose down -v`.
+   `scripts/test-compose.sh` waits for every service, logs in as each runtime role
+   from another container and probes each HTTP entry point.
 
 4. Validate and apply application manifests using `dxos-operator`:
    ```bash
