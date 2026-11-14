@@ -56,6 +56,12 @@ caller holding exactly one role may omit it. Raw `X-Hasura-User-Id` headers
 never create authority. Workflow effect calls additionally require the
 configured workflow service user acting as its role.
 
+`dxos-authz` serves two read-only calls for the UI: `GET /api/auth/me` (the
+caller's identity and roles) and `GET /api/auth/apps` (the installed
+applications the caller holds a role in, with those roles and each
+application's tables as its manifest declares them). Neither grants anything;
+see [integrating the UI](../docs/development/ui-integration.md).
+
 A command is accepted when:
 
 1. the acting role is allowed by the command;

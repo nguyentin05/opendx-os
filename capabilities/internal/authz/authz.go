@@ -22,10 +22,13 @@ package authz
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"regexp"
 	"sync"
 	"time"
+
+	"github.com/lib/pq"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
@@ -71,6 +74,16 @@ type Store interface {
 	// Grants returns the roles the user holds that are in force: platform
 	// roles, roles of Ready applications and roles of enabled capabilities.
 	Grants(ctx context.Context, userID string) ([]Grant, error)
+	// Apps returns the Ready applications among appIDs with their stored spec.
+	Apps(ctx context.Context, appIDs []string) ([]App, error)
+}
+
+// App is one installed application as the registry stores it.
+type App struct {
+	AppID       string
+	DisplayName string
+	Version     string
+	Spec        json.RawMessage
 }
 
 // Resolver turns a bearer token into a Session.
@@ -231,4 +244,31 @@ func (s PostgresStore) Grants(ctx context.Context, userID string) ([]Grant, erro
 		grants = append(grants, g)
 	}
 	return grants, rows.Err()
+}
+
+// Apps implements Store.
+func (s PostgresStore) Apps(ctx context.Context, appIDs []string) ([]App, error) {
+	apps := []App{}
+	if len(appIDs) == 0 {
+		return apps, nil
+	}
+	rows, err := s.DB.QueryContext(ctx, `
+		SELECT app_id, display_name, version, spec
+		  FROM core.apps
+		 WHERE status = 'Ready' AND app_id = ANY($1)
+		 ORDER BY display_name, app_id`, pq.Array(appIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var a App
+		var spec []byte
+		if err := rows.Scan(&a.AppID, &a.DisplayName, &a.Version, &spec); err != nil {
+			return nil, err
+		}
+		a.Spec = spec
+		apps = append(apps, a)
+	}
+	return apps, rows.Err()
 }
