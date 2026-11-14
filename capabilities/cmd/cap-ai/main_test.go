@@ -125,3 +125,17 @@ func TestLoadConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestMetadataRoutesDefaultClosed(t *testing.T) {
+	h := newHandler(testAuth())
+	for _, path := range []string{"/api/cap/ai/documents", "/api/cap/ai/collections?kind=PERSONAL", "/api/cap/ai/ingestions/00000000-0000-0000-0000-000000000001"} {
+		r := httptest.NewRequest("GET", path, nil)
+		r.Header.Set("Authorization", "Bearer token")
+		r.Header.Set("X-Hasura-Role", "role_reader")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != 503 {
+			t.Fatalf("unqualified metadata route open: %s %d", path, w.Code)
+		}
+	}
+}

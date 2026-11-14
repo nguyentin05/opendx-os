@@ -40,6 +40,9 @@ SQL
 set_password dxos_hasura "${HASURA_DATABASE_PASSWORD:-}"
 set_password dxos_process "${PROCESS_DATABASE_PASSWORD:-}"
 set_password dxos_authz "${AUTHZ_DATABASE_PASSWORD:-}"
+set_password dxos_ai_api "${AI_DATABASE_PASSWORD:-}"
+set_password dxos_ai_worker "${AI_WORKER_DATABASE_PASSWORD:-}"
+set_password dxos_ai_dispatcher "${AI_DISPATCHER_DATABASE_PASSWORD:-}"
 
 # Kestra keeps its repository and queue in a database of its own, owned by a
 # role with no rights in the platform database.

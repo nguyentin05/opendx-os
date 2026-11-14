@@ -76,3 +76,32 @@ with the same JWT and an already-open metadata subscription. A revoke before the
 final file check blocks bytes, while bytes already emitted cannot be recalled.
 Keep private upload disabled outside qualification until these live negatives
 pass. Later runner modes are reserved and fail NOT_RUN until implemented.
+
+### Metadata and internal service qualification
+
+Metadata routes default closed. `RAG_METADATA_ENABLED=true` and
+`RAG_SOURCE_QUALIFIED=true` are deployment assertions for a disposable qualified
+installation; do not set them before the source live gate passes. Public cap-ai
+uses `DATABASE_URL` for dxos_ai_api and strict OIDC identity verification.
+Optional DB passwords are `AI_DATABASE_PASSWORD`, `AI_WORKER_DATABASE_PASSWORD`
+and `AI_DISPATCHER_DATABASE_PASSWORD`; unset passwords do not grant login.
+
+Internal services require an explicit separate `RAG_INTERNAL_LISTEN` address,
+distinct allowlisted UUID subjects `RAG_WORKER_SERVICE_SUBJECT` and
+`RAG_FILE_SERVICE_SUBJECT`, existing issuer/audience/JWKS configuration, and
+`RAG_SOURCE_QUALIFIED=true`. cap-ai also requires `AI_WORKER_DATABASE_URL` for
+dxos_ai_worker; the internal File Service requires deployment-owned
+`RAG_INTERNAL_AI_URL` and `RAG_INTERNAL_BEARER_TOKEN` authenticating the File
+Service subject. User role claims cannot substitute for these service subjects.
+A worker's verified subject determines its identity; a body cannot select another
+worker. Keep internal listeners off public gateway routes. Validator HTTP clients
+reject redirects and arbitrary per-request destinations. Service-token expiry,
+authority outage or lease revocation denies source access.
+
+`scripts/test-rag.sh metadata` requires the source-mode environment plus
+`RAG_TEST_AI_API_URL`, runs the real source gate first, then concurrent REST/DB
+registration, receipt conflict, A/B/admin metadata isolation and durable deletion.
+Unit/SQL suites separately exercise rollback injection, leases, worker restart,
+source delegation and revocation during fetch. Missing live prerequisites are
+NOT_RUN/nonzero. DB-only tests or dormant package tables do not certify live
+service identity routing, package grants, parser quality or model privacy.

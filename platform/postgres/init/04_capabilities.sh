@@ -37,3 +37,5 @@ for sql_file in "$CAP_DIR"/*.sql; do
         fi
     fi
 done
+
+# cap-ai metadata migrations run at 09_rag_migrations.sh after Core registry setup.

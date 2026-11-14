@@ -59,7 +59,27 @@ func main() {
 	if err != nil {
 		log.Fatal("identity verification unavailable or invalid configuration")
 	}
-	server := &http.Server{Addr: ":" + c.Port, Handler: newHandler(access.Authenticator{Authority: knowledge.NewAuthority(verifier, db)}), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
+	if address := os.Getenv("RAG_INTERNAL_LISTEN"); address != "" {
+		if os.Getenv("RAG_SOURCE_QUALIFIED") != "true" || os.Getenv("AI_WORKER_DATABASE_URL") == "" {
+			log.Fatal("internal knowledge service requires qualified sources and a worker database connection")
+		}
+		workerDB, err := sql.Open("postgres", os.Getenv("AI_WORKER_DATABASE_URL"))
+		if err != nil {
+			log.Fatal("invalid worker database configuration")
+		}
+		defer workerDB.Close()
+		serviceVerifier, err := auth.NewSubjectVerifier(context.Background(), auth.VerifierConfig{IssuerURL: c.IssuerURL, JWKSURL: c.JWKSURL, Audience: c.Audience})
+		if err != nil {
+			log.Fatal("service verification unavailable")
+		}
+		internalCtx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		_, err = knowledge.StartInternalListener(internalCtx, address, os.Getenv("RAG_WORKER_SERVICE_SUBJECT"), os.Getenv("RAG_FILE_SERVICE_SUBJECT"), knowledge.NewStore(workerDB).InternalHandler(serviceVerifier, os.Getenv("RAG_WORKER_SERVICE_SUBJECT"), os.Getenv("RAG_FILE_SERVICE_SUBJECT")))
+		if err != nil {
+			log.Fatal("invalid internal knowledge service configuration")
+		}
+	}
+	server := &http.Server{Addr: ":" + c.Port, Handler: newHandlerWithKnowledge(access.Authenticator{Authority: knowledge.NewAuthority(verifier, db)}, knowledge.NewStore(db), os.Getenv("RAG_METADATA_ENABLED") == "true" && os.Getenv("RAG_SOURCE_QUALIFIED") == "true"), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
 	log.Printf("cap-ai listening on port %s", c.Port)
 	if err = server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal("cap-ai listener failed")

@@ -96,6 +96,23 @@ func main() {
 		log.Fatal("strict identity unavailable")
 	}
 	fileAuthority := knowledge.NewAuthority(strictAuthn, db)
+	if address := os.Getenv("RAG_INTERNAL_LISTEN"); address != "" {
+		if os.Getenv("RAG_SOURCE_QUALIFIED") != "true" {
+			log.Fatal("internal source service requires qualified sources")
+		}
+		validator, err := files.NewDelegationClient(os.Getenv("RAG_INTERNAL_AI_URL"), os.Getenv("RAG_INTERNAL_BEARER_TOKEN"))
+		if err != nil {
+			log.Fatal("invalid internal source validator configuration")
+		}
+		serviceVerifier, err := auth.NewSubjectVerifier(ctx, auth.VerifierConfig{IssuerURL: os.Getenv("OIDC_ISSUER_URL"), JWKSURL: os.Getenv("OIDC_JWKS_URL"), Audience: os.Getenv("OIDC_AUDIENCE")})
+		if err != nil {
+			log.Fatal("service verification unavailable")
+		}
+		_, err = knowledge.StartInternalListener(ctx, address, os.Getenv("RAG_WORKER_SERVICE_SUBJECT"), os.Getenv("RAG_FILE_SERVICE_SUBJECT"), fileService.DelegatedHandler(serviceVerifier, os.Getenv("RAG_WORKER_SERVICE_SUBJECT"), validator))
+		if err != nil {
+			log.Fatal("invalid internal source listener configuration")
+		}
+	}
 	engine := process.NewEngine(db, registry.NewStore(db))
 	if err := engine.ConfigureWorkflowService(os.Getenv("WORKFLOW_SERVICE_USER_ID"), os.Getenv("WORKFLOW_SERVICE_ROLE")); err != nil {
 		log.Fatal("valid WORKFLOW_SERVICE_USER_ID and WORKFLOW_SERVICE_ROLE are required")
