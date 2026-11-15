@@ -4,7 +4,7 @@
 DO $$
 DECLARE name text;
 BEGIN
-  FOREACH name IN ARRAY ARRAY['dxos_process','dxos_hasura','dxos_authz','dxos_reader','dxos_caller','dxos_module_test'] LOOP
+  FOREACH name IN ARRAY ARRAY['dxos_process','dxos_hasura','dxos_authz','dxos_hr','dxos_reader','dxos_caller','dxos_module_test'] LOOP
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname=name) THEN
       EXECUTE format('CREATE ROLE %I LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT',name);
     END IF;
@@ -47,6 +47,22 @@ BEGIN
             EXECUTE format('GRANT INSERT, UPDATE ON ALL TABLES IN SCHEMA %I TO dxos_process', s);
         END IF;
     END LOOP;
+END $$;
+-- cap-hr reads the organization and, like every capability service, the
+-- registry and role grants that decide what a caller may act as. It changes
+-- departments and staff only through audited functions (cap_hr.sql).
+GRANT USAGE ON SCHEMA core TO dxos_hr;
+GRANT SELECT ON core.users, core.roles, core.user_roles, core.apps, core.capabilities TO dxos_hr;
+DO $$
+BEGIN
+    IF to_regnamespace('cap_hr') IS NOT NULL THEN
+        GRANT USAGE ON SCHEMA cap_hr TO dxos_hr;
+        GRANT SELECT ON cap_hr.org_units, cap_hr.staff TO dxos_hr;
+        GRANT EXECUTE ON FUNCTION cap_hr.create_org_unit(UUID, TEXT, TEXT, TEXT, UUID) TO dxos_hr;
+        GRANT EXECUTE ON FUNCTION cap_hr.update_org_unit(UUID, TEXT, UUID, TEXT, TEXT, UUID) TO dxos_hr;
+        GRANT EXECUTE ON FUNCTION cap_hr.assign_staff(UUID, TEXT, UUID, UUID, TEXT) TO dxos_hr;
+        GRANT EXECUTE ON FUNCTION cap_hr.remove_staff(UUID, TEXT, UUID) TO dxos_hr;
+    END IF;
 END $$;
 -- Hasura metadata is private to its connection, not exposed to business roles.
 CREATE SCHEMA IF NOT EXISTS hdb_catalog AUTHORIZATION dxos_hasura;

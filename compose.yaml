@@ -33,6 +33,7 @@ services:
       HASURA_DATABASE_PASSWORD: ${HASURA_DATABASE_PASSWORD:-change-me-local-hasura-db}
       PROCESS_DATABASE_PASSWORD: ${PROCESS_DATABASE_PASSWORD:-change-me-local-process-db}
       AUTHZ_DATABASE_PASSWORD: ${AUTHZ_DATABASE_PASSWORD:-change-me-local-authz-db}
+      HR_DATABASE_PASSWORD: ${HR_DATABASE_PASSWORD:-change-me-local-hr-db}
       KESTRA_DATABASE_PASSWORD: ${KESTRA_DATABASE_PASSWORD:-change-me-local-kestra-database}
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
@@ -94,6 +95,33 @@ services:
       BOOTSTRAP_OPERATOR_EMAIL: ${BOOTSTRAP_OPERATOR_EMAIL:-}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+
+  # Departments and staff (cap-hr): everyone reads their own place in the
+  # organization, role_hr_admin maintains it.
+  cap-hr:
+    build:
+      context: ./capabilities
+      dockerfile: Dockerfile
+      args:
+        SERVICE: cap-hr
+    restart: unless-stopped
+    environment:
+      PORT: "8083"
+      DATABASE_URL: postgres://dxos_hr:${HR_DATABASE_PASSWORD:-change-me-local-hr-db}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-http://localhost:8085/realms/dxos}
+      OIDC_JWKS_URL: ${OIDC_JWKS_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/certs}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-dxos-runtime}
+      ROLE_CACHE_TTL: ${ROLE_CACHE_TTL:-5s}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8083/healthz"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -262,6 +290,7 @@ services:
       - hasura
       - authz
       - cap-process
+      - cap-hr
       - keycloak
 
   workspace-ui:

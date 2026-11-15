@@ -85,7 +85,7 @@ func NewPlatform(t *testing.T) *Platform {
 	// Runtime login roles are cluster-wide; 06_runtime_roles.sql creates them
 	// in a real installation.
 	exec("runtime roles", `DO $$ DECLARE r text; BEGIN
-	  FOREACH r IN ARRAY ARRAY['dxos_process','dxos_hasura','dxos_authz','dxos_reader','dxos_caller'] LOOP
+	  FOREACH r IN ARRAY ARRAY['dxos_process','dxos_hasura','dxos_authz','dxos_hr','dxos_reader','dxos_caller'] LOOP
 	    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = r) THEN
 	      EXECUTE format('CREATE ROLE %I LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT', r);
 	    END IF;
@@ -173,6 +173,13 @@ func (c sessionConnector) Connect(ctx context.Context) (driver.Conn, error) {
 }
 
 func (c sessionConnector) Driver() driver.Driver { return c.base.Driver() }
+
+// As opens a pool on the platform database whose connections act as role, a
+// runtime connection role of 06_runtime_roles.sql with its real grants.
+func (p *Platform) As(t *testing.T, role string) *sql.DB {
+	t.Helper()
+	return As(t, p.dsn, role)
+}
 
 // OrgUnit creates a department and returns its id.
 func (p *Platform) OrgUnit(t *testing.T, code string) string {

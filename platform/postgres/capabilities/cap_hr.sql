@@ -93,3 +93,101 @@ $$;
 INSERT INTO core.capabilities (cap_id, display_name, category_hpdi, base_route, enabled)
 VALUES ('cap-hr', 'Organization & HR', 'H', '/api/cap/hr', true)
 ON CONFLICT (cap_id) DO UPDATE SET enabled = true, updated_at = now();
+
+-- 5. Administration -----------------------------------------------------------
+-- The role that maintains departments and staff. It belongs to this capability:
+-- it is in force only while cap-hr is enabled.
+INSERT INTO core.roles (name, cap_id, description)
+VALUES ('role_hr_admin', 'cap-hr', 'Maintains departments and staff')
+ON CONFLICT (name) DO NOTHING;
+
+-- cap-hr changes departments and staff only through these functions, so its
+-- connection needs no write access to the tables and every change is audited
+-- in the 'core' chain in the same transaction. p_actor is the administrator
+-- and p_acting_role the role they act as.
+CREATE OR REPLACE FUNCTION cap_hr.assert_service_connection()
+RETURNS VOID LANGUAGE plpgsql AS $$
+BEGIN
+    IF session_user <> 'dxos_hr' THEN
+        RAISE EXCEPTION 'untrusted database connection for HR administration';
+    END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION cap_hr.create_org_unit(p_actor UUID, p_acting_role TEXT, p_code TEXT, p_name TEXT, p_parent UUID)
+RETURNS UUID LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, cap_hr, core, public AS $$
+DECLARE
+    v_id UUID;
+BEGIN
+    PERFORM cap_hr.assert_service_connection();
+    INSERT INTO cap_hr.org_units (code, name, parent_id) VALUES (trim(p_code), trim(p_name), p_parent) RETURNING id INTO v_id;
+    INSERT INTO core.audit_logs (actor_id, acting_role, action, entity_type, entity_id, payload)
+    VALUES (p_actor, p_acting_role, 'CREATE_ORG_UNIT', 'cap_hr.org_units', v_id,
+            jsonb_build_object('code', trim(p_code), 'name', trim(p_name), 'parent_id', p_parent));
+    RETURN v_id;
+END;
+$$;
+
+-- Replaces a department's code, name and parent; a NULL parent makes it a root.
+CREATE OR REPLACE FUNCTION cap_hr.update_org_unit(p_actor UUID, p_acting_role TEXT, p_id UUID, p_code TEXT, p_name TEXT, p_parent UUID)
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, cap_hr, core, public AS $$
+DECLARE
+    v_rows INTEGER;
+BEGIN
+    PERFORM cap_hr.assert_service_connection();
+    UPDATE cap_hr.org_units SET code = trim(p_code), name = trim(p_name), parent_id = p_parent
+     WHERE id = p_id AND (code, name, parent_id) IS DISTINCT FROM (trim(p_code), trim(p_name), p_parent);
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
+    IF v_rows = 1 THEN
+        INSERT INTO core.audit_logs (actor_id, acting_role, action, entity_type, entity_id, payload)
+        VALUES (p_actor, p_acting_role, 'UPDATE_ORG_UNIT', 'cap_hr.org_units', p_id,
+                jsonb_build_object('code', trim(p_code), 'name', trim(p_name), 'parent_id', p_parent));
+    END IF;
+    RETURN v_rows = 1;
+END;
+$$;
+
+-- Places a user in a department with a position. A user has one department,
+-- so assigning again moves them; records they created keep their department.
+CREATE OR REPLACE FUNCTION cap_hr.assign_staff(p_actor UUID, p_acting_role TEXT, p_user UUID, p_org_unit UUID, p_position TEXT)
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, cap_hr, core, public AS $$
+DECLARE
+    v_previous UUID;
+    v_position TEXT := nullif(trim(coalesce(p_position, '')), '');
+    v_rows INTEGER;
+BEGIN
+    PERFORM cap_hr.assert_service_connection();
+    SELECT org_unit_id INTO v_previous FROM cap_hr.staff WHERE user_id = p_user FOR UPDATE;
+    INSERT INTO cap_hr.staff (user_id, org_unit_id, position) VALUES (p_user, p_org_unit, v_position)
+    ON CONFLICT (user_id) DO UPDATE SET org_unit_id = EXCLUDED.org_unit_id, position = EXCLUDED.position
+     WHERE (cap_hr.staff.org_unit_id, cap_hr.staff.position) IS DISTINCT FROM (EXCLUDED.org_unit_id, EXCLUDED.position);
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
+    IF v_rows = 1 THEN
+        INSERT INTO core.audit_logs (actor_id, acting_role, action, entity_type, entity_id, payload)
+        VALUES (p_actor, p_acting_role, 'ASSIGN_STAFF', 'cap_hr.staff', p_user,
+                jsonb_build_object('org_unit_id', p_org_unit, 'position', v_position, 'previous_org_unit_id', v_previous));
+    END IF;
+    RETURN v_rows = 1;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION cap_hr.remove_staff(p_actor UUID, p_acting_role TEXT, p_user UUID)
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, cap_hr, core, public AS $$
+DECLARE
+    v_previous UUID;
+BEGIN
+    PERFORM cap_hr.assert_service_connection();
+    DELETE FROM cap_hr.staff WHERE user_id = p_user RETURNING org_unit_id INTO v_previous;
+    IF v_previous IS NULL THEN
+        RETURN false;
+    END IF;
+    INSERT INTO core.audit_logs (actor_id, acting_role, action, entity_type, entity_id, payload)
+    VALUES (p_actor, p_acting_role, 'REMOVE_STAFF', 'cap_hr.staff', p_user, jsonb_build_object('previous_org_unit_id', v_previous));
+    RETURN true;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION cap_hr.create_org_unit(UUID, TEXT, TEXT, TEXT, UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION cap_hr.update_org_unit(UUID, TEXT, UUID, TEXT, TEXT, UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION cap_hr.assign_staff(UUID, TEXT, UUID, UUID, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION cap_hr.remove_staff(UUID, TEXT, UUID) FROM PUBLIC;

@@ -33,6 +33,8 @@ establish that every component is installed, connected, or verified.
 | SeaweedFS and ClamAV | Objects, Parquet, quarantine, and scanning |
 | OpenBao | Signed audit checkpoints outside PostgreSQL |
 | `dxos-operator` | Manifest lifecycle, DDL, Hasura metadata, roles, routes, flows, and registry publication |
+| `dxos-authz` | Resolves the role a caller acts as from `core.user_roles` for Hasura and the UI; role assignment by platform operators |
+| `cap-hr` (H) | Departments and staff: who works where, which the `department` scope reads |
 | `cap-process` (P) | Commands, business validation, and file lifecycle |
 | `cap-data` (D) | OT validation/deduplication, reconciled export, DuckDB BI, and lineage |
 | `cap-ai` (I) | Schema-driven OCR and scoped RAG with source citations |

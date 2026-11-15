@@ -25,6 +25,9 @@
     scripts/seed-demo.py admin    a platform operator grants and revokes a role
                                   through /api/auth, and what the user may do
                                   before and after
+    scripts/seed-demo.py org      an HR administrator adds a department and moves
+                                  someone into it through /api/cap/hr, and what
+                                  that changes for their records
     scripts/seed-demo.py lines    a request with line items and a vendor from
                                   the application's vendor list: who may read
                                   and change them, and when
@@ -79,7 +82,7 @@ PEOPLE = [
     ("giang.vo", "Võ Hoàng", "Giang", "TC", "Kế toán ngân sách",
      ["role_procurement_finance", "role_timesheet_employee"]),
     ("quan.tri", "Quản trị", "Hệ thống", "TC", "Quản trị hệ thống",
-     ["role_operator", "role_auditor"]),
+     ["role_operator", "role_auditor", "role_hr_admin"]),
 ]
 
 # requester, vendor, item, amount, submitted
@@ -512,6 +515,78 @@ def admin() -> None:
     with_demo_client(run)
 
 
+def org() -> None:
+    """Departments and staff maintained through cap-hr, through the gateway."""
+    def run():
+        hr, an = sign_in("quan.tri"), sign_in("an.nguyen")
+        people = {p[0]: f"{p[1]} {p[2]}" for p in PEOPLE}
+        base = f"{GATEWAY}/api/cap/hr"
+        rows = [("Step", "Who", "Result")]
+
+        def note(label, user, result, ok):
+            rows.append((label, people[user], f"{result}  [{'ok' if ok else 'UNEXPECTED'}]"))
+
+        def message(body):
+            return body.get("error", body) if isinstance(body, dict) else body
+
+        def my_department(token):
+            _, me = http(f"{base}/me", token=token)
+            return me["user_id"], (me["org_unit"] or {}).get("name")
+
+        _, body = http(f"{base}/org-units", token=hr)
+        units = {u["code"]: u for u in body["org_units"]}
+        an_id, home = my_department(an)
+        home_id = next(u["id"] for u in units.values() if u["name"] == home)
+        other = next(u for code, u in units.items() if u["id"] != home_id and code != "DA")
+
+        note("my department", "an.nguyen", home, home is not None)
+        status, body = http(f"{base}/staff", token=an)
+        note("people of my department", "an.nguyen", ", ".join(m["display_name"] for m in body["staff"]) if status == 200 else f"HTTP {status}", status == 200)
+        status, _ = http(f"{base}/staff?org_unit_id={other['id']}", token=an)
+        note(f"people of {other['name']}", "an.nguyen", f"HTTP {status}", status == 403)
+        status, _ = http(f"{base}/org-units", {"code": "X", "name": "Tự tạo"}, token=an)
+        note("create a department", "an.nguyen", f"HTTP {status}", status == 403)
+
+        if "DA" in units:
+            project = units["DA"]["id"]
+            note("create Phòng Dự án under " + home, "quan.tri", "already there", True)
+        else:
+            status, body = http(f"{base}/org-units", {"code": "DA", "name": "Phòng Dự án", "parent_id": home_id}, token=hr)
+            project = body.get("id") if status == 201 else None
+            note("create Phòng Dự án under " + home, "quan.tri", f"HTTP {status}", status == 201)
+        status, body = http(f"{base}/org-units", {"code": "DA", "name": "Trùng mã"}, token=hr)
+        note("create another department coded DA", "quan.tri", f"{status}: {message(body)}", status == 409)
+        status, body = http(f"{base}/org-units/{home_id}", {"parent_id": project}, token=hr, method="PATCH")
+        note(f"put {home} under its own sub-department", "quan.tri", f"{status}: {message(body)}"[:78], status == 409)
+
+        status, _ = http(f"{base}/staff/{an_id}", {"org_unit_id": project, "position": "Trưởng dự án"}, token=hr, method="PUT")
+        note("move An to Phòng Dự án", "quan.tri", f"HTTP {status}", status == 204)
+        _, now = my_department(an)
+        note("my department", "an.nguyen", now, now == "Phòng Dự án")
+        # A record belongs to the department its creator is in when it is created.
+        record = file_request(an, "Phong Vũ", "Máy chiếu cho dự án", 12500000)
+        data, _ = graphql(an, REQUESTER, "query($id: uuid!) { domain_procurement_requests_by_pk(id: $id) { org_unit { name } } }", {"id": record["id"]})
+        stamped = ((data or {}).get("domain_procurement_requests_by_pk") or {}).get("org_unit", {}).get("name")
+        note("department of a request filed now", "an.nguyen", stamped, stamped == "Phòng Dự án")
+
+        status, _ = http(f"{base}/staff/{an_id}", {"org_unit_id": home_id, "position": "Nhân viên kinh doanh"}, token=hr, method="PUT")
+        _, back = my_department(an)
+        note(f"move An back to {home}", "quan.tri", back, status == 204 and back == home)
+
+        print("Organization maintained through the gateway (/api/cap/hr):")
+        print()
+        table(rows)
+        audit = psql("SELECT string_agg(a.action || ' -> ' || coalesce(u.name, '-'), ', ' ORDER BY a.seq) FROM core.audit_logs a "
+                     "LEFT JOIN cap_hr.org_units u ON u.id = (a.payload ->> 'org_unit_id')::uuid "
+                     f"WHERE a.chain = 'core' AND a.entity_type = 'cap_hr.staff' AND a.entity_id = {lit(an_id)}")
+        print()
+        print("Audit trail of An's department:", audit)
+        if any("UNEXPECTED" in row[2] for row in rows):
+            sys.exit(1)
+
+    with_demo_client(run)
+
+
 def lines() -> None:
     """Several tables of one application: a vendor list, a request and its lines."""
     def run():
@@ -627,9 +702,9 @@ def lines() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=["seed", "scopes", "flow", "lines", "admin"])
+    parser.add_argument("command", choices=["seed", "scopes", "flow", "lines", "admin", "org"])
     args = parser.parse_args()
-    {"seed": seed, "scopes": scopes, "flow": flow, "lines": lines, "admin": admin}[args.command]()
+    {"seed": seed, "scopes": scopes, "flow": flow, "lines": lines, "admin": admin, "org": org}[args.command]()
 
 
 if __name__ == "__main__":

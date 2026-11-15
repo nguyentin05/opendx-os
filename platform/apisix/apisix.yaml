@@ -68,6 +68,24 @@ routes:
         "cap-process:8081": 1
 
   # The caller's identity and the roles they hold (dxos-authz, ADR 0007).
+  - id: cap-hr
+    uri: /api/cap/hr/*
+    plugins:
+      cors:
+        allow_origins: "http://localhost:5173,http://localhost:15173"
+        allow_methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+        allow_headers: "Authorization,Content-Type"
+      proxy-rewrite:
+        headers:
+          remove:
+            - X-Hasura-Admin-Secret
+            - X-Hasura-User-Id
+            - X-Hasura-Workspace-Id
+    upstream:
+      type: roundrobin
+      nodes:
+        "cap-hr:8083": 1
+
   - id: authz-me
     uri: /api/auth/*
     plugins:

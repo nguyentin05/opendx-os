@@ -182,19 +182,43 @@ For users holding the platform role `role_operator` (it appears in
 A change shows in the user's `/api/auth/me` and GraphQL at once and in
 cap-process within a few seconds, without a new sign-in. Every change is
 recorded with the operator who made it. An account is listed once it has signed
-in. Departments have no API yet.
+in.
+
+### Departments and staff (cap-hr)
+
+Reads are for every signed-in user; changes need the capability role
+`role_hr_admin` (403 otherwise).
+
+| Call | Does |
+| --- | --- |
+| `GET /api/cap/hr/me` | The caller's `org_unit` (`id`, `code`, `name`, `parent_id`) and `position`, both `null` without a department, and `administrator` (whether they hold `role_hr_admin`) |
+| `GET /api/cap/hr/org-units` | `org_units`: every department with `id`, `parent_id`, `code`, `name`, `staff_count`; build the tree from `parent_id` |
+| `GET /api/cap/hr/staff` | `staff` of the caller's own department: `user_id`, `display_name`, `email`, `org_unit_id`, `position`, `joined_at`. An administrator gets every department, or the one named by `?org_unit_id=`; anyone else naming another department gets 403 |
+| `POST /api/cap/hr/org-units` | Creates a department from `{"code", "name", "parent_id"}` (`parent_id` optional). 201 with its `id` |
+| `PATCH /api/cap/hr/org-units/{id}` | Changes the fields sent: `code`, `name`, `parent_id` (`null` makes it a top-level department). 204 |
+| `PUT /api/cap/hr/staff/{user_id}` | Places the user in `{"org_unit_id", "position"}` (`position` optional). A user has one department, so this moves them. 204 |
+| `DELETE /api/cap/hr/staff/{user_id}` | Takes the user out of their department. 204 |
+
+| Status | Meaning |
+| --- | --- |
+| 400 | A field is missing, blank, of the wrong type or not known |
+| 404 | Unknown department or user (also: removing someone who has no department) |
+| 409 | With a message to show: the code is taken, the parent does not exist, or the department would end up under itself or one of its sub-departments |
+
+Moving a user changes what they see under the `department` scope from their
+next request. Records keep the department they were created in. There is no
+call to delete a department.
 
 ## 9. Try it
 
 `scripts/seed-demo.py seed` creates six accounts (password `Demo@2026`) across
-three departments. `scripts/seed-demo.py scopes`, `flow`, `lines` and `admin` make
-the calls above from the command line and print what each person may see and do;
+three departments. `scripts/seed-demo.py scopes`, `flow`, `lines`, `admin` and
+`org` make the calls above from the command line and print what each person may see and do;
 the script is a working reference for request shapes.
 
 ## Not available yet
 
 - Changing work items (assign, move between columns): `cap_work.work_items` has
   no service route yet. Reading them works: see below.
-- Assigning departments and positions: there is no API for it yet.
 - Accounts that have never signed in are not listed for role assignment.
 - cap-data and cap-ai routes.

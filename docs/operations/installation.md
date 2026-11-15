@@ -56,8 +56,9 @@ registry discovery and beta automatic-workflow readiness remain open.
    the installation: its first sign-in makes it the platform operator
    (`role_operator`), once, while nobody holds that role. Operators then grant
    and revoke roles through `/api/auth/users/{id}/roles/{role}`
-   ([integrating the UI](../development/ui-integration.md#8-administration));
-   departments are still assigned by inserting into `cap_hr.staff`. Roles take
+   ([integrating the UI](../development/ui-integration.md#8-administration)),
+   and users holding `role_hr_admin` maintain departments and staff through
+   `/api/cap/hr`. Roles take
    effect within `ROLE_CACHE_TTL` (default 5s), with no new token
    ([ADR 0007](../adr/0007-keycloak-authenticates-platform-authorizes.md)).
 
@@ -70,7 +71,8 @@ registry discovery and beta automatic-workflow readiness remain open.
    through submit, department approval and budget approval with cap-process
    commands, including the refusals on the way; `scripts/seed-demo.py admin` has
    the operator grant and revoke a role and shows what the user may do before
-   and after; `scripts/seed-demo.py lines` files
+   and after; `scripts/seed-demo.py org` has an HR administrator add a
+   department and move someone into it; `scripts/seed-demo.py lines` files
    a request with a vendor from the application's vendor list and line items, and
    shows who may read and change them before and after it is submitted. Use them
    on local stacks only.

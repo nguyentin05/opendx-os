@@ -62,7 +62,7 @@ owns its schema and registers itself in `core.capabilities`.
 
 | Capability | Tables |
 | --- | --- |
-| `cap-hr` | `cap_hr.org_units` (departments, optional parent), `cap_hr.staff` (one department per user, `position`) |
+| `cap-hr` | `cap_hr.org_units` (departments, optional parent), `cap_hr.staff` (one department per user, `position`). Maintained by users holding the capability role `role_hr_admin` through the cap-hr service, which changes them only through audited functions (`cap_hr.create_org_unit`, `update_org_unit`, `assign_staff`, `remove_staff`); each change is in the `core` audit chain |
 | `cap-work` | `cap_work.work_items`: `app_id`, `title`, `description`, `priority`, `board_column`, `assignee_id`, source record (`source_type`, `source_id`), `created_by` |
 | `cap-process` | `cap_process.command_receipts` (command idempotency), `cap_process.processed_workflow_steps` (effect deduplication) |
 | `cap-data` | `cap_data.devices` and telemetry tables |
@@ -255,6 +255,7 @@ records the accepted requirement without claiming that synchronization works.
 
 | Capability | Intended interface |
 | --- | --- |
+| `cap-hr` | `GET /api/cap/hr/me`, `GET /api/cap/hr/org-units`, `GET /api/cap/hr/staff`; for `role_hr_admin`: `POST /api/cap/hr/org-units`, `PATCH /api/cap/hr/org-units/{id}`, `PUT` and `DELETE /api/cap/hr/staff/{user_id}` ([UI integration](../development/ui-integration.md#8-administration)) |
 | `cap-process` | `POST /api/cap/process/files/upload`, `POST /api/cap/process/commands/{app_id}/{command}` |
 | `cap-data` | `POST /api/cap/data/ot/events`, `POST /api/cap/data/lakehouse/export`, `GET /api/cap/data/lakehouse/analytics` |
 | `cap-ai` | `POST /api/cap/ai/extract`, `POST /api/cap/ai/rag` |
