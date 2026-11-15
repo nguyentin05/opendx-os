@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 DX-OS Open-Core Contributors
+
+// Package contracts defines the read scope shared by knowledge services and
+// the model boundary.
 package contracts
 
 type ReadScope struct {

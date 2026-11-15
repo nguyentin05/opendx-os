@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 DX-OS Open-Core Contributors
+
 package manifest
 
 // PackagePublication is a server-only envelope retained by stored-spec decoding.
