@@ -80,6 +80,27 @@ provide the endpoint the webhook calls.
    (`directAccessGrantsEnabled: false`); tests create their own client through
    the Admin API.
 
+7. **The workflow engine is a service caller, not a user.** It has no Keycloak
+   login. cap-process admits its effect calls by the workflow service
+   credential (`WORKFLOW_SERVICE_TOKEN`) and lets it act as one platform
+   account holding `role_workflow`. That account is seeded by the platform
+   schema and is the only row of `core.users` that does not mirror a Keycloak
+   identity. The credential reaches only the effect endpoints, which the gateway
+   does not route, and an effect is limited to what installed applications
+   declare ([workflow deployment](../contracts/data-contracts.md#workflow-deployment)).
+
+8. **Operators assign roles through `dxos-authz`.** A user holding the platform
+   role `role_operator` lists accounts and roles and grants or revokes a role
+   (`/api/auth/users`, `/api/auth/roles`,
+   `/api/auth/users/{id}/roles/{role}`). `dxos-authz` still has no write access
+   to `core.user_roles`: it calls `core.grant_role` and `core.revoke_role`,
+   which make the change and its audit row in the `core` chain in one
+   transaction and refuse any other connection. `role_workflow` is never
+   assigned to a person, and an operator cannot revoke their own
+   `role_operator`. A new installation has no operator, so the account named by
+   `BOOTSTRAP_OPERATOR_EMAIL` becomes one on its first sign-in, once, while
+   nobody holds the role.
+
 ## Where `dxos-authz` sits
 
 `dxos-authz` is Tier 1 platform infrastructure, next to Keycloak, APISIX and

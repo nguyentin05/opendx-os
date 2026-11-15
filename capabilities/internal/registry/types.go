@@ -64,8 +64,9 @@ type BelongsTo struct {
 }
 
 type Column struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Nullable bool   `json:"nullable"`
 }
 type ForeignKey struct {
 	Column     string `json:"column"`
@@ -103,6 +104,14 @@ type Command struct {
 	To           string   `json:"to"`
 	AllowedRoles []string `json:"allowedRoles"`
 	RecordFilter Filter   `json:"recordFilter"`
+	// Payload lists the columns of the record the caller sets with the command.
+	Payload []PayloadField `json:"payload"`
+}
+
+// PayloadField is one column a command writes from its payload.
+type PayloadField struct {
+	Column   string `json:"column"`
+	Required bool   `json:"required"`
 }
 type Attachment struct {
 	Column                 string   `json:"column"`

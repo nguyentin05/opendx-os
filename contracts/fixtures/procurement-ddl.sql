@@ -158,6 +158,8 @@ GRANT SELECT ON "domain"."procurement_items" TO dxos_process, dxos_reader;
 GRANT USAGE ON SCHEMA "cap_hr" TO dxos_hasura;
 GRANT SELECT ON "cap_hr"."org_units" TO dxos_hasura;
 GRANT SELECT ON "cap_hr"."staff" TO dxos_hasura;
+GRANT USAGE ON SCHEMA "cap_work" TO dxos_hasura;
+GRANT SELECT ON "cap_work"."work_items" TO dxos_hasura;
 GRANT USAGE ON SCHEMA "core" TO dxos_hasura;
 GRANT SELECT ON "core"."files" TO dxos_hasura;
 GRANT SELECT ON "core"."users" TO dxos_hasura;

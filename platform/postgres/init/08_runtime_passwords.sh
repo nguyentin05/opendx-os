@@ -47,6 +47,7 @@ if [ "${RAG_MODELS_SCHEMA_ENABLED:-false}" = true ]; then
     psql_admin --dbname "${POSTGRES_DB:-dxos_db}" -c "SELECT 'CREATE ROLE dxos_ai_gateway LOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='dxos_ai_gateway')" -tA | psql_admin --dbname "${POSTGRES_DB:-dxos_db}"
     set_password dxos_ai_gateway "${AI_GATEWAY_DATABASE_PASSWORD:-}"
 fi
+set_password dxos_hr "${HR_DATABASE_PASSWORD:-}"
 
 # Kestra keeps its repository and queue in a database of its own, owned by a
 # role with no rights in the platform database.

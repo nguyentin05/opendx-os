@@ -30,6 +30,7 @@ import (
 
 	"github.com/opendx-os/opendx-os/operator/internal/apply"
 	"github.com/opendx-os/opendx-os/operator/internal/testutil"
+	"github.com/opendx-os/opendx-os/operator/internal/workflows"
 )
 
 // copyPackage copies apps/<name> (manifest and workflows) into dir.
@@ -337,5 +338,124 @@ func TestReconcileInstallsEverySampleAppIntegration(t *testing.T) {
 	}
 	if deployments(t, db) != attempts {
 		t.Fatal("second pass recorded deployments")
+	}
+}
+
+// With a workflow engine configured, a pass deploys the workflows of the
+// installed packages, puts back a flow deleted in the engine, follows a
+// changed workflow file, refuses a package whose flow runs code, and removes
+// the flows of an uninstalled application. No service is restarted for any of it.
+func TestReconcileDeploysWorkflowsIntegration(t *testing.T) {
+	db := testutil.NewDatabase(t)
+	hasuraSrv := httptest.NewServer(testutil.NewFakeHasura())
+	defer hasuraSrv.Close()
+	engine := testutil.NewFakeKestra("admin@dxos.local", "secret")
+	engineSrv := httptest.NewServer(engine)
+	defer engineSrv.Close()
+	kestra, err := workflows.NewKestra(engineSrv.URL, "admin@dxos.local", "secret", engineSrv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	applier := apply.NewRunner(db, apply.Config{HasuraURL: hasuraSrv.URL}, hasuraSrv.Client())
+	applier.DeployWorkflowsTo(kestra)
+	rec := NewRunner(db, applier)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	copyPackage(t, dir, "procurement")
+	copyPackage(t, dir, "process-fixture")
+	copyPackage(t, dir, "timesheet") // declares no workflow
+
+	const procurementFlow, reviewFlow = "dxos.apps.procurement/procurement_approval_flow", "dxos.apps.process_fixture/review_flow"
+	res, err := rec.Pass(ctx, dir)
+	if err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	if got := strings.Join(res.Workflows, ","); got != "process_fixture/review_flow,procurement/procurement_approval_flow" {
+		t.Fatalf("workflows deployed by the installing pass = %q", got)
+	}
+	var routes int
+	if err := db.QueryRow(`SELECT count(*) FROM core.app_workflows`).Scan(&routes); err != nil || routes != 2 {
+		t.Fatalf("recorded routes = %d (%v), want 2", routes, err)
+	}
+
+	if res, err := rec.Pass(ctx, dir); err != nil || res.Changed() {
+		t.Fatalf("an unchanged directory must be a no-op: %+v %v", res, err)
+	}
+
+	// Drift: the flow is deleted in the engine.
+	engine.Remove(procurementFlow)
+	if res, err := rec.Pass(ctx, dir); err != nil || strings.Join(res.Workflows, ",") != "procurement/procurement_approval_flow" {
+		t.Fatalf("a deleted flow must be redeployed: %+v %v", res, err)
+	}
+
+	// The workflow file changes while the manifest stays the same.
+	flowFile := filepath.Join(dir, "procurement", "workflows", "procurement_flow.yaml")
+	original, err := os.ReadFile(flowFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(flowFile, append(original, []byte("# reviewed\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if res, err := rec.Pass(ctx, dir); err != nil || len(res.Installed) != 0 || strings.Join(res.Workflows, ",") != "procurement/procurement_approval_flow" {
+		t.Fatalf("a changed workflow file must be deployed without reinstalling: %+v %v", res, err)
+	}
+	if source, _ := engine.Source(procurementFlow); !strings.HasSuffix(source, "# reviewed\n") {
+		t.Fatal("the engine must hold the changed file")
+	}
+
+	// A flow that runs code is refused: the package is left out and the
+	// installed application keeps the flow it has.
+	hostile := strings.Replace(string(original), "io.kestra.plugin.core.http.Request", "io.kestra.plugin.scripts.shell.Commands", 1)
+	if err := os.WriteFile(flowFile, []byte(hostile), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err = rec.Pass(ctx, dir)
+	if err == nil || !strings.Contains(err.Error(), "may use only") || res.Changed() {
+		t.Fatalf("a flow running a script must be refused without side effects: %+v %v", res, err)
+	}
+	if appStatus(t, db, "procurement") != "Ready" {
+		t.Fatal("the installed application must keep serving")
+	}
+	if source, _ := engine.Source(procurementFlow); strings.Contains(source, "scripts.shell") {
+		t.Fatal("the refused flow reached the engine")
+	}
+	if err := os.WriteFile(flowFile, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Uninstalling an application removes its flow and its route.
+	if err := os.RemoveAll(filepath.Join(dir, "process-fixture")); err != nil {
+		t.Fatal(err)
+	}
+	res, err = rec.Pass(ctx, dir)
+	if err != nil || strings.Join(res.RemovedWorkflows, ",") != "process_fixture/review_flow" {
+		t.Fatalf("pass after removing a package: %+v %v", res, err)
+	}
+	if _, ok := engine.Source(reviewFlow); ok {
+		t.Fatal("the uninstalled application's flow must be deleted")
+	}
+	if _, ok := engine.Source(procurementFlow); !ok {
+		t.Fatal("the remaining application keeps its flow")
+	}
+}
+
+// Without a workflow engine the operator installs applications and leaves
+// workflows alone.
+func TestReconcileWithoutWorkflowEngineIntegration(t *testing.T) {
+	db := testutil.NewDatabase(t)
+	srv := httptest.NewServer(testutil.NewFakeHasura())
+	defer srv.Close()
+	rec := NewRunner(db, apply.NewRunner(db, apply.Config{HasuraURL: srv.URL}, srv.Client()))
+	dir := t.TempDir()
+	copyPackage(t, dir, "procurement")
+	res, err := rec.Pass(context.Background(), dir)
+	if err != nil || len(res.Installed) != 1 || len(res.Workflows) != 0 {
+		t.Fatalf("pass: %+v %v", res, err)
+	}
+	var routes int
+	if err := db.QueryRow(`SELECT count(*) FROM core.app_workflows`).Scan(&routes); err != nil || routes != 0 {
+		t.Fatalf("recorded routes = %d (%v), want none", routes, err)
 	}
 }

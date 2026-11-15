@@ -4,7 +4,7 @@
 DO $$
 DECLARE name text;
 BEGIN
-  FOREACH name IN ARRAY ARRAY['dxos_process','dxos_hasura','dxos_authz','dxos_reader','dxos_caller','dxos_module_test','dxos_ai_api','dxos_ai_worker','dxos_ai_dispatcher'] LOOP
+  FOREACH name IN ARRAY ARRAY['dxos_process','dxos_hasura','dxos_authz','dxos_hr','dxos_reader','dxos_caller','dxos_module_test','dxos_ai_api','dxos_ai_worker','dxos_ai_dispatcher'] LOOP
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname=name) THEN
       EXECUTE format('CREATE ROLE %I LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT',name);
     END IF;
@@ -25,6 +25,10 @@ GRANT USAGE ON SCHEMA core TO dxos_authz;
 GRANT SELECT ON core.roles, core.user_roles, core.apps, core.capabilities TO dxos_authz;
 GRANT SELECT, INSERT ON core.users TO dxos_authz;
 GRANT UPDATE (email, display_name) ON core.users TO dxos_authz;
+-- Role assignments change only through audited functions (03_app_registry.sql).
+GRANT EXECUTE ON FUNCTION core.grant_role(UUID, TEXT, UUID, TEXT) TO dxos_authz;
+GRANT EXECUTE ON FUNCTION core.revoke_role(UUID, TEXT, UUID, TEXT) TO dxos_authz;
+GRANT EXECUTE ON FUNCTION core.bootstrap_operator(UUID) TO dxos_authz;
 -- Capability schemas exist only when the capability is enabled (04_capabilities.sh).
 -- cap-process writes its own records and the work items its workflows create;
 -- HR and device master data are managed by administrators.
@@ -43,6 +47,22 @@ BEGIN
             EXECUTE format('GRANT INSERT, UPDATE ON ALL TABLES IN SCHEMA %I TO dxos_process', s);
         END IF;
     END LOOP;
+END $$;
+-- cap-hr reads the organization and, like every capability service, the
+-- registry and role grants that decide what a caller may act as. It changes
+-- departments and staff only through audited functions (cap_hr.sql).
+GRANT USAGE ON SCHEMA core TO dxos_hr;
+GRANT SELECT ON core.users, core.roles, core.user_roles, core.apps, core.capabilities TO dxos_hr;
+DO $$
+BEGIN
+    IF to_regnamespace('cap_hr') IS NOT NULL THEN
+        GRANT USAGE ON SCHEMA cap_hr TO dxos_hr;
+        GRANT SELECT ON cap_hr.org_units, cap_hr.staff TO dxos_hr;
+        GRANT EXECUTE ON FUNCTION cap_hr.create_org_unit(UUID, TEXT, TEXT, TEXT, UUID) TO dxos_hr;
+        GRANT EXECUTE ON FUNCTION cap_hr.update_org_unit(UUID, TEXT, UUID, TEXT, TEXT, UUID) TO dxos_hr;
+        GRANT EXECUTE ON FUNCTION cap_hr.assign_staff(UUID, TEXT, UUID, UUID, TEXT) TO dxos_hr;
+        GRANT EXECUTE ON FUNCTION cap_hr.remove_staff(UUID, TEXT, UUID) TO dxos_hr;
+    END IF;
 END $$;
 -- Hasura metadata is private to its connection, not exposed to business roles.
 CREATE SCHEMA IF NOT EXISTS hdb_catalog AUTHORIZATION dxos_hasura;

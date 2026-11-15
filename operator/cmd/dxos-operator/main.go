@@ -25,6 +25,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -37,6 +38,7 @@ import (
 	"github.com/opendx-os/opendx-os/operator/internal/manifest"
 	"github.com/opendx-os/opendx-os/operator/internal/planner"
 	"github.com/opendx-os/opendx-os/operator/internal/reconcile"
+	"github.com/opendx-os/opendx-os/operator/internal/workflows"
 )
 
 func main() {
@@ -201,6 +203,14 @@ func buildRunnersFromEnv() (*sql.DB, *apply.Runner, *reconcile.Runner, error) {
 		HasuraAdminSecret: os.Getenv("HASURA_ADMIN_SECRET"),
 	}
 	applier := apply.NewRunner(db, cfg, nil)
+	// Application workflows are deployed when a workflow engine is configured.
+	if base := os.Getenv("KESTRA_URL"); base != "" {
+		kestra, err := workflows.NewKestra(base, os.Getenv("KESTRA_USER"), os.Getenv("KESTRA_PASSWORD"), nil)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		applier.DeployWorkflowsTo(kestra)
+	}
 	reconciler := reconcile.NewRunner(db, applier)
 	return db, applier, reconciler, nil
 }
@@ -242,8 +252,17 @@ func runApplyCmd(args []string, stdout, stderr io.Writer, applier *apply.Runner)
 		_, _ = fmt.Fprintf(stderr, "Failed building plan: %v\n", err)
 		return 1
 	}
+	flows, err := workflows.LoadPackage(filepath.Dir(fs.Arg(0)), app)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "Validation failed: %v\n", err)
+		return 1
+	}
 	if err := applier.Run(ctx, plan, []string{app.Metadata.Name}); err != nil {
 		_, _ = fmt.Fprintf(stderr, "Apply failed: %v\n", err)
+		return 1
+	}
+	if _, err := applier.SyncWorkflows(ctx, map[string][]workflows.Definition{app.Metadata.Name: flows}); err != nil {
+		_, _ = fmt.Fprintf(stderr, "Application installed, but its workflows were not deployed: %v\n", err)
 		return 1
 	}
 	_, _ = fmt.Fprintf(stdout, "Applied application %s (v%s)\n", app.Metadata.Name, app.Metadata.Version)

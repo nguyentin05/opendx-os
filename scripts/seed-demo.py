@@ -20,7 +20,14 @@
     scripts/seed-demo.py scopes   sample purchase requests, then what each
                                   person sees through the gateway
     scripts/seed-demo.py flow     one request through the whole approval chain,
-                                  including the refusals along the way
+                                  including the refusals along the way and the
+                                  review its workflow opens in Kestra
+    scripts/seed-demo.py admin    a platform operator grants and revokes a role
+                                  through /api/auth, and what the user may do
+                                  before and after
+    scripts/seed-demo.py org      an HR administrator adds a department and moves
+                                  someone into it through /api/cap/hr, and what
+                                  that changes for their records
     scripts/seed-demo.py lines    a request with line items and a vendor from
                                   the application's vendor list: who may read
                                   and change them, and when
@@ -75,7 +82,7 @@ PEOPLE = [
     ("giang.vo", "Võ Hoàng", "Giang", "TC", "Kế toán ngân sách",
      ["role_procurement_finance", "role_timesheet_employee"]),
     ("quan.tri", "Quản trị", "Hệ thống", "TC", "Quản trị hệ thống",
-     ["role_operator", "role_auditor"]),
+     ["role_operator", "role_auditor", "role_hr_admin"]),
 ]
 
 # requester, vendor, item, amount, submitted
@@ -311,10 +318,10 @@ def file_request(token: str, vendor: str, item: str, amount: int) -> dict:
     return data["insert_domain_procurement_requests_one"]
 
 
-def command(token: str, role: str, name: str, record: dict):
+def command(token: str, role: str, name: str, record: dict, payload: dict | None = None):
     """Runs a cap-process command; returns (HTTP status, new record state)."""
     status, body = http(f"{GATEWAY}/api/cap/process/commands/procurement/{name}",
-                        {"entity_id": record["id"], "expected_version": record["version"], "payload": {}},
+                        {"entity_id": record["id"], "expected_version": record["version"], "payload": payload or {}},
                         token, headers={"X-Hasura-Role": role, "Idempotency-Key": str(uuid.uuid4())})
     if status == 200:
         record = dict(record, status=body["status"], version=body["version"])
@@ -385,6 +392,19 @@ def flow() -> None:
 
         step("manager acts on a draft", "cuong.le", "role_procurement_manager", "approve", 404)
         step("submit", "an.nguyen", REQUESTER, "submit", 200)
+
+        # The submit event goes to the application's flow in Kestra, which asks
+        # cap-process to open the review its manifest declares.
+        items, deadline = [], time.time() + 120
+        while not items and time.time() < deadline:
+            data, _ = graphql(t["cuong.le"], "role_procurement_manager",
+                              "query($id: uuid!) { cap_work_work_items(where: {source_id: {_eq: $id}}) { title board_column } }",
+                              {"id": record["id"]})
+            items = (data or {}).get("cap_work_work_items", [])
+            if not items:
+                time.sleep(2)
+        opened = f"{items[0]['title']} ({items[0]['board_column']})  [ok]" if len(items) == 1 else f"{len(items)} work items  [UNEXPECTED, wanted 1]"
+        rows.append(("workflow opens a review", "workflow service", "role_workflow", opened))
         step("other department approves", "dung.pham", "role_procurement_manager", "approve", 404)
         step("requester approves", "an.nguyen", REQUESTER, "approve", 403)
         step("department manager approves", "cuong.le", "role_procurement_manager", "approve", 200)
@@ -395,6 +415,22 @@ def flow() -> None:
         status, _ = command(t["cuong.le"], "role_procurement_manager", "approve", own)
         rows.append(("approve one's own request", people["cuong.le"], "role_procurement_manager",
                      f"{'refused (403)' if status == 403 else f'HTTP {status}'}  [{'ok' if status == 403 else 'UNEXPECTED'}]"))
+        # A rejection carries its reason: the command's payload is stored with
+        # the state change, and the requester reads it on their request.
+        refused = file_request(t["binh.tran"], "Hioki", "Ampe kìm đo dòng", 3200000)
+        _, refused = command(t["binh.tran"], REQUESTER, "submit", refused)
+        status, _ = command(t["dung.pham"], "role_procurement_manager", "reject", refused)
+        rows.append(("reject without a reason", people["dung.pham"], "role_procurement_manager",
+                     f"{'refused (400)' if status == 400 else f'HTTP {status}'}  [{'ok' if status == 400 else 'UNEXPECTED'}]"))
+        reason = "Đã có thiết bị tương đương trong kho"
+        status, refused = command(t["dung.pham"], "role_procurement_manager", "reject", refused, {"rejection_reason": reason})
+        rows.append(("reject with a reason", people["dung.pham"], "role_procurement_manager",
+                     f"{refused['status'] if status == 200 else f'HTTP {status}'}  [{'ok' if status == 200 else 'UNEXPECTED'}]"))
+        data, _ = graphql(t["binh.tran"], REQUESTER,
+                          "query($id: uuid!) { domain_procurement_requests_by_pk(id: $id) { status rejection_reason } }", {"id": refused["id"]})
+        seen = ((data or {}).get("domain_procurement_requests_by_pk") or {}).get("rejection_reason")
+        rows.append(("read why it was rejected", people["binh.tran"], REQUESTER,
+                     f"{seen}  [{'ok' if seen == reason else 'UNEXPECTED'}]"))
         print("Procurement approval chain through cap-process (POST /api/cap/process/commands/...):")
         print()
         table(rows)
@@ -402,6 +438,151 @@ def flow() -> None:
                      f"FROM core.audit_logs WHERE entity_id = {lit(record['id'])}")
         print()
         print("Audit trail of the first request:", audit)
+
+    with_demo_client(run)
+
+
+def admin() -> None:
+    """Role administration by a platform operator, through the gateway."""
+    def run():
+        op, an = sign_in("quan.tri"), sign_in("an.nguyen")
+        people = {p[0]: f"{p[1]} {p[2]}" for p in PEOPLE}
+        rows = [("Step", "Who", "Result")]
+
+        def note(label, user, result, ok):
+            rows.append((label, people[user], f"{result}  [{'ok' if ok else 'UNEXPECTED'}]"))
+
+        def roles_of(token):
+            _, me = http(f"{GATEWAY}/api/auth/me", token=token)
+            return me["id"], sorted(r["name"] for r in me["roles"])
+
+        def sees_as_manager():
+            data, err = graphql(an, "role_procurement_manager", "query { domain_procurement_requests { id } }")
+            return "refused" if err else f"{len(data['domain_procurement_requests'])} requests"
+
+        an_id, before = roles_of(an)
+        op_id, _ = roles_of(op)
+        manager = "role_procurement_manager"
+        base = f"{GATEWAY}/api/auth/users"
+
+        status, _ = http(base, token=an)
+        note("list accounts", "an.nguyen", f"HTTP {status}", status == 403)
+        status, _ = http(f"{base}/{an_id}/roles/{manager}", token=an, method="PUT")
+        note("grant oneself a role", "an.nguyen", f"HTTP {status}", status == 403)
+
+        status, body = http(base, token=op)
+        note("list accounts", "quan.tri", f"{len(body['users'])} accounts" if status == 200 else f"HTTP {status}", status == 200)
+        status, body = http(f"{GATEWAY}/api/auth/roles", token=op)
+        note("list roles in force", "quan.tri", f"{len(body['roles'])} roles" if status == 200 else f"HTTP {status}", status == 200)
+
+        note("act as department manager", "an.nguyen", sees_as_manager(), sees_as_manager() == "refused")
+        status, _ = http(f"{base}/{an_id}/roles/{manager}", token=op, method="PUT")
+        note(f"grant {manager} to An", "quan.tri", f"HTTP {status}", status == 204)
+        _, after = roles_of(an)
+        note("roles, with the same token", "an.nguyen", ", ".join(r.removeprefix("role_") for r in after), manager in after)
+        seen = sees_as_manager()
+        note("act as department manager", "an.nguyen", seen, seen != "refused")
+
+        for label, path, method, want in (
+            ("grant the workflow service role", f"{an_id}/roles/role_workflow", "PUT", 409),
+            ("grant a role that does not exist", f"{an_id}/roles/role_procurement_director", "PUT", 404),
+            ("revoke one's own operator role", f"{op_id}/roles/role_operator", "DELETE", 409),
+        ):
+            status, _ = http(f"{base}/{path}", token=op, method=method)
+            note(label, "quan.tri", f"HTTP {status}", status == want)
+
+        status, _ = http(f"{base}/{an_id}/roles/{manager}", token=op, method="DELETE")
+        note(f"revoke {manager} from An", "quan.tri", f"HTTP {status}", status == 204)
+        _, final = roles_of(an)
+        note("roles, with the same token", "an.nguyen", ", ".join(r.removeprefix("role_") for r in final), final == before)
+        # cap-process and Hasura re-read grants within ROLE_CACHE_TTL.
+        deadline, seen = time.time() + 15, sees_as_manager()
+        while seen != "refused" and time.time() < deadline:
+            time.sleep(1)
+            seen = sees_as_manager()
+        note("act as department manager", "an.nguyen", seen, seen == "refused")
+
+        print("Role administration through the gateway (/api/auth/users, /api/auth/roles):")
+        print()
+        table(rows)
+        audit = psql("SELECT string_agg(action || ' ' || (payload ->> 'role'), ', ' ORDER BY seq) FROM core.audit_logs "
+                     f"WHERE chain = 'core' AND entity_type = 'core.user_roles' AND entity_id = {lit(an_id)}")
+        print()
+        print("Audit trail of An's role assignments:", audit)
+        if any("UNEXPECTED" in row[2] for row in rows):
+            sys.exit(1)
+
+    with_demo_client(run)
+
+
+def org() -> None:
+    """Departments and staff maintained through cap-hr, through the gateway."""
+    def run():
+        hr, an = sign_in("quan.tri"), sign_in("an.nguyen")
+        people = {p[0]: f"{p[1]} {p[2]}" for p in PEOPLE}
+        base = f"{GATEWAY}/api/cap/hr"
+        rows = [("Step", "Who", "Result")]
+
+        def note(label, user, result, ok):
+            rows.append((label, people[user], f"{result}  [{'ok' if ok else 'UNEXPECTED'}]"))
+
+        def message(body):
+            return body.get("error", body) if isinstance(body, dict) else body
+
+        def my_department(token):
+            _, me = http(f"{base}/me", token=token)
+            return me["user_id"], (me["org_unit"] or {}).get("name")
+
+        _, body = http(f"{base}/org-units", token=hr)
+        units = {u["code"]: u for u in body["org_units"]}
+        an_id, home = my_department(an)
+        home_id = next(u["id"] for u in units.values() if u["name"] == home)
+        other = next(u for code, u in units.items() if u["id"] != home_id and code != "DA")
+
+        note("my department", "an.nguyen", home, home is not None)
+        status, body = http(f"{base}/staff", token=an)
+        note("people of my department", "an.nguyen", ", ".join(m["display_name"] for m in body["staff"]) if status == 200 else f"HTTP {status}", status == 200)
+        status, _ = http(f"{base}/staff?org_unit_id={other['id']}", token=an)
+        note(f"people of {other['name']}", "an.nguyen", f"HTTP {status}", status == 403)
+        status, _ = http(f"{base}/org-units", {"code": "X", "name": "Tự tạo"}, token=an)
+        note("create a department", "an.nguyen", f"HTTP {status}", status == 403)
+
+        if "DA" in units:
+            project = units["DA"]["id"]
+            note("create Phòng Dự án under " + home, "quan.tri", "already there", True)
+        else:
+            status, body = http(f"{base}/org-units", {"code": "DA", "name": "Phòng Dự án", "parent_id": home_id}, token=hr)
+            project = body.get("id") if status == 201 else None
+            note("create Phòng Dự án under " + home, "quan.tri", f"HTTP {status}", status == 201)
+        status, body = http(f"{base}/org-units", {"code": "DA", "name": "Trùng mã"}, token=hr)
+        note("create another department coded DA", "quan.tri", f"{status}: {message(body)}", status == 409)
+        status, body = http(f"{base}/org-units/{home_id}", {"parent_id": project}, token=hr, method="PATCH")
+        note(f"put {home} under its own sub-department", "quan.tri", f"{status}: {message(body)}"[:78], status == 409)
+
+        status, _ = http(f"{base}/staff/{an_id}", {"org_unit_id": project, "position": "Trưởng dự án"}, token=hr, method="PUT")
+        note("move An to Phòng Dự án", "quan.tri", f"HTTP {status}", status == 204)
+        _, now = my_department(an)
+        note("my department", "an.nguyen", now, now == "Phòng Dự án")
+        # A record belongs to the department its creator is in when it is created.
+        record = file_request(an, "Phong Vũ", "Máy chiếu cho dự án", 12500000)
+        data, _ = graphql(an, REQUESTER, "query($id: uuid!) { domain_procurement_requests_by_pk(id: $id) { org_unit { name } } }", {"id": record["id"]})
+        stamped = ((data or {}).get("domain_procurement_requests_by_pk") or {}).get("org_unit", {}).get("name")
+        note("department of a request filed now", "an.nguyen", stamped, stamped == "Phòng Dự án")
+
+        status, _ = http(f"{base}/staff/{an_id}", {"org_unit_id": home_id, "position": "Nhân viên kinh doanh"}, token=hr, method="PUT")
+        _, back = my_department(an)
+        note(f"move An back to {home}", "quan.tri", back, status == 204 and back == home)
+
+        print("Organization maintained through the gateway (/api/cap/hr):")
+        print()
+        table(rows)
+        audit = psql("SELECT string_agg(a.action || ' -> ' || coalesce(u.name, '-'), ', ' ORDER BY a.seq) FROM core.audit_logs a "
+                     "LEFT JOIN cap_hr.org_units u ON u.id = (a.payload ->> 'org_unit_id')::uuid "
+                     f"WHERE a.chain = 'core' AND a.entity_type = 'cap_hr.staff' AND a.entity_id = {lit(an_id)}")
+        print()
+        print("Audit trail of An's department:", audit)
+        if any("UNEXPECTED" in row[2] for row in rows):
+            sys.exit(1)
 
     with_demo_client(run)
 
@@ -521,9 +702,9 @@ def lines() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=["seed", "scopes", "flow", "lines"])
+    parser.add_argument("command", choices=["seed", "scopes", "flow", "lines", "admin", "org"])
     args = parser.parse_args()
-    {"seed": seed, "scopes": scopes, "flow": flow, "lines": lines}[args.command]()
+    {"seed": seed, "scopes": scopes, "flow": flow, "lines": lines, "admin": admin, "org": org}[args.command]()
 
 
 if __name__ == "__main__":

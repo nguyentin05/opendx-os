@@ -36,7 +36,7 @@ if [ -f .env ]; then
 fi
 
 WAIT_SECONDS="${WAIT_SECONDS:-300}"
-SERVICES=(postgres authz hasura keycloak seaweedfs clamav kestra operator cap-process apisix workspace-ui)
+SERVICES=(postgres authz hasura keycloak seaweedfs clamav kestra operator cap-process cap-hr apisix workspace-ui)
 failures=0
 
 pass() { echo "  PASS  $*"; }
@@ -89,7 +89,7 @@ psql_as() {
         return 1
     fi
 }
-for pair in dxos_hasura:HASURA_DATABASE_PASSWORD dxos_process:PROCESS_DATABASE_PASSWORD dxos_authz:AUTHZ_DATABASE_PASSWORD; do
+for pair in dxos_hasura:HASURA_DATABASE_PASSWORD dxos_process:PROCESS_DATABASE_PASSWORD dxos_authz:AUTHZ_DATABASE_PASSWORD dxos_hr:HR_DATABASE_PASSWORD; do
     role="${pair%%:*}"
     out="$(psql_as "$role" "${pair#*:}" '$POSTGRES_DB' 'SELECT current_user')" || true
     if [ "$out" = "$role" ]; then pass "$role logs in"; else fail "$role cannot log in: $out"; fi
@@ -142,6 +142,7 @@ probe kestra "http://localhost:${KESTRA_PORT:-8082}/api/v1/configs" 401
 # Without a Keycloak token nothing is served: authz answers 401, and Hasura
 # (webhook mode) refuses the GraphQL request.
 probe authz "http://localhost:${APISIX_GATEWAY_PORT:-9080}/api/auth/me" 401
+probe cap-hr "http://localhost:${APISIX_GATEWAY_PORT:-9080}/api/cap/hr/me" 401
 out="$(curl -s -m 10 -H 'Content-Type: application/json' -H 'X-Hasura-Role: role_procurement_manager' \
     -H 'X-Hasura-User-Id: 22222222-2222-4222-8222-222222222222' \
     -d '{"query":"{ domain_procurement_requests { id } }"}' "http://localhost:${APISIX_GATEWAY_PORT:-9080}/v1/graphql" || true)"

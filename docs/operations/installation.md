@@ -51,8 +51,14 @@ registry discovery and beta automatic-workflow readiness remain open.
    Sign-in uses Keycloak (realm `dxos`, client `dxos-portal`, browser flow with
    PKCE). Create accounts in the Keycloak admin console
    (`http://localhost:8085/admin`, `KEYCLOAK_ADMIN`/`KEYCLOAK_ADMIN_PASSWORD`). A
-   user appears in `core.users` on their first request. Grant roles by inserting
-   into `core.user_roles` and departments into `cap_hr.staff`. The roles take
+   user appears in `core.users` on their first request. Set
+   `BOOTSTRAP_OPERATOR_EMAIL` to the email of the account that should administer
+   the installation: its first sign-in makes it the platform operator
+   (`role_operator`), once, while nobody holds that role. Operators then grant
+   and revoke roles through `/api/auth/users/{id}/roles/{role}`
+   ([integrating the UI](../development/ui-integration.md#8-administration)),
+   and users holding `role_hr_admin` maintain departments and staff through
+   `/api/cap/hr`. Roles take
    effect within `ROLE_CACHE_TTL` (default 5s), with no new token
    ([ADR 0007](../adr/0007-keycloak-authenticates-platform-authorizes.md)).
 
@@ -63,7 +69,10 @@ registry discovery and beta automatic-workflow readiness remain open.
    with a quote uploaded to cap-process and scanned by ClamAV) and prints what each
    person sees through the gateway; `scripts/seed-demo.py flow` takes one request
    through submit, department approval and budget approval with cap-process
-   commands, including the refusals on the way; `scripts/seed-demo.py lines` files
+   commands, including the refusals on the way; `scripts/seed-demo.py admin` has
+   the operator grant and revoke a role and shows what the user may do before
+   and after; `scripts/seed-demo.py org` has an HR administrator add a
+   department and move someone into it; `scripts/seed-demo.py lines` files
    a request with a vendor from the application's vendor list and line items, and
    shows who may read and change them before and after it is submitted. Use them
    on local stacks only.
@@ -78,6 +87,12 @@ registry discovery and beta automatic-workflow readiness remain open.
      permissions are dropped, and the domain table, data and roles are kept;
    - Hasura metadata changed by hand is repaired on the next pass.
 
+   The operator also deploys each application's workflows to Kestra and keeps
+   them there: a flow deleted or edited in Kestra is put back on the next pass,
+   and cap-process starts sending an application's events to its flow as soon
+   as it is deployed. Nothing is uploaded by hand
+   ([workflow deployment](../contracts/data-contracts.md#workflow-deployment)).
+
    Each new or changed package is installed on its own, so a refused one (for
    example, a capability that is not enabled) does not hold back the others; it
    is retried when its package changes, or after ten minutes. While any package
@@ -86,10 +101,10 @@ registry discovery and beta automatic-workflow readiness remain open.
 
    Without Compose, validate and apply application manifests using `dxos-operator`:
    ```bash
-   ./bin/dxos-operator validate contracts/fixtures/procurement.yaml
+   ./bin/dxos-operator validate apps/procurement/manifest.yaml
    HASURA_URL=http://localhost:8080 HASURA_ADMIN_SECRET=dxos_admin_secret \
    DATABASE_URL=postgres://dxos_admin:dxos_secret@localhost:5432/dxos_db?sslmode=disable \
-   ./bin/dxos-operator apply contracts/fixtures/procurement.yaml
+   ./bin/dxos-operator apply apps/procurement/manifest.yaml
    ```
 
 ## Kubernetes Operator (development cluster)

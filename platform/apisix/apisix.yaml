@@ -32,6 +32,23 @@ routes:
       nodes:
         "hasura:8080": 1
 
+  # Workflow effects are called by the workflow engine inside the network,
+  # never through the gateway.
+  - id: cap-process-effects-closed
+    uri: /api/cap/process/effects/*
+    priority: 10
+    plugins:
+      response-rewrite:
+        status_code: 404
+        body: '{"error":{"code":"Not Found","message":"Not Found"}}'
+        headers:
+          set:
+            Content-Type: application/json
+    upstream:
+      type: roundrobin
+      nodes:
+        "cap-process:8081": 1
+
   - id: cap-process-commands
     uri: /api/cap/process/*
     plugins:
@@ -51,12 +68,30 @@ routes:
         "cap-process:8081": 1
 
   # The caller's identity and the roles they hold (dxos-authz, ADR 0007).
+  - id: cap-hr
+    uri: /api/cap/hr/*
+    plugins:
+      cors:
+        allow_origins: "http://localhost:5173,http://localhost:15173"
+        allow_methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+        allow_headers: "Authorization,Content-Type"
+      proxy-rewrite:
+        headers:
+          remove:
+            - X-Hasura-Admin-Secret
+            - X-Hasura-User-Id
+            - X-Hasura-Workspace-Id
+    upstream:
+      type: roundrobin
+      nodes:
+        "cap-hr:8083": 1
+
   - id: authz-me
     uri: /api/auth/*
     plugins:
       cors:
         allow_origins: "http://localhost:5173,http://localhost:15173"
-        allow_methods: "GET,OPTIONS"
+        allow_methods: "GET,PUT,DELETE,OPTIONS"
         allow_headers: "Authorization,Content-Type"
     upstream:
       type: roundrobin

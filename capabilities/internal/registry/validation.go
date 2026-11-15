@@ -123,6 +123,14 @@ func (a *AppDefinition) validateTable(t *Table, roles, commands map[string]bool)
 			}
 		}
 	}
+	// A command payload writes plain business columns only.
+	writable := map[string]bool{}
+	for _, c := range t.Columns {
+		writable[c.Name] = true
+	}
+	for _, fk := range t.ForeignKeys {
+		delete(writable, fk.Column)
+	}
 	own := map[string]bool{}
 	if sm := t.StateMachine; sm != nil {
 		if !statePattern.MatchString(sm.Initial) {
@@ -146,6 +154,13 @@ func (a *AppDefinition) validateTable(t *Table, roles, commands map[string]bool)
 			}
 			if err := validateFilter(c.RecordFilter, cols, 0); err != nil {
 				return err
+			}
+			seen := map[string]bool{}
+			for _, f := range c.Payload {
+				if !writable[f.Column] || seen[f.Column] {
+					return fmt.Errorf("command %q payload names %q, which is not a writable business column", c.Name, f.Column)
+				}
+				seen[f.Column] = true
 			}
 		}
 	}
@@ -301,6 +316,16 @@ func validateFilter(f map[string]any, cols map[string]string, depth int) error {
 			default:
 				return errors.New("unsupported filter value")
 			}
+		}
+	}
+	return nil
+}
+
+// Column returns the business column of t named name, or nil.
+func (t *Table) Column(name string) *Column {
+	for i := range t.Columns {
+		if t.Columns[i].Name == name {
+			return &t.Columns[i]
 		}
 	}
 	return nil

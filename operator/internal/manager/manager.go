@@ -39,6 +39,7 @@ import (
 	"github.com/opendx-os/opendx-os/operator/internal/apply"
 	"github.com/opendx-os/opendx-os/operator/internal/controller"
 	"github.com/opendx-os/opendx-os/operator/internal/knowledge"
+	"github.com/opendx-os/opendx-os/operator/internal/workflows"
 )
 
 // Run parses controller flags, builds the applier from the environment and runs
@@ -85,6 +86,16 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		HasuraURL:         os.Getenv("HASURA_URL"),
 		HasuraAdminSecret: os.Getenv("HASURA_ADMIN_SECRET"),
 	}, nil)
+
+	// Application workflows are deployed when a workflow engine is configured.
+	if base := os.Getenv("KESTRA_URL"); base != "" {
+		kestra, err := workflows.NewKestra(base, os.Getenv("KESTRA_USER"), os.Getenv("KESTRA_PASSWORD"), nil)
+		if err != nil {
+			_, _ = fmt.Fprintf(stderr, "workflow engine: %v\n", err)
+			return 1
+		}
+		applier.DeployWorkflowsTo(kestra)
+	}
 
 	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))

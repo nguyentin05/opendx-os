@@ -22,6 +22,7 @@ import (
 	"github.com/opendx-os/opendx-os/capabilities/internal/files"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -54,7 +55,6 @@ func TestRouteAuthenticationEnvelopes(t *testing.T) {
 		handler            http.Handler
 	}{
 		{"command", "POST", "/api/cap/process/commands/app/submit", e.AuthenticatedHandler(envelopeVerifier{})},
-		{"effect", "POST", "/api/cap/process/effects/work-item", e.AuthenticatedEffectHandler(envelopeVerifier{})},
 		{"upload", "POST", "/api/cap/process/files/upload", (&files.Service{}).AuthenticatedHandler(envelopeVerifier{})},
 		{"download", "GET", "/api/cap/process/files/file", (&files.Service{}).AuthenticatedHandler(envelopeVerifier{})},
 	} {
@@ -78,5 +78,52 @@ func TestRouteAuthenticationEnvelopes(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// The workflow engine is a service: it presents the workflow service
+// credential, not a user token, and acts as the workflow service account.
+func TestEffectEndpointAdmitsOnlyTheWorkflowServiceCredential(t *testing.T) {
+	const credential = "workflow-service-credential-0123456789"
+	e := NewEngine(nil, nil)
+	if _, err := e.EffectHandler(credential); err == nil {
+		t.Fatal("an effect handler without a workflow service account must be refused")
+	}
+	if err := e.ConfigureWorkflowService("22222222-2222-4222-8222-000000000005", "role_workflow"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.EffectHandler("too-short"); err == nil {
+		t.Fatal("a short credential must be refused")
+	}
+	h, err := e.EffectHandler(credential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(authorization, body string) int {
+		r := httptest.NewRequest("POST", "/api/cap/process/effects/work-item", strings.NewReader(body))
+		if authorization != "" {
+			r.Header.Set("Authorization", authorization)
+		}
+		// A role header means nothing here: the credential decides.
+		r.Header.Set("X-Hasura-Role", "role_workflow")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	for name, authorization := range map[string]string{
+		"missing":          "",
+		"another secret":   "Bearer workflow-service-credential-0123456780",
+		"prefix of it":     "Bearer workflow-service-credential",
+		"basic scheme":     "Basic " + credential,
+		"no scheme":        credential,
+		"a user JWT shape": "Bearer eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ4In0.signature",
+	} {
+		if code := call(authorization, `{"event_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","step_name":"create_review"}`); code != 401 {
+			t.Errorf("%s: %d, want 401", name, code)
+		}
+	}
+	// With the credential the request is read; a malformed one is a 400, not a 401.
+	if code := call("Bearer "+credential, `{"event_id":"x","step_name":"y","extra":true}`); code != 400 {
+		t.Fatalf("authenticated malformed request: %d, want 400", code)
 	}
 }

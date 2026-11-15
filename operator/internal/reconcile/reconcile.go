@@ -34,6 +34,7 @@ import (
 	"github.com/opendx-os/opendx-os/operator/internal/apply"
 	"github.com/opendx-os/opendx-os/operator/internal/manifest"
 	"github.com/opendx-os/opendx-os/operator/internal/planner"
+	"github.com/opendx-os/opendx-os/operator/internal/workflows"
 )
 
 // DefaultRetryRefused is how long Watch waits before retrying an application
@@ -72,11 +73,14 @@ type Result struct {
 	Installed []string // installed or upgraded
 	Removed   []string
 	Repaired  []string // Hasura metadata differences that were repaired
+	// Workflows deployed to, or removed from, the workflow engine, as "<app>/<workflow>".
+	Workflows        []string
+	RemovedWorkflows []string
 }
 
 // Changed reports whether the pass changed anything.
 func (r Result) Changed() bool {
-	return len(r.Installed)+len(r.Removed)+len(r.Repaired) > 0
+	return len(r.Installed)+len(r.Removed)+len(r.Repaired)+len(r.Workflows)+len(r.RemovedWorkflows) > 0
 }
 
 // Run makes one pass over appsDir. See Pass.
@@ -92,7 +96,10 @@ func (r *Runner) Run(ctx context.Context, appsDir string) error {
 //   - an installed application without a package is uninstalled (status
 //     Removed; data and roles are kept), unless some package is invalid, since
 //     an unreadable package may be the installed application being edited;
-//   - Hasura metadata that drifted from the installed definitions is repaired.
+//   - Hasura metadata that drifted from the installed definitions is repaired;
+//   - the workflows of the installed applications are deployed to the workflow
+//     engine, redeployed when the engine's copy is missing or was changed, and
+//     removed with their application.
 //
 // The returned error joins every problem found; the rest of the pass still ran.
 func (r *Runner) Pass(ctx context.Context, appsDir string) (Result, error) {
@@ -100,7 +107,7 @@ func (r *Runner) Pass(ctx context.Context, appsDir string) (Result, error) {
 	if r.applier == nil {
 		return res, errors.New("applier runner is required")
 	}
-	apps, problems, err := loadPackages(appsDir)
+	apps, flows, problems, err := loadPackages(appsDir)
 	if err != nil {
 		return res, err
 	}
@@ -180,6 +187,24 @@ func (r *Runner) Pass(ctx context.Context, appsDir string) (Result, error) {
 	if err != nil {
 		errs = append(errs, fmt.Errorf("repair Hasura metadata: %w", err))
 	}
+
+	// A package's workflow files apply once its definition is the installed
+	// one; until then the application keeps the flows it was installed with.
+	pending := map[string]bool{}
+	for _, name := range planner.Changed(apps, live) {
+		pending[name] = true
+	}
+	declared := map[string][]workflows.Definition{}
+	for _, a := range apps {
+		if !pending[a.Metadata.Name] {
+			declared[a.Metadata.Name] = flows[a.Metadata.Name]
+		}
+	}
+	synced, err := r.applier.SyncWorkflows(ctx, declared)
+	res.Workflows, res.RemovedWorkflows = synced.Deployed, synced.Removed
+	if err != nil {
+		errs = append(errs, err)
+	}
 	return res, errors.Join(errs...)
 }
 
@@ -198,7 +223,8 @@ func (r *Runner) Watch(ctx context.Context, appsDir string, interval time.Durati
 			return nil
 		}
 		if res.Changed() {
-			log.Info("reconciled", "installed", res.Installed, "removed", res.Removed, "repaired", res.Repaired)
+			log.Info("reconciled", "installed", res.Installed, "removed", res.Removed, "repaired", res.Repaired,
+				"workflows", res.Workflows, "removedWorkflows", res.RemovedWorkflows)
 		}
 		problem := ""
 		if err != nil {
@@ -248,25 +274,27 @@ func isRefusal(err error) bool {
 	return errors.As(err, &registryErr) || errors.As(err, &schemaErr)
 }
 
-// loadPackages parses every <appsDir>/<package>/manifest.yaml. A package that
-// does not validate, names a missing workflow file or repeats another
-// package's application name is reported as a problem and left out.
-func loadPackages(appsDir string) ([]manifest.DXApplication, []error, error) {
+// loadPackages parses every <appsDir>/<package>/manifest.yaml and the workflow
+// files it declares. A package that does not validate, has a missing or
+// unacceptable workflow file, or repeats another package's application name is
+// reported as a problem and left out.
+func loadPackages(appsDir string) ([]manifest.DXApplication, map[string][]workflows.Definition, []error, error) {
 	info, err := os.Stat(appsDir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read apps directory: %w", err)
+		return nil, nil, nil, fmt.Errorf("read apps directory: %w", err)
 	}
 	if !info.IsDir() {
-		return nil, nil, fmt.Errorf("read apps directory: %s is not a directory", appsDir)
+		return nil, nil, nil, fmt.Errorf("read apps directory: %s is not a directory", appsDir)
 	}
 	matches, err := filepath.Glob(filepath.Join(appsDir, "*", "manifest.yaml"))
 	if err != nil {
-		return nil, nil, fmt.Errorf("scan apps directory: %w", err)
+		return nil, nil, nil, fmt.Errorf("scan apps directory: %w", err)
 	}
 	sort.Strings(matches)
 
 	var problems []error
 	var apps []manifest.DXApplication
+	flows := map[string][]workflows.Definition{}
 	source := map[string]string{}
 	duplicate := map[string]bool{}
 	for _, m := range matches {
@@ -275,8 +303,9 @@ func loadPackages(appsDir string) ([]manifest.DXApplication, []error, error) {
 			problems = append(problems, fmt.Errorf("%s: %w", m, err))
 			continue
 		}
-		if missing := missingWorkflow(filepath.Dir(m), app); missing != "" {
-			problems = append(problems, fmt.Errorf("%s: missing workflow file %s", m, missing))
+		defs, err := workflows.LoadPackage(filepath.Dir(m), app)
+		if err != nil {
+			problems = append(problems, fmt.Errorf("%s: %w", m, err))
 			continue
 		}
 		if first, seen := source[app.Metadata.Name]; seen {
@@ -285,6 +314,7 @@ func loadPackages(appsDir string) ([]manifest.DXApplication, []error, error) {
 			continue
 		}
 		source[app.Metadata.Name] = m
+		flows[app.Metadata.Name] = defs
 		apps = append(apps, *app)
 	}
 	kept := apps[:0]
@@ -293,15 +323,5 @@ func loadPackages(appsDir string) ([]manifest.DXApplication, []error, error) {
 			kept = append(kept, a)
 		}
 	}
-	return kept, problems, nil
-}
-
-func missingWorkflow(appDir string, app *manifest.DXApplication) string {
-	for _, wf := range app.Spec.Workflows {
-		path := filepath.Join(appDir, filepath.FromSlash(wf.File))
-		if info, err := os.Stat(path); err != nil || info.IsDir() {
-			return wf.File
-		}
-	}
-	return ""
+	return kept, flows, problems, nil
 }

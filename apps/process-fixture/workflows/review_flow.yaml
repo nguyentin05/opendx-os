@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 DX-OS Open-Core Contributors
-# Import and verify against the deployed Kestra plugin version before enabling.
+# Deployed by the operator. On a submitted record it asks cap-process to run the
+# create_review effect the manifest declares; the event id makes a retry harmless.
 id: review_flow
 namespace: dxos.apps.process_fixture
 triggers:
@@ -19,7 +20,6 @@ tasks:
         contentType: application/json
         headers:
           Authorization: "Bearer {{ secret('DXOS_WORKFLOW_TOKEN') }}"
-          X-Hasura-Role: role_workflow
           Idempotency-Key: "{{ trigger.body.event_id }}:create_review"
         body: |
           {"event_id":"{{ trigger.body.event_id }}","step_name":"create_review"}

@@ -93,3 +93,81 @@ CREATE TABLE IF NOT EXISTS core.user_roles (
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_roles_role ON core.user_roles (role_name);
+
+-- Role administration. dxos-authz changes role assignments only through these
+-- functions, so its connection needs no write access to core.user_roles and
+-- every change is audited in the 'core' chain in the same transaction.
+-- p_actor is the administrator and p_acting_role the role they act as (NULL
+-- when the platform assigns the first operator).
+CREATE OR REPLACE FUNCTION core.grant_role(p_actor UUID, p_acting_role TEXT, p_user UUID, p_role TEXT)
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, core, public AS $$
+DECLARE
+    v_rows INTEGER;
+BEGIN
+    IF session_user <> 'dxos_authz' THEN
+        RAISE EXCEPTION 'untrusted database connection for role administration';
+    END IF;
+    INSERT INTO core.user_roles (user_id, role_name, granted_by)
+    VALUES (p_user, p_role, p_actor)
+    ON CONFLICT DO NOTHING;
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
+    IF v_rows = 1 THEN
+        INSERT INTO core.audit_logs (actor_id, acting_role, action, entity_type, entity_id, payload)
+        VALUES (p_actor, p_acting_role, 'GRANT_ROLE', 'core.user_roles', p_user, jsonb_build_object('role', p_role));
+    END IF;
+    RETURN v_rows = 1;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION core.revoke_role(p_actor UUID, p_acting_role TEXT, p_user UUID, p_role TEXT)
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, core, public AS $$
+DECLARE
+    v_rows INTEGER;
+BEGIN
+    IF session_user <> 'dxos_authz' THEN
+        RAISE EXCEPTION 'untrusted database connection for role administration';
+    END IF;
+    DELETE FROM core.user_roles WHERE user_id = p_user AND role_name = p_role;
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
+    IF v_rows = 1 THEN
+        INSERT INTO core.audit_logs (actor_id, acting_role, action, entity_type, entity_id, payload)
+        VALUES (p_actor, p_acting_role, 'REVOKE_ROLE', 'core.user_roles', p_user, jsonb_build_object('role', p_role));
+    END IF;
+    RETURN v_rows = 1;
+END;
+$$;
+
+-- A new installation has nobody who may assign roles. The first sign-in of the
+-- configured account makes it the platform operator, once: it is refused as
+-- soon as any user holds role_operator.
+CREATE OR REPLACE FUNCTION core.bootstrap_operator(p_user UUID)
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, core, public AS $$
+BEGIN
+    IF session_user <> 'dxos_authz' THEN
+        RAISE EXCEPTION 'untrusted database connection for role administration';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtext('dxos.bootstrap_operator'));
+    IF EXISTS (SELECT 1 FROM core.user_roles WHERE role_name = 'role_operator') THEN
+        RETURN false;
+    END IF;
+    INSERT INTO core.user_roles (user_id, role_name, granted_by) VALUES (p_user, 'role_operator', p_user);
+    INSERT INTO core.audit_logs (actor_id, acting_role, action, entity_type, entity_id, payload)
+    VALUES (p_user, NULL, 'BOOTSTRAP_OPERATOR', 'core.user_roles', p_user, jsonb_build_object('role', 'role_operator'));
+    RETURN true;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION core.grant_role(UUID, TEXT, UUID, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION core.revoke_role(UUID, TEXT, UUID, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION core.bootstrap_operator(UUID) FROM PUBLIC;
+
+-- The workflow engine acts through one platform service account. It is not a
+-- person and has no Keycloak login: capability services admit it by the
+-- workflow service credential, and it only runs the effects that installed
+-- applications declare.
+INSERT INTO core.users (id, email, display_name)
+VALUES ('22222222-2222-4222-8222-000000000005', 'workflow@dxos.internal', 'Workflow service')
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO core.user_roles (user_id, role_name)
+VALUES ('22222222-2222-4222-8222-000000000005', 'role_workflow')
+ON CONFLICT DO NOTHING;

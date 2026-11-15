@@ -68,7 +68,11 @@ func TestReconcileValidAppPackageAndRejectMissingWorkflow(t *testing.T) {
 	}
 
 	// 2. Create workflow file and verify reconcile succeeds
-	if err := os.WriteFile(filepath.Join(appDir, "workflows", "procurement_flow.yaml"), []byte("id: procurement_approval_flow\n"), 0o644); err != nil {
+	flow, err := os.ReadFile(filepath.Join("..", "..", "..", "apps", "procurement", "workflows", "procurement_flow.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "workflows", "procurement_flow.yaml"), flow, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := rec.Run(context.Background(), tmp); err != nil {

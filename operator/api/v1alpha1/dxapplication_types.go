@@ -230,6 +230,18 @@ type Command struct {
 	AllowedRoles []string `json:"allowedRoles"`
 	// +optional
 	RecordFilter *apiextensionsv1.JSON `json:"recordFilter,omitempty"`
+	// Payload lists the columns of the record the caller sets with the
+	// command, in the same transaction as the state change.
+	// +optional
+	Payload []PayloadField `json:"payload,omitempty"`
+}
+
+// PayloadField is one column a command writes from its payload.
+type PayloadField struct {
+	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9_]*$`
+	Column string `json:"column"`
+	// Required refuses the command when the payload omits the column.
+	Required bool `json:"required"`
 }
 
 // Attachment binds a file column to the commands that require a CLEAN file.

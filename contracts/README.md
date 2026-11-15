@@ -53,14 +53,18 @@ token. It is not a signed token. Tokens carry identity only (`sub`, email,
 name, audience `dxos-runtime`). The caller names the role they act as in
 `X-Hasura-Role`; it is accepted only when `core.user_roles` grants it now, and a
 caller holding exactly one role may omit it. Raw `X-Hasura-User-Id` headers
-never create authority. Workflow effect calls additionally require the
-configured workflow service user acting as its role.
+never create authority. Workflow effect calls come from the workflow engine,
+which presents the workflow service credential instead of a user token and
+acts as the platform's workflow service account
+([workflow deployment](../docs/contracts/data-contracts.md#workflow-deployment)).
 
 `dxos-authz` serves two read-only calls for the UI: `GET /api/auth/me` (the
 caller's identity and roles) and `GET /api/auth/apps` (the installed
 applications the caller holds a role in, with those roles and each
-application's tables as its manifest declares them). Neither grants anything;
-see [integrating the UI](../docs/development/ui-integration.md).
+application's tables as its manifest declares them). Neither grants anything.
+For platform operators (`role_operator`) it also lists accounts and roles and
+grants or revokes a role, each change audited in the `core` chain; see
+[integrating the UI](../docs/development/ui-integration.md).
 
 A command is accepted when:
 
@@ -70,8 +74,10 @@ A command is accepted when:
    record filter;
 3. the record satisfies the command's record filter (for example, no one
    approves their own request);
-4. version and state match;
-5. every attachment the command requires is `CLEAN`.
+4. its payload holds only the columns the command declares, with every required
+   one present and each value fitting its column's type (otherwise 400);
+5. version and state match;
+6. every attachment the command requires is `CLEAN`.
 
 A record outside the role's scope answers 404, so its existence is not revealed.
 
@@ -80,8 +86,9 @@ Each change increments the parent record's version, so a command carrying a
 version read before the change is a 409; once the parent leaves its editable
 states the database refuses further changes.
 
-The status change, its audit row (actor, acting role and command), the outbox
-event and the idempotency receipt commit in one transaction. A receipt is
+The status change with the payload's columns, its audit row (actor, acting role
+and command), the outbox event and the idempotency receipt commit in one
+transaction. A receipt is
 identified by actor, app, entity, command and `Idempotency-Key`. Its fingerprint
 is the SHA-256 of canonical JSON `{entity_id, expected_version, payload}`. A
 retry with the same key and request returns the stored response after
@@ -94,7 +101,9 @@ preserve the event id and payload. The database `outbox_events.id` is the wire
 `event_id`. Delivery grants no permission; a workflow effect resolves its source
 from the persisted event and the application's declared steps, never from the
 caller's body. Each step runs at most once per event
-(`cap_process.processed_workflow_steps`).
+(`cap_process.processed_workflow_steps`). An event goes to the flow the operator
+deployed for its application (`core.app_workflows`), never to a destination
+named by the event.
 
 ## Fixtures and checks
 
@@ -105,7 +114,8 @@ design inputs. Contract tests check that the samples agree:
 shape alone does not establish a manifest's semantic safety.
 
 Runtime configuration: `DATABASE_URL`, `OIDC_ISSUER_URL`, `OIDC_JWKS_URL`,
-`OIDC_AUDIENCE`, `ROLE_CACHE_TTL`, `KESTRA_URL`, `S3_ENDPOINT`, `S3_BUCKET`,
-`CLAMAV_ADDRESS`. Database tests require `TEST_DATABASE_URL` and the
+`OIDC_AUDIENCE`, `ROLE_CACHE_TTL`, `KESTRA_URL`, `KESTRA_USER`,
+`KESTRA_PASSWORD`, `KESTRA_WEBHOOK_KEY`, `WORKFLOW_SERVICE_TOKEN`,
+`S3_ENDPOINT`, `S3_BUCKET`, `CLAMAV_ADDRESS`. Database tests require `TEST_DATABASE_URL` and the
 `integration` build tag. The UI receives only the public issuer, client,
 callback and gateway configuration; service credentials are never exposed.

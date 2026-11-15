@@ -113,12 +113,20 @@ Idempotency-Key: <a fresh UUID per user action>
 {"entity_id": "<record id>", "expected_version": <version shown>, "payload": {}}
 ```
 
+`payload` holds what the command declares under
+`stateMachine.commands[].payload`: for each entry, the value of that column
+(a string for `text`, `uuid` and `date`, a number for numeric columns). Ask the
+user for those fields before running the command, and mark the ones with
+`required: true`. Procurement's `reject` takes
+`{"rejection_reason": "..."}`. A command without a declared payload takes `{}`.
+
 Command names are unique within an application, so the table is not part of
 the path. The response carries the record's new `status` and `version`.
 
 | Status | Meaning for the UI |
 | --- | --- |
 | 200 | Done. Retrying with the same key and body returns the same answer |
+| 400 | The payload does not match the command's declaration: a required field is missing or empty, a value has the wrong type, or a field is not declared |
 | 401 | Token missing or expired: sign in again |
 | 403 | The role may not run this command on this record |
 | 404 | The record is not visible to this role (or does not exist) |
@@ -138,17 +146,79 @@ the path. The response carries the record's new `status` and `version`.
 4. `GET /api/cap/process/files/{file_id}` downloads a `CLEAN` file the role may
    read: its uploader, or a role that can read a record it is attached to.
 
-## 7. Try it
+## 7. Work items
+
+When an application's workflow opens a work item (procurement opens "Review
+procurement request" when a request is submitted), roles the manifest lists
+under `sharedAccess` for `cap_work.work_items` read it through GraphQL:
+
+```graphql
+query { cap_work_work_items(order_by: {created_at: desc}) {
+  id title description priority board_column assignee_id source_type source_id created_at } }
+```
+
+`source_type` is the table and `source_id` the record the item is about, so an
+inbox entry links to the record's detail. Only the application's own items are
+returned; they are not narrowed by department yet. The item appears a few
+seconds after the command, once the workflow has run.
+
+## 8. Administration
+
+For users holding the platform role `role_operator` (it appears in
+`/api/auth/me` with no owner). Everyone else gets 403.
+
+| Call | Does |
+| --- | --- |
+| `GET /api/auth/users` | `users`: every account with `id`, `email`, `display_name`, `status` and the `roles` it holds |
+| `GET /api/auth/roles` | `roles`: every role that can be granted now, with `name`, `description` and its owner (`app_id` or `cap_id`) |
+| `PUT /api/auth/users/{user_id}/roles/{role}` | Grants the role. 204, also when it was already held |
+| `DELETE /api/auth/users/{user_id}/roles/{role}` | Revokes the role. 204, also when it was not held |
+
+| Status | Meaning |
+| --- | --- |
+| 404 | Unknown user, or a role that does not exist or is not in force (its application is not installed) |
+| 409 | An assignment nobody changes here: `role_workflow` belongs to the workflow service, and an operator cannot revoke their own `role_operator` |
+
+A change shows in the user's `/api/auth/me` and GraphQL at once and in
+cap-process within a few seconds, without a new sign-in. Every change is
+recorded with the operator who made it. An account is listed once it has signed
+in.
+
+### Departments and staff (cap-hr)
+
+Reads are for every signed-in user; changes need the capability role
+`role_hr_admin` (403 otherwise).
+
+| Call | Does |
+| --- | --- |
+| `GET /api/cap/hr/me` | The caller's `org_unit` (`id`, `code`, `name`, `parent_id`) and `position`, both `null` without a department, and `administrator` (whether they hold `role_hr_admin`) |
+| `GET /api/cap/hr/org-units` | `org_units`: every department with `id`, `parent_id`, `code`, `name`, `staff_count`; build the tree from `parent_id` |
+| `GET /api/cap/hr/staff` | `staff` of the caller's own department: `user_id`, `display_name`, `email`, `org_unit_id`, `position`, `joined_at`. An administrator gets every department, or the one named by `?org_unit_id=`; anyone else naming another department gets 403 |
+| `POST /api/cap/hr/org-units` | Creates a department from `{"code", "name", "parent_id"}` (`parent_id` optional). 201 with its `id` |
+| `PATCH /api/cap/hr/org-units/{id}` | Changes the fields sent: `code`, `name`, `parent_id` (`null` makes it a top-level department). 204 |
+| `PUT /api/cap/hr/staff/{user_id}` | Places the user in `{"org_unit_id", "position"}` (`position` optional). A user has one department, so this moves them. 204 |
+| `DELETE /api/cap/hr/staff/{user_id}` | Takes the user out of their department. 204 |
+
+| Status | Meaning |
+| --- | --- |
+| 400 | A field is missing, blank, of the wrong type or not known |
+| 404 | Unknown department or user (also: removing someone who has no department) |
+| 409 | With a message to show: the code is taken, the parent does not exist, or the department would end up under itself or one of its sub-departments |
+
+Moving a user changes what they see under the `department` scope from their
+next request. Records keep the department they were created in. There is no
+call to delete a department.
+
+## 9. Try it
 
 `scripts/seed-demo.py seed` creates six accounts (password `Demo@2026`) across
-three departments. `scripts/seed-demo.py scopes`, `flow` and `lines` make the
-calls above from the command line and print what each person may see and do;
+three departments. `scripts/seed-demo.py scopes`, `flow`, `lines`, `admin` and
+`org` make the calls above from the command line and print what each person may see and do;
 the script is a working reference for request shapes.
 
 ## Not available yet
 
-- Work items for approvers (inbox, Kanban): workflows are not deployed to Kestra
-  yet, and `cap_work.work_items` has no service route.
-- Screens to assign roles and departments: there is no API for it yet.
-- `rejection_reason`: commands do not accept a payload yet.
+- Changing work items (assign, move between columns): `cap_work.work_items` has
+  no service route yet. Reading them works: see below.
+- Accounts that have never signed in are not listed for role assignment.
 - cap-data and cap-ai routes.

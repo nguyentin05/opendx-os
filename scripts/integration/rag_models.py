@@ -162,11 +162,18 @@ def main():
         thread=threading.Thread(target=lambda:result.append(answer('A',read,scope,'Director')))
         thread.start()
         try:
-            for _ in range(50):
-                if fake()['pending']:
+            # Retrieval and fresh scope checks may legitimately take longer
+            # than one second on a populated installation. Observe the actual
+            # handoff before revoking; never release the hold just because the
+            # old fixed polling count elapsed.
+            deadline = time.monotonic() + 10
+            pending = False
+            while time.monotonic() < deadline:
+                pending = fake()['pending'] > 0
+                if pending:
                     break
-                time.sleep(.02)
-            source.require(fake()['pending']>0,'FAIL: provider handoff not observed')
+                time.sleep(.05)
+            source.require(pending, 'FAIL: provider handoff not observed')
             source.db('DELETE FROM core.user_roles WHERE user_id='+literal(actors['A'])+' AND role_name='+literal(read))
             fake('/control',{'mode':'normal'})
             thread.join(10)

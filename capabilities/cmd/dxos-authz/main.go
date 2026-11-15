@@ -60,9 +60,14 @@ func main() {
 		log.Fatal(err)
 	}
 
+	store := authz.PostgresStore{DB: db}
+	resolver := authz.NewResolver(authn, store, ttl)
+	// Operators manage role assignments here. BOOTSTRAP_OPERATOR_EMAIL names
+	// the account that becomes the first operator of a new installation.
+	resolver.Administer(store, os.Getenv("BOOTSTRAP_OPERATOR_EMAIL"))
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           authz.Handler(authz.NewResolver(authn, authz.PostgresStore{DB: db}, ttl)),
+		Handler:           authz.Handler(resolver),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {

@@ -28,6 +28,23 @@ CREATE TABLE IF NOT EXISTS core.app_deployments (
 CREATE INDEX IF NOT EXISTS idx_app_deployments_app
     ON core.app_deployments (app_id, started_at DESC);
 
+-- Workflows of installed applications that the operator has deployed to the
+-- workflow engine. The row is the route of the application's events: the
+-- event publisher delivers an event only to a flow recorded here, and the
+-- operator redeploys the stored definition when the engine's copy is missing
+-- or differs (revision is the engine's revision of the deployed flow).
+CREATE TABLE IF NOT EXISTS core.app_workflows (
+    app_id TEXT NOT NULL REFERENCES core.apps(app_id),
+    workflow_id TEXT NOT NULL CHECK (workflow_id ~ '^[a-z][a-z0-9_]*$'),
+    namespace TEXT NOT NULL CHECK (namespace ~ '^[a-z][a-z0-9_.]*$'),
+    flow_id TEXT NOT NULL CHECK (flow_id ~ '^[a-z][a-z0-9_]*$'),
+    definition TEXT NOT NULL CHECK (length(trim(definition)) > 0),
+    revision INTEGER NOT NULL CHECK (revision > 0),
+    deployed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (app_id, workflow_id),
+    UNIQUE (namespace, flow_id)
+);
+
 -- Versions of the Tier 1 schema applied to this database, so a running
 -- installation can be upgraded in place. Written by the migration runner; the
 -- checksum detects a migration edited after it was applied.

@@ -1,37 +1,61 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 DX-OS Open-Core Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package events
 
 import (
-	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
+	"errors"
 	"testing"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
 )
 
-func TestRouteRejectsStaleAndAmbiguousDeclarations(t *testing.T) {
-	app := &registry.AppDefinition{AppID: "example", Version: "1", Spec: registry.Spec{Workflows: []registry.Workflow{{ID: "review", SubscribedEvents: []string{"command.committed"}}}}}
-	routes := []Route{{AppID: "example", Version: "1", WorkflowID: "review", Endpoint: "http://kestra:8080/api/v1/executions/webhook/example/review/key"}}
-	if got, err := selectRoute(routes, app, "command.committed"); err != nil || got != routes[0].Endpoint {
-		t.Fatal("declared route unavailable", err)
+func TestSubscriberIsTheOneWorkflowOfTheEvent(t *testing.T) {
+	app := &registry.AppDefinition{AppID: "example", Version: "1", Spec: registry.Spec{Workflows: []registry.Workflow{
+		{ID: "review", SubscribedEvents: []string{"command.committed"}},
+	}}}
+	if got, err := subscriber(app, "command.committed"); err != nil || got != "review" {
+		t.Fatalf("subscriber = %q, %v", got, err)
 	}
-	app.Version = "2"
-	if _, err := selectRoute(routes, app, "command.committed"); err == nil {
-		t.Fatal("stale route accepted")
+	if _, err := subscriber(app, "ot.event.accepted"); !errors.Is(err, errNoSubscriber) {
+		t.Fatalf("an event nobody subscribes to: %v", err)
 	}
-	app.Version = "1"
 	app.Spec.Workflows = append(app.Spec.Workflows, registry.Workflow{ID: "another", SubscribedEvents: []string{"command.committed"}})
-	if _, err := selectRoute(routes, app, "command.committed"); err == nil {
-		t.Fatal("ambiguous workflow silently dropped")
+	if _, err := subscriber(app, "command.committed"); !errors.Is(err, errAmbiguous) {
+		t.Fatalf("two subscribers must not be reduced to one: %v", err)
 	}
 }
-func TestTransportAuthorizationRejectsUnknownScheme(t *testing.T) {
-	p := NewPublisher(nil, nil, "http://kestra/webhook")
-	if err := p.SetAuthorization("Basic", "dXNlcjpwYXNz"); err != nil {
+
+func TestPublisherConfigurationIsChecked(t *testing.T) {
+	good := Config{BaseURL: "http://kestra:8080", User: "admin@dxos.local", Password: "secret", WebhookKey: "0123456789abcdef"}
+	if _, err := NewPublisher(nil, nil, good); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.SetAuthorization("Digest", "value"); err == nil {
-		t.Fatal("unsupported auth accepted")
-	}
-	if err := p.SetAuthorization("Basic", "value\nInjected: yes"); err == nil {
-		t.Fatal("header injection accepted")
+	for name, mutate := range map[string]func(*Config){
+		"no engine":                  func(c *Config) { c.BaseURL = "" },
+		"credentials in the URL":     func(c *Config) { c.BaseURL = "http://user:pw@kestra:8080" },
+		"query in the URL":           func(c *Config) { c.BaseURL = "http://kestra:8080?x=1" },
+		"no user":                    func(c *Config) { c.User = "" },
+		"header injection":           func(c *Config) { c.Password = "secret\nInjected: yes" },
+		"short webhook key":          func(c *Config) { c.WebhookKey = "short" },
+		"webhook key breaks the URL": func(c *Config) { c.WebhookKey = "0123456789abcdef/../x" },
+	} {
+		cfg := good
+		mutate(&cfg)
+		if _, err := NewPublisher(nil, nil, cfg); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
 	}
 }

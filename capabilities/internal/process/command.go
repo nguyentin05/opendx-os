@@ -25,11 +25,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
-	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/lib/pq"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
 )
 
 type Engine struct {
@@ -64,7 +68,7 @@ func (e *Engine) Execute(ctx context.Context, id *auth.Identity, app, command, k
 	if id == nil || !uuidPattern.MatchString(id.UserID) || !namePattern.MatchString(id.Role) {
 		return fail(401)
 	}
-	if req == nil || !uuidPattern.MatchString(req.EntityID) || req.ExpectedVersion < 1 || req.Payload == nil || len(req.Payload) != 0 || !namePattern.MatchString(app) || !namePattern.MatchString(command) || strings.TrimSpace(key) == "" || len(key) > 1024 {
+	if req == nil || !uuidPattern.MatchString(req.EntityID) || req.ExpectedVersion < 1 || req.Payload == nil || !namePattern.MatchString(app) || !namePattern.MatchString(command) || strings.TrimSpace(key) == "" || len(key) > 1024 {
 		return fail(400)
 	}
 	user := strings.ToLower(id.UserID)
@@ -127,6 +131,12 @@ func (e *Engine) Execute(ctx context.Context, id *auth.Identity, app, command, k
 	if !ok {
 		return fail(403)
 	}
+	// Checked after access, so a record the caller cannot see answers 404
+	// whatever the payload holds.
+	writes, err := payloadWrites(table, cmd, request.Payload)
+	if err != nil {
+		return fail(400)
+	}
 	var oldHash string
 	var body []byte
 	var status int
@@ -178,8 +188,21 @@ func (e *Engine) Execute(ctx context.Context, id *auth.Identity, app, command, k
 		return fail(503)
 	}
 	resp := &CommandResponse{EntityID: request.EntityID, Status: cmd.To, ExecutedAt: time.Now().UTC()}
-	err = tx.QueryRowContext(ctx, `UPDATE `+table.Name+` SET status=$1 WHERE id=$2 RETURNING version`, cmd.To, request.EntityID).Scan(&resp.Version)
+	// The payload's columns change with the status, in one statement: one
+	// version, one audit row holding both.
+	set, args := `status=$1`, []any{cmd.To, request.EntityID}
+	for _, w := range writes {
+		args = append(args, w.value)
+		set += fmt.Sprintf(`, %s=$%d::%s`, pq.QuoteIdentifier(w.column), len(args), w.cast)
+	}
+	err = tx.QueryRowContext(ctx, `UPDATE `+table.Name+` SET `+set+` WHERE id=$2 RETURNING version`, args...).Scan(&resp.Version)
 	if err != nil {
+		// A value the column's own rules refuse (a CHECK, a numeric range) is
+		// the caller's mistake, not an outage.
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && (pqErr.Code.Class() == "22" || pqErr.Code == "23514" || pqErr.Code == "23502") {
+			return fail(400)
+		}
 		return fail(503)
 	}
 	eventID, err := newUUID()
@@ -198,4 +221,91 @@ func (e *Engine) Execute(ctx context.Context, id *auth.Identity, app, command, k
 		return fail(503)
 	}
 	return resp, 200, nil
+}
+
+// payloadWrite is one column a command sets from its payload. A nil value
+// stores NULL.
+type payloadWrite struct {
+	column, cast string
+	value        any
+}
+
+// maxPayloadText bounds a text value of a command payload.
+const maxPayloadText = 10000
+
+// payloadWrites checks a command's payload against its declaration and returns
+// the columns to set. Only declared columns may appear; a required one must be
+// present and not empty; each value must fit its column's type. A column that
+// is absent from the payload is left as it is.
+func payloadWrites(table *registry.Table, cmd *registry.Command, payload map[string]any) ([]payloadWrite, error) {
+	invalid := errors.New("invalid command payload")
+	declared := map[string]bool{}
+	for _, f := range cmd.Payload {
+		declared[f.Column] = true
+	}
+	for key := range payload {
+		if !declared[key] {
+			return nil, invalid
+		}
+	}
+	var writes []payloadWrite
+	for _, f := range cmd.Payload {
+		col := table.Column(f.Column)
+		if col == nil {
+			return nil, invalid
+		}
+		raw, present := payload[f.Column]
+		if !present {
+			if f.Required {
+				return nil, invalid
+			}
+			continue
+		}
+		w := payloadWrite{column: col.Name, cast: strings.SplitN(col.Type, "(", 2)[0]}
+		switch {
+		case raw == nil:
+			if f.Required || !col.Nullable {
+				return nil, invalid
+			}
+		case col.Type == "text":
+			text, ok := raw.(string)
+			if !ok || len(text) > maxPayloadText || (f.Required && strings.TrimSpace(text) == "") {
+				return nil, invalid
+			}
+			w.value = text
+		case col.Type == "uuid":
+			text, ok := raw.(string)
+			if !ok || !uuidPattern.MatchString(text) {
+				return nil, invalid
+			}
+			w.value = text
+		case col.Type == "date":
+			text, ok := raw.(string)
+			if !ok {
+				return nil, invalid
+			}
+			if _, err := time.Parse("2006-01-02", text); err != nil {
+				return nil, invalid
+			}
+			w.value = text
+		case strings.HasPrefix(col.Type, "numeric("):
+			var text string
+			switch n := raw.(type) {
+			case json.Number:
+				text = n.String()
+			case float64:
+				text = strconv.FormatFloat(n, 'f', -1, 64)
+			default:
+				return nil, invalid
+			}
+			if _, err := strconv.ParseFloat(text, 64); err != nil {
+				return nil, invalid
+			}
+			w.value = text
+		default:
+			return nil, invalid
+		}
+		writes = append(writes, w)
+	}
+	return writes, nil
 }

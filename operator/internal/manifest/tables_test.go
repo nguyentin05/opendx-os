@@ -221,3 +221,41 @@ func TestValidateChildTables(t *testing.T) {
 		})
 	}
 }
+
+// A command may write columns of its record from its payload (ADR 0006): plain
+// business columns only.
+func TestValidateCommandPayload(t *testing.T) {
+	command := func(a *manifest.DXApplication, name string) *manifest.CommandDef {
+		sm := a.Table("domain.procurement_requests").StateMachine
+		for i := range sm.Commands {
+			if sm.Commands[i].Name == name {
+				return &sm.Commands[i]
+			}
+		}
+		t.Fatalf("no command %s", name)
+		return nil
+	}
+	app := testutil.LoadApp(t, "procurement")
+	if p := command(app, "reject").Payload; len(p) != 1 || p[0].Column != "rejection_reason" || !p[0].Required {
+		t.Fatalf("the sample application must declare the rejection reason, got %+v", p)
+	}
+	for name, column := range map[string]string{
+		"an undeclared column": "comment",
+		"a system column":      "status",
+		"the creator":          "created_by",
+		"an attachment":        "quote_file_id",
+		"a reference":          "vendor_id",
+	} {
+		app := testutil.LoadApp(t, "procurement")
+		command(app, "reject").Payload = []manifest.PayloadFieldDef{{Column: column}}
+		if err := manifest.Validate(app); err == nil || !strings.Contains(err.Error(), "payload names") {
+			t.Errorf("%s in a payload: want a refusal, got %v", name, err)
+		}
+	}
+	app = testutil.LoadApp(t, "procurement")
+	reject := command(app, "reject")
+	reject.Payload = append(reject.Payload, reject.Payload[0])
+	if err := manifest.Validate(app); err == nil {
+		t.Error("a column listed twice in a payload must be refused")
+	}
+}
