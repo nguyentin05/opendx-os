@@ -6,8 +6,9 @@ package knowledge
 import (
 	"context"
 	"database/sql"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"regexp"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
 var idPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -26,6 +27,7 @@ func (p *Policy) CanRead(ctx context.Context, actor *auth.Identity, documentID s
 	err := decodeRow(p.db.QueryRowContext(ctx, `SELECT cap_ai.read_document($1,$2,$3)`, actor.UserID, actor.Role, documentID), &out)
 	return out, err
 }
+
 func concealAuthority(err error) error {
 	if err == auth.ErrUnauthenticated || err == auth.ErrForbidden {
 		return ErrNotFound

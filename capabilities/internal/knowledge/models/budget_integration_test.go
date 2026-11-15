@@ -26,6 +26,7 @@ func budgetFixture(t *testing.T) (*sql.DB, *Budget, ReservationRequest) {
 	}
 	return db, &Budget{DB: db}, ReservationRequest{OperationKey: "operation", AppID: "app", ActorID: "11111111-1111-4111-8111-111111111111", ProfileID: "gen", ProfileRevision: 1, Estimate: 10, PricingRevision: "price-1", Fingerprint: strings.Repeat("a", 64)}
 }
+
 func TestConcurrentReserveCeiling(t *testing.T) {
 	db, b, req := budgetFixture(t)
 	var wg sync.WaitGroup
@@ -52,6 +53,7 @@ func TestConcurrentReserveCeiling(t *testing.T) {
 		t.Fatal("budget exceeded", err, n)
 	}
 }
+
 func TestSettlementIdempotent(t *testing.T) {
 	db, b, req := budgetFixture(t)
 	r, err := b.Reserve(context.Background(), req)

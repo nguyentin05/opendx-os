@@ -77,8 +77,10 @@ func NewPublisher(db *sql.DB, client *http.Client, cfg Config) (*Publisher, erro
 	if copyClient.Timeout <= 0 || copyClient.Timeout > 20*time.Second {
 		copyClient.Timeout = 20 * time.Second
 	}
-	return &Publisher{db: db, client: &copyClient, base: strings.TrimRight(cfg.BaseURL, "/"),
-		webhookKey: cfg.WebhookKey, user: cfg.User, password: cfg.Password}, nil
+	return &Publisher{
+		db: db, client: &copyClient, base: strings.TrimRight(cfg.BaseURL, "/"),
+		webhookKey: cfg.WebhookKey, user: cfg.User, password: cfg.Password,
+	}, nil
 }
 
 func backoff(attempt int) time.Duration {
@@ -90,6 +92,7 @@ func backoff(attempt int) time.Duration {
 	}
 	return time.Second * time.Duration(1<<uint(attempt))
 }
+
 func (p *Publisher) PublishPending(ctx context.Context, limit int) error {
 	if limit < 1 || limit > 1000 {
 		return errors.New("invalid batch limit")

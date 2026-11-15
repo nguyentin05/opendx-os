@@ -7,28 +7,33 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
-type principalKey struct{}
-type Authenticator struct {
-	Authority  auth.Authorizer
-	Verifier   auth.SubjectVerifier
-	Membership Membership
-}
+type (
+	principalKey  struct{}
+	Authenticator struct {
+		Authority  auth.Authorizer
+		Verifier   auth.SubjectVerifier
+		Membership Membership
+	}
+)
 
 func FromContext(ctx context.Context) (Principal, bool) {
 	p, ok := ctx.Value(principalKey{}).(Principal)
 	return p, ok
 }
+
 func authError(w http.ResponseWriter, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": http.StatusText(status), "message": http.StatusText(status)}})
 }
+
 func (a Authenticator) Middleware(next http.Handler) http.Handler {
 	if a.Authority != nil {
 		protected := auth.Middleware(a.Authority, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

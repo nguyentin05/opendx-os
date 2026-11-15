@@ -91,6 +91,7 @@ func NewUnixClient(socket, token string) *Client {
 		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
 	}}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, token: token}
 }
+
 func (c *Client) Parse(ctx context.Context, req ParseRequest, source io.Reader) (Result, error) {
 	var result Result
 	var body bytes.Buffer

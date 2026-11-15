@@ -44,11 +44,13 @@ func NewS3Storage(endpoint, bucket, region, access, secret string, timeout time.
 	}
 	return &S3Storage{u, bucket, region, access, secret, &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
+
 func mac(key []byte, s string) []byte {
 	h := hmac.New(sha256.New, key)
 	h.Write([]byte(s))
 	return h.Sum(nil)
 }
+
 func (s *S3Storage) request(ctx context.Context, method, key string, b []byte) (*http.Response, error) {
 	if key == "" || strings.HasPrefix(key, "/") || strings.Contains(key, "..") || strings.ContainsAny(key, "\\\r\n") {
 		return nil, ErrContent
@@ -86,6 +88,7 @@ func (s *S3Storage) request(ctx context.Context, method, key string, b []byte) (
 	}
 	return resp, nil
 }
+
 func (s *S3Storage) Put(ctx context.Context, key string, r io.Reader) error {
 	b, e := io.ReadAll(io.LimitReader(r, MaxSize+1))
 	if e != nil {
@@ -102,6 +105,7 @@ func (s *S3Storage) Put(ctx context.Context, key string, r io.Reader) error {
 	_, e = io.Copy(io.Discard, io.LimitReader(resp.Body, 65536))
 	return e
 }
+
 func (s *S3Storage) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 	resp, e := s.request(ctx, "GET", key, nil)
 	if e != nil {

@@ -16,6 +16,7 @@ func tokenDigest(token string) string {
 	h := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(h[:])
 }
+
 func (s *Store) IssueDelegation(ctx context.Context, lease Lease, now time.Time) (string, error) {
 	var random [32]byte
 	if _, err := rand.Read(random[:]); err != nil {
@@ -29,6 +30,7 @@ func (s *Store) IssueDelegation(ctx context.Context, lease Lease, now time.Time)
 	}
 	return token, nil
 }
+
 func (s *Store) ValidateDelegation(ctx context.Context, token, workerID, sourceID string) (SourceGrant, error) {
 	var grant SourceGrant
 	if len(token) < 16 || len(token) > 200 || !idPattern.MatchString(sourceID) {

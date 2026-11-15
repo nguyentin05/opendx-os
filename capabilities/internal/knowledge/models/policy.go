@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 

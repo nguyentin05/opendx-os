@@ -75,18 +75,22 @@ func Chunk(r Result, recipe ChunkRecipe) ([]ChunkRecord, error) {
 					continue
 				}
 				for _, cell := range rows[row] {
-					label := fmt.Sprintf("row %d | %s: ", row, e.Structured.Columns[cell.Column].Label)
+					var label strings.Builder
+					fmt.Fprintf(&label, "row %d | %s: ", row, e.Structured.Columns[cell.Column].Label)
 					for _, other := range rows[row] {
 						if other.Column != cell.Column && utf8.RuneCountInString(other.Text) < 64 {
-							label += e.Structured.Columns[other.Column].Label + ": " + other.Text + " | "
+							label.WriteString(e.Structured.Columns[other.Column].Label)
+							label.WriteString(": ")
+							label.WriteString(other.Text)
+							label.WriteString(" | ")
 						}
 					}
-					segments, err := splitWords(cell.Text, recipe.MaxTokens-utf8.RuneCountInString(label))
+					segments, err := splitWords(cell.Text, recipe.MaxTokens-utf8.RuneCountInString(label.String()))
 					if err != nil {
 						return nil, err
 					}
 					for _, s := range segments {
-						if err = emit(label+s, e, []string{"OVERSIZE_TABLE_ROW"}); err != nil {
+						if err = emit(label.String()+s, e, []string{"OVERSIZE_TABLE_ROW"}); err != nil {
 							return nil, err
 						}
 					}
@@ -97,7 +101,7 @@ func Chunk(r Result, recipe ChunkRecipe) ([]ChunkRecord, error) {
 		segments := []string{}
 		if e.Kind == "code" {
 			current := ""
-			for _, line := range strings.Split(e.Text, "\n") {
+			for line := range strings.SplitSeq(e.Text, "\n") {
 				if utf8.RuneCountInString(line) > recipe.MaxTokens {
 					return nil, ErrLimit
 				}
@@ -128,13 +132,14 @@ func Chunk(r Result, recipe ChunkRecipe) ([]ChunkRecord, error) {
 	}
 	return out, nil
 }
+
 func splitWords(text string, max int) ([]string, error) {
 	if max < 1 {
 		return nil, ErrLimit
 	}
 	parts := []string{}
 	current := ""
-	for _, word := range strings.Fields(text) {
+	for word := range strings.FieldsSeq(text) {
 		if utf8.RuneCountInString(word) > max {
 			return nil, ErrLimit
 		}

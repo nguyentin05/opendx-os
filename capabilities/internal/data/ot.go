@@ -67,7 +67,6 @@ func (e *OTEngine) IngestTelemetry(ctx context.Context, req *OTIngestionRequest)
 		 RETURNING id`,
 		req.WorkspaceID, req.DeviceID, req.EventKey, req.MetricName, req.MetricValue,
 	).Scan(&eventID)
-
 	if err != nil {
 		// Check for unique constraint violation (dedup key collision)
 		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {

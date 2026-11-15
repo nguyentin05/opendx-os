@@ -8,11 +8,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"time"
 
 	"github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
-	"time"
 )
 
 func (s *Store) ConfigureModels(gateway *models.Gateway, embed, generate models.Profile) {
@@ -20,6 +20,7 @@ func (s *Store) ConfigureModels(gateway *models.Gateway, embed, generate models.
 	s.embedProfile = embed
 	s.generateProfile = generate
 }
+
 func modelOperationKey() string {
 	var b [24]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -27,6 +28,7 @@ func modelOperationKey() string {
 	}
 	return hex.EncodeToString(b[:])
 }
+
 func (s *Store) EnqueueEmbeddings(ctx context.Context, actor *auth.Identity, profile models.Profile) error {
 	if s.gateway == nil || profile.ID == "" {
 		return models.ErrPolicy
@@ -37,6 +39,7 @@ func (s *Store) EnqueueEmbeddings(ctx context.Context, actor *auth.Identity, pro
 	_, err := s.db.ExecContext(ctx, `SELECT cap_ai.queue_embeddings($1,$2,$3,$4)`, actor.UserID, actor.Role, profile.ID, profile.Revision)
 	return dbErrorOrNil(err)
 }
+
 func (s *Store) ClaimEmbedding(ctx context.Context, worker string) (*Lease, error) {
 	var lease Lease
 	err := decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.claim_embedding($1)`, worker), &lease)
@@ -104,6 +107,7 @@ func (s *Store) BuildEmbeddings(ctx context.Context, lease Lease, profile models
 		}
 	}
 }
+
 func (s *Store) semanticCandidates(ctx context.Context, actor *auth.Identity, req SearchRequest) ([]candidate, error) {
 	profile := s.embedProfile
 	if s.gateway == nil || profile.ID == "" || req.Scope.Kind != "APP" {

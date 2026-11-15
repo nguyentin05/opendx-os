@@ -7,11 +7,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
 	"io"
 	"net/http"
 	"strconv"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
 )
 
 func (s *Store) Handler() http.Handler {
@@ -34,6 +35,7 @@ func (s *Store) Handler() http.Handler {
 	mux.HandleFunc("GET /api/cap/ai/documents/{id}/assets/{asset}", s.protectedDocument(s.assetHTTP, false))
 	return mux
 }
+
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
@@ -42,6 +44,7 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 		_ = json.NewEncoder(w).Encode(value)
 	}
 }
+
 func httpError(w http.ResponseWriter, err error) {
 	status, code := 503, "AUTHORITY_UNAVAILABLE"
 	switch {
@@ -64,6 +67,7 @@ func httpError(w http.ResponseWriter, err error) {
 	}
 	writeJSON(w, status, map[string]any{"error": map[string]string{"code": code, "message": http.StatusText(status)}})
 }
+
 func decodeRequest(w http.ResponseWriter, r *http.Request, out any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	raw, err := io.ReadAll(r.Body)
@@ -81,6 +85,7 @@ func decodeRequest(w http.ResponseWriter, r *http.Request, out any) error {
 	}
 	return nil
 }
+
 func (s *Store) registerHTTP(w http.ResponseWriter, r *http.Request) {
 	var req RegisterRequest
 	if err := decodeRequest(w, r, &req); err != nil {
@@ -100,6 +105,7 @@ func (s *Store) registerHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("ETag", `"`+strconv.FormatInt(v.Revision, 10)+`"`)
 	writeJSON(w, 202, v)
 }
+
 func revisionHeader(r *http.Request) (int64, error) {
 	value := r.Header.Get("If-Match")
 	if len(value) < 3 || value[0] != '"' || value[len(value)-1] != '"' {
@@ -111,6 +117,7 @@ func revisionHeader(r *http.Request) (int64, error) {
 	}
 	return n, nil
 }
+
 func (s *Store) replaceHTTP(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		FileID        string `json:"file_id"`
@@ -164,6 +171,7 @@ func (s *Store) listHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, page)
 }
+
 func (s *Store) documentHTTP(w http.ResponseWriter, r *http.Request) {
 	actor, err := auth.ExtractIdentity(r)
 	if err != nil {
@@ -178,6 +186,7 @@ func (s *Store) documentHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("ETag", `"`+strconv.FormatInt(doc.Revision, 10)+`"`)
 	writeJSON(w, 200, doc)
 }
+
 func (s *Store) deleteHTTP(w http.ResponseWriter, r *http.Request) {
 	actor, err := auth.ExtractIdentity(r)
 	if err != nil {
@@ -195,6 +204,7 @@ func (s *Store) deleteHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 204, nil)
 }
+
 func (s *Store) collectionsHTTP(w http.ResponseWriter, r *http.Request) {
 	if kind := r.URL.Query().Get("kind"); kind != "" && kind != "PERSONAL" {
 		httpError(w, ErrInvalid)
@@ -212,6 +222,7 @@ func (s *Store) collectionsHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{"collections": rows})
 }
+
 func (s *Store) ingestionHTTP(w http.ResponseWriter, r *http.Request) {
 	actor, err := auth.ExtractIdentity(r)
 	if err != nil {
@@ -246,6 +257,7 @@ func (s *Store) personal(next http.HandlerFunc) http.HandlerFunc {
 		next(w, r)
 	}
 }
+
 func (s *Store) searchHTTP(w http.ResponseWriter, r *http.Request) {
 	var req SearchRequest
 	if err := decodeRequest(w, r, &req); err != nil {
@@ -268,6 +280,7 @@ func (s *Store) searchHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, result)
 }
+
 func (s *Store) answersHTTP(w http.ResponseWriter, r *http.Request) {
 	var req AnswerRequest
 	if err := decodeRequest(w, r, &req); err != nil {
@@ -296,6 +309,7 @@ func (s *Store) answersHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, result)
 }
+
 func (s *Store) citationHTTP(w http.ResponseWriter, r *http.Request) {
 	actor, err := auth.ExtractIdentity(r)
 	if err != nil {
@@ -309,6 +323,7 @@ func (s *Store) citationHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, citation)
 }
+
 func binaryResponse(w http.ResponseWriter, data []byte) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", "attachment")
@@ -316,6 +331,7 @@ func binaryResponse(w http.ResponseWriter, data []byte) {
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(data)
 }
+
 func (s *Store) originalHTTP(w http.ResponseWriter, r *http.Request) {
 	actor, err := auth.ExtractIdentity(r)
 	if err != nil {
@@ -329,6 +345,7 @@ func (s *Store) originalHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	binaryResponse(w, data)
 }
+
 func (s *Store) assetHTTP(w http.ResponseWriter, r *http.Request) {
 	actor, err := auth.ExtractIdentity(r)
 	if err != nil {

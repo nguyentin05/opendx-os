@@ -22,11 +22,12 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
-	_ "github.com/lib/pq"
 	"net/url"
 	"os"
 	"strings"
 	"testing"
+
+	_ "github.com/lib/pq"
 )
 
 // Database requires an explicit PostgreSQL test URL and CREATE DATABASE privileges.

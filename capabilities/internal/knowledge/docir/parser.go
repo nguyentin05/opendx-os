@@ -8,14 +8,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"io"
+	"strings"
+	"unicode/utf8"
+
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
 	east "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/text"
-	"io"
-	"strings"
-	"unicode/utf8"
 )
 
 type Parser struct{}
@@ -61,10 +62,12 @@ func (Parser) Parse(ctx context.Context, req ParseRequest, source io.Reader) (Re
 	}
 	return r, nil
 }
+
 func appendElement(r *Result, kind, body, parent string, path []string, page int, box *[4]float64, table *Table) {
 	i := len(r.Elements)
 	r.Elements = append(r.Elements, Element{LocalID: fmt.Sprintf("e%d", i+1), ParentID: parent, Kind: kind, Ordinal: i, SectionPath: append([]string{}, path...), PageNo: page, BBox: box, Text: body, Structured: table, Confidence: 1, Provenance: "EXTRACTED"})
 }
+
 func inline(n ast.Node, b []byte) string {
 	var s strings.Builder
 	_ = ast.Walk(n, func(c ast.Node, enter bool) (ast.WalkStatus, error) {
@@ -86,6 +89,7 @@ func inline(n ast.Node, b []byte) string {
 	})
 	return strings.TrimSpace(s.String())
 }
+
 func parseMarkdown(ctx context.Context, b []byte, r *Result) error {
 	root := goldmark.New(goldmark.WithExtensions(extension.Table)).Parser().Parse(text.NewReader(b))
 	path := []string{"Document"}
@@ -104,10 +108,7 @@ func parseMarkdown(ctx context.Context, b []byte, r *Result) error {
 		switch x := n.(type) {
 		case *ast.Heading:
 			label := inline(n, b)
-			level := x.Level
-			if level > len(parents)+1 {
-				level = len(parents) + 1
-			}
+			level := min(x.Level, len(parents)+1)
 			if level <= len(parents) {
 				parents = parents[:level-1]
 				path = path[:level-1]

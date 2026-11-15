@@ -7,6 +7,7 @@ package models
 import (
 	"context"
 	"errors"
+
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/contracts"
 )

@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+
 	"github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
 )
@@ -39,12 +40,12 @@ func decodeRow(row *sql.Row, out any) error {
 	}
 	return nil
 }
+
 func dbError(err error) error {
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
-	var p *pq.Error
-	if errors.As(err, &p) {
+	if p, ok := errors.AsType[*pq.Error](err); ok {
 		switch p.Code {
 		case "P0404":
 			return ErrNotFound
@@ -62,6 +63,7 @@ func dbError(err error) error {
 	}
 	return ErrAuthorityUnavailable
 }
+
 func (s *Store) ping(ctx context.Context) error {
 	if s == nil || s.db == nil {
 		return ErrAuthorityUnavailable

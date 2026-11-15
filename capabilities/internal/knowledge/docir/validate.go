@@ -9,8 +9,10 @@ import (
 	"regexp"
 )
 
-var localID = regexp.MustCompile(`^e[0-9]+$`)
-var digestID = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var (
+	localID  = regexp.MustCompile(`^e[0-9]+$`)
+	digestID = regexp.MustCompile(`^[0-9a-f]{64}$`)
+)
 
 func Validate(r Result, l Limits) error {
 	if l.Validate() != nil || r.IRVersion != 1 || !digestID.MatchString(r.SourceSHA256) || r.Parser.Recipe != "standard-text-v1" || r.Parser.Name == "" || r.Parser.Version == "" || len(r.Elements) < 1 || len(r.Elements) > l.MaxElements {

@@ -11,10 +11,12 @@ import (
 	"time"
 )
 
-var ErrInvalid = errors.New("INVALID_DOCIR")
-var ErrLimit = errors.New("PARSER_LIMIT")
-var ErrOCRUnavailable = errors.New("OCR_UNAVAILABLE")
-var ErrLayout = errors.New("LAYOUT_UNSUPPORTED")
+var (
+	ErrInvalid        = errors.New("INVALID_DOCIR")
+	ErrLimit          = errors.New("PARSER_LIMIT")
+	ErrOCRUnavailable = errors.New("OCR_UNAVAILABLE")
+	ErrLayout         = errors.New("LAYOUT_UNSUPPORTED")
+)
 
 type Limits struct {
 	MaxSourceBytes  int64         `json:"max_source_bytes"`
@@ -30,6 +32,7 @@ type Limits struct {
 func DefaultLimits() Limits {
 	return Limits{20 << 20, 200, 120 * time.Second, 512 << 20, 200 << 20, 25000000, 50000, 20000}
 }
+
 func (l Limits) Validate() error {
 	d := DefaultLimits()
 	if l.MaxSourceBytes < 1 || l.MaxSourceBytes > d.MaxSourceBytes || l.MaxPages < 1 || l.MaxPages > d.MaxPages || l.Deadline < 1 || l.Deadline > d.Deadline || l.MaxMemoryBytes < 1 || l.MaxMemoryBytes > d.MaxMemoryBytes || l.MaxDecodedBytes < 1 || l.MaxDecodedBytes > d.MaxDecodedBytes || l.MaxImagePixels < 1 || l.MaxImagePixels > d.MaxImagePixels || l.MaxElements < 1 || l.MaxElements > d.MaxElements || l.MaxChunks < 1 || l.MaxChunks > d.MaxChunks {

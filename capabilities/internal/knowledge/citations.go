@@ -5,6 +5,7 @@ package knowledge
 
 import (
 	"context"
+
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
@@ -13,6 +14,7 @@ type Citation = SearchHit
 func citationURL(doc, version, chunk string) string {
 	return "/api/cap/ai/documents/" + doc + "/citations/" + chunk + "?version_id=" + version
 }
+
 func (s *Store) Citation(ctx context.Context, actor *auth.Identity, documentID, versionID, chunkID string) (Citation, error) {
 	var result Citation
 	if !idPattern.MatchString(documentID) || !idPattern.MatchString(versionID) || !idPattern.MatchString(chunkID) {

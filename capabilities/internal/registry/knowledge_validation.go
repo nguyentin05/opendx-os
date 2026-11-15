@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -89,10 +90,5 @@ func (a *AppDefinition) AllowsPersonalLibrary(role string) bool {
 	if k == nil || k.Version != 1 || k.PersonalLibrary == nil || !k.PersonalLibrary.Enabled {
 		return false
 	}
-	for _, r := range k.PersonalLibrary.AllowedRoles {
-		if r == role {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(k.PersonalLibrary.AllowedRoles, role)
 }

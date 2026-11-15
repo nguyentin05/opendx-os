@@ -79,6 +79,7 @@ func NewStrictAuthenticator(ctx context.Context, cfg VerifierConfig) (Authentica
 	}
 	return strictAuthenticator{v: a.(*jwtVerifier)}, nil
 }
+
 func (s strictAuthenticator) Authenticate(ctx context.Context, token string) (*Principal, error) {
 	return s.v.authenticateWithMaxAge(ctx, token, jwksCacheLifetime)
 }

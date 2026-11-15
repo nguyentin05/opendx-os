@@ -36,16 +36,18 @@ import (
 
 // VerifierConfig names the token issuer, the audience tokens must carry, and
 // where the issuer publishes its signing keys.
-type VerifierConfig struct{ IssuerURL, Audience, JWKSURL string }
-type jwtVerifier struct {
-	cfg         VerifierConfig
-	client      *http.Client
-	mu          sync.Mutex
-	keys        map[string]*rsa.PublicKey
-	lastRefresh time.Time
-	lastAttempt time.Time
-	refreshing  bool
-}
+type (
+	VerifierConfig struct{ IssuerURL, Audience, JWKSURL string }
+	jwtVerifier    struct {
+		cfg         VerifierConfig
+		client      *http.Client
+		mu          sync.Mutex
+		keys        map[string]*rsa.PublicKey
+		lastRefresh time.Time
+		lastAttempt time.Time
+		refreshing  bool
+	}
+)
 
 var uuid = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
@@ -94,9 +96,11 @@ func WaitForAuthenticator(ctx context.Context, cfg VerifierConfig, wait time.Dur
 // dropped. If the issuer cannot be reached, the last keys stay in use for up to
 // an hour, so a short identity-provider outage does not reject every valid
 // token; after that verification fails closed.
-const jwksCacheLifetime = 5 * time.Minute
-const jwksRefreshBackoff = time.Second
-const jwksMaxStaleness = time.Hour
+const (
+	jwksCacheLifetime  = 5 * time.Minute
+	jwksRefreshBackoff = time.Second
+	jwksMaxStaleness   = time.Hour
+)
 
 // refresh loads the keys at start-up, when there must be at least one.
 func (v *jwtVerifier) refresh(ctx context.Context) error {

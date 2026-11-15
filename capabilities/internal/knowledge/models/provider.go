@@ -27,11 +27,12 @@ func NewHTTPProvider(endpoint, secret string, loopbackTest bool) (*HTTPProvider,
 		return nil, ErrPolicy
 	}
 	ip := net.ParseIP(u.Hostname())
-	if u.Scheme != "https" && !(loopbackTest && u.Scheme == "http" && ip != nil && ip.IsLoopback()) {
+	if u.Scheme != "https" && (!loopbackTest || u.Scheme != "http" || ip == nil || !ip.IsLoopback()) {
 		return nil, ErrPolicy
 	}
 	return &HTTPProvider{endpoint: endpoint, secret: secret, client: &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
+
 func (p *HTTPProvider) Invoke(ctx context.Context, profile Profile, payload Payload) (Result, error) {
 	var out Result
 	// Fixed instruction envelope; retrieved content stays JSON data. No tools,
