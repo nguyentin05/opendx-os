@@ -35,7 +35,9 @@ import (
 	dxosv1alpha1 "github.com/opendx-os/opendx-os/operator/api/v1alpha1"
 	"github.com/opendx-os/opendx-os/operator/internal/apply"
 	"github.com/opendx-os/opendx-os/operator/internal/crdconv"
+	"github.com/opendx-os/opendx-os/operator/internal/manifest"
 	"github.com/opendx-os/opendx-os/operator/internal/planner"
+	"github.com/opendx-os/opendx-os/operator/internal/workflows"
 )
 
 // Condition reasons.
@@ -52,6 +54,7 @@ const (
 	ReasonInSync           = "InSync"
 	ReasonNotReady         = "NotReady"
 	ReasonCleanupFailed    = "CleanupFailed"
+	ReasonWorkflowsFailed  = "WorkflowsNotDeployed"
 )
 
 const maxMessageLength = 1024
@@ -109,7 +112,11 @@ func (r *DXApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, r.Update(ctx, &app)
 	}
 
-	desired, _, err := crdconv.ToManifest(&app)
+	desired, inline, err := crdconv.ToManifest(&app)
+	var flows []workflows.Definition
+	if err == nil {
+		flows, err = inlineWorkflows(desired, inline)
+	}
 	if err != nil {
 		log.Info("spec rejected by validator", "error", err.Error())
 		return ctrl.Result{}, r.patchStatus(ctx, &app, func(a *dxosv1alpha1.DXApplication) {
@@ -149,6 +156,9 @@ func (r *DXApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, err
 		}
 		if len(drift) == 0 {
+			if err := r.syncWorkflows(ctx, &app, desired, flows); err != nil {
+				return ctrl.Result{}, err
+			}
 			return ctrl.Result{RequeueAfter: r.RequeueInterval}, r.patchStatus(ctx, &app, func(a *dxosv1alpha1.DXApplication) {
 				markReady(a, desired.Metadata.Version)
 			})
@@ -192,13 +202,45 @@ func (r *DXApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	log.Info("applied", "version", desired.Metadata.Version)
+	if err := r.syncWorkflows(ctx, &app, desired, flows); err != nil {
+		return ctrl.Result{}, err
+	}
 	return ctrl.Result{RequeueAfter: r.RequeueInterval}, r.patchStatus(ctx, &app, func(a *dxosv1alpha1.DXApplication) {
 		markReady(a, desired.Metadata.Version)
 	})
 }
 
-// cleanup uninstalls the application: its Hasura permissions are dropped and
-// core.apps is marked Removed. Domain tables, data and roles are retained.
+// inlineWorkflows checks the workflow definitions a resource carries inline,
+// with the rules that apply to the workflow files of a package.
+func inlineWorkflows(app *manifest.DXApplication, inline crdconv.Workflows) ([]workflows.Definition, error) {
+	defs := make([]workflows.Definition, 0, len(app.Spec.Workflows))
+	for _, wf := range app.Spec.Workflows {
+		def, err := workflows.Parse(app, wf, []byte(inline[wf.ID]))
+		if err != nil {
+			return nil, err
+		}
+		defs = append(defs, def)
+	}
+	return defs, nil
+}
+
+// syncWorkflows deploys the application's flows to the workflow engine, when
+// the applier has one, and repairs them when the engine's copy drifted. The
+// application is installed either way; a failure is reported in Ready and
+// retried.
+func (r *DXApplicationReconciler) syncWorkflows(ctx context.Context, app *dxosv1alpha1.DXApplication, desired *manifest.DXApplication, flows []workflows.Definition) error {
+	_, err := r.Applier.SyncWorkflows(ctx, map[string][]workflows.Definition{desired.Metadata.Name: flows})
+	if err == nil {
+		return nil
+	}
+	return errors.Join(err, r.patchStatus(ctx, app, func(a *dxosv1alpha1.DXApplication) {
+		a.Status.ObservedGeneration = a.Generation
+		setCondition(a, dxosv1alpha1.ConditionReady, metav1.ConditionFalse, ReasonWorkflowsFailed, err.Error())
+	}))
+}
+
+// cleanup uninstalls the application: its Hasura permissions are dropped, its
+// flows are removed from the workflow engine and core.apps is marked Removed. Domain tables, data and roles are retained.
 func (r *DXApplicationReconciler) cleanup(ctx context.Context, app *dxosv1alpha1.DXApplication) error {
 	live, err := r.Applier.ReadManagedState(ctx)
 	if err != nil {
@@ -212,7 +254,12 @@ func (r *DXApplicationReconciler) cleanup(ctx context.Context, app *dxosv1alpha1
 	if err != nil {
 		return err
 	}
-	return r.Applier.Run(ctx, plan, nil)
+	if err := r.Applier.Run(ctx, plan, nil); err != nil {
+		return err
+	}
+	// The flows of an application that is no longer installed are removed.
+	_, err = r.Applier.SyncWorkflows(ctx, nil)
+	return err
 }
 
 func (r *DXApplicationReconciler) patchStatus(ctx context.Context, app *dxosv1alpha1.DXApplication, mutate func(*dxosv1alpha1.DXApplication)) error {

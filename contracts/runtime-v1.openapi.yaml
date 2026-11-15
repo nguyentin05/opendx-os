@@ -91,9 +91,12 @@ paths:
   /api/cap/process/effects/work-item:
     post:
       operationId: createWorkItemEffect
-      description: Only the configured workflow service identity. Persisted event
-        and deployed step determine source and fields; event/step retries return the
-        same stored result.
+      description: Called by the workflow engine inside the platform network; the
+        gateway does not route it. The bearer token is the workflow service
+        credential, not a user token. Persisted event and deployed step determine
+        source and fields; event/step retries return the same stored result.
+      security:
+      - workflowService: []
       requestBody:
         required: true
         content:
@@ -294,6 +297,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    workflowService:
+      type: http
+      scheme: bearer
+      description: The workflow service credential (WORKFLOW_SERVICE_TOKEN).
   schemas:
     CommandRequest:
       type: object

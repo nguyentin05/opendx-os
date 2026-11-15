@@ -17,11 +17,15 @@ package process
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"io"
 	"net/http"
+	"strings"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
 func decodeRequest(r io.Reader) (*CommandRequest, error) {
@@ -146,14 +150,28 @@ func (w *envelopeWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
-// AuthenticatedEffectHandler admits only the configured workflow service principal.
-func (e *Engine) AuthenticatedEffectHandler(v auth.Authorizer) http.Handler {
-	return auth.Middleware(v, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id, err := auth.ExtractIdentity(r)
-		if err != nil {
+// MinServiceTokenLength is the shortest workflow service credential accepted.
+const MinServiceTokenLength = 32
+
+// EffectHandler serves workflow effects to the workflow engine. The engine is
+// a service, not a person: it has no Keycloak login and presents the workflow
+// service credential as a bearer token. A caller holding it acts as the
+// configured workflow service account (ConfigureWorkflowService) and can only
+// run the effects installed applications declare, once per event and step.
+func (e *Engine) EffectHandler(serviceToken string) (http.Handler, error) {
+	if len(serviceToken) < MinServiceTokenLength || e.serviceUser == "" {
+		return nil, errors.New("a workflow service account and a credential of at least 32 characters are required")
+	}
+	want := sha256.Sum256([]byte(serviceToken))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		presented, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		got := sha256.Sum256([]byte(presented))
+		// Compare digests in constant time, so neither content nor length leaks.
+		if !found || subtle.ConstantTimeCompare(got[:], want[:]) != 1 {
 			WriteError(w, 401)
 			return
 		}
+		id := &auth.Identity{UserID: e.serviceUser, Role: e.serviceRole}
 		b, err := io.ReadAll(io.LimitReader(r.Body, 4097))
 		if err != nil || len(b) > 4096 {
 			WriteError(w, 400)
@@ -189,5 +207,5 @@ func (e *Engine) AuthenticatedEffectHandler(v auth.Authorizer) http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"work_item_id": result}) // Best-effort response; the client may have disconnected.
-	}))
+	}), nil
 }

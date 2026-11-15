@@ -37,6 +37,7 @@ import (
 	"github.com/opendx-os/opendx-os/operator/internal/apply"
 	"github.com/opendx-os/opendx-os/operator/internal/crdconv"
 	"github.com/opendx-os/opendx-os/operator/internal/testutil"
+	"github.com/opendx-os/opendx-os/operator/internal/workflows"
 )
 
 func waitFor(t *testing.T, what string, cond func() bool) {
@@ -91,10 +92,19 @@ func TestReconcileLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	engine := testutil.NewFakeKestra("admin@dxos.local", "secret")
+	engineSrv := httptest.NewServer(engine)
+	defer engineSrv.Close()
+	kestra, err := workflows.NewKestra(engineSrv.URL, "admin@dxos.local", "secret", engineSrv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	applier := apply.NewRunner(db, apply.Config{HasuraURL: srv.URL}, srv.Client())
+	applier.DeployWorkflowsTo(kestra)
 	rec := &DXApplicationReconciler{
 		Client:  mgr.GetClient(),
 		Scheme:  mgr.GetScheme(),
-		Applier: apply.NewRunner(db, apply.Config{HasuraURL: srv.URL}, srv.Client()),
+		Applier: applier,
 		// Short period so the test observes drift repair and the absence of churn.
 		RequeueInterval: 300 * time.Millisecond,
 	}
@@ -139,6 +149,14 @@ func TestReconcileLifecycle(t *testing.T) {
 	if n := count(t, db, `SELECT count(*) FROM core.app_capabilities WHERE app_id = 'procurement'`); n != 3 {
 		t.Fatalf("capabilities = %d, want 3", n)
 	}
+	// The flow the resource carries inline is deployed and recorded as the
+	// route of the application's events; a flow deleted in the engine comes back.
+	const flow = "dxos.apps.procurement/procurement_approval_flow"
+	if _, ok := engine.Source(flow); !ok || count(t, db, `SELECT count(*) FROM core.app_workflows WHERE app_id = 'procurement'`) != 1 {
+		t.Fatal("the application's workflow must be deployed and recorded")
+	}
+	engine.Remove(flow)
+	waitFor(t, "workflow redeployed", func() bool { _, ok := engine.Source(flow); return ok })
 	if !hasura.Has(insertPerm) {
 		t.Fatal("Hasura permission not created")
 	}
@@ -238,6 +256,9 @@ func TestReconcileLifecycle(t *testing.T) {
 	}
 	if hasura.Has(insertPerm) {
 		t.Fatal("Hasura permission must be revoked on delete")
+	}
+	if _, ok := engine.Source(flow); ok || count(t, db, `SELECT count(*) FROM core.app_workflows`) != 0 {
+		t.Fatal("the workflow and its route must be removed on delete")
 	}
 	if n := count(t, db, `SELECT count(*) FROM information_schema.tables WHERE table_schema = 'domain' AND table_name = 'procurement_requests'`); n != 1 {
 		t.Fatal("domain table must be retained after delete")

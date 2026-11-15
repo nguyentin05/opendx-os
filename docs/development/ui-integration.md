@@ -138,7 +138,23 @@ the path. The response carries the record's new `status` and `version`.
 4. `GET /api/cap/process/files/{file_id}` downloads a `CLEAN` file the role may
    read: its uploader, or a role that can read a record it is attached to.
 
-## 7. Try it
+## 7. Work items
+
+When an application's workflow opens a work item (procurement opens "Review
+procurement request" when a request is submitted), roles the manifest lists
+under `sharedAccess` for `cap_work.work_items` read it through GraphQL:
+
+```graphql
+query { cap_work_work_items(order_by: {created_at: desc}) {
+  id title description priority board_column assignee_id source_type source_id created_at } }
+```
+
+`source_type` is the table and `source_id` the record the item is about, so an
+inbox entry links to the record's detail. Only the application's own items are
+returned; they are not narrowed by department yet. The item appears a few
+seconds after the command, once the workflow has run.
+
+## 8. Try it
 
 `scripts/seed-demo.py seed` creates six accounts (password `Demo@2026`) across
 three departments. `scripts/seed-demo.py scopes`, `flow` and `lines` make the
@@ -147,8 +163,8 @@ the script is a working reference for request shapes.
 
 ## Not available yet
 
-- Work items for approvers (inbox, Kanban): workflows are not deployed to Kestra
-  yet, and `cap_work.work_items` has no service route.
+- Changing work items (assign, move between columns): `cap_work.work_items` has
+  no service route yet. Reading them works: see below.
 - Screens to assign roles and departments: there is no API for it yet.
 - `rejection_reason`: commands do not accept a payload yet.
 - cap-data and cap-ai routes.

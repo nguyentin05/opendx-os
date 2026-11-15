@@ -155,16 +155,27 @@ services:
   kestra:
     image: kestra/kestra:v0.20.7
     restart: unless-stopped
-    command: server standalone --config /app/config/config.yaml
+    # start.sh hands the platform's secrets to Kestra, then starts the server.
+    entrypoint: ["/bin/bash", "/app/config/start.sh"]
     environment:
       KESTRA_DATABASE_PASSWORD: ${KESTRA_DATABASE_PASSWORD:-change-me-local-kestra-database}
       KESTRA_USER: ${KESTRA_USER:-admin@dxos.local}
       KESTRA_PASSWORD: ${KESTRA_PASSWORD:-change-me-local-kestra}
+      DXOS_WEBHOOK_KEY: ${KESTRA_WEBHOOK_KEY:-change-me-local-webhook-key}
+      DXOS_PROCESS_URL: http://cap-process:8081
+      DXOS_WORKFLOW_TOKEN: ${WORKFLOW_SERVICE_TOKEN:-change-me-local-workflow-service-token}
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${KESTRA_PORT:-8082}:8080"
     volumes:
       - kestra-data:/app/storage
       - ./platform/kestra/config.yaml:/app/config/config.yaml:ro
+      - ./platform/kestra/start.sh:/app/config/start.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null -u \"$$KESTRA_USER:$$KESTRA_PASSWORD\" http://127.0.0.1:8080/api/v1/configs"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 18
     depends_on:
       postgres:
         condition: service_healthy
@@ -182,12 +193,18 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-dxos_admin}:${POSTGRES_PASSWORD:-dxos_secret}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
       HASURA_URL: http://hasura:8080
       HASURA_ADMIN_SECRET: ${HASURA_ADMIN_SECRET:-dxos_admin_secret}
+      # Application workflows are deployed to Kestra and kept there.
+      KESTRA_URL: http://kestra:8080
+      KESTRA_USER: ${KESTRA_USER:-admin@dxos.local}
+      KESTRA_PASSWORD: ${KESTRA_PASSWORD:-change-me-local-kestra}
     volumes:
       - ${OPERATOR_APPS_DIR:-./apps}:/apps:ro
     depends_on:
       postgres:
         condition: service_healthy
       hasura:
+        condition: service_healthy
+      kestra:
         condition: service_healthy
 
   cap-process:
@@ -203,10 +220,13 @@ services:
       OIDC_AUDIENCE: ${OIDC_AUDIENCE:-dxos-runtime}
       WORKFLOW_SERVICE_USER_ID: ${WORKFLOW_SERVICE_USER_ID:-22222222-2222-4222-8222-000000000005}
       WORKFLOW_SERVICE_ROLE: ${WORKFLOW_SERVICE_ROLE:-role_workflow}
-      KESTRA_URL: ${KESTRA_URL:-http://kestra:8080/api/v1/executions/webhook/dxos/procurement_approval_flow/webhook-key}
-      KESTRA_API_TOKEN: ${KESTRA_API_TOKEN:-change-me-local-kestra-token}
-      KESTRA_AUTH_SCHEME: ${KESTRA_AUTH_SCHEME:-Bearer}
-      KESTRA_ROUTES_FILE: ${KESTRA_ROUTES_FILE:-}
+      # Events go to the flow the operator deployed for their application;
+      # flows call back with the workflow service credential.
+      WORKFLOW_SERVICE_TOKEN: ${WORKFLOW_SERVICE_TOKEN:-change-me-local-workflow-service-token}
+      KESTRA_URL: http://kestra:8080
+      KESTRA_USER: ${KESTRA_USER:-admin@dxos.local}
+      KESTRA_PASSWORD: ${KESTRA_PASSWORD:-change-me-local-kestra}
+      KESTRA_WEBHOOK_KEY: ${KESTRA_WEBHOOK_KEY:-change-me-local-webhook-key}
       S3_ENDPOINT: ${S3_ENDPOINT:-http://seaweedfs:8333}
       S3_BUCKET: ${S3_BUCKET:-dxos-attachments}
       S3_REGION: ${S3_REGION:-us-east-1}

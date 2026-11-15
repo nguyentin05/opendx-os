@@ -12,7 +12,10 @@ parsers or app packages.
    organization), UI metadata, and for a process table its state machine and
    attachment bindings. Rows that are part of another record (lines of a
    document) go in a child table (`belongsTo`). Declare workflows on the commands of those tables.
-2. Put thresholds and business handling in declared workflows. Map standard OT
+2. Put thresholds and business handling in declared workflows. A workflow file
+   is a Kestra flow limited to the platform's webhook trigger, `If`, `Log` and
+   requests to the capability effect endpoints
+   ([workflow deployment](../contracts/data-contracts.md#workflow-deployment)). Map standard OT
    events to those flows; adding an app must not add an app-name branch to shared
    capabilities, UI, or bootstrap DDL.
 3. Validate the package: `go -C operator run ./cmd/dxos-operator validate ../apps/<app>/manifest.yaml`.

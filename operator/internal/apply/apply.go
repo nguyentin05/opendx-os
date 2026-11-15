@@ -28,6 +28,7 @@ import (
 
 	"github.com/opendx-os/opendx-os/operator/internal/manifest"
 	"github.com/opendx-os/opendx-os/operator/internal/planner"
+	"github.com/opendx-os/opendx-os/operator/internal/workflows"
 )
 
 // Config holds endpoints and credentials for Operator apply operations.
@@ -38,9 +39,25 @@ type Config struct {
 
 // Runner executes compiled plans against PostgreSQL and Hasura.
 type Runner struct {
-	db     *sql.DB
-	cfg    Config
-	client *http.Client
+	db        *sql.DB
+	cfg       Config
+	client    *http.Client
+	workflows *workflows.Syncer
+}
+
+// DeployWorkflowsTo makes the runner deploy application workflows to engine.
+// Without an engine, workflows are left alone.
+func (r *Runner) DeployWorkflowsTo(engine workflows.Engine) {
+	r.workflows = nil
+	if engine != nil && r.db != nil {
+		r.workflows = &workflows.Syncer{DB: r.db, Engine: engine}
+	}
+}
+
+// SyncWorkflows brings the workflow engine in line with the installed
+// applications; see workflows.Syncer.Sync.
+func (r *Runner) SyncWorkflows(ctx context.Context, declared map[string][]workflows.Definition) (workflows.Result, error) {
+	return r.workflows.Sync(ctx, declared)
 }
 
 // NewRunner creates a new apply Runner.

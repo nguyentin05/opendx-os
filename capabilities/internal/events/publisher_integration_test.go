@@ -20,15 +20,15 @@ package events
 import (
 	"context"
 	"database/sql"
-	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
 	"github.com/opendx-os/opendx-os/capabilities/internal/testutil"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
 // publisherFixture is the platform with one pending command event of the
-// installed sample application.
+// installed sample application, whose workflow the operator has deployed.
 func publisherFixture(t *testing.T) *sql.DB {
 	p := testutil.NewPlatform(t)
 	_, err := p.Admin.Exec(`INSERT INTO core.outbox_events(id,app_id,event_type,entity_type,entity_id,entity_version,payload)
@@ -37,8 +37,33 @@ func publisherFixture(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
+	deployFlow(t, p.Admin)
 	return p.Admin
 }
+
+// deployFlow records the sample application's workflow as deployed, as the
+// operator does once the engine holds the flow.
+func deployFlow(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if _, err := db.Exec(`INSERT INTO core.app_workflows (app_id, workflow_id, namespace, flow_id, definition, revision)
+		VALUES ('procurement', 'procurement_approval_flow', 'dxos.apps.procurement', 'procurement_approval_flow', 'id: procurement_approval_flow', 1)`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+const testWebhookKey = "test-webhook-key-0001"
+
+// newTestPublisher publishes to the engine double at base as the dxos_process
+// connection would.
+func newTestPublisher(t *testing.T, db *sql.DB, client *http.Client, base string) *Publisher {
+	t.Helper()
+	p, err := NewPublisher(db, client, Config{BaseURL: base, User: "user", Password: "pass", WebhookKey: testWebhookKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
 func TestPublishRetriesSameEventAfterLostAck(t *testing.T) {
 	db := publisherFixture(t)
 	var ids []string
@@ -52,15 +77,13 @@ func TestPublishRetriesSameEventAfterLostAck(t *testing.T) {
 		w.WriteHeader(204)
 	}))
 	defer s.Close()
-	p := NewPublisher(db, s.Client(), s.URL)
-	if err := p.PublishPending(context.Background(), 1); err != nil {
+	if err := newTestPublisher(t, db, s.Client(), s.URL).PublishPending(context.Background(), 1); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`UPDATE core.outbox_events SET next_attempt_at=now()`); err != nil {
 		t.Fatal(err)
 	}
-	p = NewPublisher(db, s.Client(), s.URL)
-	if err := p.PublishPending(context.Background(), 1); err != nil {
+	if err := newTestPublisher(t, db, s.Client(), s.URL).PublishPending(context.Background(), 1); err != nil {
 		t.Fatal(err)
 	}
 	if len(ids) != 2 || ids[0] != ids[1] {
@@ -84,7 +107,7 @@ func TestExpiredClaimRestartAndStaleAcknowledgement(t *testing.T) {
 		w.WriteHeader(204)
 	}))
 	defer s.Close()
-	if err := NewPublisher(db, s.Client(), s.URL).PublishPending(context.Background(), 1); err == nil {
+	if err := newTestPublisher(t, db, s.Client(), s.URL).PublishPending(context.Background(), 1); err == nil {
 		t.Fatal("stale ack accepted")
 	}
 	var state string
@@ -96,51 +119,85 @@ func TestExpiredClaimRestartAndStaleAcknowledgement(t *testing.T) {
 	}
 }
 
-// Both transport auth and destination selection are observed on the real HTTP
-// request; a route miss must retain the durable event without fallback delivery.
-func TestRoutedBasicDeliveryAndMissingRouteRetention(t *testing.T) {
+// The destination comes from the registry: the flow the operator deployed for
+// the application's workflow. Until it is deployed the event waits; an
+// application without a workflow for the event has nothing to deliver.
+func TestEventsFollowTheDeployedWorkflowOfTheirApplication(t *testing.T) {
 	db := publisherFixture(t)
-	a, err := registry.NewStore(db).Load(context.Background(), "procurement")
-	if err != nil {
-		t.Fatal(err)
-	}
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		if r.URL.Path != "/declared" || r.Header.Get("Authorization") != "Basic dXNlcjpwYXNz" || r.Header.Get("Idempotency-Key") != "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" {
-			t.Error("incorrect outbound transport/path/identity")
+		user, pass, _ := r.BasicAuth()
+		if r.URL.Path != "/api/v1/executions/webhook/dxos.apps.procurement/procurement_approval_flow/"+testWebhookKey ||
+			user != "user" || pass != "pass" || r.Header.Get("Idempotency-Key") != "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" {
+			t.Errorf("unexpected delivery: %s as %q", r.URL.Path, user)
 		}
 		w.WriteHeader(204)
 	}))
 	defer server.Close()
-	p := NewPublisher(db, server.Client(), server.URL+"/fallback")
-	if err = p.SetAuthorization("Basic", "dXNlcjpwYXNz"); err != nil {
+	p := newTestPublisher(t, db, server.Client(), server.URL)
+	ctx := context.Background()
+	state := func() (status string, attempts int, waiting bool, note sql.NullString) {
+		t.Helper()
+		if err := db.QueryRow(`SELECT delivery_status, attempt_count, next_attempt_at > now(), last_error FROM core.outbox_events`).Scan(&status, &attempts, &waiting, &note); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	retry := func() {
+		t.Helper()
+		if _, err := db.Exec(`UPDATE core.outbox_events SET delivery_status='pending', delivered_at=NULL, next_attempt_at=now(), last_error=NULL`); err != nil {
+			t.Fatal(err)
+		}
+		if err := p.PublishPending(ctx, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The flow is not deployed yet: the event is kept and retried later.
+	if _, err := db.Exec(`DELETE FROM core.app_workflows`); err != nil {
 		t.Fatal(err)
 	}
-	route := Route{AppID: a.AppID, Version: a.Version, WorkflowID: a.Spec.Workflows[0].ID, Endpoint: server.URL + "/declared"}
-	if err = p.SetRoutes([]Route{route}); err != nil {
+	retry()
+	if status, attempts, waiting, note := state(); status != "pending" || attempts != 1 || !waiting || calls != 0 || note.String != errNotDeployed.Error() {
+		t.Fatalf("undeployed flow: %s attempts=%d waiting=%v calls=%d note=%q", status, attempts, waiting, calls, note.String)
+	}
+
+	// Once the operator has deployed it, the same event is delivered, with no restart.
+	deployFlow(t, db)
+	retry()
+	if status, _, _, note := state(); status != "delivered" || calls != 1 || note.Valid {
+		t.Fatalf("deployed flow: %s calls=%d note=%q", status, calls, note.String)
+	}
+
+	// The engine refuses: the event is kept, and the stored reason holds no secret.
+	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(500) }))
+	defer failing.Close()
+	p = newTestPublisher(t, db, failing.Client(), failing.URL)
+	retry()
+	if status, _, waiting, note := state(); status != "pending" || !waiting || strings.Contains(note.String, testWebhookKey) || !strings.Contains(note.String, "HTTP 500") {
+		t.Fatalf("refused delivery: %s waiting=%v note=%q", status, waiting, note.String)
+	}
+	p = newTestPublisher(t, db, server.Client(), server.URL)
+
+	// An uninstalled application's events wait for it to come back.
+	if _, err := db.Exec(`UPDATE core.apps SET status = 'Removed'`); err != nil {
 		t.Fatal(err)
 	}
-	if err = p.PublishPending(context.Background(), 1); err != nil {
+	retry()
+	if status, _, waiting, _ := state(); status != "pending" || !waiting || calls != 1 {
+		t.Fatalf("removed application: %s waiting=%v calls=%d", status, waiting, calls)
+	}
+	if _, err := db.Exec(`UPDATE core.apps SET status = 'Ready'`); err != nil {
 		t.Fatal(err)
 	}
-	var state string
-	if err = db.QueryRow(`SELECT delivery_status FROM core.outbox_events`).Scan(&state); err != nil || state != "delivered" || calls != 1 {
-		t.Fatalf("delivery %s calls=%d err=%v", state, calls, err)
-	}
-	if _, err = db.Exec(`UPDATE core.outbox_events SET delivery_status='pending',delivered_at=NULL,next_attempt_at=now()`); err != nil {
+
+	// An application that declares no workflow has nothing to deliver.
+	if _, err := db.Exec(`UPDATE core.apps SET spec = spec - 'workflows'`); err != nil {
 		t.Fatal(err)
 	}
-	route.Version = "not-current"
-	if err = p.SetRoutes([]Route{route}); err != nil {
-		t.Fatal(err)
-	}
-	if err = p.PublishPending(context.Background(), 1); err != nil {
-		t.Fatal(err)
-	}
-	var attempts int
-	var next bool
-	if err = db.QueryRow(`SELECT delivery_status,attempt_count,next_attempt_at>now() FROM core.outbox_events`).Scan(&state, &attempts, &next); err != nil || state != "pending" || attempts != 2 || !next || calls != 1 {
-		t.Fatalf("missing route lost event: %s attempts=%d retry=%v calls=%d err=%v", state, attempts, next, calls, err)
+	retry()
+	if status, _, _, note := state(); status != "delivered" || calls != 1 || note.String != errNoSubscriber.Error() {
+		t.Fatalf("no subscriber: %s calls=%d note=%q", status, calls, note.String)
 	}
 }

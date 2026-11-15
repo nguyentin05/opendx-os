@@ -20,7 +20,8 @@
     scripts/seed-demo.py scopes   sample purchase requests, then what each
                                   person sees through the gateway
     scripts/seed-demo.py flow     one request through the whole approval chain,
-                                  including the refusals along the way
+                                  including the refusals along the way and the
+                                  review its workflow opens in Kestra
     scripts/seed-demo.py lines    a request with line items and a vendor from
                                   the application's vendor list: who may read
                                   and change them, and when
@@ -385,6 +386,19 @@ def flow() -> None:
 
         step("manager acts on a draft", "cuong.le", "role_procurement_manager", "approve", 404)
         step("submit", "an.nguyen", REQUESTER, "submit", 200)
+
+        # The submit event goes to the application's flow in Kestra, which asks
+        # cap-process to open the review its manifest declares.
+        items, deadline = [], time.time() + 120
+        while not items and time.time() < deadline:
+            data, _ = graphql(t["cuong.le"], "role_procurement_manager",
+                              "query($id: uuid!) { cap_work_work_items(where: {source_id: {_eq: $id}}) { title board_column } }",
+                              {"id": record["id"]})
+            items = (data or {}).get("cap_work_work_items", [])
+            if not items:
+                time.sleep(2)
+        opened = f"{items[0]['title']} ({items[0]['board_column']})  [ok]" if len(items) == 1 else f"{len(items)} work items  [UNEXPECTED, wanted 1]"
+        rows.append(("workflow opens a review", "workflow service", "role_workflow", opened))
         step("other department approves", "dung.pham", "role_procurement_manager", "approve", 404)
         step("requester approves", "an.nguyen", REQUESTER, "approve", 403)
         step("department manager approves", "cuong.le", "role_procurement_manager", "approve", 200)

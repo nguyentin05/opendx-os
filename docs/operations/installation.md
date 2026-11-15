@@ -78,6 +78,12 @@ registry discovery and beta automatic-workflow readiness remain open.
      permissions are dropped, and the domain table, data and roles are kept;
    - Hasura metadata changed by hand is repaired on the next pass.
 
+   The operator also deploys each application's workflows to Kestra and keeps
+   them there: a flow deleted or edited in Kestra is put back on the next pass,
+   and cap-process starts sending an application's events to its flow as soon
+   as it is deployed. Nothing is uploaded by hand
+   ([workflow deployment](../contracts/data-contracts.md#workflow-deployment)).
+
    Each new or changed package is installed on its own, so a refused one (for
    example, a capability that is not enabled) does not hold back the others; it
    is retried when its package changes, or after ten minutes. While any package
@@ -86,10 +92,10 @@ registry discovery and beta automatic-workflow readiness remain open.
 
    Without Compose, validate and apply application manifests using `dxos-operator`:
    ```bash
-   ./bin/dxos-operator validate contracts/fixtures/procurement.yaml
+   ./bin/dxos-operator validate apps/procurement/manifest.yaml
    HASURA_URL=http://localhost:8080 HASURA_ADMIN_SECRET=dxos_admin_secret \
    DATABASE_URL=postgres://dxos_admin:dxos_secret@localhost:5432/dxos_db?sslmode=disable \
-   ./bin/dxos-operator apply contracts/fixtures/procurement.yaml
+   ./bin/dxos-operator apply apps/procurement/manifest.yaml
    ```
 
 ## Kubernetes Operator (development cluster)

@@ -49,6 +49,21 @@ spec:
     - scan_status
     - sha256_hash
     - scanned_at
+  # The reviews the workflow opens when a request is submitted.
+  - table: cap_work.work_items
+    roles:
+    - role_procurement_manager
+    - role_procurement_finance
+    columns:
+    - id
+    - title
+    - description
+    - priority
+    - board_column
+    - assignee_id
+    - source_type
+    - source_id
+    - created_at
   tables:
   - name: domain.procurement_requests
     columns:

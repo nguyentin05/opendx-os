@@ -93,25 +93,21 @@ func main() {
 	if err := engine.ConfigureWorkflowService(os.Getenv("WORKFLOW_SERVICE_USER_ID"), os.Getenv("WORKFLOW_SERVICE_ROLE")); err != nil {
 		log.Fatal("valid WORKFLOW_SERVICE_USER_ID and WORKFLOW_SERVICE_ROLE are required")
 	}
-	endpoint := os.Getenv("KESTRA_URL")
-	if events.ValidateEndpoint(endpoint) != nil || os.Getenv("KESTRA_API_TOKEN") == "" {
-		log.Fatal("valid KESTRA_URL webhook endpoint and KESTRA_API_TOKEN are required")
-	}
+	// Events go to the flow the operator deployed for their application
+	// (core.app_workflows), so installing an application needs no restart here.
 	client := &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
-	publisher := events.NewPublisher(db, client, endpoint)
-	scheme := os.Getenv("KESTRA_AUTH_SCHEME")
-	if scheme == "" {
-		scheme = "Bearer"
+	publisher, err := events.NewPublisher(db, client, events.Config{
+		BaseURL:    os.Getenv("KESTRA_URL"),
+		User:       os.Getenv("KESTRA_USER"),
+		Password:   os.Getenv("KESTRA_PASSWORD"),
+		WebhookKey: os.Getenv("KESTRA_WEBHOOK_KEY"),
+	})
+	if err != nil {
+		log.Fatal(err)
 	}
-	if publisher.SetAuthorization(scheme, os.Getenv("KESTRA_API_TOKEN")) != nil {
-		log.Fatal("invalid Kestra authorization configuration")
-	}
-	if path := os.Getenv("KESTRA_ROUTES_FILE"); path != "" {
-		raw, err := os.ReadFile(path)
-		var routes []events.Route
-		if err != nil || json.Unmarshal(raw, &routes) != nil || publisher.SetRoutes(routes) != nil {
-			log.Fatal("invalid deployment-owned workflow routes")
-		}
+	effects, err := engine.EffectHandler(os.Getenv("WORKFLOW_SERVICE_TOKEN"))
+	if err != nil {
+		log.Fatal("WORKFLOW_SERVICE_TOKEN: ", err)
 	}
 	workerDone := make(chan struct{})
 	go func() {
@@ -157,7 +153,7 @@ func main() {
 	mux.Handle("POST /api/cap/process/files/upload", fileService.AuthenticatedHandler(verifier))
 	mux.Handle("GET /api/cap/process/files/{file_id}", fileService.AuthenticatedHandler(verifier))
 	mux.Handle("POST /api/cap/process/commands/{app_id}/{command}", engine.AuthenticatedHandler(verifier))
-	mux.Handle("POST /api/cap/process/effects/work-item", engine.AuthenticatedEffectHandler(verifier))
+	mux.Handle("POST /api/cap/process/effects/work-item", effects)
 
 	log.Printf("[cap-process] Listening on port %s", port)
 	server := &http.Server{Addr: ":" + port, Handler: mux, ReadHeaderTimeout: 5 * time.Second}

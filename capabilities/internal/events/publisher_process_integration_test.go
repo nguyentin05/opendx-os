@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 )
@@ -44,10 +45,18 @@ func TestPublisherProcessHelper(t *testing.T) {
 	defer func() { _ = db.Close() }()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	if err := NewPublisher(db, nil, os.Getenv("OPENDX_PUBLISHER_ENDPOINT")).PublishPending(ctx, 1); err != nil {
+	p, err := NewPublisher(db, nil, Config{BaseURL: os.Getenv("OPENDX_PUBLISHER_ENGINE"), User: "publisher", Password: "secret", WebhookKey: os.Getenv("OPENDX_PUBLISHER_KEY")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.PublishPending(ctx, 1); err != nil {
 		t.Fatal(err)
 	}
 }
+
+// The two publisher processes use different webhook keys, so the engine double
+// can tell their requests apart by the destination path.
+const firstKey, secondKey = "first-process-webhook-key", "second-process-webhook-key"
 
 func TestPublisherRecoversAfterProcessCrash(t *testing.T) {
 	db := publisherFixture(t)
@@ -74,7 +83,7 @@ func TestPublisherRecoversAfterProcessCrash(t *testing.T) {
 		accepted <- delivery{r.Header.Get("Idempotency-Key"), body, err}
 		// Acceptance is deliberately separated from its HTTP acknowledgement. The
 		// parent kills the first process while this response is withheld.
-		if r.URL.Path == "/first" {
+		if strings.HasSuffix(r.URL.Path, "/"+firstKey) {
 			select {
 			case <-releaseFirst:
 			case <-r.Context().Done():
@@ -87,12 +96,12 @@ func TestPublisherRecoversAfterProcessCrash(t *testing.T) {
 		close(releaseFirst)
 		server.Close()
 	}()
-	start := func(path string) (*exec.Cmd, <-chan error, *bytes.Buffer) {
+	start := func(key string) (*exec.Cmd, <-chan error, *bytes.Buffer) {
 		t.Helper()
 		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestPublisherProcessHelper$", "-test.count=1")
 		// Pass only required connection/endpoint settings and Go race settings; no
 		// ambient helper switches or second fixture lifecycle enter the child.
-		cmd.Env = []string{"OPENDX_PUBLISHER_HELPER=1", "OPENDX_PUBLISHER_DSN=" + dsn.String(), "OPENDX_PUBLISHER_ENDPOINT=" + server.URL + path, "GORACE=halt_on_error=1"}
+		cmd.Env = []string{"OPENDX_PUBLISHER_HELPER=1", "OPENDX_PUBLISHER_DSN=" + dsn.String(), "OPENDX_PUBLISHER_ENGINE=" + server.URL, "OPENDX_PUBLISHER_KEY=" + key, "GORACE=halt_on_error=1"}
 		output := new(bytes.Buffer)
 		cmd.Stdout, cmd.Stderr = output, output
 		if err := cmd.Start(); err != nil {
@@ -121,7 +130,7 @@ func TestPublisherRecoversAfterProcessCrash(t *testing.T) {
 			return delivery{}
 		}
 	}
-	first, firstDone, firstOutput := start("/first")
+	first, firstDone, firstOutput := start(firstKey)
 	initial := receive()
 	const eventID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 	if initial.id != eventID {
@@ -158,7 +167,7 @@ func TestPublisherRecoversAfterProcessCrash(t *testing.T) {
 	if count, err := result.RowsAffected(); err != nil || count != 1 {
 		t.Fatalf("lost persisted claim after crash: rows=%d err=%v", count, err)
 	}
-	_, secondDone, secondOutput := start("/second")
+	_, secondDone, secondOutput := start(secondKey)
 	retried := receive()
 	if retried.id != initial.id || !bytes.Equal(retried.body, initial.body) {
 		t.Fatalf("retry changed persisted identity/body: %q %q", retried.id, retried.body)

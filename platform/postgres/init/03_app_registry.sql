@@ -92,3 +92,14 @@ CREATE TABLE IF NOT EXISTS core.user_roles (
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_roles_role ON core.user_roles (role_name);
+
+-- The workflow engine acts through one platform service account. It is not a
+-- person and has no Keycloak login: capability services admit it by the
+-- workflow service credential, and it only runs the effects that installed
+-- applications declare.
+INSERT INTO core.users (id, email, display_name)
+VALUES ('22222222-2222-4222-8222-000000000005', 'workflow@dxos.internal', 'Workflow service')
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO core.user_roles (user_id, role_name)
+VALUES ('22222222-2222-4222-8222-000000000005', 'role_workflow')
+ON CONFLICT DO NOTHING;

@@ -80,6 +80,15 @@ provide the endpoint the webhook calls.
    (`directAccessGrantsEnabled: false`); tests create their own client through
    the Admin API.
 
+7. **The workflow engine is a service caller, not a user.** It has no Keycloak
+   login. cap-process admits its effect calls by the workflow service
+   credential (`WORKFLOW_SERVICE_TOKEN`) and lets it act as one platform
+   account holding `role_workflow`. That account is seeded by the platform
+   schema and is the only row of `core.users` that does not mirror a Keycloak
+   identity. The credential reaches only the effect endpoints, which the gateway
+   does not route, and an effect is limited to what installed applications
+   declare ([workflow deployment](../contracts/data-contracts.md#workflow-deployment)).
+
 ## Where `dxos-authz` sits
 
 `dxos-authz` is Tier 1 platform infrastructure, next to Keycloak, APISIX and
