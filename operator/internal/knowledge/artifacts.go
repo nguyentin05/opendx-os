@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 DX-OS Open-Core Contributors
+
+// Package knowledge stages and publishes the knowledge sources declared by
+// installed applications and dispatches index updates to the retrieval service.
 package knowledge
 
 import (
