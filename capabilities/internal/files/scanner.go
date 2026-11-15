@@ -38,6 +38,7 @@ func NewClamAV(address string, timeout time.Duration) (*ClamAV, error) {
 	}
 	return &ClamAV{address, timeout}, nil
 }
+
 func (s *ClamAV) Scan(ctx context.Context, r io.Reader) (ScanResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()

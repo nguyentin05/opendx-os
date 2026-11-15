@@ -20,14 +20,17 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
 
-var identifier = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
-var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-var statePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
-var roleName = regexp.MustCompile(`^role_[a-z0-9_]+$`)
+var (
+	identifier   = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	uuidPattern  = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+	statePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
+	roleName     = regexp.MustCompile(`^role_[a-z0-9_]+$`)
+)
 
 // Validate checks what the services rely on at run time. The operator has
 // already validated the whole manifest before marking it Ready; this guards
@@ -243,12 +246,7 @@ func (a *AppDefinition) ColumnTypes(t *Table) map[string]string {
 }
 
 func oneOf(s string, values ...string) bool {
-	for _, v := range values {
-		if s == v {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, s)
 }
 
 // validateFilter accepts the grammar the operator accepts: _and/_or of

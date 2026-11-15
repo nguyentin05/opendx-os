@@ -6,8 +6,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"time"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
 type DocumentSummary struct {
@@ -40,6 +41,7 @@ func (s *Store) Delete(ctx context.Context, actor *auth.Identity, key, documentI
 	var ok bool
 	return dbErrorOrNil(s.db.QueryRowContext(ctx, `SELECT cap_ai.delete_document($1,$2,$3,$4,$5)`, actor.UserID, actor.Role, key, documentID, expectedRevision).Scan(&ok))
 }
+
 func (s *Store) GetDocument(ctx context.Context, actor *auth.Identity, documentID string) (DocumentSummary, error) {
 	var result DocumentSummary
 	if _, err := NewPolicy(s.db).CanRead(ctx, actor, documentID); err != nil {
@@ -48,6 +50,7 @@ func (s *Store) GetDocument(ctx context.Context, actor *auth.Identity, documentI
 	err := decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.document_metadata($1,$2,$3)`, actor.UserID, actor.Role, documentID), &result)
 	return result, err
 }
+
 func (s *Store) ListDocuments(ctx context.Context, actor *auth.Identity, cursor string, limit int) (DocumentPage, error) {
 	out := DocumentPage{Documents: []DocumentSummary{}}
 	if limit < 1 || limit > 100 || len(cursor) > 2048 {
@@ -84,6 +87,7 @@ func (s *Store) ListDocuments(ctx context.Context, actor *auth.Identity, cursor 
 	}
 	return out, nil
 }
+
 func (s *Store) Collections(ctx context.Context, actor *auth.Identity) ([]map[string]any, error) {
 	out := []map[string]any{}
 	if err := CheckIdentity(ctx, s.db, actor); err != nil {
@@ -92,6 +96,7 @@ func (s *Store) Collections(ctx context.Context, actor *auth.Identity) ([]map[st
 	err := decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.get_collections($1,$2)`, actor.UserID, actor.Role), &out)
 	return out, err
 }
+
 func (s *Store) Ingestion(ctx context.Context, actor *auth.Identity, jobID string) (map[string]any, error) {
 	var out map[string]any
 	if !idPattern.MatchString(jobID) {
@@ -103,6 +108,7 @@ func (s *Store) Ingestion(ctx context.Context, actor *auth.Identity, jobID strin
 	err := decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.ingestion_metadata($1,$2,$3)`, actor.UserID, actor.Role, jobID), &out)
 	return out, err
 }
+
 func (s *Store) Recover(ctx context.Context, now time.Time) error {
 	var ok bool
 	return dbErrorOrNil(s.db.QueryRowContext(ctx, `SELECT cap_ai.recover_jobs($1)`, now).Scan(&ok))

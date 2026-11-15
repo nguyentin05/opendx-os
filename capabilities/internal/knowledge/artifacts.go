@@ -6,13 +6,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
 func (s *Store) ConfigurePersonal(enabled bool, fileURL, artifactRoot string) error {
@@ -27,6 +28,7 @@ func (s *Store) ConfigurePersonal(enabled bool, fileURL, artifactRoot string) er
 	s.artifactRoot = artifactRoot
 	return nil
 }
+
 func (s *Store) Original(ctx context.Context, actor *auth.Identity, doc, token string) ([]byte, error) {
 	before, err := NewPolicy(s.db).CanRead(ctx, actor, doc)
 	if err != nil {
@@ -84,6 +86,7 @@ func (s *Store) Original(ctx context.Context, actor *auth.Identity, doc, token s
 	}
 	return data, nil
 }
+
 func (s *Store) Asset(ctx context.Context, actor *auth.Identity, doc, assetID string) ([]byte, error) {
 	if !idPattern.MatchString(assetID) || s.artifactRoot == "" {
 		return nil, ErrNotFound

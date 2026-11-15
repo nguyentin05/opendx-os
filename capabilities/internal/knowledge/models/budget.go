@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+
 	"github.com/lib/pq"
 )
 
@@ -30,8 +31,7 @@ func modelError(err error) error {
 	if err == nil {
 		return nil
 	}
-	var p *pq.Error
-	if errors.As(err, &p) {
+	if p, ok := errors.AsType[*pq.Error](err); ok {
 		switch p.Code {
 		case "P0429":
 			return ErrQuota
@@ -43,6 +43,7 @@ func modelError(err error) error {
 	}
 	return ErrUnavailable
 }
+
 func (b *Budget) Reserve(ctx context.Context, req ReservationRequest) (Reservation, error) {
 	var r Reservation
 	if b == nil || b.DB == nil {
@@ -59,6 +60,7 @@ func (b *Budget) Reserve(ctx context.Context, req ReservationRequest) (Reservati
 	}
 	return r, nil
 }
+
 func (b *Budget) Settle(ctx context.Context, id, event string, usage Usage) error {
 	if b == nil || b.DB == nil {
 		return ErrUnavailable
@@ -67,6 +69,7 @@ func (b *Budget) Settle(ctx context.Context, id, event string, usage Usage) erro
 	_, err := b.DB.ExecContext(ctx, `SELECT cap_ai.settle_model($1,$2,$3)`, id, event, string(raw))
 	return modelError(err)
 }
+
 func (b *Budget) begin(ctx context.Context, id string) (string, error) {
 	var call string
 	err := b.DB.QueryRowContext(ctx, `SELECT cap_ai.begin_model_call($1)`, id).Scan(&call)
@@ -78,6 +81,7 @@ func (b *Budget) begin(ctx context.Context, id string) (string, error) {
 	}
 	return call, nil
 }
+
 func (b *Budget) finish(ctx context.Context, id, state, providerID string) error {
 	_, err := b.DB.ExecContext(ctx, `SELECT cap_ai.finish_model_call($1,$2,$3)`, id, state, providerID)
 	return modelError(err)

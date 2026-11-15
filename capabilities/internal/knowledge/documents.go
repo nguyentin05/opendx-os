@@ -7,19 +7,22 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"strings"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
 func (s *Store) Register(ctx context.Context, actor *auth.Identity, key string, req RegisterRequest) (Registration, error) {
 	return s.register(ctx, actor, key, "", 0, req)
 }
+
 func (s *Store) ReplaceVersion(ctx context.Context, actor *auth.Identity, key, documentID string, expectedRevision int64, req RegisterRequest) (Registration, error) {
 	if !idPattern.MatchString(documentID) || expectedRevision < 1 {
 		return Registration{}, ErrInvalid
 	}
 	return s.register(ctx, actor, key, documentID, expectedRevision, req)
 }
+
 func (s *Store) register(ctx context.Context, actor *auth.Identity, key, doc string, revision int64, req RegisterRequest) (Registration, error) {
 	var out Registration
 	if !idPattern.MatchString(req.FileID) || req.CollectionID != "" && !idPattern.MatchString(req.CollectionID) || len(key) < 1 || len(key) > 200 || strings.TrimSpace(key) == "" || len(req.ParserProfile) < 1 || len(req.ParserProfile) > 200 || len(req.Title) > 512 {

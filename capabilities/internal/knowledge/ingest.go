@@ -6,12 +6,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/docir"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/docir"
 )
 
 type ParseAdapter interface {
@@ -70,9 +71,10 @@ func (w *Worker) Once(ctx context.Context) error {
 	err = w.process(ctx, *lease)
 	if err != nil {
 		safe, permanent := "TEMPORARY_UNAVAILABLE", false
-		if err == docir.ErrOCRUnavailable {
+		switch err {
+		case docir.ErrOCRUnavailable:
 			safe, permanent = "OCR_UNAVAILABLE", true
-		} else if err == docir.ErrLayout || err == docir.ErrLimit || err == docir.ErrInvalid {
+		case docir.ErrLayout, docir.ErrLimit, docir.ErrInvalid:
 			safe, permanent = "PARSER_UNAVAILABLE", true
 		}
 		retryCtx, stop := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
@@ -81,6 +83,7 @@ func (w *Worker) Once(ctx context.Context) error {
 	}
 	return err
 }
+
 func (w *Worker) process(ctx context.Context, lease Lease) error {
 	var source struct {
 		ID     string `json:"source_id"`
@@ -149,11 +152,12 @@ func (w *Worker) process(ctx context.Context, lease Lease) error {
 	}
 	return w.Store.Activate(ctx, lease, lease.RunID)
 }
+
 func (w *Worker) Run(ctx context.Context) error {
 	if !idPattern.MatchString(w.WorkerID) || w.Parser == nil || w.Store == nil || w.FileEndpoint == "" || w.ServiceToken == "" {
 		return ErrInvalid
 	}
-	for i := 0; i < WorkerConcurrency; i++ {
+	for range WorkerConcurrency {
 		go func() {
 			for {
 				select {

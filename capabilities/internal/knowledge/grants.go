@@ -5,8 +5,9 @@ package knowledge
 import (
 	"context"
 	"encoding/base64"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"strings"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
 type GrantIdentity struct {
@@ -63,12 +64,15 @@ func (s *Store) GrantManagement(ctx context.Context, actor *auth.Identity, docum
 	}
 	return out, nil
 }
+
 func (s *Store) GrantRead(ctx context.Context, actor *auth.Identity, key, documentID, targetUserID string, expectedRevision int64) error {
 	return s.mutateGrant(ctx, actor, key, documentID, targetUserID, expectedRevision, false)
 }
+
 func (s *Store) RevokeRead(ctx context.Context, actor *auth.Identity, key, documentID, targetUserID string, expectedRevision int64) error {
 	return s.mutateGrant(ctx, actor, key, documentID, targetUserID, expectedRevision, true)
 }
+
 func (s *Store) mutateGrant(ctx context.Context, actor *auth.Identity, key, doc, target string, revision int64, revoke bool) error {
 	if !s.packageEnabled || !idPattern.MatchString(doc) || !idPattern.MatchString(target) {
 		return ErrNotFound

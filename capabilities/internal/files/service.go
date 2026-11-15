@@ -23,13 +23,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 )
 
 func readContent(r io.Reader) ([]byte, string, error) {
@@ -56,9 +57,11 @@ func newID() (string, error) {
 	b[8] = b[8]&63 | 128
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[:4], b[4:6], b[6:8], b[8:10], b[10:]), nil
 }
+
 func (s *Service) Upload(ctx context.Context, actor *auth.Identity, appID, fileName string, content io.Reader) (*FileObject, error) {
 	return s.upload(ctx, actor, appID, fileName, content, "APP_ATTACHMENT")
 }
+
 func (s *Service) UploadPrivate(ctx context.Context, actor *auth.Identity, appID, fileName string, content io.Reader) (*FileObject, error) {
 	if err := knowledge.CheckIdentity(ctx, s.db, actor); err != nil {
 		return nil, privateAuthorityError(err)
@@ -69,6 +72,7 @@ func (s *Service) UploadPrivate(ctx context.Context, actor *auth.Identity, appID
 	}
 	return s.upload(ctx, actor, appID, fileName, content, "OWNER_ONLY")
 }
+
 func (s *Service) upload(ctx context.Context, actor *auth.Identity, appID, fileName string, content io.Reader, policy string) (*FileObject, error) {
 	if _, e := s.application(ctx, actor, appID); e != nil {
 		return nil, ErrDenied
@@ -101,6 +105,7 @@ func (s *Service) upload(ctx context.Context, actor *auth.Identity, appID, fileN
 	}
 	return &FileObject{ID: id, ScanStatus: "QUARANTINED"}, nil
 }
+
 func (s *Service) verified(ctx context.Context, key, hash string) ([]byte, error) {
 	r, e := s.storage.Get(ctx, key)
 	if e != nil {
@@ -113,6 +118,7 @@ func (s *Service) verified(ctx context.Context, key, hash string) ([]byte, error
 	}
 	return b, nil
 }
+
 func (s *Service) Download(ctx context.Context, actor *auth.Identity, fileID string) (io.ReadCloser, error) {
 	key, hash, status, e := s.readable(ctx, actor, fileID)
 	if e != nil {
@@ -135,6 +141,7 @@ func (s *Service) Download(ctx context.Context, actor *auth.Identity, fileID str
 	}
 	return io.NopCloser(bytes.NewReader(b)), nil
 }
+
 func (s *Service) ScanPending(ctx context.Context, limit int) error {
 	if limit < 1 || limit > 1000 {
 		return ErrContent

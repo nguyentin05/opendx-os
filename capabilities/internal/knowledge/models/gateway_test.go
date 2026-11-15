@@ -4,8 +4,9 @@ package models
 
 import (
 	"context"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"testing"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
 func TestKillSwitchFallback(t *testing.T) {

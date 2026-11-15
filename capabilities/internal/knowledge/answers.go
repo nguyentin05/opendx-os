@@ -6,10 +6,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
 )
 
 type AnswerRequest struct {
@@ -54,6 +55,7 @@ type AnswerService struct {
 func emptyAnswer(reason string) AnswerResponse {
 	return AnswerResponse{Status: "SEARCH_ONLY", Reason: reason, Results: []SearchHit{}, Citations: []Citation{}}
 }
+
 func (s *AnswerService) Answer(ctx context.Context, actor *auth.Identity, req AnswerRequest) (AnswerResponse, error) {
 	empty := emptyAnswer("")
 	if actor == nil || s == nil || s.Search == nil {

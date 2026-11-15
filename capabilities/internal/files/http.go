@@ -20,9 +20,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"io"
 	"net/http"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
 func fileError(w http.ResponseWriter, status int) {
@@ -30,6 +31,7 @@ func fileError(w http.ResponseWriter, status int) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": http.StatusText(status), "message": http.StatusText(status)}}) // Best-effort response; the client may have disconnected.
 }
+
 func (s *Service) AuthenticatedHandler(v auth.Authorizer) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/cap/process/files/upload", s.uploadHTTP)
@@ -43,6 +45,7 @@ func (s *Service) AuthenticatedHandler(v auth.Authorizer) http.Handler {
 	mux.HandleFunc("GET /api/cap/process/files/{file_id}", s.downloadHTTP)
 	return auth.Middleware(v, mux)
 }
+
 func (s *Service) uploadHTTP(w http.ResponseWriter, r *http.Request) {
 	id, e := auth.ExtractIdentity(r)
 	if e != nil {
@@ -121,6 +124,7 @@ func (s *Service) uploadHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(f) // Best-effort response; the client may have disconnected.
 }
+
 func (s *Service) downloadHTTP(w http.ResponseWriter, r *http.Request) {
 	id, e := auth.ExtractIdentity(r)
 	if e != nil {

@@ -90,9 +90,11 @@ func NewPlatform(t *testing.T) *Platform {
 	      EXECUTE format('CREATE ROLE %I LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT', r);
 	    END IF;
 	  END LOOP; END $$`)
-	for _, f := range []string{"init/01_core_schema.sql", "init/02_capability_registry.sql", "init/03_app_registry.sql",
+	for _, f := range []string{
+		"init/01_core_schema.sql", "init/02_capability_registry.sql", "init/03_app_registry.sql",
 		"init/05_operator_deployments.sql", "capabilities/cap_hr.sql", "capabilities/cap_work.sql",
-		"capabilities/cap_process.sql", "init/07_app_definitions.sql"} {
+		"capabilities/cap_process.sql", "init/07_app_definitions.sql",
+	} {
 		exec(f, readRepo(t, "platform", "postgres", f))
 	}
 	// The grants of 06_runtime_roles.sql. Its first part alters cluster roles
@@ -296,8 +298,10 @@ func (p *Platform) SetStatusIn(t *testing.T, table, entity, actor, status string
 		t.Fatal(err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	for _, stmt := range []string{`SET LOCAL SESSION AUTHORIZATION dxos_process`,
-		`SELECT set_config('dxos.actor_id', '` + actor + `', true), set_config('dxos.action', 'test', true)`} {
+	for _, stmt := range []string{
+		`SET LOCAL SESSION AUTHORIZATION dxos_process`,
+		`SELECT set_config('dxos.actor_id', '` + actor + `', true), set_config('dxos.action', 'test', true)`,
+	} {
 		if _, err = tx.Exec(stmt); err != nil {
 			t.Fatal(err)
 		}

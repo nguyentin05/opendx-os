@@ -3,9 +3,10 @@
 package knowledge
 
 import (
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"net/http"
 	"strconv"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
 func (s *Store) grantManagementHTTP(w http.ResponseWriter, r *http.Request) {
@@ -26,6 +27,7 @@ func (s *Store) grantManagementHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("ETag", `"`+strconv.FormatInt(page.Revision, 10)+`"`)
 	writeJSON(w, 200, page)
 }
+
 func (s *Store) grantReadHTTP(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		UserID string `json:"user_id"`
@@ -36,9 +38,11 @@ func (s *Store) grantReadHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	s.changeGrantHTTP(w, r, body.UserID, false)
 }
+
 func (s *Store) revokeReadHTTP(w http.ResponseWriter, r *http.Request) {
 	s.changeGrantHTTP(w, r, r.PathValue("user"), true)
 }
+
 func (s *Store) changeGrantHTTP(w http.ResponseWriter, r *http.Request, target string, revoke bool) {
 	if !s.packageEnabled {
 		httpError(w, ErrAuthorityUnavailable)

@@ -64,7 +64,6 @@ func (e *LakehouseEngine) ReconcileExportBatch(ctx context.Context, req *ExportB
 		 RETURNING id`,
 		req.WorkspaceID, req.BatchKey, req.StorageURI, len(req.Records),
 	).Scan(&batchID)
-
 	if err != nil {
 		return "", fmt.Errorf("failed to upsert export batch: %w", err)
 	}

@@ -4,11 +4,12 @@ package knowledge
 
 import (
 	"context"
-	"github.com/lib/pq"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/lib/pq"
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
 type Scope struct {
@@ -117,6 +118,7 @@ func (s *Store) Search(ctx context.Context, actor *auth.Identity, req SearchRequ
 
 	return result, err
 }
+
 func (s *Store) searchCandidates(ctx context.Context, actor *auth.Identity, req SearchRequest) ([]candidate, error) {
 	rows := []candidate{}
 	limit := req.Limit
@@ -134,6 +136,7 @@ func (s *Store) searchCandidates(ctx context.Context, actor *auth.Identity, req 
 	err := decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.search_personal($1,$2,$3,$4,$5)`, actor.UserID, actor.Role, req.Query, limit, pq.Array(req.Scope.CollectionIDs)), &rows)
 	return rows, err
 }
+
 func (s *Store) finalizeSearch(ctx context.Context, actor *auth.Identity, rows []candidate) (SearchResult, error) {
 	result := SearchResult{Status: "LEXICAL", Results: []SearchHit{}, Warnings: []string{}}
 	for _, row := range rows {

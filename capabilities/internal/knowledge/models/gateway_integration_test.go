@@ -6,12 +6,13 @@ package models
 
 import (
 	"context"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
 type gatewayAuthority struct {
@@ -22,6 +23,7 @@ type gatewayAuthority struct {
 func (a *gatewayAuthority) Current(context.Context, *auth.Identity, Operation) (Decision, error) {
 	return Decision{Profile: a.profile, Allowed: !a.denied, PolicyRevision: 1, QueryClassification: "NON_PERSONAL"}, nil
 }
+
 func TestTimeoutAfterSendUncertain(t *testing.T) {
 	db, b, _ := budgetFixture(t)
 	if _, err := db.Exec(`UPDATE cap_ai.budget_accounts SET limit_units=100000`); err != nil {
@@ -69,6 +71,7 @@ func (a *revokeAuthority) Current(ctx context.Context, id *auth.Identity, op Ope
 	}
 	return d, e
 }
+
 func TestGatewayRechecksAfterCallIntent(t *testing.T) {
 	db, b, _ := budgetFixture(t)
 	if _, err := db.Exec(`UPDATE cap_ai.budget_accounts SET limit_units=100000`); err != nil {

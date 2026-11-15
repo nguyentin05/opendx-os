@@ -29,6 +29,7 @@ func (s *Store) ConfigurePackages(enabled bool, root string) error {
 	s.packageRoot = root
 	return nil
 }
+
 func (s *Store) readPackageArtifact(ctx context.Context, ref packageArtifact) ([]byte, error) {
 	if s.packageRoot == "" || len(ref.SHA256) != 64 || ref.SizeBytes < 1 || ref.SizeBytes > 20<<20 || ref.ArtifactRef == "" || path.Clean(ref.ArtifactRef) != ref.ArtifactRef || strings.Contains(ref.ArtifactRef, "..") || strings.Contains(ref.ArtifactRef, "\\") || strings.HasPrefix(ref.ArtifactRef, "/") {
 		return nil, ErrNotFound
@@ -56,6 +57,7 @@ func (s *Store) readPackageArtifact(ctx context.Context, ref packageArtifact) ([
 	}
 	return data, nil
 }
+
 func (s *Store) ReconcilePackage(ctx context.Context, appID string, generation int64, specDigest string) error {
 	if !s.packageEnabled || !appPattern.MatchString(appID) || generation < 1 || !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(specDigest) {
 		return ErrInvalid
@@ -107,6 +109,7 @@ func (s *Store) PackageSource(ctx context.Context, token, workerID, sourceID str
 	}
 	return data, nil
 }
+
 func (s *Store) ConfigureDispatcher(store *Store, subject, workerSubject, fileSubject string) error {
 	if store == nil || !idPattern.MatchString(subject) || subject == workerSubject || subject == fileSubject {
 		return ErrInvalid

@@ -15,13 +15,8 @@
 
 package process
 
-import ()
+import "slices"
 
 func contains(a []string, s string) bool {
-	for _, v := range a {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(a, s)
 }

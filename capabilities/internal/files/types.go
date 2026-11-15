@@ -20,15 +20,18 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
 	"io"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
 )
 
 const MaxSize = 20 << 20
 
-var ErrDenied = errors.New("file unavailable")
-var ErrUnclean = errors.New("file is not clean")
-var ErrContent = errors.New("unsupported or oversized content")
+var (
+	ErrDenied  = errors.New("file unavailable")
+	ErrUnclean = errors.New("file is not clean")
+	ErrContent = errors.New("unsupported or oversized content")
+)
 
 type Storage interface {
 	Put(context.Context, string, io.Reader) error

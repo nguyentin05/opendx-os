@@ -7,13 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 )
 
 type DelegationValidator interface {
@@ -62,6 +63,7 @@ func (s *Service) DelegatedHandler(verifier auth.SubjectVerifier, workerSubject 
 	})
 	return knowledge.ServiceMiddleware(verifier, workerSubject, mux)
 }
+
 func (s *Service) delegatedSource(ctx context.Context, g knowledge.SourceGrant) (string, error) {
 	var key string
 	err := s.db.QueryRowContext(ctx, `SELECT object_key FROM core.files WHERE id=$1 AND bucket=$2 AND uploaded_by=$3 AND sha256_hash=$4 AND scan_status='CLEAN' AND read_policy='OWNER_ONLY'`, g.SourceID, s.bucket, g.OwnerID, g.SHA256).Scan(&key)
@@ -80,6 +82,7 @@ func NewDelegationClient(endpoint, bearer string) (*DelegationClient, error) {
 	}
 	return &DelegationClient{endpoint: strings.TrimRight(endpoint, "/") + "/internal/v1/source-delegations/validate", bearer: bearer, client: &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
+
 func (c *DelegationClient) ValidateDelegation(ctx context.Context, token, workerID, sourceID string) (knowledge.SourceGrant, error) {
 	var out knowledge.SourceGrant
 	body, _ := json.Marshal(map[string]string{"token": token, "worker_id": workerID, "source_id": sourceID})

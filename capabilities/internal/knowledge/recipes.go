@@ -18,6 +18,7 @@ func (c RecipeConfig) Validate() error {
 	}
 	return nil
 }
+
 func DefaultRecipe() RecipeConfig {
 	return RecipeConfig{ID: "standard-text-v1", MaxBytes: 20 << 20, MaxPages: 200, MaxElements: 50000, MaxChunks: 20000, Timeout: 120 * time.Second, LocalOnly: true}
 }

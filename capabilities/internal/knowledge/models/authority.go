@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 

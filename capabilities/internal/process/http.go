@@ -60,6 +60,7 @@ func decodeRequest(r io.Reader) (*CommandRequest, error) {
 	}
 	return &req, nil
 }
+
 func uniqueJSON(d *json.Decoder) error {
 	t, e := d.Token()
 	if e != nil {
@@ -97,11 +98,13 @@ func uniqueJSON(d *json.Decoder) error {
 	}
 	return nil
 }
+
 func WriteError(w http.ResponseWriter, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": http.StatusText(status), "message": http.StatusText(status)}}) // Best-effort response; the client may have disconnected.
 }
+
 func (e *Engine) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, err := auth.ExtractIdentity(r)
@@ -143,6 +146,7 @@ func (w *envelopeWriter) WriteHeader(status int) {
 	}
 	w.ResponseWriter.WriteHeader(status)
 }
+
 func (w *envelopeWriter) Write(b []byte) (int, error) {
 	if w.failed {
 		return len(b), nil

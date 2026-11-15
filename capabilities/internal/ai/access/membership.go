@@ -8,17 +8,20 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"github.com/opendx-os/opendx-os/capabilities/internal/authz"
 	"regexp"
 	"time"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/authz"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
-var ErrDenied = errors.New("membership denied")
-var ErrUnavailable = errors.New("membership authority unavailable")
-var subjectID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-var selectedRole = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+var (
+	ErrDenied      = errors.New("membership denied")
+	ErrUnavailable = errors.New("membership authority unavailable")
+	subjectID      = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+	selectedRole   = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+)
 
 type Principal struct {
 	UserID string

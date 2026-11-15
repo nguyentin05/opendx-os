@@ -5,8 +5,9 @@ package knowledge
 import (
 	"context"
 	"encoding/json"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"net/http"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
 type AppSource struct {
@@ -49,6 +50,7 @@ func (s *Store) AppKnowledge(ctx context.Context, actor *auth.Identity, app stri
 	}
 	return final, nil
 }
+
 func (s *Store) appKnowledgeHTTP(w http.ResponseWriter, r *http.Request) {
 	actor, e := auth.ExtractIdentity(r)
 	if e != nil {

@@ -65,9 +65,9 @@ func parsePDF(ctx context.Context, b []byte, l Limits, r *Result) error {
 		return e
 	}
 	pages := 0
-	for _, line := range strings.Split(string(info), "\n") {
-		if strings.HasPrefix(line, "Pages:") {
-			pages, _ = strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "Pages:")))
+	for line := range strings.SplitSeq(string(info), "\n") {
+		if after, ok := strings.CutPrefix(line, "Pages:"); ok {
+			pages, _ = strconv.Atoi(strings.TrimSpace(after))
 		}
 	}
 	if pages < 1 || pages > l.MaxPages {

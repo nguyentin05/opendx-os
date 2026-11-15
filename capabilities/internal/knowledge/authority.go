@@ -8,9 +8,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
+
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/authz"
-	"time"
 )
 
 var ErrAuthorityUnavailable = errors.New("knowledge authority unavailable")
@@ -23,6 +24,7 @@ func NewAuthority(authn auth.Authenticator, db *sql.DB) *Authority {
 	}
 	return &Authority{resolver: authz.NewResolver(authn, authz.PostgresStore{DB: db, ReadOnly: true}, 0)}
 }
+
 func (a *Authority) Resolve(ctx context.Context, token, selectedRole string) (*auth.Identity, error) {
 	if a == nil || a.resolver == nil {
 		return nil, ErrAuthorityUnavailable
@@ -35,6 +37,7 @@ func (a *Authority) Resolve(ctx context.Context, token, selectedRole string) (*a
 	}
 	return id, err
 }
+
 func (a *Authority) Authorize(ctx context.Context, token, role string) (*auth.Identity, error) {
 	return a.Resolve(ctx, token, role)
 }
