@@ -85,6 +85,29 @@ def upload(who, app, role, content):
     return str(uuid.UUID(result['file_id']))
 
 
+
+def infected_pdf():
+    # A PDF prefix followed by EICAR is not an EICAR file: real ClamAV returns
+    # CLEAN for that malformed input. Embed the harmless standard test file in
+    # a valid PDF attachment so the real PDF scanner extracts and detects it.
+    signature = b'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*'
+    objects = [
+        b'<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [(eicar.com) 3 0 R] >> >> >>',
+        b'<< /Type /Pages /Count 0 /Kids [] >>',
+        b'<< /Type /Filespec /F (eicar.com) /EF << /F 4 0 R >> >>',
+        b'<< /Type /EmbeddedFile /Length ' + str(len(signature)).encode() + b' >>\nstream\n' + signature + b'\nendstream',
+    ]
+    pdf = b'%PDF-1.7\n'
+    offsets = []
+    for i, obj in enumerate(objects, 1):
+        offsets.append(len(pdf))
+        pdf += str(i).encode() + b' 0 obj\n' + obj + b'\nendobj\n'
+    xref = len(pdf)
+    pdf += b'xref\n0 5\n0000000000 65535 f \n'
+    pdf += b''.join(f'{offset:010d} 00000 n \n'.encode() for offset in offsets)
+    return pdf + f'trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n'.encode()
+
+
 def main():
     try:
         import websocket
@@ -161,7 +184,7 @@ def main():
     finally:
         ws.close()
         db(f"INSERT INTO core.user_roles(user_id,role_name) VALUES('{actors['A']}','{role}') ON CONFLICT DO NOTHING;")
-    infected = upload('A', app, role, b'%PDF-1.7\n' + b'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*')
+    infected = upload('A', app, role, infected_pdf())
     for _ in range(60):
         state = db(f"SELECT scan_status FROM core.files WHERE id='{infected}'")
         require(state != 'CLEAN', 'infected source blessed CLEAN')

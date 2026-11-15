@@ -388,3 +388,37 @@ func TestDDLIntegrationChildRowsFollowTheirParent(t *testing.T) {
 		t.Fatalf("another draft must stay editable: %v", err)
 	}
 }
+
+func TestPersonalLibraryDDLAllowsHasuraAuthorityPredicates(t *testing.T) {
+	db := testutil.NewDatabase(t)
+	app, err := manifest.ParseFile("../../../apps/personal-library/manifest.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ddl, err := GenerateDDL(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(ddl); err != nil {
+		t.Fatal(err)
+	}
+	// Hasura executes these private-file predicates with its database login,
+	// even though clients have no direct permissions on authority tables.
+	err = inTx(t, db, "dxos_hasura", alice, "", func(tx *sql.Tx) error {
+		var n int
+		return tx.QueryRow(`SELECT count(*) FROM core.files f WHERE
+EXISTS (SELECT FROM core.users u WHERE u.id=f.uploaded_by AND u.status='ACTIVE') AND
+EXISTS (SELECT FROM core.user_roles r WHERE r.user_id=f.uploaded_by AND r.role_name='role_library_user') AND
+EXISTS (SELECT FROM core.apps a WHERE a.app_id=f.app_id AND a.status='Ready') AND
+EXISTS (SELECT FROM core.capabilities c WHERE c.cap_id='cap-ai' AND c.enabled)`).Scan(&n)
+	})
+	if err != nil {
+		t.Fatalf("Hasura cannot execute private source authority predicates: %v", err)
+	}
+	for _, table := range []string{"core.users", "core.user_roles", "core.apps", "core.capabilities"} {
+		var writable bool
+		if err := db.QueryRow(`SELECT has_table_privilege('dxos_hasura',$1,'INSERT,UPDATE,DELETE')`, table).Scan(&writable); err != nil || writable {
+			t.Fatalf("Hasura must not write authority table %s: writable=%v err=%v", table, writable, err)
+		}
+	}
+}

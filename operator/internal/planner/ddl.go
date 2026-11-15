@@ -59,6 +59,14 @@ func GenerateDDL(app *manifest.DXApplication) (string, error) {
 			fmt.Fprintf(&sb, "GRANT USAGE ON SCHEMA %s TO dxos_hasura;\n", quoteIdent(schema))
 		}
 		fmt.Fprintf(&sb, "GRANT SELECT ON %s TO dxos_hasura;\n", quoteTable(shared))
+		if shared == "core.files" && app.Spec.Knowledge != nil && app.Spec.Knowledge.PersonalLibrary != nil && app.Spec.Knowledge.PersonalLibrary.Enabled {
+			// Private-file filters recheck current authority inside Hasura's SQL.
+			// These are connection grants; no client metadata permission is added.
+			sb.WriteString("GRANT SELECT (id, status) ON core.users TO dxos_hasura;\n")
+			sb.WriteString("GRANT SELECT (user_id, role_name) ON core.user_roles TO dxos_hasura;\n")
+			sb.WriteString("GRANT SELECT (app_id, status) ON core.apps TO dxos_hasura;\n")
+			sb.WriteString("GRANT SELECT (cap_id, enabled) ON core.capabilities TO dxos_hasura;\n")
+		}
 	}
 
 	return sb.String(), nil

@@ -24,7 +24,7 @@ const documentID = "55555555-5555-4555-8555-555555555555"
 func metadataFixture(t *testing.T) (*sql.DB, *sql.DB, *auth.Identity) {
 	t.Helper()
 	db := testutil.Database(t)
-	for _, p := range []string{"init/01_core_schema.sql", "init/02_capability_registry.sql", "init/03_app_registry.sql", "init/06_runtime_roles.sql", "init/07_app_definitions.sql", "capabilities/cap_ai.sql", "migrations/cap_ai/0001_metadata_jobs.sql"} {
+	for _, p := range []string{"init/01_core_schema.sql", "init/02_capability_registry.sql", "init/03_app_registry.sql", "init/05_operator_deployments.sql", "init/06_runtime_roles.sql", "init/07_app_definitions.sql", "capabilities/cap_ai.sql", "migrations/cap_ai/0001_metadata_jobs.sql"} {
 		raw, e := os.ReadFile("../../../platform/postgres/" + p)
 		if e != nil {
 			t.Fatal(e)
@@ -106,7 +106,7 @@ func TestFreshUpgradeEquivalent(t *testing.T) {
 
 func TestBootstrapMigrationLedger(t *testing.T) {
 	db := testutil.Database(t)
-	for _, p := range []string{"init/01_core_schema.sql", "init/02_capability_registry.sql", "init/03_app_registry.sql", "init/06_runtime_roles.sql", "init/07_app_definitions.sql", "capabilities/cap_ai.sql"} {
+	for _, p := range []string{"init/01_core_schema.sql", "init/02_capability_registry.sql", "init/03_app_registry.sql", "init/05_operator_deployments.sql", "init/06_runtime_roles.sql", "init/07_app_definitions.sql", "capabilities/cap_ai.sql"} {
 		raw, e := os.ReadFile("../../../platform/postgres/" + p)
 		if e != nil {
 			t.Fatal(e)

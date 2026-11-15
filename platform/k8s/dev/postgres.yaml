@@ -13,8 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # PostgreSQL 17 initialized from platform/postgres/init (ConfigMap postgres-init)
-# and the capability modules (ConfigMap postgres-capabilities). Data lives in an
-# emptyDir: this deployment is disposable and must not hold real data.
+# plus capability modules and scoped migrations (ConfigMaps postgres-capabilities
+# and postgres-migrations). Data lives in an emptyDir: this deployment is disposable and must not hold real data.
 apiVersion: v1
 kind: Service
 metadata:
@@ -106,5 +106,18 @@ spec:
                 path: capabilities/cap_data.sql
               - key: cap_ai.sql
                 path: capabilities/cap_ai.sql
+          - configMap:
+              name: postgres-migrations
+              items:
+              - key: ledger.sql
+                path: migrations/ledger.sql
+              - key: core-0001_private_file_policy.sql
+                path: migrations/core/0001_private_file_policy.sql
+              - key: core-0002_private_markdown.sql
+                path: migrations/core/0002_private_markdown.sql
+              - key: cap_ai-0001_metadata_jobs.sql
+                path: migrations/cap_ai/0001_metadata_jobs.sql
+              - key: cap_ai-0002_docir_fts.sql
+                path: migrations/cap_ai/0002_docir_fts.sql
       - name: data
         emptyDir: {}

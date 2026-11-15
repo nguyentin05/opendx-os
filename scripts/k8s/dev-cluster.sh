@@ -108,7 +108,7 @@ create_credentials() {
 }
 
 create_init_configmaps() {
-    local args=()
+    local args=() scope f
     for f in "$ROOT"/platform/postgres/init/*; do
         args+=(--from-file="$(basename "$f")=$f")
     done
@@ -118,6 +118,13 @@ create_init_configmaps() {
         args+=(--from-file="$(basename "$f")=$f")
     done
     kc -n "$PLATFORM_NS" create configmap postgres-capabilities "${args[@]}" --dry-run=client -o yaml | kc apply -f - >/dev/null
+    args=(--from-file="ledger.sql=$ROOT/platform/postgres/migrations/ledger.sql")
+    for scope in core cap_ai; do
+        for f in "$ROOT"/platform/postgres/migrations/"$scope"/*.sql; do
+            args+=(--from-file="${scope}-$(basename "$f")=$f")
+        done
+    done
+    kc -n "$PLATFORM_NS" create configmap postgres-migrations "${args[@]}" --dry-run=client -o yaml | kc apply -f - >/dev/null
 }
 
 up() {

@@ -11,12 +11,19 @@ private content.
 ## Runtime components and gates
 
 Apply the checksum-verified Core and cap_ai migrations using
-`python3 scripts/migrate_rag.py --help`. Fresh bootstrap uses the same SQL. Core
-migration 0002 permits `text/markdown` only with `OWNER_ONLY`; existing ordinary
+`python3 scripts/migrate_rag.py --help`. Fresh bootstrap uses the same SQL. Both
+migration entry points upgrade the legacy Core ledger to `(scope, version)`
+transactionally, retaining existing versions and checksums under the `core` scope.
+Core migration 0002 permits `text/markdown` only with `OWNER_ONLY`; existing ordinary
 attachment MIME policy is unchanged. cap_ai 0002 adds run-scoped DocIR, chunks,
 provenance links, simple FTS and fenced activation. Disable the feature to roll
 back enablement; retain source restrictions and evidence rather than dropping
 these tables or widening file permissions.
+
+Reapply or reconcile the library manifest with the current Operator when
+upgrading. Its private-file predicates require column-level reads on Core
+authority tables for the Hasura connection; application roles receive no direct
+metadata access to those authority tables and no new write permission.
 
 The API needs `RAG_METADATA_ENABLED=true`, `RAG_SOURCE_QUALIFIED=true`, then
 `RAG_PERSONAL_ENABLED=true`, `RAG_METADATA_QUALIFIED=true` and

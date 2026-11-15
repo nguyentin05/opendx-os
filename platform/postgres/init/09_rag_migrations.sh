@@ -10,7 +10,7 @@ trap 'rm -f "$migration_script"' EXIT HUP INT TERM
 cat > "$migration_script" <<'SQL'
 BEGIN;
 SELECT pg_advisory_xact_lock(782634901);
-CREATE TABLE IF NOT EXISTS core.schema_migrations(scope text NOT NULL,version text NOT NULL,checksum text NOT NULL,applied_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(scope,version));
+\i :migration_dir/ledger.sql
 SELECT EXISTS(SELECT FROM core.capabilities WHERE cap_id='cap-ai' AND enabled) AS ai_enabled \gset
 SQL
 # Verify every checksum before any domain mutation. No connection secrets enter argv/output.

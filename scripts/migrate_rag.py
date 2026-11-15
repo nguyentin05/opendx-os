@@ -27,7 +27,7 @@ versions = [f.name[:4] for f in files]
 if len(set(versions)) != len(versions) or a.through not in versions:
     sys.exit('unknown or duplicate migration version')
 selected = [f for f in files if f.name[:4] <= a.through]
-sql = ["BEGIN; SELECT pg_advisory_xact_lock(782634901);", "CREATE TABLE IF NOT EXISTS core.schema_migrations(scope text NOT NULL, version text NOT NULL, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(scope,version));"]
+sql = ["BEGIN; SELECT pg_advisory_xact_lock(782634901);", (root / "platform/postgres/migrations/ledger.sql").read_text()]
 # Check every checksum before executing any domain mutation.
 for f in selected:
     v = f.name[:4]

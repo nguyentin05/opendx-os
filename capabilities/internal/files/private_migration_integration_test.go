@@ -65,6 +65,17 @@ func TestMigrationReplayAndChecksumConflict(t *testing.T) {
 	if _, err = db.Exec(string(schema)); err != nil {
 		t.Fatal(err)
 	}
+	// Match real installations: the operator ledger predates scoped RAG migrations.
+	operatorSchema, err := os.ReadFile("../../../platform/postgres/init/05_operator_deployments.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The deployment table references the app registry; only its ledger is needed here.
+	ledger := strings.SplitN(string(operatorSchema), "CREATE TABLE IF NOT EXISTS core.schema_migrations", 2)[1]
+	if _, err = db.Exec("CREATE TABLE IF NOT EXISTS core.schema_migrations" + ledger + `
+INSERT INTO core.schema_migrations(version,checksum) VALUES('legacy-bootstrap',repeat('a',64));`); err != nil {
+		t.Fatal(err)
+	}
 	var name string
 	if err = db.QueryRow(`SELECT current_database()`).Scan(&name); err != nil {
 		t.Fatal(err)
@@ -87,14 +98,18 @@ func TestMigrationReplayAndChecksumConflict(t *testing.T) {
 	if err = run(); err != nil {
 		t.Fatal("replay:", err)
 	}
-	if _, err = db.Exec(`UPDATE core.schema_migrations SET checksum='changed'`); err != nil {
+	if _, err = db.Exec(`UPDATE core.schema_migrations SET checksum=repeat('b',64) WHERE version='0001'`); err != nil {
 		t.Fatal(err)
 	}
 	if err = run(); err == nil {
 		t.Fatal("checksum conflict accepted")
 	}
+	var legacyChecksum string
+	if err = db.QueryRow(`SELECT checksum FROM core.schema_migrations WHERE version='legacy-bootstrap'`).Scan(&legacyChecksum); err != nil || legacyChecksum != strings.Repeat("a", 64) {
+		t.Fatal("legacy ledger changed", err)
+	}
 	var n int
-	if err = db.QueryRow(`SELECT count(*) FROM core.schema_migrations WHERE checksum='changed'`).Scan(&n); err != nil || n != 1 {
+	if err = db.QueryRow(`SELECT count(*) FROM core.schema_migrations WHERE checksum=repeat('b',64)`).Scan(&n); err != nil || n != 1 {
 		t.Fatal("ledger mutated", n, err)
 	}
 }
