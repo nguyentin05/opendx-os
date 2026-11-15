@@ -17,11 +17,14 @@ package manifest
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 
 	"gopkg.in/yaml.v3"
@@ -78,5 +81,37 @@ func ParseFile(path string) (*DXApplication, error) {
 		return nil, fmt.Errorf("open manifest file: %w", err)
 	}
 	defer func() { _ = f.Close() }()
-	return Parse(f)
+	app, err := Parse(f)
+	if err != nil {
+		return nil, err
+	}
+	app.PackageRoot, err = filepath.Abs(filepath.Dir(path))
+	if err != nil {
+		return nil, err
+	}
+	if err = ValidateKnowledgePaths(filepath.Dir(path), app.Spec.Knowledge); err != nil {
+		return nil, err
+	}
+	if k := app.Spec.Knowledge; k != nil && len(k.Sources) > 0 {
+		root, err := os.OpenRoot(app.PackageRoot)
+		if err != nil {
+			return nil, err
+		}
+		defer root.Close()
+		app.SourceDigests = map[string]string{}
+		for _, source := range k.Sources {
+			f, err := root.Open(source.Path)
+			if err != nil {
+				return nil, fmt.Errorf("knowledge source unavailable")
+			}
+			h := sha256.New()
+			n, err := io.Copy(h, io.LimitReader(f, (20<<20)+1))
+			f.Close()
+			if err != nil || n == 0 || n > 20<<20 {
+				return nil, fmt.Errorf("knowledge source size/read error")
+			}
+			app.SourceDigests[source.ID] = hex.EncodeToString(h.Sum(nil))
+		}
+	}
+	return app, nil
 }

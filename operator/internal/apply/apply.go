@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/opendx-os/opendx-os/operator/internal/knowledge"
 	"github.com/opendx-os/opendx-os/operator/internal/manifest"
 	"github.com/opendx-os/opendx-os/operator/internal/planner"
 	"github.com/opendx-os/opendx-os/operator/internal/workflows"
@@ -33,6 +35,7 @@ import (
 
 // Config holds endpoints and credentials for Operator apply operations.
 type Config struct {
+	Artifacts         *knowledge.ArtifactStore
 	HasuraURL         string
 	HasuraAdminSecret string
 }
@@ -81,6 +84,76 @@ func NewRunner(db *sql.DB, cfg Config, client *http.Client) *Runner {
 // and capabilities). A failure before that transaction leaves the registry on
 // the previous definitions.
 func (r *Runner) Run(ctx context.Context, plan planner.Plan, targets []string) error {
+	// Stage exact bounded bytes before any registry/DDL/metadata mutation. A plan
+	// is pure; an unconfigured scanner/storage fails closed on package apply.
+	plan.Apps = append([]manifest.DXApplication(nil), plan.Apps...)
+	for i, app := range plan.Apps {
+		if app.Spec.Knowledge == nil || len(app.Spec.Knowledge.Sources) == 0 {
+			continue
+		}
+		if app.PackageRoot == "" && app.Spec.Publication != nil {
+			continue
+		} // unchanged active definition
+		if r.cfg.Artifacts == nil {
+			return fmt.Errorf("package artifact safety storage is not configured")
+		}
+		staged, err := r.cfg.Artifacts.Stage(ctx, app)
+		if err != nil {
+			return err
+		}
+		plan.Apps[i] = staged
+	}
+	// Registry locking alone does not serialize PostgreSQL GRANT/catalog DDL or
+	// Hasura snapshot/rollback. Keep the entire apply ordered across Operators.
+	if r.db != nil {
+		connection, err := r.db.Conn(ctx)
+		if err != nil {
+			return err
+		}
+		if _, err = connection.ExecContext(ctx, `SELECT pg_advisory_lock(hashtextextended('dxos.operator.apply',0))`); err != nil {
+			connection.Close()
+			return err
+		}
+		defer func() {
+			unlockCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			if _, err := connection.ExecContext(unlockCtx, `SELECT pg_advisory_unlock(hashtextextended('dxos.operator.apply',0))`); err != nil {
+				_ = connection.Raw(func(any) error { return driver.ErrBadConn })
+			}
+			_ = connection.Close()
+		}()
+	}
+	if r.db != nil && plan.ExpectedApps != nil {
+		live, err := r.ReadManagedState(ctx)
+		if err != nil {
+			return err
+		}
+		intended := map[string]bool{}
+		for _, name := range targets {
+			intended[name] = true
+		}
+		for _, name := range plan.RemovedApps {
+			intended[name] = true
+		}
+		actual := map[string]string{}
+		for _, app := range live.ActiveApps {
+			if intended[app.Metadata.Name] {
+				continue
+			}
+			value, ok := planner.Canonical(app)
+			if !ok || plan.ExpectedApps[app.Metadata.Name] != value {
+				return fmt.Errorf("application registry changed while preparing plan; rebuild the plan")
+			}
+			actual[app.Metadata.Name] = value
+		}
+		for name := range plan.ExpectedApps {
+			if !intended[name] {
+				if _, ok := actual[name]; !ok {
+					return fmt.Errorf("application registry changed while preparing plan; rebuild the plan")
+				}
+			}
+		}
+	}
 	byName := make(map[string]*manifest.DXApplication, len(plan.Apps))
 	for i := range plan.Apps {
 		byName[plan.Apps[i].Metadata.Name] = &plan.Apps[i]
@@ -115,7 +188,9 @@ func (r *Runner) Run(ctx context.Context, plan planner.Plan, targets []string) e
 	if r.db != nil {
 		for _, name := range targets {
 			app := byName[name]
-			specBytes, err := json.Marshal(app.Spec)
+			placeholder := app.Spec
+			placeholder.Publication = nil // staging is not authoritative history
+			specBytes, err := json.Marshal(placeholder)
 			if err != nil {
 				return err
 			}

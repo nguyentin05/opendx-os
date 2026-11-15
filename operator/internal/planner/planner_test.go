@@ -155,9 +155,9 @@ func TestGenerateHasuraOperations(t *testing.T) {
 	// A role sees the app's files it uploaded or that are attached to records
 	// it may read; the application alone is not enough.
 	files := perms["pg_create_select_permission:core.files:role_procurement_manager"]
-	assertJSON(t, "manager files filter", files["filter"], `{"_and":[{"app_id":{"_eq":"procurement"}},{"_or":[{"uploaded_by":{"_eq":"X-Hasura-User-Id"}},{"procurement_requests_by_quote_file_id":{"_and":[{"org_unit":{"staff":{"user_id":{"_eq":"X-Hasura-User-Id"}}}},{"status":{"_neq":"DRAFT"}}]}}]}]}`)
+	assertJSON(t, "manager files filter", files["filter"], `{"_and":[{"app_id":{"_eq":"procurement"}},{"_or":[{"_and":[{"read_policy":{"_eq":"APP_ATTACHMENT"}},{"_or":[{"uploaded_by":{"_eq":"X-Hasura-User-Id"}},{"procurement_requests_by_quote_file_id":{"_and":[{"org_unit":{"staff":{"user_id":{"_eq":"X-Hasura-User-Id"}}}},{"status":{"_neq":"DRAFT"}}]}}]}]}]}]}`)
 	ownFiles := perms["pg_create_select_permission:core.files:role_procurement_requester"]
-	assertJSON(t, "requester files filter", ownFiles["filter"], `{"_and":[{"app_id":{"_eq":"procurement"}},{"_or":[{"uploaded_by":{"_eq":"X-Hasura-User-Id"}},{"procurement_requests_by_quote_file_id":{"created_by":{"_eq":"X-Hasura-User-Id"}}}]}]}`)
+	assertJSON(t, "requester files filter", ownFiles["filter"], `{"_and":[{"app_id":{"_eq":"procurement"}},{"_or":[{"_and":[{"read_policy":{"_eq":"APP_ATTACHMENT"}},{"_or":[{"uploaded_by":{"_eq":"X-Hasura-User-Id"}},{"procurement_requests_by_quote_file_id":{"created_by":{"_eq":"X-Hasura-User-Id"}}}]}]}]}]}`)
 	users := perms["pg_create_select_permission:core.users:role_procurement_manager"]
 	assertJSON(t, "users filter", users["filter"], `{}`)
 }
@@ -214,5 +214,20 @@ func TestProcurementDDLFixtureIsCurrent(t *testing.T) {
 	}
 	if strings.Join(body, "") != want+"\n" && strings.Join(body, "") != want {
 		t.Fatal("contracts/fixtures/procurement-ddl.sql is stale; regenerate it with:\n  go -C operator run ./cmd/dxos-operator plan -format sql ../apps/procurement/manifest.yaml")
+	}
+}
+
+func TestChangedUsesDeclaredSourceContentNotServerEnvelope(t *testing.T) {
+	a := loadFixtureApp(t)
+	a.SourceDigests = map[string]string{"policy": "hash-a"}
+	live := *a.Clone()
+	live.SourceDigests = nil
+	live.Spec.Publication = &manifest.PackagePublication{Generation: 7, Sources: []manifest.PublishedSource{{SourceID: "policy", SHA256: "hash-a", Incarnation: "server"}}}
+	if got := Changed([]manifest.DXApplication{*a}, ManagedState{ActiveApps: []manifest.DXApplication{live}}); len(got) != 0 {
+		t.Fatal("server metadata caused perpetual reconcile", got)
+	}
+	a.SourceDigests["policy"] = "hash-b"
+	if got := Changed([]manifest.DXApplication{*a}, ManagedState{ActiveApps: []manifest.DXApplication{live}}); len(got) != 1 {
+		t.Fatal("content-only change missed")
 	}
 }

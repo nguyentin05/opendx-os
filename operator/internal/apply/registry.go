@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/lib/pq"
+	"github.com/opendx-os/opendx-os/operator/internal/knowledge"
 	"github.com/opendx-os/opendx-os/operator/internal/manifest"
 	"github.com/opendx-os/opendx-os/operator/internal/planner"
 )
@@ -191,6 +192,33 @@ func publishSnapshot(ctx context.Context, tx *sql.Tx, plan planner.Plan) error {
 	}
 
 	for _, name := range plan.RemovedApps {
+		var raw []byte
+		if err := tx.QueryRowContext(ctx, `SELECT spec FROM core.apps WHERE app_id=$1 FOR UPDATE`, name).Scan(&raw); err != nil {
+			return err
+		}
+		spec, err := manifest.DecodeStoredSpec(raw)
+		if err != nil {
+			return err
+		}
+		if spec.Publication != nil {
+			app := manifest.DXApplication{Metadata: manifest.AppMetadata{Name: name}, Spec: spec}
+			app.Spec.Knowledge = nil
+			retired, err := knowledge.NextPublication(*spec.Publication, app)
+			if err != nil {
+				return err
+			}
+			spec.Publication = &retired
+			b, err := json.Marshal(spec)
+			if err != nil {
+				return err
+			}
+			if _, err = tx.ExecContext(ctx, `UPDATE core.apps SET spec=$2::jsonb,publication_generation=$3 WHERE app_id=$1`, name, string(b), retired.Generation); err != nil {
+				return err
+			}
+			if err = enqueuePublication(ctx, tx, name, retired); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.ExecContext(ctx, `UPDATE core.apps SET status = 'Removed', last_error = NULL, updated_at = now() WHERE app_id = $1`, name); err != nil {
 			return fmt.Errorf("mark %s removed: %w", name, err)
 		}
@@ -198,11 +226,55 @@ func publishSnapshot(ctx context.Context, tx *sql.Tx, plan planner.Plan) error {
 			return fmt.Errorf("release capabilities of %s: %w", name, err)
 		}
 	}
+	return checkLibraryUniqueness(ctx, tx)
+}
+
+func checkLibraryUniqueness(ctx context.Context, tx *sql.Tx) error {
+	var n int
+	err := tx.QueryRowContext(ctx, `SELECT count(*) FROM core.apps WHERE status='Ready' AND spec#>>'{knowledge,personalLibrary,enabled}'='true'`).Scan(&n)
+	if err != nil {
+		return err
+	}
+	if n > 1 {
+		return fmt.Errorf("only one personal library may be enabled")
+	}
 	return nil
 }
 
 func publishApp(ctx context.Context, tx *sql.Tx, app manifest.DXApplication) error {
 	name := app.Metadata.Name
+	var previousRaw []byte
+	if err := tx.QueryRowContext(ctx, `SELECT spec FROM core.apps WHERE app_id=$1 FOR UPDATE`, name).Scan(&previousRaw); err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	previousSpec, err := manifest.DecodeStoredSpec(previousRaw)
+	if len(previousRaw) == 0 {
+		previousSpec = manifest.AppSpec{}
+		err = nil
+	}
+	if err != nil {
+		return fmt.Errorf("decode prior publication: %w", err)
+	}
+	var generation int64
+	changed := false
+	if previousSpec.Publication != nil || app.Spec.Knowledge != nil && len(app.Spec.Knowledge.Sources) > 0 {
+		previous := knowledge.Publication{}
+		if previousSpec.Publication != nil {
+			previous = *previousSpec.Publication
+		}
+		next, e := knowledge.NextPublication(previous, app)
+		if e != nil {
+			return e
+		}
+		for _, source := range next.Sources {
+			if source.SafetyState != "APPROVED" || source.ArtifactRef == "" || len(source.SHA256) != 64 {
+				return fmt.Errorf("package source is not safety approved")
+			}
+		}
+		generation = next.Generation
+		changed = next.Generation != previous.Generation
+		app.Spec.Publication = &next
+	}
 	specBytes, err := json.Marshal(app.Spec)
 	if err != nil {
 		return err
@@ -221,6 +293,17 @@ func publishApp(ctx context.Context, tx *sql.Tx, app manifest.DXApplication) err
 		name, app.Metadata.DisplayName, app.Metadata.Version, string(specBytes),
 	); err != nil {
 		return fmt.Errorf("record definition for %s: %w", name, err)
+	}
+
+	if generation > 0 {
+		if _, err := tx.ExecContext(ctx, `UPDATE core.apps SET publication_generation=$2 WHERE app_id=$1`, name, generation); err != nil {
+			return err
+		}
+	}
+	if changed {
+		if err := enqueuePublication(ctx, tx, name, *app.Spec.Publication); err != nil {
+			return err
+		}
 	}
 
 	// Capabilities: exactly the declared set. The insert trigger refuses a
@@ -257,4 +340,14 @@ func publishApp(ctx context.Context, tx *sql.Tx, app manifest.DXApplication) err
 		return fmt.Errorf("remove dropped roles of %s: %w", name, err)
 	}
 	return nil
+}
+
+// Notification contains authority identity only, never source paths or bytes.
+func enqueuePublication(ctx context.Context, tx *sql.Tx, appID string, p knowledge.Publication) error {
+	payload, err := json.Marshal(map[string]any{"app_id": appID, "generation": p.Generation, "spec_digest": p.SpecDigest})
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO core.outbox_events(app_id,event_type,entity_type,entity_id,entity_version,payload) VALUES($1,'knowledge.publication','app_publication','00000000-0000-0000-0000-000000000000',$2,$3::jsonb) ON CONFLICT DO NOTHING`, appID, p.Generation, string(payload))
+	return err
 }

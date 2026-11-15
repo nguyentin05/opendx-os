@@ -201,3 +201,21 @@ func TestEventsFollowTheDeployedWorkflowOfTheirApplication(t *testing.T) {
 		t.Fatalf("no subscriber: %s calls=%d note=%q", status, calls, note.String)
 	}
 }
+
+func TestWorkflowPublisherLeavesKnowledgeNotifications(t *testing.T) {
+	db := publisherFixture(t)
+	if _, err := db.Exec(`INSERT INTO core.outbox_events(app_id,event_type,entity_type,entity_id,entity_version,payload) VALUES('procurement','knowledge.publication','app_publication','00000000-0000-0000-0000-000000000000',1,'{}')`); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(200) }))
+	defer server.Close()
+	p := newTestPublisher(t, db, server.Client(), server.URL)
+	if err := p.PublishPending(context.Background(), 10); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	if err := db.QueryRow(`SELECT delivery_status FROM core.outbox_events WHERE event_type='knowledge.publication'`).Scan(&state); err != nil || state != "pending" || calls != 1 {
+		t.Fatal("workflow publisher consumed knowledge notification", state, calls, err)
+	}
+}

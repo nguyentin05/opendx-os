@@ -20,6 +20,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 	"regexp"
 	"strings"
 
@@ -36,7 +38,7 @@ func (s *Service) application(ctx context.Context, id *auth.Identity, app string
 		return nil, ErrDenied
 	}
 	a, e := s.apps.Load(ctx, app)
-	if e != nil || !a.HasRole(id.Role) {
+	if e != nil || (!a.HasRole(id.Role) && !a.AllowsPersonalLibrary(id.Role)) {
 		return nil, ErrDenied
 	}
 	return a, nil
@@ -49,13 +51,27 @@ func (s *Service) readable(ctx context.Context, id *auth.Identity, file string) 
 	if id == nil || !uuid.MatchString(file) {
 		return "", "", "", ErrDenied
 	}
-	var app, owner string
-	e := s.db.QueryRowContext(ctx, `SELECT app_id,uploaded_by::text FROM core.files WHERE id=$1 AND bucket=$2`, file, s.bucket).Scan(&app, &owner)
+	var app, owner, policy string
+	e := s.db.QueryRowContext(ctx, `SELECT app_id,uploaded_by::text,read_policy FROM core.files WHERE id=$1 AND bucket=$2`, file, s.bucket).Scan(&app, &owner, &policy)
 	if e != nil {
 		return "", "", "", ErrDenied
 	}
+	if policy == "OWNER_ONLY" {
+		if !strings.EqualFold(owner, id.UserID) {
+			return "", "", "", ErrDenied
+		}
+		if err := knowledge.CheckIdentity(ctx, s.db, id); err != nil {
+			return "", "", "", privateAuthorityError(err)
+		}
+	}
 	a, e := s.application(ctx, id, app)
 	if e != nil {
+		return "", "", "", ErrDenied
+	}
+	if policy == "OWNER_ONLY" && !a.AllowsPersonalLibrary(id.Role) {
+		return "", "", "", ErrDenied
+	}
+	if policy != "OWNER_ONLY" && policy != "APP_ATTACHMENT" {
 		return "", "", "", ErrDenied
 	}
 	allowed := strings.EqualFold(owner, id.UserID)
@@ -99,4 +115,11 @@ func (s *Service) readable(ctx context.Context, id *auth.Identity, file string) 
 	var key, hash, status string
 	e = s.db.QueryRowContext(ctx, `SELECT object_key,sha256_hash,scan_status FROM core.files WHERE id=$1 AND app_id=$2 AND bucket=$3`, file, app, s.bucket).Scan(&key, &hash, &status)
 	return key, hash, status, e
+}
+
+func privateAuthorityError(err error) error {
+	if errors.Is(err, auth.ErrUnauthenticated) || errors.Is(err, auth.ErrForbidden) {
+		return ErrDenied
+	}
+	return knowledge.ErrAuthorityUnavailable
 }

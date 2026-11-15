@@ -24,10 +24,12 @@ import (
 
 // DXApplication defines the root C0 v1 manifest structure.
 type DXApplication struct {
-	APIVersion string      `yaml:"apiVersion" json:"apiVersion"`
-	Kind       string      `yaml:"kind" json:"kind"`
-	Metadata   AppMetadata `yaml:"metadata" json:"metadata"`
-	Spec       AppSpec     `yaml:"spec" json:"spec"`
+	SourceDigests map[string]string `yaml:"-" json:"-"`
+	PackageRoot   string            `yaml:"-" json:"-"`
+	APIVersion    string            `yaml:"apiVersion" json:"apiVersion"`
+	Kind          string            `yaml:"kind" json:"kind"`
+	Metadata      AppMetadata       `yaml:"metadata" json:"metadata"`
+	Spec          AppSpec           `yaml:"spec" json:"spec"`
 }
 
 // AppMetadata defines metadata for the manifest. Name is the application id
@@ -40,6 +42,8 @@ type AppMetadata struct {
 
 // AppSpec defines the full specification of a DXApplication.
 type AppSpec struct {
+	Publication *PackagePublication `yaml:"-" json:"_publication,omitempty"`
+	Knowledge   *KnowledgeDef       `yaml:"knowledge,omitempty" json:"knowledge,omitempty"`
 	// Capabilities lists the Tier 2 capabilities the application uses. cap-process
 	// is required because every application runs commands through it.
 	Capabilities []string `yaml:"capabilities" json:"capabilities"`
@@ -92,6 +96,13 @@ func (app *DXApplication) Clone() *DXApplication {
 	if err := dec.Decode(out); err != nil {
 		panic(fmt.Sprintf("clone manifest: %v", err))
 	}
+	if app.SourceDigests != nil {
+		out.SourceDigests = make(map[string]string, len(app.SourceDigests))
+		for k, v := range app.SourceDigests {
+			out.SourceDigests[k] = v
+		}
+	}
+	out.PackageRoot = app.PackageRoot
 	return out
 }
 

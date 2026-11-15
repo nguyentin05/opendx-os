@@ -38,6 +38,7 @@ import (
 	dxosv1alpha1 "github.com/opendx-os/opendx-os/operator/api/v1alpha1"
 	"github.com/opendx-os/opendx-os/operator/internal/apply"
 	"github.com/opendx-os/opendx-os/operator/internal/controller"
+	"github.com/opendx-os/opendx-os/operator/internal/knowledge"
 	"github.com/opendx-os/opendx-os/operator/internal/workflows"
 )
 
@@ -72,7 +73,16 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer func() { _ = db.Close() }()
+	var artifacts *knowledge.ArtifactStore
+	if root := os.Getenv("RAG_PACKAGE_ARTIFACT_ROOT"); root != "" {
+		scanner, err := knowledge.NewClamAV(os.Getenv("CLAMAV_ADDRESS"), 30*time.Second)
+		if err != nil {
+			return 1
+		}
+		artifacts = &knowledge.ArtifactStore{Root: root, Scanner: scanner}
+	}
 	applier := apply.NewRunner(db, apply.Config{
+		Artifacts:         artifacts,
 		HasuraURL:         os.Getenv("HASURA_URL"),
 		HasuraAdminSecret: os.Getenv("HASURA_ADMIN_SECRET"),
 	}, nil)

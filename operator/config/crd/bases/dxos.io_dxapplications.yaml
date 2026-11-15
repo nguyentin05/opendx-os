@@ -88,6 +88,85 @@ spec:
                 description: DisplayName is shown by the App Shell.
                 minLength: 1
                 type: string
+              knowledge:
+                properties:
+                  grantPolicies:
+                    additionalProperties:
+                      properties:
+                        allowedRoles:
+                          items:
+                            pattern: ^role_[a-z0-9_]+$
+                            type: string
+                          minItems: 1
+                          type: array
+                      required:
+                      - allowedRoles
+                      type: object
+                    type: object
+                  personalLibrary:
+                    properties:
+                      allowedRoles:
+                        items:
+                          pattern: ^role_[a-z0-9_]+$
+                          type: string
+                        minItems: 1
+                        type: array
+                      enabled:
+                        type: boolean
+                    required:
+                    - allowedRoles
+                    - enabled
+                    type: object
+                  sources:
+                    items:
+                      properties:
+                        access:
+                          properties:
+                            allowedRoles:
+                              items:
+                                pattern: ^role_[a-z0-9_]+$
+                                type: string
+                              minItems: 1
+                              type: array
+                            grantsManagedBy:
+                              type: string
+                            mode:
+                              enum:
+                              - ROLE
+                              - RESTRICTED
+                              type: string
+                          required:
+                          - allowedRoles
+                          - mode
+                          type: object
+                        id:
+                          type: string
+                        indexingProfile:
+                          enum:
+                          - standard-text-v1
+                          type: string
+                        mediaType:
+                          enum:
+                          - text/markdown
+                          - application/pdf
+                          type: string
+                        path:
+                          type: string
+                      required:
+                      - access
+                      - id
+                      - indexingProfile
+                      - mediaType
+                      - path
+                      type: object
+                    type: array
+                  version:
+                    enum:
+                    - 1
+                    type: integer
+                required:
+                - version
+                type: object
               roles:
                 description: Roles are owned by this application; no other application
                   may use them.
@@ -501,7 +580,7 @@ spec:
                   - name
                   - ui
                   type: object
-                minItems: 1
+                minItems: 0
                 type: array
               version:
                 description: Version of the application package.

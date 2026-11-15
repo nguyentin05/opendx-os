@@ -3,7 +3,8 @@
 .env.*
 !.env.example
 
-# Private local planning
+# Private local planning and per-user agent guidance
+/AGENTS.local.md
 /docs/superpowers/
 .scratch/
 

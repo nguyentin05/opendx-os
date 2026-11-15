@@ -84,6 +84,17 @@ func GenerateHasuraOperations(app *manifest.DXApplication) ([]HasuraMetadataPayl
 		ops = append(ops, trackTable(ParseTableRef(t)))
 	}
 
+	// Tables used by OWNER_ONLY live predicates are tracked without granting
+	// clients direct access to authority rows.
+	for _, t := range SharedTablesRead(app) {
+		if t == "core.files" {
+			for _, name := range []string{"users", "user_roles", "apps", "capabilities"} {
+				ops = append(ops, trackTable(TableRef{Schema: "core", Name: name}))
+			}
+			break
+		}
+	}
+
 	// 2. Relationships along foreign keys (to shared tables and to other tables
 	// of the application) and from a record to its department.
 	for i := range app.Spec.Tables {
@@ -277,7 +288,31 @@ func sharedFilter(app *manifest.DXApplication, table, role string) map[string]an
 			}
 		}
 	}
-	return conjoinFilters(filter, map[string]any{"_or": visible})
+	// OWNER_ONLY metadata is intersected with current primary-DB authority;
+	// cached webhook roles cannot keep a revoked subscription readable.
+	exists := func(name string, where map[string]any) map[string]any {
+		return map[string]any{"_exists": map[string]any{"_table": TableRef{Schema: "core", Name: name}, "_where": where}}
+	}
+	eq := func(v string) map[string]any { return map[string]any{"_eq": v} }
+	private := map[string]any{"_and": []any{
+		map[string]any{"read_policy": eq("OWNER_ONLY"), "uploaded_by": eq("X-Hasura-User-Id")},
+		exists("users", map[string]any{"id": eq("X-Hasura-User-Id"), "status": eq("ACTIVE")}),
+		exists("user_roles", map[string]any{"user_id": eq("X-Hasura-User-Id"), "role_name": eq(role)}),
+		exists("apps", map[string]any{"app_id": eq(app.Metadata.Name), "status": eq("Ready")}),
+	}}
+	for _, capID := range app.Spec.Capabilities {
+		private["_and"] = append(private["_and"].([]any), exists("capabilities", map[string]any{"cap_id": eq(capID), "enabled": map[string]any{"_eq": true}}))
+	}
+	// Only explicitly admitted library roles can read private metadata.
+	admitted := false
+	if k := app.Spec.Knowledge; k != nil && k.PersonalLibrary != nil && k.PersonalLibrary.Enabled {
+		admitted = slices.Contains(k.PersonalLibrary.AllowedRoles, role)
+	}
+	branches := []any{map[string]any{"_and": []any{map[string]any{"read_policy": eq("APP_ATTACHMENT")}, map[string]any{"_or": visible}}}}
+	if admitted {
+		branches = append(branches, private)
+	}
+	return conjoinFilters(filter, map[string]any{"_or": branches})
 }
 
 func relationship(kind string, table TableRef, name string, remote TableRef, mapping map[string]string) HasuraMetadataPayload {

@@ -114,7 +114,7 @@ func (v *jwtVerifier) refresh(ctx context.Context) error {
 
 // signingKey returns the key for kid, refreshing the set when it is old or
 // lacks kid.
-func (v *jwtVerifier) signingKey(ctx context.Context, kid string) (*rsa.PublicKey, error) {
+func (v *jwtVerifier) signingKey(ctx context.Context, kid string, maxAge time.Duration) (*rsa.PublicKey, error) {
 	v.mu.Lock()
 	key := v.keys[kid]
 	fresh := time.Since(v.lastRefresh) < jwksCacheLifetime
@@ -136,7 +136,7 @@ func (v *jwtVerifier) signingKey(ctx context.Context, kid string) (*rsa.PublicKe
 	if key == nil {
 		return nil, errors.New("unknown signing key")
 	}
-	if age >= jwksMaxStaleness {
+	if age >= maxAge {
 		return nil, errors.New("signing keys are stale and the issuer is unreachable")
 	}
 	return key, nil
@@ -199,6 +199,13 @@ func (v *jwtVerifier) fetch(ctx context.Context) (map[string]*rsa.PublicKey, err
 // verifiedPayload checks the token's header and RS256 signature against the
 // issuer's signing keys and returns the decoded payload.
 func (v *jwtVerifier) verifiedPayload(ctx context.Context, token string) ([]byte, error) {
+	return v.verifiedPayloadWithMaxAge(ctx, token, jwksMaxStaleness)
+}
+
+func (v *jwtVerifier) verifiedPayloadWithMaxAge(ctx context.Context, token string, maxAge time.Duration) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(token) > 32768 {
 		return nil, errors.New("oversized token")
 	}
@@ -217,7 +224,7 @@ func (v *jwtVerifier) verifiedPayload(ctx context.Context, token string) ([]byte
 	if json.Unmarshal(h, &header) != nil || header.Alg != "RS256" || header.Kid == "" || len(header.Crit) > 0 {
 		return nil, errors.New("unsupported JWT header")
 	}
-	key, e := v.signingKey(ctx, header.Kid)
+	key, e := v.signingKey(ctx, header.Kid, maxAge)
 	if e != nil {
 		return nil, e
 	}
@@ -281,7 +288,11 @@ type Authenticator interface {
 }
 
 func (v *jwtVerifier) Authenticate(ctx context.Context, token string) (*Principal, error) {
-	payload, e := v.verifiedPayload(ctx, token)
+	return v.authenticateWithMaxAge(ctx, token, jwksMaxStaleness)
+}
+
+func (v *jwtVerifier) authenticateWithMaxAge(ctx context.Context, token string, maxAge time.Duration) (*Principal, error) {
+	payload, e := v.verifiedPayloadWithMaxAge(ctx, token, maxAge)
 	if e != nil {
 		return nil, e
 	}

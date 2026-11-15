@@ -208,8 +208,12 @@ func Validate(app *DXApplication) error {
 		}
 	}
 
+	if err := validateKnowledge(s.Knowledge, roles, app.UsesCapability(CapAI)); err != nil {
+		return err
+	}
+
 	// Domain tables.
-	if len(s.Tables) == 0 {
+	if len(s.Tables) == 0 && (!hasKnowledge(s.Knowledge) || len(s.Workflows) > 0) {
 		return errors.New("spec.tables must declare at least one table")
 	}
 	tables := map[string]bool{}
@@ -677,6 +681,9 @@ func checkShape(v any, t reflect.Type) error {
 		known := map[string]bool{}
 		for i := 0; i < t.NumField(); i++ {
 			field := t.Field(i)
+			if field.Tag.Get("yaml") == "-" {
+				continue
+			}
 			tag := strings.Split(field.Tag.Get("json"), ",")
 			name := tag[0]
 			known[name] = true
@@ -708,8 +715,16 @@ func checkShape(v any, t reflect.Type) error {
 			}
 		}
 	case reflect.Map:
-		if _, ok := v.(map[string]any); !ok {
+		m, ok := v.(map[string]any)
+		if !ok {
 			return errors.New("expected map/object")
+		}
+		if t.Elem().Kind() != reflect.Interface {
+			for _, child := range m {
+				if err := checkShape(child, t.Elem()); err != nil {
+					return err
+				}
+			}
 		}
 	case reflect.String:
 		if _, ok := v.(string); !ok {

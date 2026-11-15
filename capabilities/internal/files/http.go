@@ -33,6 +33,13 @@ func fileError(w http.ResponseWriter, status int) {
 func (s *Service) AuthenticatedHandler(v auth.Authorizer) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/cap/process/files/upload", s.uploadHTTP)
+	mux.HandleFunc("POST /api/cap/process/files/private/upload", func(w http.ResponseWriter, r *http.Request) {
+		if !s.privateUploadsEnabled {
+			fileError(w, 503)
+			return
+		}
+		s.uploadHTTP(w, r)
+	})
 	mux.HandleFunc("GET /api/cap/process/files/{file_id}", s.downloadHTTP)
 	return auth.Middleware(v, mux)
 }
@@ -77,7 +84,11 @@ func (s *Service) uploadHTTP(w http.ResponseWriter, r *http.Request) {
 			app = string(b)
 		} else {
 			var e error
-			content, _, e = readContent(p)
+			if r.URL.Path == "/api/cap/process/files/private/upload" {
+				content, _, e = readPrivateContent(p.FileName(), p)
+			} else {
+				content, _, e = readContent(p)
+			}
 			if e != nil {
 				_ = p.Close()
 				fileError(w, 400)
@@ -91,7 +102,12 @@ func (s *Service) uploadHTTP(w http.ResponseWriter, r *http.Request) {
 		fileError(w, 400)
 		return
 	}
-	f, e := s.Upload(r.Context(), id, app, name, bytes.NewReader(content))
+	var f *FileObject
+	if r.URL.Path == "/api/cap/process/files/private/upload" {
+		f, e = s.UploadPrivate(r.Context(), id, app, name, bytes.NewReader(content))
+	} else {
+		f, e = s.Upload(r.Context(), id, app, name, bytes.NewReader(content))
+	}
 	if e != nil {
 		status := 503
 		if errors.Is(e, ErrDenied) {
@@ -115,7 +131,7 @@ func (s *Service) downloadHTTP(w http.ResponseWriter, r *http.Request) {
 	if e != nil {
 		status := 503
 		if errors.Is(e, ErrDenied) {
-			status = 403
+			status = 404
 		} else if errors.Is(e, ErrUnclean) {
 			status = 422
 		}

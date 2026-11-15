@@ -32,6 +32,9 @@ services:
       # Login passwords for the runtime roles, applied by 08_runtime_passwords.sh.
       HASURA_DATABASE_PASSWORD: ${HASURA_DATABASE_PASSWORD:-change-me-local-hasura-db}
       PROCESS_DATABASE_PASSWORD: ${PROCESS_DATABASE_PASSWORD:-change-me-local-process-db}
+      AI_DATABASE_PASSWORD: ${AI_DATABASE_PASSWORD:-}
+      AI_WORKER_DATABASE_PASSWORD: ${AI_WORKER_DATABASE_PASSWORD:-}
+      AI_DISPATCHER_DATABASE_PASSWORD: ${AI_DISPATCHER_DATABASE_PASSWORD:-}
       AUTHZ_DATABASE_PASSWORD: ${AUTHZ_DATABASE_PASSWORD:-change-me-local-authz-db}
       HR_DATABASE_PASSWORD: ${HR_DATABASE_PASSWORD:-change-me-local-hr-db}
       KESTRA_DATABASE_PASSWORD: ${KESTRA_DATABASE_PASSWORD:-change-me-local-kestra-database}
@@ -48,6 +51,8 @@ services:
       - ./platform/postgres/init/07_app_definitions.sql:/docker-entrypoint-initdb.d/07_app_definitions.sql:ro
       - ./platform/postgres/init/08_runtime_passwords.sh:/docker-entrypoint-initdb.d/08_runtime_passwords.sh:ro
       - ./platform/postgres/capabilities:/docker-entrypoint-initdb.d/capabilities:ro
+      - ./platform/postgres/migrations:/docker-entrypoint-initdb.d/migrations:ro
+      - ./platform/postgres/init/09_rag_migrations.sh:/docker-entrypoint-initdb.d/09_rag_migrations.sh:ro
     healthcheck:
       # TCP, not the socket: the init-time server listens on the socket only, so
       # this passes once init scripts have finished and the real server is up.

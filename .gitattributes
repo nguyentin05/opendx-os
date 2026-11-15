@@ -38,3 +38,7 @@ AGENTS.md export-ignore
 CLAUDE.md export-ignore
 docs/superpowers export-ignore
 docs/superpowers/** export-ignore
+
+# User-local planning and agent extensions never belong in exports.
+.scratch export-ignore
+AGENTS.local.md export-ignore

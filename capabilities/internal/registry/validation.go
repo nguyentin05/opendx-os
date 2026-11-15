@@ -45,7 +45,10 @@ func (a *AppDefinition) Validate() error {
 		}
 		roles[r.Name] = true
 	}
-	if len(s.Tables) == 0 {
+	if err := validateKnowledge(s.Knowledge, roles, a.UsesCapability("cap-ai")); err != nil {
+		return err
+	}
+	if len(s.Tables) == 0 && (!hasKnowledge(s.Knowledge) || len(s.Workflows) > 0) {
 		return errors.New("no domain table (a definition stored before spec.tables must be reinstalled)")
 	}
 	tables := map[string]bool{}

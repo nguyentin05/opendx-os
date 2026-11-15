@@ -103,7 +103,7 @@ func (p *Publisher) PublishPending(ctx context.Context, limit int) error {
 		var id string
 		var payload []byte
 		var attempt int
-		err := p.db.QueryRowContext(ctx, `WITH due AS (SELECT id FROM core.outbox_events WHERE (delivery_status='pending' AND next_attempt_at<=now()) OR (delivery_status='in_flight' AND lease_until<=now()) ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE core.outbox_events o SET delivery_status='in_flight',attempt_count=attempt_count+1,lease_token=$1,lease_until=now()+interval '60 seconds' FROM due WHERE o.id=due.id RETURNING o.id::text,o.payload,o.attempt_count`, token).Scan(&id, &payload, &attempt)
+		err := p.db.QueryRowContext(ctx, `WITH due AS (SELECT id FROM core.outbox_events WHERE event_type <> 'knowledge.publication' AND ((delivery_status='pending' AND next_attempt_at<=now()) OR (delivery_status='in_flight' AND lease_until<=now())) ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE core.outbox_events o SET delivery_status='in_flight',attempt_count=attempt_count+1,lease_token=$1,lease_until=now()+interval '60 seconds' FROM due WHERE o.id=due.id RETURNING o.id::text,o.payload,o.attempt_count`, token).Scan(&id, &payload, &attempt)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}

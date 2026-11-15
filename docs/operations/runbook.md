@@ -38,3 +38,11 @@ Because `core.file_objects` stores immutable SHA-256 digests and S3 object keys,
    ```bash
    docker compose start cap-process
    ```
+
+For optional semantic retrieval, model policy, conservative reservations and
+uncertain-charge reconciliation, follow
+[model retrieval and answers](../development/model-knowledge.md). Keep model
+features disabled until predecessor and model gates pass and classification,
+provider/retention and deployment-adapter approvals exist. Disable model profiles
+or `RAG_MODELS_ENABLED` to retain scoped lexical search and protected originals.
+Do not release IN_FLIGHT/UNCERTAIN reservations because their period expired.

@@ -160,3 +160,31 @@ func TestCRDSchemaRejectsInvalidResources(t *testing.T) {
 		})
 	}
 }
+
+func TestKnowledgeCapabilityOnlyCRDRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	a := minimalApp("knowledge-library")
+	a.Spec.Tables = []dxosv1alpha1.Table{}
+	a.Spec.Capabilities = []string{"cap-process", "cap-ai"}
+	a.Spec.Knowledge = &dxosv1alpha1.KnowledgeDef{Version: 1, PersonalLibrary: &dxosv1alpha1.PersonalLibraryDef{Enabled: true, AllowedRoles: []string{"role_test"}}}
+	if err := testClient.Create(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = testClient.Delete(ctx, a) })
+	var got dxosv1alpha1.DXApplication
+	if err := testClient.Get(ctx, client.ObjectKey{Name: a.Name}, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Spec.Knowledge == nil || got.Spec.Knowledge.Version != 1 || !got.Spec.Knowledge.PersonalLibrary.Enabled || len(got.Spec.Tables) != 0 {
+		t.Fatal("knowledge was pruned or changed")
+	}
+	invalid := a.DeepCopy()
+	invalid.Name = "knowledge-v2"
+	invalid.ResourceVersion = ""
+	invalid.UID = ""
+	invalid.Spec.Knowledge.Version = 2
+	if err := testClient.Create(ctx, invalid); err == nil {
+		testClient.Delete(ctx, invalid)
+		t.Fatal("unknown knowledge version admitted")
+	}
+}

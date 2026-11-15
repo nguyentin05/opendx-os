@@ -4,7 +4,7 @@
 DO $$
 DECLARE name text;
 BEGIN
-  FOREACH name IN ARRAY ARRAY['dxos_process','dxos_hasura','dxos_authz','dxos_hr','dxos_reader','dxos_caller','dxos_module_test'] LOOP
+  FOREACH name IN ARRAY ARRAY['dxos_process','dxos_hasura','dxos_authz','dxos_hr','dxos_reader','dxos_caller','dxos_module_test','dxos_ai_api','dxos_ai_worker','dxos_ai_dispatcher'] LOOP
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname=name) THEN
       EXECUTE format('CREATE ROLE %I LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT',name);
     END IF;

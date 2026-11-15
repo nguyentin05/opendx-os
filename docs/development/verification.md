@@ -25,7 +25,7 @@ the current [Makefile](../../Makefile), module manifests, and prerequisites firs
 | Repository hygiene | Root | `make check-hygiene` | Python 3 and PyYAML; metadata, text/header checks, static boundary/manifest checks |
 | Static contracts | Root | `python3 -m unittest discover -s tests -v` | Python 3 and PyYAML; source/fixture checks, not live database authorization |
 | Operator unit tests | `operator/` | `go test ./...` | Go version/dependencies from `go.mod` |
-| Capability unit tests | `capabilities/` | `go test ./...` | Go version/dependencies from `go.mod` |
+| Capability unit tests | `capabilities/` | `go test ./...` | Go version/dependencies from `go.mod`; PDF parser subtests skip unless `poppler-utils` (`pdfinfo`, `pdfimages`, `pdftotext`) is installed |
 | Operator integration | `operator/` | `make test-integration` | `TEST_DATABASE_URL` naming a disposable PostgreSQL 17 test database; Hasura is a local fake |
 | Operator CRD schema | `operator/` | `make test-envtest` | Downloads envtest binaries (kube-apiserver, etcd) into `operator/bin/` |
 | Operator controller lifecycle | `operator/` | `make test-controller` | envtest plus `TEST_DATABASE_URL`; Hasura is a fake modelling `export_metadata` |
@@ -54,3 +54,10 @@ between static evidence and runtime behavior. A hand-off or PR describes the
 change and rationale, affected consumers, results, remaining gaps, and open
 decisions. Review findings include a location, failure scenario, impact, and fix
 direction; distinguish contract defects from unimplemented requirements.
+
+The optional model slice uses `scripts/test-rag.sh models` with real PostgreSQL
+17/pgvector, Operator, File/scanner/Hasura and controlled HTTP model spies; see
+[model qualification](model-knowledge.md#qualification). Run Go integration
+packages with `-p 1` when fixtures share PostgreSQL cluster-global roles.
+Deterministic fake responses establish boundary/accounting/citation behavior,
+not real-provider groundedness or invoice qualification.

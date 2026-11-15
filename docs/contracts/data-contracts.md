@@ -188,7 +188,7 @@ One installation serves one organization, so a manifest names no workspace.
 | `spec.capabilities` | Tier 2 capabilities the app uses. `cap-process` is required; `cap-hr` adds departments (`org_unit_id`, `department` scope); `cap-work` is required by `create_work_item` effects. Each must be enabled when the app is installed |
 | `spec.roles` | Roles the app owns (`name`, optional `description`). Every role used anywhere in the manifest must be declared here. A role belongs to exactly one app; `role_operator`, `role_auditor` and `role_workflow` are reserved |
 | `spec.sharedAccess` | Optional. Shared tables the app's roles read, from a closed catalog: `core.users`, `core.files`, `cap_hr.org_units`, `cap_hr.staff`, `cap_work.work_items`, `cap_data.devices`. Rows of `core.files` and `cap_work.work_items` are limited to the app's own `app_id`; a role sees only the files its user uploaded or that are attached to records it may read. No write access |
-| `spec.tables` | One or more domain tables; each entry has the fields below. Table names are unique, and a table belongs to one application |
+| `spec.tables` | Domain tables, or an empty list for a validated capability-only knowledge application (see Knowledge v1); each entry has the fields below. Table names are unique, and a table belongs to one application |
 | `spec.workflows` | Optional. Flows with an identity, a YAML file in the package, `command.committed` subscription and literal `create_work_item` effects (`title`, `description`, `priority`, optional `assigneeId`) on commands of any table. At most one flow subscribes to an event type. The file is a Kestra flow the operator deploys ([workflow deployment](#workflow-deployment)) |
 
 Each entry of `spec.tables`:
@@ -322,3 +322,157 @@ the effect endpoints.
 | `KESTRA_WEBHOOK_KEY` | cap-process, Kestra (`DXOS_WEBHOOK_KEY`) | Key of the webhook trigger of application flows |
 | `WORKFLOW_SERVICE_TOKEN` | cap-process, Kestra (`DXOS_WORKFLOW_TOKEN`) | Workflow service credential, at least 32 characters |
 | `DXOS_PROCESS_URL` (Kestra secret) | Kestra | Where flows reach cap-process inside the network |
+
+### Knowledge v1
+
+`spec.knowledge` is optional and explicitly versioned (`version: 1`). It requires
+cap-ai. `personalLibrary` declares `enabled` and nonempty `allowedRoles` drawn
+from the app-owned roles. A single enabled library is permitted per installation.
+A validated enabled library or nonempty `sources` permits `tables: []`, with no
+table commands/workflows. This refines ADR 0008; a library owns no dummy table.
+
+`sources` entries declare `id`, safe relative `path` under `knowledge/`,
+`mediaType` (`text/markdown` or `application/pdf`), `indexingProfile`
+(`standard-text-v1`), and nested `access`. Paths may not traverse or resolve
+symlinks outside the package root. `access.mode` is ROLE or RESTRICTED;
+`access.allowedRoles` is nonempty and app-owned. RESTRICTED requires
+`access.grantsManagedBy` naming a `grantPolicies` map entry whose nonempty
+`allowedRoles` lists app-owned manager roles. Management does not grant READ.
+ROLE has no manager policy. Flat aliases, unknown fields/versions and cross-app
+roles are invalid. Package publication is implemented independently of indexing;
+package reconciliation, grants and serving require their own acceptance gates.
+
+The Operator stores a server-only `spec._publication` envelope, never accepted in
+user manifests or CRDs. It contains `generation`, `spec_digest`, `package_digest`
+and `sources`, each binding `source_id`, `incarnation`,
+`authorization_generation`, `declaration_hash`, `artifact_ref`, `sha256`,
+`source_path`, `media_type`, `size_bytes`, `parser_profile` and `safety_state`.
+`core.apps.publication_generation` matches the envelope. Stored-spec decoders
+retain it across unrelated application changes; public declaration schemas do not
+expose artifact references or permit generation selection.
+
+A successful changed publication increments its generation in the registry
+transaction; an identical reconcile keeps it. Continuously declared sources keep
+incarnation. Removal/reintroduction replaces incarnation. Changes to mode, sorted
+allowed-role set, manager-policy ID or resolved manager-role set increment source
+authorization generation, including A → B → A. Content-only changes preserve that
+generation. Failed staging/publication preserves the previously active definition.
+The full apply is serialized across Operators, including DDL and Hasura snapshot
+handling; this does not place the Operator on user request paths.
+
+Before publication, package bytes are opened relative to a confined package root,
+bounded to 20 MiB, verified against declared MIME and scanned locally by ClamAV.
+The Operator requires deployment-owned `RAG_PACKAGE_ARTIFACT_ROOT` (private local
+storage) and `CLAMAV_ADDRESS`; absent configuration denies package publication.
+Approved bytes are copied to immutable app/source/hash references and verified;
+mutable package files and Operator uptime are no longer source-read dependencies.
+This admission does not establish parser support for arbitrary PDFs. Unreferenced
+staged artifacts remain retained pending an approved cleanup policy.
+
+The registry transaction writes a `knowledge.publication` durable outbox event
+containing only `(app_id, generation, spec_digest)`. The workflow publisher does
+not claim these events. A dedicated knowledge dispatcher must validate current
+Core authority; the notification and delayed cap_ai state never authorize a source.
+
+`core.files.read_policy` is immutable: APP_ATTACHMENT (default, including legacy
+rows) or OWNER_ONLY. Original identity, owner, app, content hash and policy cannot
+be relabelled. `POST /api/cap/process/files/private/upload` accepts only `app_id`
+and `file` multipart fields; the server stamps OWNER_ONLY and verified owner.
+It requires current DB membership in a Ready library's declared allowedRoles and
+enabled dependencies, with no admin bypass. Ordinary upload keeps APP_ATTACHMENT.
+Downloads independently enforce policy, CLEAN status and hash, and repeat current
+private authorization after bounded object retrieval before emitting bytes.
+Protected file routes use strict JWT verification and uncached shared authz;
+identity mirroring remains a sign-in responsibility. Tokens require platform email
+claims; legacy identity-only tokens are incompatible with these protected routes.
+
+Hasura file permission branches constrain OWNER_ONLY to the owner, current ACTIVE
+user, current role membership, Ready app and enabled dependencies. Attachment
+relationships cannot widen the private branch. No cap_ai table is tracked.
+Private upload defaults off (`RAG_PRIVATE_UPLOAD_ENABLED` absent/false); enable
+only in a disposable qualified installation after the live source gate below.
+Disablement preserves originals and private guards; no destructive rollback.
+
+### Native knowledge metadata and jobs
+
+cap_ai owns the fourteen metadata/job tables: collections, documents, allowed
+roles, named-user grants, processing policies, package sources/revisions and
+publications, versions, processing runs, ingestion jobs/attempts, request receipts
+and source delegations. Package reconciliation is scoped to the current Core
+publication; see [package knowledge](../development/package-knowledge.md). No cap_ai table is tracked by Hasura or granted to browser SQL roles.
+Core has no capability/domain FK. Original, source, owner, recipe and version
+identities are immutable; active/desired pointers have same-document deferred FKs.
+
+`dxos_ai_owner` is a non-login owner. `dxos_ai_api` has current Core reads and
+EXECUTE on scoped lifecycle functions, with no direct cap_ai table reads/writes
+and no Core identity writes. `dxos_ai_worker` can only claim, heartbeat,
+checkpoint, retry/recover and validate exact-source delegation through reviewed
+functions; it cannot change document ACLs or active pointers directly.
+`dxos_ai_dispatcher` executes scoped package snapshot/reconcile and Core knowledge
+notification claim/acknowledgment functions; it has no arbitrary chunk or grant access. SECURITY DEFINER functions use a fixed search path; the controlled public
+schema is needed by the existing Core audit hash trigger's pgcrypto dependency,
+and PUBLIC cannot create there. Sign-in remains the sole identity mirror.
+
+`POST /api/cap/ai/documents` accepts only `collection_id?`, `file_id`, `title?`
+and `parser_profile`. `standard-text-v1` pins local recipe limits without claiming
+a qualified parser. The server resolves the current library and owner, accepts a
+CLEAN OWNER_ONLY file, and atomically writes document/version/PARSE job, audit and
+receipt. `Idempotency-Key` is required. Equal retries reconstruct the same IDs
+after current authorization; changed payload returns 409. Different keys for the
+same owner/collection/source/recipe converge. There is no cross-owner hash dedup.
+Only CLEAN PDF sources under the supported text recipe are admitted in this slice;
+owner-authorized unsupported MIME/recipe requests return 415 without durable work.
+Source existence is concealed before reporting owner-only admission errors.
+
+`POST /documents/{id}/versions` accepts only `file_id` and `parser_profile` and
+requires an `If-Match: "<revision>"` header. Receipt replay precedes revision
+comparison but follows current authority. A new desired version preserves the
+old active pointer. A request to reselect a superseded or terminal source/recipe
+returns 409; it cannot report a cancelled historical job as newly queued. A fresh
+private file identity is required for another processing request in that case.
+`GET /documents`, `/documents/{id}`, `/collections?kind=PERSONAL`
+and `/ingestions/{job_id}` expose only owner metadata and safe error codes.
+Lists have bounded owner/library-bound cursors and no total count, worker identity,
+object key or original bytes. Other owners and application admins receive 404.
+`DELETE /documents/{id}` requires the key/revision, tombstones atomically,
+cancels live work/delegations and appends audit; evidence/originals are retained.
+No policy-edit, sharing, search, parsing or model API is enabled by this slice.
+
+Jobs use SKIP LOCKED, a 60-second lease, 15-second heartbeat interval, at most two
+live leases per worker and five attempts. Every claim creates a new attempt/run
+and increments the fence. Retry uses bounded exponential full jitter; recovery
+reclaims expired work without deleting originals/history. Activation remains
+unavailable until a qualified derived-content pipeline exists. Delegations use
+256-bit random opaque tokens, persist hashes only, expire no later than the lease,
+and bind worker/job/fence/run/source/hash/owner/local policy. Validation reads
+metadata only. The internal File Service validates before and after bounded object
+retrieval and independently enforces CLEAN/hash/owner/private policy.
+
+Bootstrap runs the same reviewed migrations through `09_rag_migrations.sh`, after
+the app-capability registry exists; upgrades use `scripts/migrate-rag.sh` with
+`--scope core --through 0001` then `--scope cap-ai --through 0001`. Both paths use
+the shared checksum/version ledger and advisory lock. Rollback disables routes
+and workers while retaining source guards, originals, metadata and evidence.
+
+### Optional model Gateway and answers
+
+`POST /api/cap/ai/answers` accepts
+`{scope,query,max_citations?,require_generation?}` and returns
+`{status,answer,results,citations,reason?,model_profile?,usage?}`. Status is
+ANSWERED, SEARCH_ONLY or NO_EVIDENCE; `answer` is null without supported
+generation. Profile references expose only ID/revision. A client cannot choose
+classification, provider, credentials, tools or endpoints. Every supplied context
+source is freshly checked after generation; any revocation discards the whole
+answer and retrieved titles/citations with `AUTHORIZATION_CHANGED`.
+
+Hosted processing requires separate reviewed app-query and per-source immutable
+policy/profile approval. Personal content/questions always deny hosted processing,
+including fallback. Gateway reservations charge installation/app/user accounts
+atomically; possible billed timeouts retain UNCERTAIN funds and never resend the
+same operation automatically. Model unavailability preserves lexical search.
+Semantic generations and dimensions are independent from lexical readiness;
+current source/role checks apply before exact vector ranking and final response.
+
+The optional additive model migration and deployment adapter contract are in
+[model retrieval and answers](../development/model-knowledge.md). No profiles,
+provider/classification approvals or local models are enabled by bootstrap.

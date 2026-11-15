@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS core.apps (
     display_name TEXT NOT NULL CHECK (length(trim(display_name)) > 0),
     version TEXT NOT NULL CHECK (length(trim(version)) > 0),
     spec JSONB NOT NULL,
+    publication_generation BIGINT NOT NULL DEFAULT 0 CHECK (publication_generation >= 0),
     status TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending', 'Applying', 'Ready', 'Failed', 'Removed')),
     last_error TEXT,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()

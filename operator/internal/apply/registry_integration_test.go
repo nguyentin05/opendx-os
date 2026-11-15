@@ -185,3 +185,45 @@ func TestApplyRefusesRegistryConflictsBeforeAnySideEffect(t *testing.T) {
 		t.Fatalf("status = %v, want Ready", got)
 	}
 }
+
+func TestOneEnabledLibraryPublication(t *testing.T) {
+	db := testutil.NewDatabase(t)
+	ctx := context.Background()
+	runner := NewRunner(db, Config{}, nil)
+	if _, err := db.Exec(`INSERT INTO core.capabilities(cap_id,display_name,category_hpdi,base_route,enabled) VALUES('cap-ai','AI','I','/api/cap/ai',true) ON CONFLICT(cap_id) DO UPDATE SET enabled=true`); err != nil {
+		t.Fatal(err)
+	}
+	library := parseApp(t, "personal-library")
+	plan, err := planner.BuildPlan([]manifest.DXApplication{library}, planner.ManagedState{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = runner.Run(ctx, plan, []string{library.Metadata.Name}); err != nil {
+		t.Fatal(err)
+	}
+	var ready string
+	if err = db.QueryRow(`SELECT status FROM core.apps WHERE app_id='personal_library'`).Scan(&ready); err != nil || ready != "Ready" {
+		t.Fatal("library not registered", ready, err)
+	}
+	// A caller bypassing stale plan validation still cannot publish a second library.
+	second := library.Clone()
+	second.Metadata.Name = "second_library"
+	second.Spec.Roles[0].Name = "role_second_user"
+	second.Spec.Knowledge.PersonalLibrary.AllowedRoles = []string{"role_second_user"}
+	second.Spec.SharedAccess = nil
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if err = publishSnapshot(ctx, tx, planner.Plan{Apps: []manifest.DXApplication{*second}}); err == nil || !strings.Contains(err.Error(), "only one personal library") {
+		t.Fatal("expected uniqueness refusal", err)
+	}
+	if err = tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err = db.QueryRow(`SELECT count(*) FROM core.apps WHERE app_id='second_library'`).Scan(&n); err != nil || n != 0 {
+		t.Fatal("second library mutation survived rollback", n, err)
+	}
+}

@@ -31,10 +31,11 @@ type AppDefinition struct {
 // Spec is the part of the manifest's spec that capability services act on.
 // Fields the services do not use (ui, sharedAccess) are ignored.
 type Spec struct {
-	Capabilities []string   `json:"capabilities"`
-	Roles        []Role     `json:"roles"`
-	Tables       []Table    `json:"tables"`
-	Workflows    []Workflow `json:"workflows"`
+	Knowledge    *KnowledgeDef `yaml:"knowledge,omitempty" json:"knowledge,omitempty"`
+	Capabilities []string      `json:"capabilities"`
+	Roles        []Role        `json:"roles"`
+	Tables       []Table       `json:"tables"`
+	Workflows    []Workflow    `json:"workflows"`
 }
 
 type Role struct {
