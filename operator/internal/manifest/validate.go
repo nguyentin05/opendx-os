@@ -672,6 +672,9 @@ func checkShape(v any, t reflect.Type) error {
 		known := map[string]bool{}
 		for i := 0; i < t.NumField(); i++ {
 			field := t.Field(i)
+			if field.Tag.Get("yaml") == "-" {
+				continue
+			}
 			tag := strings.Split(field.Tag.Get("json"), ",")
 			name := tag[0]
 			known[name] = true

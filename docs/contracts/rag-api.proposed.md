@@ -71,7 +71,16 @@ Answer response: answer, grounded, citations, model_profile, usage with prompt_t
 
 ## App publication and indexing
 
-`POST /internal/cap/ai/package-sources/reconcile` consumes an authenticated, scoped Operator snapshot: schema_version=1, app_id, immutable app_revision, monotonic publication_generation and complete desired source declarations/checksums. P4 must implement its authenticated trust envelope before exposure. Stale/replayed generations cannot restore removed sources. App apply durably commits desired-source work with Ready app publication; delivery retries survive Operator downtime. Reads and worker activation validate against the synchronously committed authoritative registry publication generation and source membership, not merely the most recently delivered Knowledge snapshot. If current publication state is unavailable or a snapshot cannot be matched to it, fail closed for affected package sources. Delayed reconcile delivery therefore cannot keep removed sources visible or authorize late activation; retrieval does not synchronously call the Operator.
+`POST /internal/v1/package-sources/reconcile` accepts `{schema_version: 1,
+app_id, publication_generation, spec_digest}` through the separate internal
+listener and the deployment's narrow dispatcher OIDC subject. It accepts no
+caller-supplied source snapshot, bytes, artifact address or grant ceiling.
+cap-ai rereads current Core authority and independently verifies immutable
+artifacts before reconciling. Stale/replayed generations cannot restore removed
+sources. Ready publication and durable notification commit together; delivery
+retries survive Operator downtime. Reads and activation validate current Core,
+source incarnation and authorization generation independently of delivery.
+See [package knowledge integration](../development/package-knowledge.md).
 
 **App Ready** means app configuration was published successfully. **Knowledge Source Ready** means the source has complete eligible lexical content and protected provenance. Embedding readiness is a separate derived-index state. Operator never waits on parser/model calls within apply and is not a request-time dependency.
 

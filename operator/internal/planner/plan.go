@@ -31,11 +31,12 @@ type ManagedState struct {
 
 // Plan represents the pure, side-effect-free compilation of desired state vs live state.
 type Plan struct {
-	Apps        []manifest.DXApplication
-	DDLs        map[string]string
-	HasuraOps   []HasuraMetadataPayload
-	DropOps     []HasuraMetadataPayload
-	RemovedApps []string
+	ExpectedApps map[string]string
+	Apps         []manifest.DXApplication
+	DDLs         map[string]string
+	HasuraOps    []HasuraMetadataPayload
+	DropOps      []HasuraMetadataPayload
+	RemovedApps  []string
 }
 
 type sharedGrantKey struct {
@@ -53,6 +54,14 @@ func BuildPlan(apps []manifest.DXApplication, live ManagedState) (Plan, error) {
 		DDLs: make(map[string]string, len(apps)),
 	}
 	copy(plan.Apps, apps)
+	plan.ExpectedApps = make(map[string]string, len(live.ActiveApps))
+	for _, app := range live.ActiveApps {
+		if value, ok := Canonical(app); ok {
+			plan.ExpectedApps[app.Metadata.Name] = value
+		} else {
+			return Plan{}, fmt.Errorf("invalid active definition")
+		}
+	}
 
 	seenNames := map[string]bool{}
 	seenTables := map[string]string{}
@@ -272,6 +281,26 @@ func Changed(apps []manifest.DXApplication, live ManagedState) []string {
 // Canonical renders a value as JSON with sorted keys and normalized numbers, so
 // a manifest parsed from YAML compares equal to one decoded from the database.
 func Canonical(v any) (string, bool) {
+	// Compare declarations plus bounded source-byte fingerprints, excluding
+	// server-only publication state. The planning operation itself does no I/O.
+	switch app := v.(type) {
+	case manifest.DXApplication:
+		var hashes map[string]string
+		if len(app.SourceDigests) > 0 {
+			hashes = app.SourceDigests
+		} else if app.Spec.Publication != nil && len(app.Spec.Publication.Sources) > 0 {
+			hashes = map[string]string{}
+			for _, s := range app.Spec.Publication.Sources {
+				hashes[s.SourceID] = s.SHA256
+			}
+		}
+		app.Spec.Publication = nil
+		v = struct {
+			App     manifest.DXApplication `json:"app"`
+			Sources map[string]string      `json:"source_hashes,omitempty"`
+		}{app, hashes}
+	}
+
 	raw, err := json.Marshal(v)
 	if err != nil {
 		return "", false

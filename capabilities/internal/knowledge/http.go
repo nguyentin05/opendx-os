@@ -14,18 +14,22 @@ import (
 
 func (s *Store) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/cap/ai/app-knowledge", s.appKnowledgeHTTP)
 	mux.HandleFunc("POST /api/cap/ai/documents", s.registerHTTP)
 	mux.HandleFunc("POST /api/cap/ai/documents/{id}/versions", s.replaceHTTP)
 	mux.HandleFunc("GET /api/cap/ai/documents", s.listHTTP)
-	mux.HandleFunc("GET /api/cap/ai/documents/{id}", s.documentHTTP)
+	mux.HandleFunc("GET /api/cap/ai/documents/{id}", s.protectedDocument(s.documentHTTP, true))
 	mux.HandleFunc("DELETE /api/cap/ai/documents/{id}", s.deleteHTTP)
+	mux.HandleFunc("GET /api/cap/ai/documents/{id}/grant-management", s.grantManagementHTTP)
+	mux.HandleFunc("POST /api/cap/ai/documents/{id}/grants", s.grantReadHTTP)
+	mux.HandleFunc("DELETE /api/cap/ai/documents/{id}/grants/{user}", s.revokeReadHTTP)
 	mux.HandleFunc("GET /api/cap/ai/collections", s.collectionsHTTP)
 	mux.HandleFunc("GET /api/cap/ai/ingestions/{id}", s.ingestionHTTP)
 	mux.HandleFunc("POST /api/cap/ai/search", s.personal(s.searchHTTP))
 	mux.HandleFunc("POST /api/cap/ai/answers", s.personal(s.answersHTTP))
-	mux.HandleFunc("GET /api/cap/ai/documents/{id}/citations/{chunk}", s.personal(s.citationHTTP))
-	mux.HandleFunc("GET /api/cap/ai/documents/{id}/original", s.personal(s.originalHTTP))
-	mux.HandleFunc("GET /api/cap/ai/documents/{id}/assets/{asset}", s.personal(s.assetHTTP))
+	mux.HandleFunc("GET /api/cap/ai/documents/{id}/citations/{chunk}", s.protectedDocument(s.citationHTTP, false))
+	mux.HandleFunc("GET /api/cap/ai/documents/{id}/original", s.protectedDocument(s.originalHTTP, false))
+	mux.HandleFunc("GET /api/cap/ai/documents/{id}/assets/{asset}", s.protectedDocument(s.assetHTTP, false))
 	return mux
 }
 func writeJSON(w http.ResponseWriter, status int, value any) {
@@ -211,12 +215,23 @@ func (s *Store) ingestionHTTP(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
+	if doc, ok := job["document_id"].(string); ok {
+		scope, e := NewPolicy(s.db).CanRead(r.Context(), actor, doc)
+		if e != nil {
+			httpError(w, e)
+			return
+		}
+		if scope.SourceIncarnation != "" && !s.packageEnabled {
+			httpError(w, ErrAuthorityUnavailable)
+			return
+		}
+	}
 	writeJSON(w, 200, job)
 }
 
 func (s *Store) personal(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.personalEnabled {
+		if !s.personalEnabled && !s.packageEnabled {
 			httpError(w, ErrAuthorityUnavailable)
 			return
 		}
@@ -227,6 +242,10 @@ func (s *Store) searchHTTP(w http.ResponseWriter, r *http.Request) {
 	var req SearchRequest
 	if err := decodeRequest(w, r, &req); err != nil {
 		httpError(w, err)
+		return
+	}
+	if req.Scope.Kind == "APP" && !s.packageEnabled || req.Scope.Kind == "PERSONAL" && !s.personalEnabled {
+		httpError(w, ErrAuthorityUnavailable)
 		return
 	}
 	actor, err := auth.ExtractIdentity(r)
@@ -250,6 +269,10 @@ func (s *Store) answersHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decodeRequest(w, r, &req); err != nil {
 		httpError(w, err)
+		return
+	}
+	if req.Scope.Kind == "APP" && !s.packageEnabled || req.Scope.Kind == "PERSONAL" && !s.personalEnabled {
+		httpError(w, ErrAuthorityUnavailable)
 		return
 	}
 	if req.RequireGeneration {
@@ -314,4 +337,24 @@ func (s *Store) assetHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	binaryResponse(w, data)
+}
+
+func (s *Store) protectedDocument(next http.HandlerFunc, metadata bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		actor, e := auth.ExtractIdentity(r)
+		if e != nil {
+			httpError(w, ErrNotFound)
+			return
+		}
+		scope, e := NewPolicy(s.db).CanRead(r.Context(), actor, r.PathValue("id"))
+		if e != nil {
+			httpError(w, e)
+			return
+		}
+		if scope.SourceIncarnation != "" && !s.packageEnabled || scope.SourceIncarnation == "" && !metadata && !s.personalEnabled {
+			httpError(w, ErrAuthorityUnavailable)
+			return
+		}
+		next(w, r)
+	}
 }

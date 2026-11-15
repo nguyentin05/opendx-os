@@ -26,7 +26,7 @@ func newHandlerWithKnowledge(a access.Authenticator, store *knowledge.Store, ena
 	})
 	mux.HandleFunc("POST /api/cap/ai/rag", unavailable)
 	mux.Handle("POST /api/cap/ai/extract", a.Middleware(http.HandlerFunc(unavailable)))
-	for _, path := range []string{"/api/cap/ai/documents", "/api/cap/ai/documents/", "/api/cap/ai/collections", "/api/cap/ai/ingestions/", "/api/cap/ai/search", "/api/cap/ai/answers"} {
+	for _, path := range []string{"/api/cap/ai/app-knowledge", "/api/cap/ai/documents", "/api/cap/ai/documents/", "/api/cap/ai/collections", "/api/cap/ai/ingestions/", "/api/cap/ai/search", "/api/cap/ai/answers"} {
 		if enabled && store != nil {
 			mux.Handle(path, a.Middleware(store.Handler()))
 		} else {

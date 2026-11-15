@@ -11,8 +11,12 @@ import (
 )
 
 type Store struct {
+	dispatcherStore       *Store
+	dispatcherSubject     string
 	db                    *sql.DB
 	personalEnabled       bool
+	packageEnabled        bool
+	packageRoot           string
 	fileURL, artifactRoot string
 }
 

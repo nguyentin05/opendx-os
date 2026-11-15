@@ -77,3 +77,35 @@ func TestKnowledgeSymlinkEscape(t *testing.T) {
 		t.Fatal("escaping symlink accepted")
 	}
 }
+
+func TestPublicationEnvelopeIsServerOnly(t *testing.T) {
+	if _, err := Parse(strings.NewReader(libraryYAML + "  _publication: {generation: 99}\n")); err == nil {
+		t.Fatal("user supplied publication accepted")
+	}
+	spec, err := DecodeStoredSpec([]byte(`{"capabilities":["cap-ai"],"tables":[],"_publication":{"generation":7,"spec_digest":"test","sources":[]}}`))
+	if err != nil || spec.Publication == nil || spec.Publication.Generation != 7 {
+		t.Fatal("stored publication lost", err)
+	}
+}
+
+func TestKnowledgeFileContentFingerprint(t *testing.T) {
+	root := t.TempDir()
+	os.Mkdir(filepath.Join(root, "knowledge"), 0700)
+	source := filepath.Join(root, "knowledge/policy.md")
+	os.WriteFile(source, []byte("one"), 0600)
+	raw := libraryYAML + "    sources: [{id: policy, path: knowledge/policy.md, mediaType: text/markdown, indexingProfile: standard-text-v1, access: {mode: ROLE, allowedRoles: [role_library_user]}}]\n"
+	file := filepath.Join(root, "manifest.yaml")
+	os.WriteFile(file, []byte(raw), 0600)
+	first, err := ParseFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(source, []byte("two"), 0600)
+	second, err := ParseFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.SourceDigests["policy"] == "" || first.SourceDigests["policy"] == second.SourceDigests["policy"] {
+		t.Fatal("content-only package edit lost")
+	}
+}

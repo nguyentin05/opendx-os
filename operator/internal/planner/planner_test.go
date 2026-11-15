@@ -216,3 +216,18 @@ func TestProcurementDDLFixtureIsCurrent(t *testing.T) {
 		t.Fatal("contracts/fixtures/procurement-ddl.sql is stale; regenerate it with:\n  go -C operator run ./cmd/dxos-operator plan -format sql ../apps/procurement/manifest.yaml")
 	}
 }
+
+func TestChangedUsesDeclaredSourceContentNotServerEnvelope(t *testing.T) {
+	a := loadFixtureApp(t)
+	a.SourceDigests = map[string]string{"policy": "hash-a"}
+	live := *a.Clone()
+	live.SourceDigests = nil
+	live.Spec.Publication = &manifest.PackagePublication{Generation: 7, Sources: []manifest.PublishedSource{{SourceID: "policy", SHA256: "hash-a", Incarnation: "server"}}}
+	if got := Changed([]manifest.DXApplication{*a}, ManagedState{ActiveApps: []manifest.DXApplication{live}}); len(got) != 0 {
+		t.Fatal("server metadata caused perpetual reconcile", got)
+	}
+	a.SourceDigests["policy"] = "hash-b"
+	if got := Changed([]manifest.DXApplication{*a}, ManagedState{ActiveApps: []manifest.DXApplication{live}}); len(got) != 1 {
+		t.Fatal("content-only change missed")
+	}
+}

@@ -10,6 +10,35 @@ import (
 
 func (s *Store) InternalHandler(verifier auth.SubjectVerifier, workerSubject, fileServiceSubject string) http.Handler {
 	mux := http.NewServeMux()
+	if s.packageEnabled {
+		mux.Handle("GET /internal/v1/package-sources/{source}", ServiceMiddleware(verifier, workerSubject, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			data, err := s.PackageSource(r.Context(), r.Header.Get("X-Source-Delegation"), ServiceSubject(r.Context()), r.PathValue("source"))
+			if err != nil {
+				httpError(w, err)
+				return
+			}
+			binaryResponse(w, data)
+		})))
+	}
+	if s.dispatcherStore != nil {
+		mux.Handle("POST /internal/v1/package-sources/reconcile", ServiceMiddleware(verifier, s.dispatcherSubject, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body struct {
+				SchemaVersion int    `json:"schema_version"`
+				AppID         string `json:"app_id"`
+				Generation    int64  `json:"publication_generation"`
+				SpecDigest    string `json:"spec_digest"`
+			}
+			if err := decodeRequest(w, r, &body); err != nil || body.SchemaVersion != 1 {
+				httpError(w, ErrInvalid)
+				return
+			}
+			if err := s.dispatcherStore.ReconcilePackage(r.Context(), body.AppID, body.Generation, body.SpecDigest); err != nil {
+				httpError(w, err)
+				return
+			}
+			writeJSON(w, 204, nil)
+		})))
+	}
 	mux.Handle("POST /internal/v1/jobs/claim", ServiceMiddleware(verifier, workerSubject, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := s.Recover(r.Context(), time.Now()); err != nil {
 			httpError(w, err)

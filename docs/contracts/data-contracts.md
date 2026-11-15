@@ -290,7 +290,40 @@ symlinks outside the package root. `access.mode` is ROLE or RESTRICTED;
 `access.grantsManagedBy` naming a `grantPolicies` map entry whose nonempty
 `allowedRoles` lists app-owned manager roles. Management does not grant READ.
 ROLE has no manager policy. Flat aliases, unknown fields/versions and cross-app
-roles are invalid. Package ingestion/publication remains a later delivery gate.
+roles are invalid. Package publication is implemented independently of indexing;
+package reconciliation, grants and serving require their own acceptance gates.
+
+The Operator stores a server-only `spec._publication` envelope, never accepted in
+user manifests or CRDs. It contains `generation`, `spec_digest`, `package_digest`
+and `sources`, each binding `source_id`, `incarnation`,
+`authorization_generation`, `declaration_hash`, `artifact_ref`, `sha256`,
+`source_path`, `media_type`, `size_bytes`, `parser_profile` and `safety_state`.
+`core.apps.publication_generation` matches the envelope. Stored-spec decoders
+retain it across unrelated application changes; public declaration schemas do not
+expose artifact references or permit generation selection.
+
+A successful changed publication increments its generation in the registry
+transaction; an identical reconcile keeps it. Continuously declared sources keep
+incarnation. Removal/reintroduction replaces incarnation. Changes to mode, sorted
+allowed-role set, manager-policy ID or resolved manager-role set increment source
+authorization generation, including A → B → A. Content-only changes preserve that
+generation. Failed staging/publication preserves the previously active definition.
+The full apply is serialized across Operators, including DDL and Hasura snapshot
+handling; this does not place the Operator on user request paths.
+
+Before publication, package bytes are opened relative to a confined package root,
+bounded to 20 MiB, verified against declared MIME and scanned locally by ClamAV.
+The Operator requires deployment-owned `RAG_PACKAGE_ARTIFACT_ROOT` (private local
+storage) and `CLAMAV_ADDRESS`; absent configuration denies package publication.
+Approved bytes are copied to immutable app/source/hash references and verified;
+mutable package files and Operator uptime are no longer source-read dependencies.
+This admission does not establish parser support for arbitrary PDFs. Unreferenced
+staged artifacts remain retained pending an approved cleanup policy.
+
+The registry transaction writes a `knowledge.publication` durable outbox event
+containing only `(app_id, generation, spec_digest)`. The workflow publisher does
+not claim these events. A dedicated knowledge dispatcher must validate current
+Core authority; the notification and delayed cap_ai state never authorize a source.
 
 `core.files.read_policy` is immutable: APP_ATTACHMENT (default, including legacy
 rows) or OWNER_ONLY. Original identity, owner, app, content hash and policy cannot
@@ -316,8 +349,8 @@ Disablement preserves originals and private guards; no destructive rollback.
 cap_ai owns the fourteen metadata/job tables: collections, documents, allowed
 roles, named-user grants, processing policies, package sources/revisions and
 publications, versions, processing runs, ingestion jobs/attempts, request receipts
-and source delegations. Package tables are dormant until package publication is
-implemented. No cap_ai table is tracked by Hasura or granted to browser SQL roles.
+and source delegations. Package reconciliation is scoped to the current Core
+publication; see [package knowledge](../development/package-knowledge.md). No cap_ai table is tracked by Hasura or granted to browser SQL roles.
 Core has no capability/domain FK. Original, source, owner, recipe and version
 identities are immutable; active/desired pointers have same-document deferred FKs.
 
@@ -326,8 +359,8 @@ EXECUTE on scoped lifecycle functions, with no direct cap_ai table reads/writes
 and no Core identity writes. `dxos_ai_worker` can only claim, heartbeat,
 checkpoint, retry/recover and validate exact-source delegation through reviewed
 functions; it cannot change document ACLs or active pointers directly.
-`dxos_ai_dispatcher` has no source/publication mutation grants until its later
-slice. SECURITY DEFINER functions use a fixed search path; the controlled public
+`dxos_ai_dispatcher` executes scoped package snapshot/reconcile and Core knowledge
+notification claim/acknowledgment functions; it has no arbitrary chunk or grant access. SECURITY DEFINER functions use a fixed search path; the controlled public
 schema is needed by the existing Core audit hash trigger's pgcrypto dependency,
 and PUBLIC cannot create there. Sign-in remains the sole identity mirror.
 

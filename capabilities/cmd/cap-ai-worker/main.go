@@ -30,7 +30,7 @@ func main() {
 	defer db.Close()
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	worker := knowledge.Worker{Store: knowledge.NewStore(db), Parser: docir.NewUnixClient(os.Getenv("PARSER_SOCKET"), os.Getenv("PARSER_SERVICE_TOKEN")), FileEndpoint: os.Getenv("RAG_INTERNAL_FILE_URL"), ServiceToken: os.Getenv("RAG_WORKER_BEARER_TOKEN"), WorkerID: os.Getenv("RAG_WORKER_SERVICE_SUBJECT")}
+	worker := knowledge.Worker{Store: knowledge.NewStore(db), Parser: docir.NewUnixClient(os.Getenv("PARSER_SOCKET"), os.Getenv("PARSER_SERVICE_TOKEN")), FileEndpoint: os.Getenv("RAG_INTERNAL_FILE_URL"), ServiceToken: os.Getenv("RAG_WORKER_BEARER_TOKEN"), WorkerID: os.Getenv("RAG_WORKER_SERVICE_SUBJECT"), PackageEndpoint: os.Getenv("RAG_INTERNAL_AI_URL")}
 	if err = worker.Run(ctx); err != nil && ctx.Err() == nil {
 		log.Fatal("worker failed")
 	}

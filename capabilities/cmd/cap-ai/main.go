@@ -59,6 +59,10 @@ func main() {
 	if err != nil {
 		log.Fatal("identity verification unavailable or invalid configuration")
 	}
+	packageEnabled := os.Getenv("RAG_PACKAGE_ENABLED") == "true"
+	if packageEnabled && (os.Getenv("RAG_SOURCE_QUALIFIED") != "true" || os.Getenv("RAG_METADATA_QUALIFIED") != "true" || os.Getenv("RAG_PARSER_QUALIFIED") != "true") {
+		log.Fatal("package processing requires qualified predecessors")
+	}
 	if address := os.Getenv("RAG_INTERNAL_LISTEN"); address != "" {
 		if os.Getenv("RAG_SOURCE_QUALIFIED") != "true" || os.Getenv("AI_WORKER_DATABASE_URL") == "" {
 			log.Fatal("internal knowledge service requires qualified sources and a worker database connection")
@@ -74,12 +78,33 @@ func main() {
 		}
 		internalCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		_, err = knowledge.StartInternalListener(internalCtx, address, os.Getenv("RAG_WORKER_SERVICE_SUBJECT"), os.Getenv("RAG_FILE_SERVICE_SUBJECT"), knowledge.NewStore(workerDB).InternalHandler(serviceVerifier, os.Getenv("RAG_WORKER_SERVICE_SUBJECT"), os.Getenv("RAG_FILE_SERVICE_SUBJECT")))
+		internalStore := knowledge.NewStore(workerDB)
+		if err = internalStore.ConfigurePackages(packageEnabled, os.Getenv("RAG_PACKAGE_ARTIFACT_ROOT")); err != nil {
+			log.Fatal("invalid package artifact configuration")
+		}
+		if packageEnabled {
+			dispatcherDB, e := sql.Open("postgres", os.Getenv("AI_DISPATCHER_DATABASE_URL"))
+			if e != nil {
+				log.Fatal("dispatcher database unavailable")
+			}
+			defer dispatcherDB.Close()
+			dispatcherStore := knowledge.NewStore(dispatcherDB)
+			if e = dispatcherStore.ConfigurePackages(true, os.Getenv("RAG_PACKAGE_ARTIFACT_ROOT")); e != nil {
+				log.Fatal("invalid package reconcile configuration")
+			}
+			if e = internalStore.ConfigureDispatcher(dispatcherStore, os.Getenv("RAG_DISPATCHER_SERVICE_SUBJECT"), os.Getenv("RAG_WORKER_SERVICE_SUBJECT"), os.Getenv("RAG_FILE_SERVICE_SUBJECT")); e != nil {
+				log.Fatal("distinct dispatcher identity required")
+			}
+		}
+		_, err = knowledge.StartInternalListener(internalCtx, address, os.Getenv("RAG_WORKER_SERVICE_SUBJECT"), os.Getenv("RAG_FILE_SERVICE_SUBJECT"), internalStore.InternalHandler(serviceVerifier, os.Getenv("RAG_WORKER_SERVICE_SUBJECT"), os.Getenv("RAG_FILE_SERVICE_SUBJECT")))
 		if err != nil {
 			log.Fatal("invalid internal knowledge service configuration")
 		}
 	}
 	store := knowledge.NewStore(db)
+	if err = store.ConfigurePackages(packageEnabled, os.Getenv("RAG_PACKAGE_ARTIFACT_ROOT")); err != nil {
+		log.Fatal("invalid package source configuration")
+	}
 	personal := os.Getenv("RAG_PERSONAL_ENABLED") == "true" && os.Getenv("RAG_SOURCE_QUALIFIED") == "true" && os.Getenv("RAG_METADATA_QUALIFIED") == "true" && os.Getenv("RAG_PARSER_QUALIFIED") == "true"
 	if err = store.ConfigurePersonal(personal, os.Getenv("RAG_FILE_API_URL"), os.Getenv("KNOWLEDGE_ARTIFACT_ROOT")); err != nil {
 		log.Fatal("invalid personal-source configuration")

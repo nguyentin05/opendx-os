@@ -139,3 +139,20 @@ func TestMetadataRoutesDefaultClosed(t *testing.T) {
 		}
 	}
 }
+
+func TestAppKnowledgeFrontDoorIsAuthenticatedAndDefaultClosed(t *testing.T) {
+	h := newHandler(testAuth())
+	for _, test := range []struct {
+		token string
+		want  int
+	}{{"", 401}, {"Bearer token", 503}} {
+		req := httptest.NewRequest("GET", "/api/cap/ai/app-knowledge?app_id=example", nil)
+		req.Header.Set("Authorization", test.token)
+		req.Header.Set("X-Hasura-Role", "role_reader")
+		response := httptest.NewRecorder()
+		h.ServeHTTP(response, req)
+		if response.Code != test.want {
+			t.Fatalf("app knowledge front door: got %d want %d", response.Code, test.want)
+		}
+	}
+}

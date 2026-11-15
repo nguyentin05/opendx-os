@@ -57,7 +57,7 @@ type candidate struct {
 func (s *Store) Search(ctx context.Context, actor *auth.Identity, req SearchRequest) (SearchResult, error) {
 	empty := SearchResult{Status: "LEXICAL", Results: []SearchHit{}, Warnings: []string{}}
 	req.Query = strings.Join(strings.Fields(req.Query), " ")
-	if req.Scope.Kind != "PERSONAL" || req.Scope.AppID != "" || utf8.RuneCountInString(req.Query) < 1 || utf8.RuneCountInString(req.Query) > 2000 || req.Limit < 0 || req.Limit > 20 || len(req.Scope.CollectionIDs) > 20 || (req.Retrieval != "" && req.Retrieval != "LEXICAL" && req.Retrieval != "HYBRID") {
+	if (req.Scope.Kind != "PERSONAL" && req.Scope.Kind != "APP") || (req.Scope.Kind == "PERSONAL" && req.Scope.AppID != "") || (req.Scope.Kind == "APP" && (req.Scope.AppID == "" || !s.packageEnabled)) || utf8.RuneCountInString(req.Query) < 1 || utf8.RuneCountInString(req.Query) > 2000 || req.Limit < 0 || req.Limit > 20 || len(req.Scope.CollectionIDs) > 20 || (req.Retrieval != "" && req.Retrieval != "LEXICAL" && req.Retrieval != "HYBRID") {
 		return empty, ErrInvalid
 	}
 	for _, id := range req.Scope.CollectionIDs {
@@ -89,6 +89,10 @@ func (s *Store) searchCandidates(ctx context.Context, actor *auth.Identity, req 
 	limit := req.Limit
 	if limit == 0 {
 		limit = 10
+	}
+	if req.Scope.Kind == "APP" {
+		err := decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.search_app($1,$2,$3,$4,$5,$6)`, actor.UserID, actor.Role, req.Scope.AppID, req.Query, limit, pq.Array(req.Scope.CollectionIDs)), &rows)
+		return rows, err
 	}
 	err := decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.search_personal($1,$2,$3,$4,$5)`, actor.UserID, actor.Role, req.Query, limit, pq.Array(req.Scope.CollectionIDs)), &rows)
 	return rows, err

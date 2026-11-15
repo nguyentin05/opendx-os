@@ -27,10 +27,12 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	_ "github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/operator/internal/apply"
 	"github.com/opendx-os/opendx-os/operator/internal/crdconv"
+	"github.com/opendx-os/opendx-os/operator/internal/knowledge"
 	"github.com/opendx-os/opendx-os/operator/internal/manager"
 	"github.com/opendx-os/opendx-os/operator/internal/manifest"
 	"github.com/opendx-os/opendx-os/operator/internal/planner"
@@ -185,7 +187,16 @@ func buildRunnersFromEnv() (*sql.DB, *apply.Runner, *reconcile.Runner, error) {
 			return nil, nil, nil, err
 		}
 	}
+	var artifacts *knowledge.ArtifactStore
+	if root := os.Getenv("RAG_PACKAGE_ARTIFACT_ROOT"); root != "" {
+		scanner, err := knowledge.NewClamAV(os.Getenv("CLAMAV_ADDRESS"), 30*time.Second)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		artifacts = &knowledge.ArtifactStore{Root: root, Scanner: scanner}
+	}
 	cfg := apply.Config{
+		Artifacts:         artifacts,
 		HasuraURL:         os.Getenv("HASURA_URL"),
 		HasuraAdminSecret: os.Getenv("HASURA_ADMIN_SECRET"),
 	}

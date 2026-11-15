@@ -21,6 +21,7 @@ type Worker struct {
 	Store                                *Store
 	Parser                               ParseAdapter
 	FileEndpoint, ServiceToken, WorkerID string
+	PackageEndpoint                      string
 	Client                               *http.Client
 }
 
@@ -66,6 +67,7 @@ func (w *Worker) Once(ctx context.Context) error {
 func (w *Worker) process(ctx context.Context, lease Lease) error {
 	var source struct {
 		ID     string `json:"source_id"`
+		Kind   string `json:"source_kind"`
 		SHA    string `json:"sha256"`
 		Media  string `json:"media_type"`
 		Recipe string `json:"recipe"`
@@ -77,11 +79,15 @@ func (w *Worker) process(ctx context.Context, lease Lease) error {
 	if err != nil {
 		return err
 	}
-	u, err := url.Parse(w.FileEndpoint)
+	endpoint, route := w.FileEndpoint, "/internal/v1/files/"
+	if source.Kind == "PACKAGE" {
+		endpoint, route = w.PackageEndpoint, "/internal/v1/package-sources/"
+	}
+	u, err := url.Parse(endpoint)
 	if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") || u.RawQuery != "" || u.Fragment != "" || w.ServiceToken == "" || !idPattern.MatchString(source.ID) {
 		return ErrInvalid
 	}
-	request, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(w.FileEndpoint, "/")+"/internal/v1/files/"+source.ID, nil)
+	request, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(endpoint, "/")+route+source.ID, nil)
 	if err != nil {
 		return err
 	}

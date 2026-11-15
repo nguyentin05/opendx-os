@@ -33,10 +33,25 @@ func (s *Store) Original(ctx context.Context, actor *auth.Identity, doc, token s
 		return nil, err
 	}
 	var source struct {
-		FileID string `json:"file_id"`
+		FileID   string           `json:"file_id"`
+		Artifact *packageArtifact `json:"artifact"`
 	}
 	if err = decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.original_source($1,$2,$3)`, actor.UserID, actor.Role, doc), &source); err != nil {
 		return nil, err
+	}
+	if source.Artifact != nil {
+		if !s.packageEnabled {
+			return nil, ErrNotFound
+		}
+		data, e := s.readPackageArtifact(ctx, *source.Artifact)
+		if e != nil {
+			return nil, e
+		}
+		after, e := NewPolicy(s.db).CanRead(ctx, actor, doc)
+		if e != nil || before != after {
+			return nil, ErrNotFound
+		}
+		return data, nil
 	}
 	if s.fileURL == "" || !idPattern.MatchString(source.FileID) {
 		return nil, ErrAuthorityUnavailable
