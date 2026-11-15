@@ -123,5 +123,7 @@ spec:
                 path: migrations/cap_ai/0002_docir_fts.sql
               - key: cap_ai-0003_package_knowledge.sql
                 path: migrations/cap_ai/0003_package_knowledge.sql
+              - key: cap_ai-0004_models_vectors.sql
+                path: migrations/cap_ai/0004_models_vectors.sql
       - name: data
         emptyDir: {}

@@ -68,6 +68,7 @@ func (s *Store) Search(ctx context.Context, actor *auth.Identity, req SearchRequ
 	if req.Limit == 0 {
 		req.Limit = 10
 	}
+	callerCtx := ctx
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	if err := CheckIdentity(ctx, s.db, actor); err != nil {
@@ -77,11 +78,43 @@ func (s *Store) Search(ctx context.Context, actor *auth.Identity, req SearchRequ
 	if err != nil {
 		return empty, err
 	}
-	result, err := s.finalizeSearch(ctx, actor, rows)
+	semanticOK := false
 	if req.Retrieval == "HYBRID" {
-		result.Status = "LEXICAL_ONLY"
-		result.Warnings = append(result.Warnings, "SEMANTIC_UNAVAILABLE")
+		semanticCtx, semanticCancel := context.WithTimeout(callerCtx, 2*time.Second)
+		semantic, e := s.semanticCandidates(semanticCtx, actor, req)
+		semanticCancel()
+		semanticOK = e == nil
+		lexicalHits, semanticHits := []SearchHit{}, []SearchHit{}
+		byChunk := map[string]candidate{}
+		for _, row := range rows {
+			lexicalHits = append(lexicalHits, row.Hit)
+			byChunk[row.Hit.ChunkID] = row
+		}
+		if semanticOK {
+			for _, row := range semantic {
+				semanticHits = append(semanticHits, row.Hit)
+				byChunk[row.Hit.ChunkID] = row
+			}
+		}
+		fused := Fuse(lexicalHits, semanticHits, req.Limit)
+		rows = []candidate{}
+		for _, h := range fused {
+			rows = append(rows, byChunk[h.ChunkID])
+		}
 	}
+
+	finalCtx, finalCancel := context.WithTimeout(callerCtx, 3*time.Second)
+	defer finalCancel()
+	result, err := s.finalizeSearch(finalCtx, actor, rows)
+	if req.Retrieval == "HYBRID" {
+		if semanticOK {
+			result.Status = "HYBRID"
+		} else {
+			result.Status = "LEXICAL_ONLY"
+			result.Warnings = append(result.Warnings, "SEMANTIC_UNAVAILABLE")
+		}
+	}
+
 	return result, err
 }
 func (s *Store) searchCandidates(ctx context.Context, actor *auth.Identity, req SearchRequest) ([]candidate, error) {
@@ -89,6 +122,10 @@ func (s *Store) searchCandidates(ctx context.Context, actor *auth.Identity, req 
 	limit := req.Limit
 	if limit == 0 {
 		limit = 10
+	}
+	if req.Scope.Kind == "APP" && req.Retrieval == "HYBRID" && s.gateway != nil && s.embedProfile.ID != "" {
+		err := decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.hybrid_lexical($1,$2,$3,$4,$5,$6)`, actor.UserID, actor.Role, req.Scope.AppID, req.Query, 50, pq.Array(req.Scope.CollectionIDs)), &rows)
+		return rows, err
 	}
 	if req.Scope.Kind == "APP" {
 		err := decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.search_app($1,$2,$3,$4,$5,$6)`, actor.UserID, actor.Role, req.Scope.AppID, req.Query, limit, pq.Array(req.Scope.CollectionIDs)), &rows)

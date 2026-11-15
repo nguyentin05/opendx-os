@@ -26,9 +26,26 @@ type Worker struct {
 }
 
 func (w *Worker) Once(ctx context.Context) error {
+	// Enqueue only profile-allowlisted current sources; no model dependency for PARSE.
+	if w.Store.gateway != nil && w.Store.embedProfile.ID != "" {
+		_, err := w.Store.db.ExecContext(ctx, `SELECT cap_ai.queue_embeddings(NULL,NULL,$1,$2)`, w.Store.embedProfile.ID, w.Store.embedProfile.Revision)
+		if err != nil {
+			return dbError(err)
+		}
+	}
 	lease, err := w.Store.Claim(ctx, w.WorkerID, time.Now())
-	if err != nil || lease == nil {
+	if err != nil {
 		return err
+	}
+	if lease == nil {
+		if w.Store.gateway == nil || w.Store.embedProfile.ID == "" {
+			return nil
+		}
+		embedLease, e := w.Store.ClaimEmbedding(ctx, w.WorkerID)
+		if e != nil || embedLease == nil {
+			return e
+		}
+		return w.Store.BuildEmbeddings(ctx, *embedLease, w.Store.embedProfile)
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

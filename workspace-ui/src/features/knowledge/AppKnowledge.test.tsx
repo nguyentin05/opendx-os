@@ -25,3 +25,11 @@ it('role switch discards stale search and grant state',async()=>{
  vi.stubGlobal('fetch',vi.fn((input:RequestInfo|URL)=>String(input).endsWith('/search')?new Promise<Response>(resolve=>{finish=resolve}):Promise.resolve(json({sources:[]}))));
  const view=render(<AppKnowledge {...props}/>);fireEvent.change(screen.getByLabelText('Search app documents'),{target:{value:'payroll'}});fireEvent.click(screen.getByRole('button',{name:'Search app'}));await waitFor(()=>expect(finish).toBeDefined());view.rerender(<AppKnowledge {...props} role="role_other" contextKey="other"/>);finish!(json({status:'LEXICAL',results:[{snippet:'restricted payroll excerpt'}],warnings:[]}));await new Promise(r=>setTimeout(r,0));expect(screen.queryByText('restricted payroll excerpt')).toBeNull();expect(screen.queryByLabelText('User ID')).toBeNull();
 });
+it('shows a grounded answer and protected citations, then clears it on role change',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>String(input).endsWith('/answers')?json({status:'ANSWERED',answer:'Director approval is required.',results:[],citations:[{document_id:'d',version_id:'v',chunk_id:'c',title:'Policy',snippet:'Director approval',positions:[],section_path:[],element_ids:[],warnings:[],url:'/protected'}]}):json({sources:[]})));
+ const view=render(<AppKnowledge {...props}/>);fireEvent.change(screen.getByLabelText('Search app documents'),{target:{value:'Who approves?'}});fireEvent.click(screen.getByRole('button',{name:'Ask app'}));await screen.findByText('Director approval is required.');expect(screen.getByRole('button',{name:'View answer citation 1'})).toBeTruthy();view.rerender(<AppKnowledge {...props} role="role_other" contextKey="other"/>);await waitFor(()=>expect(screen.queryByText('Director approval is required.')).toBeNull());
+});
+it('explains search-only answers without inventing generated text',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>String(input).endsWith('/answers')?json({status:'SEARCH_ONLY',answer:null,reason:'POLICY_BLOCKED',results:[],citations:[]}):json({sources:[]})));
+ render(<AppKnowledge {...props}/>);fireEvent.change(screen.getByLabelText('Search app documents'),{target:{value:'Who approves?'}});fireEvent.click(screen.getByRole('button',{name:'Ask app'}));await screen.findByText(/Search only.*generation is unavailable/i);
+});

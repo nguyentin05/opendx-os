@@ -8,16 +8,19 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/lib/pq"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
 )
 
 type Store struct {
-	dispatcherStore       *Store
-	dispatcherSubject     string
-	db                    *sql.DB
-	personalEnabled       bool
-	packageEnabled        bool
-	packageRoot           string
-	fileURL, artifactRoot string
+	gateway                       *models.Gateway
+	embedProfile, generateProfile models.Profile
+	dispatcherStore               *Store
+	dispatcherSubject             string
+	db                            *sql.DB
+	personalEnabled               bool
+	packageEnabled                bool
+	packageRoot                   string
+	fileURL, artifactRoot         string
 }
 
 func NewStore(db *sql.DB) *Store { return &Store{db: db} }

@@ -21,6 +21,7 @@ export class KnowledgeClient {
  async original(doc:DocumentSummary):Promise<Blob>{const response=await fetch('/api/cap/ai/documents/'+encodeURIComponent(doc.document_id)+'/original',{signal:this.context.signal,headers:{Authorization:`Bearer ${this.context.token}`,'X-Hasura-Role':this.context.role}});if(!response.ok)throw new Error('Original is unavailable.');const blob=await response.blob();if(this.context.signal.aborted)throw new DOMException('Context changed','AbortError');return blob}
  appSources():Promise<{sources:AppSource[]}>{return this.request('/api/cap/ai/app-knowledge?app_id='+encodeURIComponent(this.context.appID))}
  searchApp(query:string):Promise<SearchResult>{return this.request('/api/cap/ai/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scope:{kind:'APP',app_id:this.context.appID},query,limit:10,retrieval:'LEXICAL'})})}
+ answerApp(query:string):Promise<AnswerResponse>{return this.request('/api/cap/ai/answers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scope:{kind:'APP',app_id:this.context.appID},query,max_citations:8})})}
  management(documentID:string,cursor=''):Promise<GrantPage>{return this.request('/api/cap/ai/documents/'+encodeURIComponent(documentID)+'/grant-management'+(cursor?'?cursor='+encodeURIComponent(cursor):''))}
  changeGrant(documentID:string,userID:string,revision:number,revoke=false):Promise<void>{return this.request('/api/cap/ai/documents/'+encodeURIComponent(documentID)+'/grants'+(revoke?'/'+encodeURIComponent(userID):''),{method:revoke?'DELETE':'POST',headers:{'Content-Type':'application/json','If-Match':`"${revision}"`,'Idempotency-Key':this.key([revoke?'revoke':'grant',documentID,userID,revision].join(':'))},...(revoke?{}:{body:JSON.stringify({user_id:userID})})})}
 
@@ -28,3 +29,5 @@ export class KnowledgeClient {
 
 export interface AppSource {source_id:string;document_id?:string;title?:string;status:'PENDING'|'INDEXING'|'READY'|'FAILED';readable:boolean;manageable:boolean;active_version_available:boolean}
 export interface GrantPage {document_id:string;revision:number;authorization_generation:number;ceiling:{mode:string;allowedRoles:string[];grantsManagedBy:string};pending_publication:boolean;grants:Array<{user_id:string;status:string}>;next_cursor?:string}
+
+export interface AnswerResponse {status:"ANSWERED"|"SEARCH_ONLY"|"NO_EVIDENCE";answer:string|null;results:SearchHit[];citations:SearchHit[];reason?:string;model_profile?:{id:string;revision:number};usage?:{input_tokens:number;output_tokens:number;units:number;pricing_revision:string}}

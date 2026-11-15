@@ -8,6 +8,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/docir"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
 	"log"
 	"os"
 	"os/signal"
@@ -31,6 +32,12 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	worker := knowledge.Worker{Store: knowledge.NewStore(db), Parser: docir.NewUnixClient(os.Getenv("PARSER_SOCKET"), os.Getenv("PARSER_SERVICE_TOKEN")), FileEndpoint: os.Getenv("RAG_INTERNAL_FILE_URL"), ServiceToken: os.Getenv("RAG_WORKER_BEARER_TOKEN"), WorkerID: os.Getenv("RAG_WORKER_SERVICE_SUBJECT"), PackageEndpoint: os.Getenv("RAG_INTERNAL_AI_URL")}
+	gateway, embed, generate, closeGateway, modelErr := models.FromEnvironment(ctx, os.Getenv)
+	if modelErr != nil {
+		log.Fatal("invalid model gateway configuration")
+	}
+	defer closeGateway()
+	worker.Store.ConfigureModels(gateway, embed, generate)
 	if err = worker.Run(ctx); err != nil && ctx.Err() == nil {
 		log.Fatal("worker failed")
 	}

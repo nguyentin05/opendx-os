@@ -19,6 +19,7 @@ import (
 	"github.com/opendx-os/opendx-os/capabilities/internal/ai/access"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
 )
 
 type config struct{ DatabaseURL, IssuerURL, JWKSURL, Audience, Port string }
@@ -105,6 +106,14 @@ func main() {
 	if err = store.ConfigurePackages(packageEnabled, os.Getenv("RAG_PACKAGE_ARTIFACT_ROOT")); err != nil {
 		log.Fatal("invalid package source configuration")
 	}
+	modelCtx, modelCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	gateway, embed, generate, closeGateway, modelErr := models.FromEnvironment(modelCtx, os.Getenv)
+	modelCancel()
+	if modelErr != nil {
+		log.Fatal("invalid model gateway configuration")
+	}
+	defer closeGateway()
+	store.ConfigureModels(gateway, embed, generate)
 	personal := os.Getenv("RAG_PERSONAL_ENABLED") == "true" && os.Getenv("RAG_SOURCE_QUALIFIED") == "true" && os.Getenv("RAG_METADATA_QUALIFIED") == "true" && os.Getenv("RAG_PARSER_QUALIFIED") == "true"
 	if err = store.ConfigurePersonal(personal, os.Getenv("RAG_FILE_API_URL"), os.Getenv("KNOWLEDGE_ARTIFACT_ROOT")); err != nil {
 		log.Fatal("invalid personal-source configuration")

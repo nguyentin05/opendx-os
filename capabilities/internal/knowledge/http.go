@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
 	"io"
 	"net/http"
 	"strconv"
@@ -43,6 +44,12 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 func httpError(w http.ResponseWriter, err error) {
 	status, code := 503, "AUTHORITY_UNAVAILABLE"
 	switch {
+	case errors.Is(err, models.ErrPolicy):
+		status, code = 403, "POLICY_BLOCKED"
+	case errors.Is(err, models.ErrQuota):
+		status, code = 429, "QUOTA_EXCEEDED"
+	case errors.Is(err, models.ErrUnavailable), errors.Is(err, models.ErrUncertain):
+		status, code = 503, "MODEL_UNAVAILABLE"
 	case errors.Is(err, ErrInvalid):
 		status, code = 400, "INVALID_REQUEST"
 	case errors.Is(err, ErrNotFound):
@@ -261,12 +268,7 @@ func (s *Store) searchHTTP(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, result)
 }
 func (s *Store) answersHTTP(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Scope             Scope  `json:"scope"`
-		Query             string `json:"query"`
-		MaxCitations      int    `json:"max_citations,omitempty"`
-		RequireGeneration bool   `json:"require_generation,omitempty"`
-	}
+	var req AnswerRequest
 	if err := decodeRequest(w, r, &req); err != nil {
 		httpError(w, err)
 		return
@@ -275,21 +277,22 @@ func (s *Store) answersHTTP(w http.ResponseWriter, r *http.Request) {
 		httpError(w, ErrAuthorityUnavailable)
 		return
 	}
-	if req.RequireGeneration {
-		writeJSON(w, 403, map[string]any{"error": map[string]string{"code": "POLICY_BLOCKED", "message": "Personal generation is unavailable"}})
-		return
-	}
+
 	actor, err := auth.ExtractIdentity(r)
 	if err != nil {
 		httpError(w, ErrNotFound)
 		return
 	}
-	result, err := s.Search(r.Context(), actor, SearchRequest{Scope: req.Scope, Query: req.Query, Limit: req.MaxCitations, Retrieval: "LEXICAL"})
+	service := AnswerService{Search: s, Reader: NewPolicy(s.db), Profile: s.generateProfile}
+	if s.gateway != nil {
+		service.Gateway = s.gateway
+		service.Policy = s.gateway.Policy
+	}
+	result, err := service.Answer(r.Context(), actor, req)
 	if err != nil {
 		httpError(w, err)
 		return
 	}
-	result.Status = "SEARCH_ONLY"
 	writeJSON(w, 200, result)
 }
 func (s *Store) citationHTTP(w http.ResponseWriter, r *http.Request) {

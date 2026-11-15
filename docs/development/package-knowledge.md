@@ -129,3 +129,7 @@ manager grant controls without READ, and app/role switching. Prepare them after
 the UI build, using the real browser installation described in the personal guide. Missing prerequisites are NOT_RUN, never PASS. Runtime support
 is bounded by the qualified parser envelope and observed live evidence; this
 page is not itself a test result or permission to enable another installation.
+
+Optional semantic retrieval and grounded answers build on these same source and
+grant checks; see [model retrieval and answers](model-knowledge.md). Model
+readiness does not change application Ready or lexical readiness.

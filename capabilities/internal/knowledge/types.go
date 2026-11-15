@@ -4,6 +4,7 @@ package knowledge
 
 import (
 	"errors"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/contracts"
 	"time"
 )
 
@@ -14,17 +15,7 @@ var ErrUnsupported = errors.New("unsupported knowledge media or recipe")
 var ErrInvalid = errors.New("invalid knowledge request")
 var ErrStaleLease = errors.New("lease unavailable")
 
-type ReadScope struct {
-	DocumentID               string `json:"document_id"`
-	VersionID                string `json:"version_id"`
-	RunID                    string `json:"run_id"`
-	PolicyRevision           int64  `json:"policy_revision"`
-	AuthorizationGeneration  int64  `json:"authorization_generation"`
-	SourceIncarnation        string `json:"source_incarnation"`
-	AppPublicationGeneration int64  `json:"app_publication_generation"`
-	ProcessingPolicyID       string `json:"processing_policy_id"`
-	ProcessingPolicyVersion  int64  `json:"processing_policy_version"`
-}
+type ReadScope = contracts.ReadScope
 type RegisterRequest struct {
 	CollectionID  string `json:"collection_id,omitempty"`
 	FileID        string `json:"file_id"`

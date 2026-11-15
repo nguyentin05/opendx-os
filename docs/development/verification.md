@@ -54,3 +54,10 @@ between static evidence and runtime behavior. A hand-off or PR describes the
 change and rationale, affected consumers, results, remaining gaps, and open
 decisions. Review findings include a location, failure scenario, impact, and fix
 direction; distinguish contract defects from unimplemented requirements.
+
+The optional model slice uses `scripts/test-rag.sh models` with real PostgreSQL
+17/pgvector, Operator, File/scanner/Hasura and controlled HTTP model spies; see
+[model qualification](model-knowledge.md#qualification). Run Go integration
+packages with `-p 1` when fixtures share PostgreSQL cluster-global roles.
+Deterministic fake responses establish boundary/accounting/citation behavior,
+not real-provider groundedness or invoice qualification.

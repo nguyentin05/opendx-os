@@ -20,7 +20,9 @@ for phase in check apply; do
   if [ "$folder" = cap_ai ]; then printf '\\if :ai_enabled\n' >> "$migration_script"; fi
   for file in "$migration_dir/$folder"/[0-9][0-9][0-9][0-9]_*.sql; do
    [ -f "$file" ] || continue
-   filename=$(basename "$file"); version=$(printf '%s' "$filename" | cut -c1-4)
+   filename=$(basename "$file");
+   if [ "$folder" = cap_ai ] && [ "$filename" = 0004_models_vectors.sql ] && [ "${RAG_MODELS_SCHEMA_ENABLED:-false}" != true ]; then continue; fi
+   version=$(printf '%s' "$filename" | cut -c1-4)
    checksum=$(sha256sum "$file" | cut -d ' ' -f1)
    if [ "$phase" = check ]; then
     cat >> "$migration_script" <<SQL
