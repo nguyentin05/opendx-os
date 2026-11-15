@@ -418,6 +418,29 @@
                           "pattern": "^[a-z][a-z0-9_]*$",
                           "type": "string"
                         },
+                        "payload": {
+                          "description": "Payload lists the columns of the record the caller sets with the\ncommand, in the same transaction as the state change.",
+                          "items": {
+                            "description": "PayloadField is one column a command writes from its payload.",
+                            "properties": {
+                              "column": {
+                                "pattern": "^[a-z][a-z0-9_]*$",
+                                "type": "string"
+                              },
+                              "required": {
+                                "description": "Required refuses the command when the payload omits the column.",
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "column",
+                              "required"
+                            ],
+                            "type": "object",
+                            "additionalProperties": false
+                          },
+                          "type": "array"
+                        },
                         "recordFilter": {
                           "type": "object"
                         },

@@ -130,7 +130,7 @@ enforced.
 | --- | --- | --- |
 | Create record | Only business columns in the `insert` allowlist | Stamp creator and department, initial state, version `1`, timestamps; check FKs and initialization conditions |
 | Edit content | `update` allowlist, only within `editableStates` | Filter by scope and permissions, increment the version, record time and audit in the same transaction |
-| Transition state | Send a command with `expected_version` | Check role, current state, permissions on the record, related files, and write atomically |
+| Transition state | Send a command with `expected_version` and the payload the command declares | Check role, current state, permissions on the record, related files and the payload, and write the state and the payload's columns atomically |
 | Upsert/nested mutation | Denied by default; if granted, it must satisfy both the insert and update paths | Must not reset state/version, change creator or department, or bypass FKs |
 | Delete | Only rows of a child table, by a role that may edit the parent record | Refuse it once the parent leaves its editable states; increment the parent's version; audit the deleted row. Process and plain records are never deleted: use a `cancel` command |
 
@@ -149,6 +149,14 @@ state and version even when they share an employee or work item.
 A command compares `id`, the acting role's scope and permissions, state, and `expected_version` in the same transaction using a row lock or an equivalent conditional UPDATE. If the record is valid within the caller's scope but its version has changed, return `409`; do not write state, audit, or a business event for the failed attempt.
 
 Example: the approver reads `version=1`; the requester edits `quoted_amount` through CRUD, making the record `version=2`; an approval command carrying `expected_version=1` must be rejected. When two commands with the same version run concurrently, at most one state transition succeeds.
+
+A command that declares a `payload` writes those columns in the statement that
+changes the status, so the new state and its data share one version, one audit
+row and one event. The request's payload may hold only the declared columns; a
+required one must be present and not empty, and each value must fit its
+column's type (a refused payload is a `400` and changes nothing). A column the
+payload omits keeps its value. A command without a declared payload takes an
+empty one.
 
 Each command carries an idempotency key. The lock scope includes actor, app, entity, command and key; the server stores the payload fingerprint and result in the same transaction. Retrying the same key/payload returns the recorded result after checking current permissions, before re-evaluating the old version; the same key with a different payload returns `409`. The receipt schema and its consumers must implement this full scope; storing the result only in memory is insufficient.
 
@@ -192,7 +200,7 @@ Each entry of `spec.tables`:
 | `foreignKeys` | Optional. `column` → `references`: a referenceable table of the shared catalog, or another table of the same application. A table of another application cannot be referenced. A foreign key to `core.files` must be declared in `attachments` |
 | `access` | Allowlist of roles and columns for `select`, `insert` and optional `update` (and `delete` on a child table). `select` and `update` rules declare a `scope`: `own` (`created_by` is the caller), `department` (the record's `org_unit_id` is the caller's department in `cap_hr.staff`; requires cap-hr) or `organization`. An optional `recordFilter` narrows the scope. Insert rules have no scope: the creator and department are stamped by database triggers. System columns are never writable |
 | `belongsTo` | Optional; makes the table a child table. `table` is another table of the application that is not itself a child; `column` is the parent column the operator adds. A child table has no `stateMachine` or `attachments`; its `select`, `insert` and `update` rules name a role and columns only (no `scope`, `recordFilter` or `presets`), and may add `delete` rules naming a role. A role in a `select` rule needs a `select` rule on the parent; a role in an `insert`, `update` or `delete` rule needs an `update` rule on the parent. The parent column is insertable and never updatable |
-| `stateMachine` | Optional; makes the table a process table. `initial`, `editableStates`, `terminalStates`, and commands with `from`, `to`, `allowedRoles` and an optional `recordFilter` (for example `created_by _neq X-Hasura-User-Id` forbids self-approval). The table's `status` CHECK lists exactly these states. Command names are unique within the application |
+| `stateMachine` | Optional; makes the table a process table. `initial`, `editableStates`, `terminalStates`, and commands with `from`, `to`, `allowedRoles`, an optional `recordFilter` (for example `created_by _neq X-Hasura-User-Id` forbids self-approval) and an optional `payload`: the business columns the caller sets with the command (`column`, `required`), which may not be system columns, attachments or foreign keys ([ADR 0006](../adr/0006-where-application-business-logic-lives.md)). The table's `status` CHECK lists exactly these states. Command names are unique within the application |
 | `attachments` | Optional, process tables only. File columns (foreign keys to `core.files`) that must be `CLEAN` for the listed commands of the table |
 | `ui` | `listColumns` and `formFields` referencing declared columns, and `actions` listing the table's commands (process tables only); creates no permissions |
 

@@ -113,12 +113,20 @@ Idempotency-Key: <a fresh UUID per user action>
 {"entity_id": "<record id>", "expected_version": <version shown>, "payload": {}}
 ```
 
+`payload` holds what the command declares under
+`stateMachine.commands[].payload`: for each entry, the value of that column
+(a string for `text`, `uuid` and `date`, a number for numeric columns). Ask the
+user for those fields before running the command, and mark the ones with
+`required: true`. Procurement's `reject` takes
+`{"rejection_reason": "..."}`. A command without a declared payload takes `{}`.
+
 Command names are unique within an application, so the table is not part of
 the path. The response carries the record's new `status` and `version`.
 
 | Status | Meaning for the UI |
 | --- | --- |
 | 200 | Done. Retrying with the same key and body returns the same answer |
+| 400 | The payload does not match the command's declaration: a required field is missing or empty, a value has the wrong type, or a field is not declared |
 | 401 | Token missing or expired: sign in again |
 | 403 | The role may not run this command on this record |
 | 404 | The record is not visible to this role (or does not exist) |
@@ -166,5 +174,4 @@ the script is a working reference for request shapes.
 - Changing work items (assign, move between columns): `cap_work.work_items` has
   no service route yet. Reading them works: see below.
 - Screens to assign roles and departments: there is no API for it yet.
-- `rejection_reason`: commands do not accept a payload yet.
 - cap-data and cap-ai routes.

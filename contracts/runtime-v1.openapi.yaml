@@ -311,9 +311,13 @@ components:
           minimum: 1
         payload:
           type: object
-          properties: {}
-          required: []
-          additionalProperties: false
+          description: The columns the command declares in its manifest payload
+            (spec.tables[].stateMachine.commands[].payload), by column name. A
+            text or uuid or date column takes a string, a numeric column a number;
+            null clears an optional nullable column. Empty for a command that
+            declares no payload. Any other key, a missing required column or a
+            value of the wrong type is a 400.
+          additionalProperties: true
       required:
       - entity_id
       - expected_version

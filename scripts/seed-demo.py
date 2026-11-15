@@ -312,10 +312,10 @@ def file_request(token: str, vendor: str, item: str, amount: int) -> dict:
     return data["insert_domain_procurement_requests_one"]
 
 
-def command(token: str, role: str, name: str, record: dict):
+def command(token: str, role: str, name: str, record: dict, payload: dict | None = None):
     """Runs a cap-process command; returns (HTTP status, new record state)."""
     status, body = http(f"{GATEWAY}/api/cap/process/commands/procurement/{name}",
-                        {"entity_id": record["id"], "expected_version": record["version"], "payload": {}},
+                        {"entity_id": record["id"], "expected_version": record["version"], "payload": payload or {}},
                         token, headers={"X-Hasura-Role": role, "Idempotency-Key": str(uuid.uuid4())})
     if status == 200:
         record = dict(record, status=body["status"], version=body["version"])
@@ -409,6 +409,22 @@ def flow() -> None:
         status, _ = command(t["cuong.le"], "role_procurement_manager", "approve", own)
         rows.append(("approve one's own request", people["cuong.le"], "role_procurement_manager",
                      f"{'refused (403)' if status == 403 else f'HTTP {status}'}  [{'ok' if status == 403 else 'UNEXPECTED'}]"))
+        # A rejection carries its reason: the command's payload is stored with
+        # the state change, and the requester reads it on their request.
+        refused = file_request(t["binh.tran"], "Hioki", "Ampe kìm đo dòng", 3200000)
+        _, refused = command(t["binh.tran"], REQUESTER, "submit", refused)
+        status, _ = command(t["dung.pham"], "role_procurement_manager", "reject", refused)
+        rows.append(("reject without a reason", people["dung.pham"], "role_procurement_manager",
+                     f"{'refused (400)' if status == 400 else f'HTTP {status}'}  [{'ok' if status == 400 else 'UNEXPECTED'}]"))
+        reason = "Đã có thiết bị tương đương trong kho"
+        status, refused = command(t["dung.pham"], "role_procurement_manager", "reject", refused, {"rejection_reason": reason})
+        rows.append(("reject with a reason", people["dung.pham"], "role_procurement_manager",
+                     f"{refused['status'] if status == 200 else f'HTTP {status}'}  [{'ok' if status == 200 else 'UNEXPECTED'}]"))
+        data, _ = graphql(t["binh.tran"], REQUESTER,
+                          "query($id: uuid!) { domain_procurement_requests_by_pk(id: $id) { status rejection_reason } }", {"id": refused["id"]})
+        seen = ((data or {}).get("domain_procurement_requests_by_pk") or {}).get("rejection_reason")
+        rows.append(("read why it was rejected", people["binh.tran"], REQUESTER,
+                     f"{seen}  [{'ok' if seen == reason else 'UNEXPECTED'}]"))
         print("Procurement approval chain through cap-process (POST /api/cap/process/commands/...):")
         print()
         table(rows)

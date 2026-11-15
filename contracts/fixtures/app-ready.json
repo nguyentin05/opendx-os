@@ -288,6 +288,12 @@
               "allowedRoles": [
                 "role_procurement_manager",
                 "role_procurement_finance"
+              ],
+              "payload": [
+                {
+                  "column": "rejection_reason",
+                  "required": true
+                }
               ]
             },
             {

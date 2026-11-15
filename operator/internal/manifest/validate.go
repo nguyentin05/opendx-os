@@ -414,6 +414,15 @@ func validateTable(app *DXApplication, t *TableDef, tables, commands map[string]
 			if err := validateFilter(c.RecordFilter, cols, 0); err != nil {
 				return err
 			}
+			// A command may write plain business columns: not a system column,
+			// and not a reference, whose target the command does not check.
+			payload := map[string]bool{}
+			for _, f := range c.Payload {
+				if cols[f.Column] == "" || system[f.Column] != "" || foreign[f.Column] != "" || payload[f.Column] {
+					return fmt.Errorf("command %q payload names %q, which must be a business column that is not a foreign key, once", c.Name, f.Column)
+				}
+				payload[f.Column] = true
+			}
 		}
 		states := map[string]bool{}
 		for _, st := range States(*sm) {

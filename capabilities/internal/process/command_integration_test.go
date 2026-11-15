@@ -19,6 +19,7 @@ package process
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 	"sync"
 	"testing"
@@ -318,5 +319,77 @@ func TestChangingALineInvalidatesAnEarlierVersion(t *testing.T) {
 	o.p.SetStatus(t, other, o.alice, "CANCELLED")
 	if _, err := o.p.TryInsertInto(items, o.alice, "role_procurement_requester", map[string]any{"request_id": other, "item": "Late", "quantity": 1, "unit_price": 1}); err == nil {
 		t.Fatal("a cancelled request must not take new lines")
+	}
+}
+
+func (o *org) runWith(user, role, command, entity, key string, version int64, payload map[string]any) (*CommandResponse, int) {
+	resp, status, _ := o.engine.Execute(context.Background(), &auth.Identity{UserID: user, Role: role}, testutil.AppID, command, key,
+		&CommandRequest{EntityID: entity, ExpectedVersion: version, Payload: payload})
+	return resp, status
+}
+
+// A command writes the columns its manifest declares from its payload, in the
+// transaction of the state change: a rejection is stored with its reason.
+func TestRejectStoresItsReasonWithTheStateChange(t *testing.T) {
+	o := newOrg(t)
+	request := o.request(t, o.alice)
+	if _, s := o.run(o.alice, "role_procurement_requester", "submit", request, "submit", 1); s != 200 {
+		t.Fatalf("submit: %d", s)
+	}
+	state := func() (status string, version int, reason sql.NullString) {
+		t.Helper()
+		if err := o.p.Admin.QueryRow(`SELECT status, version, rejection_reason FROM `+o.p.Table+` WHERE id = $1`, request).Scan(&status, &version, &reason); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+
+	for name, payload := range map[string]map[string]any{
+		"no reason":                {},
+		"a blank reason":           {"rejection_reason": "   "},
+		"a reason that is null":    {"rejection_reason": nil},
+		"a reason of another type": {"rejection_reason": 42},
+		"an undeclared column":     {"rejection_reason": "Over budget", "quoted_amount": 1},
+		"a system column":          {"rejection_reason": "Over budget", "status": "APPROVED"},
+	} {
+		if _, s := o.runWith(o.carol, "role_procurement_manager", "reject", request, "bad-"+name, 2, payload); s != 400 {
+			t.Errorf("reject with %s: %d, want 400", name, s)
+		}
+	}
+	// A command that declares no payload takes none.
+	if _, s := o.runWith(o.carol, "role_procurement_manager", "approve", request, "approve-extra", 2, map[string]any{"rejection_reason": "x"}); s != 400 {
+		t.Fatalf("approve with a payload: %d, want 400", s)
+	}
+	if status, version, reason := state(); status != "SUBMITTED" || version != 2 || reason.Valid {
+		t.Fatalf("refused commands changed the record: %s v%d reason=%v", status, version, reason)
+	}
+	if n := o.count(t, `SELECT count(*) FROM core.outbox_events WHERE entity_id = $1`, request); n != 1 {
+		t.Fatalf("refused commands emitted events: %d, want only the submit", n)
+	}
+
+	const why = "Vượt ngân sách quý; đề nghị tách thành hai đợt"
+	resp, s := o.runWith(o.carol, "role_procurement_manager", "reject", request, "reject", 2, map[string]any{"rejection_reason": why})
+	if s != 200 || resp.Status != "REJECTED" || resp.Version != 3 {
+		t.Fatalf("reject with a reason: %d %+v", s, resp)
+	}
+	if status, version, reason := state(); status != "REJECTED" || version != 3 || reason.String != why {
+		t.Fatalf("after reject: %s v%d reason=%q", status, version, reason.String)
+	}
+	// One audit row holds the new state and the reason together.
+	if n := o.count(t, `SELECT count(*) FROM core.audit_logs WHERE entity_id = $1 AND action = 'reject' AND acting_role = 'role_procurement_manager'
+		AND payload ->> 'status' = 'REJECTED' AND payload ->> 'rejection_reason' = $2 AND entity_version = 3`, request, why); n != 1 {
+		t.Fatalf("audit rows for the rejection: %d, want 1", n)
+	}
+
+	// The payload is part of the request's identity: the same key and payload
+	// replay the stored answer, another payload under that key is a conflict.
+	if again, s := o.runWith(o.carol, "role_procurement_manager", "reject", request, "reject", 2, map[string]any{"rejection_reason": why}); s != 200 || again.Version != 3 {
+		t.Fatalf("retry of the same rejection: %d %+v", s, again)
+	}
+	if _, s := o.runWith(o.carol, "role_procurement_manager", "reject", request, "reject", 2, map[string]any{"rejection_reason": "Another reason"}); s != 409 {
+		t.Fatalf("same key, another reason: %d, want 409", s)
+	}
+	if _, version, reason := state(); version != 3 || reason.String != why {
+		t.Fatal("a replay or a conflict must not change the record")
 	}
 }

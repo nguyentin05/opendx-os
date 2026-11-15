@@ -189,6 +189,15 @@ type CommandDef struct {
 	To           string         `yaml:"to" json:"to"`
 	AllowedRoles []string       `yaml:"allowedRoles" json:"allowedRoles"`
 	RecordFilter map[string]any `yaml:"recordFilter,omitempty" json:"recordFilter,omitempty"`
+	// Payload lists the columns of the record the caller sets with the command,
+	// in the same transaction as the state change.
+	Payload []PayloadFieldDef `yaml:"payload,omitempty" json:"payload,omitempty"`
+}
+
+// PayloadFieldDef is one column a command writes from its payload.
+type PayloadFieldDef struct {
+	Column   string `yaml:"column" json:"column"`
+	Required bool   `yaml:"required" json:"required"`
 }
 
 // AttachmentDef defines file attachment clean-status requirements.

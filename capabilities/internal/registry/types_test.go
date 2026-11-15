@@ -123,6 +123,14 @@ func TestRejectUnsafeDefinitions(t *testing.T) {
 			tables := spec(m)["tables"].([]any)
 			tables[2].(map[string]any)["belongsTo"].(map[string]any)["table"] = "domain.other_records"
 		},
+		"payload writes a system column": func(m map[string]any) {
+			commands := table(m)["stateMachine"].(map[string]any)["commands"].([]any)
+			commands[0].(map[string]any)["payload"] = []any{map[string]any{"column": "status", "required": true}}
+		},
+		"payload writes a reference": func(m map[string]any) {
+			commands := table(m)["stateMachine"].(map[string]any)["commands"].([]any)
+			commands[0].(map[string]any)["payload"] = []any{map[string]any{"column": "quote_file_id"}}
+		},
 		"bad effect": func(m map[string]any) {
 			spec(m)["workflows"].([]any)[0].(map[string]any)["effects"].([]any)[0].(map[string]any)["kind"] = "run_sql"
 		},

@@ -72,8 +72,10 @@ A command is accepted when:
    record filter;
 3. the record satisfies the command's record filter (for example, no one
    approves their own request);
-4. version and state match;
-5. every attachment the command requires is `CLEAN`.
+4. its payload holds only the columns the command declares, with every required
+   one present and each value fitting its column's type (otherwise 400);
+5. version and state match;
+6. every attachment the command requires is `CLEAN`.
 
 A record outside the role's scope answers 404, so its existence is not revealed.
 
@@ -82,8 +84,9 @@ Each change increments the parent record's version, so a command carrying a
 version read before the change is a 409; once the parent leaves its editable
 states the database refuses further changes.
 
-The status change, its audit row (actor, acting role and command), the outbox
-event and the idempotency receipt commit in one transaction. A receipt is
+The status change with the payload's columns, its audit row (actor, acting role
+and command), the outbox event and the idempotency receipt commit in one
+transaction. A receipt is
 identified by actor, app, entity, command and `Idempotency-Key`. Its fingerprint
 is the SHA-256 of canonical JSON `{entity_id, expected_version, payload}`. A
 retry with the same key and request returns the stored response after

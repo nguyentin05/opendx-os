@@ -184,6 +184,10 @@ spec:
         allowedRoles:
         - role_procurement_manager
         - role_procurement_finance
+        # A rejection states its reason; it is stored with the state change.
+        payload:
+        - column: rejection_reason
+          required: true
       - name: cancel
         from:
         - DRAFT
