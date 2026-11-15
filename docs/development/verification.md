@@ -25,7 +25,7 @@ the current [Makefile](../../Makefile), module manifests, and prerequisites firs
 | Repository hygiene | Root | `make check-hygiene` | Python 3 and PyYAML; metadata, text/header checks, static boundary/manifest checks |
 | Static contracts | Root | `python3 -m unittest discover -s tests -v` | Python 3 and PyYAML; source/fixture checks, not live database authorization |
 | Operator unit tests | `operator/` | `go test ./...` | Go version/dependencies from `go.mod` |
-| Capability unit tests | `capabilities/` | `go test ./...` | Go version/dependencies from `go.mod` |
+| Capability unit tests | `capabilities/` | `go test ./...` | Go version/dependencies from `go.mod`; PDF parser subtests skip unless `poppler-utils` (`pdfinfo`, `pdfimages`, `pdftotext`) is installed |
 | Operator integration | `operator/` | `make test-integration` | `TEST_DATABASE_URL` naming a disposable PostgreSQL 17 test database; Hasura is a local fake |
 | Operator CRD schema | `operator/` | `make test-envtest` | Downloads envtest binaries (kube-apiserver, etcd) into `operator/bin/` |
 | Operator controller lifecycle | `operator/` | `make test-controller` | envtest plus `TEST_DATABASE_URL`; Hasura is a fake modelling `export_metadata` |

@@ -9,10 +9,20 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
 )
+
+func requirePoppler(t *testing.T) {
+	t.Helper()
+	for _, name := range []string{"pdfinfo", "pdfimages", "pdftotext"} {
+		if _, err := exec.LookPath(name); err != nil {
+			t.Skipf("poppler-utils not installed (%s not found); skipping PDF parser checks", name)
+		}
+	}
+}
 
 func requestFor(data []byte, media string) ParseRequest {
 	h := sha256.Sum256(data)
@@ -23,46 +33,54 @@ func TestDocIRProvenance(t *testing.T) {
 		path, media string
 		page        int
 	}{{"policy.md", "text/markdown", 0}, {"table.pdf", "application/pdf", 4}} {
-		data, e := os.ReadFile("testdata/" + f.path)
-		if e != nil {
-			t.Fatal(e)
-		}
-		r, e := (Parser{}).Parse(context.Background(), requestFor(data, f.media), bytes.NewReader(data))
-		if e != nil {
-			t.Fatal(f.path, e)
-		}
-		found := false
-		for _, el := range r.Elements {
-			if el.Kind == "table" && strings.Contains(el.Text, "Director") && strings.Contains(el.Text, "10,000,000") {
-				found = true
-				if el.PageNo != f.page || len(el.SectionPath) == 0 {
-					t.Fatal("table provenance lost", el)
-				}
-				if f.page > 0 && el.BBox == nil {
-					t.Fatal("PDF bbox missing")
+		t.Run(f.path, func(t *testing.T) {
+			if f.media == "application/pdf" {
+				requirePoppler(t)
+			}
+			data, e := os.ReadFile("testdata/" + f.path)
+			if e != nil {
+				t.Fatal(e)
+			}
+			r, e := (Parser{}).Parse(context.Background(), requestFor(data, f.media), bytes.NewReader(data))
+			if e != nil {
+				t.Fatal(f.path, e)
+			}
+			found := false
+			for _, el := range r.Elements {
+				if el.Kind == "table" && strings.Contains(el.Text, "Director") && strings.Contains(el.Text, "10,000,000") {
+					found = true
+					if el.PageNo != f.page || len(el.SectionPath) == 0 {
+						t.Fatal("table provenance lost", el)
+					}
+					if f.page > 0 && el.BBox == nil {
+						t.Fatal("PDF bbox missing")
+					}
 				}
 			}
-		}
-		if !found {
-			t.Fatal("table relation lost", f.path)
-		}
-		r.Elements[0].ParentID = r.Elements[0].LocalID
-		if Validate(r, DefaultLimits()) == nil {
-			t.Fatal("cyclic parent accepted")
-		}
+			if !found {
+				t.Fatal("table relation lost", f.path)
+			}
+			r.Elements[0].ParentID = r.Elements[0].LocalID
+			if Validate(r, DefaultLimits()) == nil {
+				t.Fatal("cyclic parent accepted")
+			}
+		})
 	}
 }
 func TestParserLimits(t *testing.T) {
-	for _, name := range []string{"scan.pdf", "too-many-pages.pdf"} {
-		b, _ := os.ReadFile("testdata/" + name)
-		_, e := (Parser{}).Parse(context.Background(), requestFor(b, "application/pdf"), bytes.NewReader(b))
-		if e == nil {
-			t.Fatal("unsupported PDF accepted", name)
+	t.Run("unsupported PDFs", func(t *testing.T) {
+		requirePoppler(t)
+		for _, name := range []string{"scan.pdf", "too-many-pages.pdf"} {
+			b, _ := os.ReadFile("testdata/" + name)
+			_, e := (Parser{}).Parse(context.Background(), requestFor(b, "application/pdf"), bytes.NewReader(b))
+			if e == nil {
+				t.Fatal("unsupported PDF accepted", name)
+			}
+			if name == "scan.pdf" && !errors.Is(e, ErrOCRUnavailable) {
+				t.Fatal("missing OCR outcome", e)
+			}
 		}
-		if name == "scan.pdf" && !errors.Is(e, ErrOCRUnavailable) {
-			t.Fatal("missing OCR outcome", e)
-		}
-	}
+	})
 	b := []byte("# safe")
 	req := requestFor(b, "text/markdown")
 	req.Limits.Deadline = 121 * time.Second
