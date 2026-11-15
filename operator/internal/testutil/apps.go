@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package testutil provides application, Hasura, and Kestra fixtures for
+// operator integration tests.
 package testutil
 
 import (

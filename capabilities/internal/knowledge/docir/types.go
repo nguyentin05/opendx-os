@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 DX-OS Open-Core Contributors
+
+// Package docir parses supported Markdown and PDF sources into a bounded
+// intermediate representation and chunks it for indexing.
 package docir
 
 import (
