@@ -162,16 +162,39 @@ inbox entry links to the record's detail. Only the application's own items are
 returned; they are not narrowed by department yet. The item appears a few
 seconds after the command, once the workflow has run.
 
-## 8. Try it
+## 8. Administration
+
+For users holding the platform role `role_operator` (it appears in
+`/api/auth/me` with no owner). Everyone else gets 403.
+
+| Call | Does |
+| --- | --- |
+| `GET /api/auth/users` | `users`: every account with `id`, `email`, `display_name`, `status` and the `roles` it holds |
+| `GET /api/auth/roles` | `roles`: every role that can be granted now, with `name`, `description` and its owner (`app_id` or `cap_id`) |
+| `PUT /api/auth/users/{user_id}/roles/{role}` | Grants the role. 204, also when it was already held |
+| `DELETE /api/auth/users/{user_id}/roles/{role}` | Revokes the role. 204, also when it was not held |
+
+| Status | Meaning |
+| --- | --- |
+| 404 | Unknown user, or a role that does not exist or is not in force (its application is not installed) |
+| 409 | An assignment nobody changes here: `role_workflow` belongs to the workflow service, and an operator cannot revoke their own `role_operator` |
+
+A change shows in the user's `/api/auth/me` and GraphQL at once and in
+cap-process within a few seconds, without a new sign-in. Every change is
+recorded with the operator who made it. An account is listed once it has signed
+in. Departments have no API yet.
+
+## 9. Try it
 
 `scripts/seed-demo.py seed` creates six accounts (password `Demo@2026`) across
-three departments. `scripts/seed-demo.py scopes`, `flow` and `lines` make the
-calls above from the command line and print what each person may see and do;
+three departments. `scripts/seed-demo.py scopes`, `flow`, `lines` and `admin` make
+the calls above from the command line and print what each person may see and do;
 the script is a working reference for request shapes.
 
 ## Not available yet
 
 - Changing work items (assign, move between columns): `cap_work.work_items` has
   no service route yet. Reading them works: see below.
-- Screens to assign roles and departments: there is no API for it yet.
+- Assigning departments and positions: there is no API for it yet.
+- Accounts that have never signed in are not listed for role assignment.
 - cap-data and cap-ai routes.

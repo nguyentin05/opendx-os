@@ -37,7 +37,7 @@ audit IDs are BIGSERIAL.
 | --- | --- |
 | `core.users` | `id` (= Keycloak `sub`), `email` (unique, case-insensitive), `display_name`, `status` (`ACTIVE`/`DISABLED`). A one-way mirror of Keycloak identity, written only by `dxos-authz` and the account sync; never deleted |
 | `core.roles` | `name`, owner `app_id` or `cap_id` (at most one; neither for platform roles), `description` |
-| `core.user_roles` | `(user_id, role_name)`, `granted_by`, `granted_at`: the only record of who holds which role |
+| `core.user_roles` | `(user_id, role_name)`, `granted_by`, `granted_at`: the only record of who holds which role. Changed by platform operators through `dxos-authz`, which calls `core.grant_role` and `core.revoke_role`; each change is audited in the `core` chain |
 | `core.apps` | `app_id`, `display_name`, `version`, validated `spec`, `status` (`Pending`/`Applying`/`Ready`/`Failed`/`Removed`), `last_error`. Rows are never deleted |
 | `core.capabilities` | `cap_id`, `display_name`, `category_hpdi`, `base_route`, `enabled` |
 | `core.app_capabilities` | `(app_id, cap_id)`; a capability cannot be disabled while an installed app uses it |

@@ -24,7 +24,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,6 +34,9 @@ import (
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
+
+// logf reports events an administrator should see; tests may replace it.
+var logf = log.Printf
 
 // roleName is the only shape of role the platform hands out (see core.roles).
 var roleName = regexp.MustCompile(`^role_[a-z0-9_]+$`)
@@ -95,6 +100,10 @@ type Resolver struct {
 
 	mu    sync.Mutex
 	cache map[string]cached
+
+	// Role administration; nil unless Administer was called.
+	directory      Directory
+	bootstrapEmail string
 }
 
 type cached struct {
@@ -153,6 +162,14 @@ func (r *Resolver) Resolve(ctx context.Context, token string) (*Session, error) 
 	}
 	if status != "ACTIVE" {
 		return nil, ErrUnauthenticated
+	}
+	// A new installation has no operator: the configured account becomes it.
+	if r.directory != nil && r.bootstrapEmail != "" && strings.EqualFold(p.Email, r.bootstrapEmail) {
+		if made, err := r.directory.BootstrapOperator(ctx, p.Subject); err != nil {
+			return nil, err
+		} else if made {
+			logf("%s is now the platform operator (first sign-in of BOOTSTRAP_OPERATOR_EMAIL)", p.Email)
+		}
 	}
 	grants, err := r.store.Grants(ctx, p.Subject)
 	if err != nil {

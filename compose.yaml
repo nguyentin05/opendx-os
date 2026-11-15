@@ -89,6 +89,9 @@ services:
       OIDC_JWKS_URL: ${OIDC_JWKS_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/certs}
       OIDC_AUDIENCE: ${OIDC_AUDIENCE:-dxos-runtime}
       ROLE_CACHE_TTL: ${ROLE_CACHE_TTL:-5s}
+      # The account that becomes the first platform operator when it signs in
+      # and nobody holds role_operator yet. Empty: no bootstrap.
+      BOOTSTRAP_OPERATOR_EMAIL: ${BOOTSTRAP_OPERATOR_EMAIL:-}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/healthz"]
       interval: 5s

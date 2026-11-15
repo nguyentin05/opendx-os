@@ -233,3 +233,163 @@ func TestAppsListsApplicationsOfHeldRoles(t *testing.T) {
 		t.Fatalf("a caller without application roles: %d %v, want an empty list", code, body)
 	}
 }
+
+type fakeDirectory struct {
+	calls     []string
+	bootstrap []string
+	err       error
+}
+
+func (d *fakeDirectory) Roles(context.Context) ([]Grant, error) {
+	return []Grant{{Role: "role_review", AppID: "process_fixture"}}, d.err
+}
+func (d *fakeDirectory) Users(context.Context) ([]User, error) {
+	return []User{{ID: alice, Email: "alice@example.test", DisplayName: "Alice", Status: "ACTIVE", Roles: []string{"role_review"}}}, d.err
+}
+func (d *fakeDirectory) GrantRole(_ context.Context, actor, user, role string) error {
+	d.calls = append(d.calls, "grant:"+actor+":"+user+":"+role)
+	return d.err
+}
+func (d *fakeDirectory) RevokeRole(_ context.Context, actor, user, role string) error {
+	d.calls = append(d.calls, "revoke:"+actor+":"+user+":"+role)
+	return d.err
+}
+func (d *fakeDirectory) BootstrapOperator(_ context.Context, user string) (bool, error) {
+	d.bootstrap = append(d.bootstrap, user)
+	return len(d.bootstrap) == 1, d.err
+}
+
+func do(t *testing.T, h http.Handler, method, path, token string) int {
+	t.Helper()
+	req := httptest.NewRequest(method, path, nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	return w.Code
+}
+
+// Only a platform operator manages role assignments, and some assignments are
+// not theirs to change.
+func TestRoleAdministrationIsForOperators(t *testing.T) {
+	const bob = "33333333-3333-4333-8333-333333333333"
+	path := "/api/auth/users/" + bob + "/roles/role_review"
+	admin := func(grants ...Grant) (http.Handler, *fakeDirectory, *fakeStore) {
+		store := &fakeStore{status: "ACTIVE", grants: grants}
+		dir := &fakeDirectory{}
+		r := NewResolver(&fakeAuthn{name: "Alice"}, store, time.Minute)
+		r.Administer(dir, "")
+		return Handler(r), dir, store
+	}
+
+	// Without role_operator every endpoint is closed.
+	h, dir, _ := admin(Grant{Role: "role_review", AppID: "process_fixture"})
+	for _, c := range []struct{ method, path string }{
+		{"GET", "/api/auth/roles"}, {"GET", "/api/auth/users"}, {"PUT", path}, {"DELETE", path},
+	} {
+		if code := do(t, h, c.method, c.path, "good"); code != http.StatusForbidden {
+			t.Errorf("%s %s without role_operator: %d, want 403", c.method, c.path, code)
+		}
+		if code := do(t, h, c.method, c.path, ""); code != http.StatusUnauthorized {
+			t.Errorf("%s %s without a token: %d, want 401", c.method, c.path, code)
+		}
+	}
+	if len(dir.calls) != 0 {
+		t.Fatalf("a caller without role_operator reached the directory: %v", dir.calls)
+	}
+
+	h, dir, _ = admin(Grant{Role: OperatorRole})
+	if code, body := call(t, h, "/api/auth/roles", "good", ""); code != http.StatusOK || len(body["roles"].([]any)) != 1 {
+		t.Fatalf("roles: %d %v", code, body)
+	}
+	if code, body := call(t, h, "/api/auth/users", "good", ""); code != http.StatusOK || body["users"].([]any)[0].(map[string]any)["email"] != "alice@example.test" {
+		t.Fatalf("users: %d %v", code, body)
+	}
+	if code := do(t, h, "PUT", path, "good"); code != http.StatusNoContent {
+		t.Fatalf("grant: %d", code)
+	}
+	if code := do(t, h, "DELETE", path, "good"); code != http.StatusNoContent {
+		t.Fatalf("revoke: %d", code)
+	}
+	if got := strings.Join(dir.calls, " "); got != "grant:"+alice+":"+bob+":role_review revoke:"+alice+":"+bob+":role_review" {
+		t.Fatalf("directory calls = %q (the operator is the recorded actor)", got)
+	}
+
+	// Assignments nobody changes here, and names that are not roles or users.
+	for name, c := range map[string]struct {
+		method, path string
+		want         int
+	}{
+		"the workflow role is granted":  {"PUT", "/api/auth/users/" + bob + "/roles/role_workflow", http.StatusConflict},
+		"the workflow role is revoked":  {"DELETE", "/api/auth/users/" + bob + "/roles/role_workflow", http.StatusConflict},
+		"an operator revokes their own": {"DELETE", "/api/auth/users/" + alice + "/roles/" + OperatorRole, http.StatusConflict},
+		"a privileged Hasura name":      {"PUT", "/api/auth/users/" + bob + "/roles/admin", http.StatusNotFound},
+		"a user id that is not a UUID":  {"PUT", "/api/auth/users/bob/roles/role_review", http.StatusNotFound},
+		"another operator is revoked":   {"DELETE", "/api/auth/users/" + bob + "/roles/" + OperatorRole, http.StatusNoContent},
+		"an operator grants operator":   {"PUT", "/api/auth/users/" + bob + "/roles/" + OperatorRole, http.StatusNoContent},
+	} {
+		if code := do(t, h, c.method, c.path, "good"); code != c.want {
+			t.Errorf("%s: %d, want %d", name, code, c.want)
+		}
+	}
+	dir.err = ErrNotFound
+	if code := do(t, h, "PUT", path, "good"); code != http.StatusNotFound {
+		t.Fatalf("a role that is not in force: %d, want 404", code)
+	}
+	dir.err = errors.New("database down")
+	if code := do(t, h, "PUT", path, "good"); code != http.StatusServiceUnavailable {
+		t.Fatalf("a directory failure: %d, want 503", code)
+	}
+
+	// Without administration configured the endpoints do not exist.
+	plain := Handler(NewResolver(&fakeAuthn{name: "Alice"}, &fakeStore{status: "ACTIVE", grants: []Grant{{Role: OperatorRole}}}, time.Minute))
+	if code := do(t, plain, "GET", "/api/auth/users", "good"); code != http.StatusNotFound {
+		t.Fatalf("admin endpoint without administration: %d, want 404", code)
+	}
+}
+
+// A change applies to the user's next request: their cached grants are dropped.
+func TestRoleChangeDropsTheCachedGrants(t *testing.T) {
+	store := &fakeStore{status: "ACTIVE", grants: []Grant{{Role: OperatorRole}}}
+	r := NewResolver(&fakeAuthn{name: "Alice"}, store, time.Minute)
+	r.Administer(&fakeDirectory{}, "")
+	h := Handler(r)
+	if code, _ := call(t, h, "/api/auth/me", "good", ""); code != http.StatusOK || store.reads != 1 {
+		t.Fatalf("first request: %d reads=%d", code, store.reads)
+	}
+	if code, _ := call(t, h, "/api/auth/me", "good", ""); code != http.StatusOK || store.reads != 1 {
+		t.Fatalf("grants must be cached: reads=%d", store.reads)
+	}
+	// Alice (an operator) grants herself another role: her cache is dropped.
+	if code := do(t, h, "PUT", "/api/auth/users/"+alice+"/roles/role_review", "good"); code != http.StatusNoContent {
+		t.Fatalf("grant: %d", code)
+	}
+	if code, _ := call(t, h, "/api/auth/me", "good", ""); code != http.StatusOK || store.reads != 2 {
+		t.Fatalf("the changed user's grants must be read again: reads=%d", store.reads)
+	}
+}
+
+// A new installation has no operator. The first sign-in of the configured
+// account becomes it; nobody else triggers the bootstrap.
+func TestFirstOperatorIsBootstrappedByEmail(t *testing.T) {
+	dir := &fakeDirectory{}
+	r := NewResolver(&fakeAuthn{name: "Alice"}, &fakeStore{status: "ACTIVE"}, 0)
+	r.Administer(dir, "  ALICE@example.test ")
+	h := Handler(r)
+	if code, _ := call(t, h, "/api/auth/me", "good", ""); code != http.StatusOK || len(dir.bootstrap) != 1 || dir.bootstrap[0] != alice {
+		t.Fatalf("the configured account must be bootstrapped: %d %v", code, dir.bootstrap)
+	}
+	other := &fakeDirectory{}
+	r = NewResolver(&fakeAuthn{name: "Alice"}, &fakeStore{status: "ACTIVE"}, 0)
+	r.Administer(other, "someone.else@example.org")
+	if code, _ := call(t, Handler(r), "/api/auth/me", "good", ""); code != http.StatusOK || len(other.bootstrap) != 0 {
+		t.Fatalf("another account must not be bootstrapped: %d %v", code, other.bootstrap)
+	}
+	none := &fakeDirectory{}
+	r = NewResolver(&fakeAuthn{name: "Alice"}, &fakeStore{status: "ACTIVE"}, 0)
+	r.Administer(none, "")
+	if _, _ = call(t, Handler(r), "/api/auth/me", "good", ""); len(none.bootstrap) != 0 {
+		t.Fatal("without BOOTSTRAP_OPERATOR_EMAIL nobody is bootstrapped")
+	}
+}

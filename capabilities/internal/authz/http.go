@@ -126,6 +126,9 @@ func Handler(r *Resolver) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"apps": out})
 	})
+	if r.directory != nil {
+		registerAdmin(mux, r)
+	}
 	return mux
 }
 

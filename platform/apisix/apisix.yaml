@@ -73,7 +73,7 @@ routes:
     plugins:
       cors:
         allow_origins: "http://localhost:5173,http://localhost:15173"
-        allow_methods: "GET,OPTIONS"
+        allow_methods: "GET,PUT,DELETE,OPTIONS"
         allow_headers: "Authorization,Content-Type"
     upstream:
       type: roundrobin

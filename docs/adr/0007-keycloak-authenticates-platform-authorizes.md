@@ -89,6 +89,18 @@ provide the endpoint the webhook calls.
    does not route, and an effect is limited to what installed applications
    declare ([workflow deployment](../contracts/data-contracts.md#workflow-deployment)).
 
+8. **Operators assign roles through `dxos-authz`.** A user holding the platform
+   role `role_operator` lists accounts and roles and grants or revokes a role
+   (`/api/auth/users`, `/api/auth/roles`,
+   `/api/auth/users/{id}/roles/{role}`). `dxos-authz` still has no write access
+   to `core.user_roles`: it calls `core.grant_role` and `core.revoke_role`,
+   which make the change and its audit row in the `core` chain in one
+   transaction and refuse any other connection. `role_workflow` is never
+   assigned to a person, and an operator cannot revoke their own
+   `role_operator`. A new installation has no operator, so the account named by
+   `BOOTSTRAP_OPERATOR_EMAIL` becomes one on its first sign-in, once, while
+   nobody holds the role.
+
 ## Where `dxos-authz` sits
 
 `dxos-authz` is Tier 1 platform infrastructure, next to Keycloak, APISIX and

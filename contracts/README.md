@@ -61,8 +61,10 @@ acts as the platform's workflow service account
 `dxos-authz` serves two read-only calls for the UI: `GET /api/auth/me` (the
 caller's identity and roles) and `GET /api/auth/apps` (the installed
 applications the caller holds a role in, with those roles and each
-application's tables as its manifest declares them). Neither grants anything;
-see [integrating the UI](../docs/development/ui-integration.md).
+application's tables as its manifest declares them). Neither grants anything.
+For platform operators (`role_operator`) it also lists accounts and roles and
+grants or revokes a role, each change audited in the `core` chain; see
+[integrating the UI](../docs/development/ui-integration.md).
 
 A command is accepted when:
 

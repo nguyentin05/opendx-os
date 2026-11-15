@@ -25,6 +25,10 @@ GRANT USAGE ON SCHEMA core TO dxos_authz;
 GRANT SELECT ON core.roles, core.user_roles, core.apps, core.capabilities TO dxos_authz;
 GRANT SELECT, INSERT ON core.users TO dxos_authz;
 GRANT UPDATE (email, display_name) ON core.users TO dxos_authz;
+-- Role assignments change only through audited functions (03_app_registry.sql).
+GRANT EXECUTE ON FUNCTION core.grant_role(UUID, TEXT, UUID, TEXT) TO dxos_authz;
+GRANT EXECUTE ON FUNCTION core.revoke_role(UUID, TEXT, UUID, TEXT) TO dxos_authz;
+GRANT EXECUTE ON FUNCTION core.bootstrap_operator(UUID) TO dxos_authz;
 -- Capability schemas exist only when the capability is enabled (04_capabilities.sh).
 -- cap-process writes its own records and the work items its workflows create;
 -- HR and device master data are managed by administrators.

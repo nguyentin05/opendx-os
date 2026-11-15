@@ -20,6 +20,7 @@ package authz
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,6 +41,9 @@ GRANT USAGE ON SCHEMA core TO dxos_authz;
 GRANT SELECT ON core.roles, core.user_roles, core.apps, core.capabilities TO dxos_authz;
 GRANT SELECT, INSERT ON core.users TO dxos_authz;
 GRANT UPDATE (email, display_name) ON core.users TO dxos_authz;
+GRANT EXECUTE ON FUNCTION core.grant_role(UUID, TEXT, UUID, TEXT) TO dxos_authz;
+GRANT EXECUTE ON FUNCTION core.revoke_role(UUID, TEXT, UUID, TEXT) TO dxos_authz;
+GRANT EXECUTE ON FUNCTION core.bootstrap_operator(UUID) TO dxos_authz;
 `
 
 func platformDB(t *testing.T) *sql.DB {
@@ -65,12 +69,14 @@ func asAuthz(t *testing.T, db *sql.DB, fn func(store PostgresStore)) {
 	t.Helper()
 	db.SetMaxOpenConns(1)
 	defer db.SetMaxOpenConns(0)
-	if _, err := db.Exec(`SET ROLE dxos_authz`); err != nil {
+	// The session itself is dxos_authz, as in production: the role
+	// administration functions check session_user.
+	if _, err := db.Exec(`SET SESSION AUTHORIZATION dxos_authz`); err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _, _ = db.Exec(`RESET ROLE`) }()
+	defer func() { _, _ = db.Exec(`RESET SESSION AUTHORIZATION`) }()
 	var who string
-	if err := db.QueryRow(`SELECT current_user`).Scan(&who); err != nil || who != "dxos_authz" {
+	if err := db.QueryRow(`SELECT session_user`).Scan(&who); err != nil || who != "dxos_authz" {
 		t.Fatalf("running as %q, want dxos_authz (%v)", who, err)
 	}
 	fn(PostgresStore{DB: db})
@@ -173,4 +179,117 @@ INSERT INTO core.user_roles (user_id, role_name) VALUES
 			t.Fatalf("no applications asked: %+v %v", apps, err)
 		}
 	})
+}
+
+// Role assignments change only through the audited functions: dxos_authz has
+// no write access to core.user_roles, and every change lands in the core chain.
+func TestPostgresStoreAdministersRolesIntegration(t *testing.T) {
+	db := platformDB(t)
+	ctx := context.Background()
+	const admin, user = "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"
+	setup := `
+INSERT INTO core.users (id, email, display_name) VALUES ('` + admin + `', 'admin@example.test', 'Admin'), ('` + user + `', 'alice@example.test', 'Alice');
+INSERT INTO core.apps (app_id, display_name, version, spec, status) VALUES
+  ('ready_app', 'Ready', '1', '{}', 'Ready'), ('gone_app', 'Gone', '1', '{}', 'Removed');
+INSERT INTO core.roles (name, app_id, description) VALUES ('role_ready', 'ready_app', 'Uses the ready application'), ('role_gone', 'gone_app', '');`
+	if _, err := db.Exec(setup); err != nil {
+		t.Fatal(err)
+	}
+	audit := func() string {
+		t.Helper()
+		var got sql.NullString
+		if err := db.QueryRow(`SELECT string_agg(action || ':' || (payload ->> 'role') || ':' || coalesce(acting_role, '-'), ',' ORDER BY seq)
+			FROM core.audit_logs WHERE chain = 'core' AND entity_type = 'core.user_roles'`).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		return got.String
+	}
+
+	asAuthz(t, db, func(store PostgresStore) {
+		// The first sign-in of the configured account becomes the operator, once.
+		if made, err := store.BootstrapOperator(ctx, admin); err != nil || !made {
+			t.Fatalf("bootstrap: %v %v", made, err)
+		}
+		if made, err := store.BootstrapOperator(ctx, user); err != nil || made {
+			t.Fatalf("a second bootstrap must be refused: %v %v", made, err)
+		}
+
+		if err := store.GrantRole(ctx, admin, user, "role_ready"); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.GrantRole(ctx, admin, user, "role_ready"); err != nil {
+			t.Fatalf("granting a held role must be a no-op: %v", err)
+		}
+		for what, err := range map[string]error{
+			"a role of a removed application": store.GrantRole(ctx, admin, user, "role_gone"),
+			"an unknown role":                 store.GrantRole(ctx, admin, user, "role_none"),
+			"an unknown user":                 store.GrantRole(ctx, admin, "33333333-3333-4333-8333-333333333333", "role_ready"),
+			"revoking from an unknown user":   store.RevokeRole(ctx, admin, "33333333-3333-4333-8333-333333333333", "role_ready"),
+		} {
+			if !errors.Is(err, ErrNotFound) {
+				t.Errorf("%s: %v, want ErrNotFound", what, err)
+			}
+		}
+		grants, err := store.Grants(ctx, user)
+		if err != nil || len(grants) != 1 || grants[0].Role != "role_ready" {
+			t.Fatalf("grants after granting = %+v %v", grants, err)
+		}
+
+		users, err := store.Users(ctx)
+		if err != nil || len(users) < 2 {
+			t.Fatalf("users = %+v %v", users, err)
+		}
+		byID := map[string]User{}
+		for _, u := range users {
+			byID[u.ID] = u
+		}
+		if got := strings.Join(byID[user].Roles, ","); got != "role_ready" || byID[admin].Roles[0] != "role_operator" || byID[user].Email != "alice@example.test" {
+			t.Fatalf("users listing: %+v", byID)
+		}
+		roles, err := store.Roles(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		names := map[string]string{}
+		for _, r := range roles {
+			names[r.Role] = r.AppID
+		}
+		if names["role_ready"] != "ready_app" || names["role_operator"] != "" {
+			t.Fatalf("roles in force: %v", names)
+		}
+		if _, listed := names["role_gone"]; listed {
+			t.Fatal("a role of a removed application is not in force")
+		}
+
+		if err := store.RevokeRole(ctx, admin, user, "role_ready"); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.RevokeRole(ctx, admin, user, "role_ready"); err != nil {
+			t.Fatalf("revoking a role that is not held must be a no-op: %v", err)
+		}
+		if grants, _ := store.Grants(ctx, user); len(grants) != 0 {
+			t.Fatalf("grants after revoking = %+v", grants)
+		}
+
+		// The connection cannot write assignments itself.
+		if _, err := store.DB.ExecContext(ctx, `INSERT INTO core.user_roles (user_id, role_name) VALUES ($1, 'role_operator')`, user); err == nil {
+			t.Fatal("dxos_authz must not write core.user_roles directly")
+		}
+		if _, err := store.DB.ExecContext(ctx, `DELETE FROM core.user_roles`); err == nil {
+			t.Fatal("dxos_authz must not delete from core.user_roles directly")
+		}
+	})
+
+	// One audit row per change that happened; no-ops leave none.
+	if got := audit(); got != "BOOTSTRAP_OPERATOR:role_operator:-,GRANT_ROLE:role_ready:role_operator,REVOKE_ROLE:role_ready:role_operator" {
+		t.Fatalf("audit of role changes = %s", got)
+	}
+	var grantedBy string
+	if err := db.QueryRow(`SELECT granted_by::text FROM core.user_roles WHERE role_name = 'role_operator' AND user_id = $1`, admin).Scan(&grantedBy); err != nil || grantedBy != admin {
+		t.Fatalf("granted_by = %s %v", grantedBy, err)
+	}
+	// Another connection cannot use the functions, even a privileged one.
+	if _, err := db.Exec(`SELECT core.grant_role($1, 'role_operator', $2, 'role_ready')`, admin, user); err == nil || !strings.Contains(err.Error(), "untrusted database connection") {
+		t.Fatalf("role functions must refuse other connections, got %v", err)
+	}
 }

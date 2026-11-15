@@ -22,6 +22,9 @@
     scripts/seed-demo.py flow     one request through the whole approval chain,
                                   including the refusals along the way and the
                                   review its workflow opens in Kestra
+    scripts/seed-demo.py admin    a platform operator grants and revokes a role
+                                  through /api/auth, and what the user may do
+                                  before and after
     scripts/seed-demo.py lines    a request with line items and a vendor from
                                   the application's vendor list: who may read
                                   and change them, and when
@@ -436,6 +439,79 @@ def flow() -> None:
     with_demo_client(run)
 
 
+def admin() -> None:
+    """Role administration by a platform operator, through the gateway."""
+    def run():
+        op, an = sign_in("quan.tri"), sign_in("an.nguyen")
+        people = {p[0]: f"{p[1]} {p[2]}" for p in PEOPLE}
+        rows = [("Step", "Who", "Result")]
+
+        def note(label, user, result, ok):
+            rows.append((label, people[user], f"{result}  [{'ok' if ok else 'UNEXPECTED'}]"))
+
+        def roles_of(token):
+            _, me = http(f"{GATEWAY}/api/auth/me", token=token)
+            return me["id"], sorted(r["name"] for r in me["roles"])
+
+        def sees_as_manager():
+            data, err = graphql(an, "role_procurement_manager", "query { domain_procurement_requests { id } }")
+            return "refused" if err else f"{len(data['domain_procurement_requests'])} requests"
+
+        an_id, before = roles_of(an)
+        op_id, _ = roles_of(op)
+        manager = "role_procurement_manager"
+        base = f"{GATEWAY}/api/auth/users"
+
+        status, _ = http(base, token=an)
+        note("list accounts", "an.nguyen", f"HTTP {status}", status == 403)
+        status, _ = http(f"{base}/{an_id}/roles/{manager}", token=an, method="PUT")
+        note("grant oneself a role", "an.nguyen", f"HTTP {status}", status == 403)
+
+        status, body = http(base, token=op)
+        note("list accounts", "quan.tri", f"{len(body['users'])} accounts" if status == 200 else f"HTTP {status}", status == 200)
+        status, body = http(f"{GATEWAY}/api/auth/roles", token=op)
+        note("list roles in force", "quan.tri", f"{len(body['roles'])} roles" if status == 200 else f"HTTP {status}", status == 200)
+
+        note("act as department manager", "an.nguyen", sees_as_manager(), sees_as_manager() == "refused")
+        status, _ = http(f"{base}/{an_id}/roles/{manager}", token=op, method="PUT")
+        note(f"grant {manager} to An", "quan.tri", f"HTTP {status}", status == 204)
+        _, after = roles_of(an)
+        note("roles, with the same token", "an.nguyen", ", ".join(r.removeprefix("role_") for r in after), manager in after)
+        seen = sees_as_manager()
+        note("act as department manager", "an.nguyen", seen, seen != "refused")
+
+        for label, path, method, want in (
+            ("grant the workflow service role", f"{an_id}/roles/role_workflow", "PUT", 409),
+            ("grant a role that does not exist", f"{an_id}/roles/role_procurement_director", "PUT", 404),
+            ("revoke one's own operator role", f"{op_id}/roles/role_operator", "DELETE", 409),
+        ):
+            status, _ = http(f"{base}/{path}", token=op, method=method)
+            note(label, "quan.tri", f"HTTP {status}", status == want)
+
+        status, _ = http(f"{base}/{an_id}/roles/{manager}", token=op, method="DELETE")
+        note(f"revoke {manager} from An", "quan.tri", f"HTTP {status}", status == 204)
+        _, final = roles_of(an)
+        note("roles, with the same token", "an.nguyen", ", ".join(r.removeprefix("role_") for r in final), final == before)
+        # cap-process and Hasura re-read grants within ROLE_CACHE_TTL.
+        deadline, seen = time.time() + 15, sees_as_manager()
+        while seen != "refused" and time.time() < deadline:
+            time.sleep(1)
+            seen = sees_as_manager()
+        note("act as department manager", "an.nguyen", seen, seen == "refused")
+
+        print("Role administration through the gateway (/api/auth/users, /api/auth/roles):")
+        print()
+        table(rows)
+        audit = psql("SELECT string_agg(action || ' ' || (payload ->> 'role'), ', ' ORDER BY seq) FROM core.audit_logs "
+                     f"WHERE chain = 'core' AND entity_type = 'core.user_roles' AND entity_id = {lit(an_id)}")
+        print()
+        print("Audit trail of An's role assignments:", audit)
+        if any("UNEXPECTED" in row[2] for row in rows):
+            sys.exit(1)
+
+    with_demo_client(run)
+
+
 def lines() -> None:
     """Several tables of one application: a vendor list, a request and its lines."""
     def run():
@@ -551,9 +627,9 @@ def lines() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=["seed", "scopes", "flow", "lines"])
+    parser.add_argument("command", choices=["seed", "scopes", "flow", "lines", "admin"])
     args = parser.parse_args()
-    {"seed": seed, "scopes": scopes, "flow": flow, "lines": lines}[args.command]()
+    {"seed": seed, "scopes": scopes, "flow": flow, "lines": lines, "admin": admin}[args.command]()
 
 
 if __name__ == "__main__":
