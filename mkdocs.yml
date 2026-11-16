@@ -1,0 +1,174 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+
+site_name: OpenDX-OS
+site_description: Composable three-tier platform for business applications.
+site_url: https://nguyentin05.github.io/opendx-os/
+repo_url: https://github.com/nguyentin05/opendx-os
+repo_name: nguyentin05/opendx-os
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+site_dir: site
+strict: true
+
+# Internal material stays in the repository but is never published.
+exclude_docs: |
+  /README.md
+  /_internal/
+  /superpowers/
+  *.vi.md
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - content.action.edit
+    - search.suggest
+    - search.highlight
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search
+  - git-revision-date-localized:
+      enable_creation_date: false
+      type: date
+  - minify:
+      minify_html: true
+  - redirects:
+      redirect_maps: {}
+
+hooks:
+  - hooks/status_banner.py
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+    absolute_links: warn
+  links:
+    # Legacy pages still link to repository files outside docs_dir. Phase 4
+    # turns these checks back on once the content migration is complete.
+    not_found: ignore
+    anchors: ignore
+    absolute_links: ignore
+    unrecognized_links: ignore
+
+extra_css:
+  - stylesheets/extra.css
+
+nav:
+  - Home: index.md
+  - Get started:
+      - Overview: get-started/index.md
+      - Prerequisites: get-started/prerequisites.md
+      - Run the local stack: get-started/local-stack.md
+      - First request: get-started/first-request.md
+  - Guides:
+      - Overview: guides/index.md
+      - Adding an application: guides/adding-an-app.md
+      - Integrating the UI: guides/integrating-the-ui.md
+      - Running workflows: guides/running-workflows.md
+      - Knowledge:
+          - Package knowledge: guides/knowledge/package-knowledge.md
+          - Personal library: guides/knowledge/personal-library.md
+          - Model answers: guides/knowledge/models.md
+  - Reference:
+      - Overview: reference/index.md
+      - Runtime rules: reference/runtime-rules.md
+      - Manifest: reference/manifest/index.md
+      - Data contracts: reference/data-contracts/index.md
+      - Security and acceptance: reference/security/index.md
+      - API: reference/api/index.md
+      - dxos-operator CLI: reference/cli/dxos-operator.md
+      - RAG: reference/rag/index.md
+  - Architecture:
+      - Overview: architecture/README.md
+      - Anti-patterns: architecture/anti-patterns.md
+      - RAG authorization (proposed): architecture/rag-authorization-proposal.md
+  - Decisions:
+      - ADR index: adr/index.md
+      - ADR 0001: adr/0001-three-tier-composable-architecture.md
+      - ADR 0002: adr/0002-semantic-schema-governance-and-cross-app-data-sync.md
+      - ADR 0003: adr/0003-modular-capability-schema-separation-for-iot-data.md
+      - ADR 0004: adr/0004-kubernetes-crd-operator.md
+      - ADR 0005: adr/0005-department-and-application-data-model.md
+      - ADR 0006: adr/0006-where-application-business-logic-lives.md
+      - ADR 0007: adr/0007-keycloak-authenticates-platform-authorizes.md
+      - ADR 0008: adr/0008-an-application-declares-several-tables.md
+      - ADR 0009: adr/0009-native-rag-identity-and-source-boundaries.md
+  - Operate:
+      - Installation: operations/installation.md
+      - Runbook: operations/runbook.md
+  - Contribute:
+      - Overview: contribute/index.md
+      - Verification: contribute/verification.md
+      - Source hygiene: contribute/source-hygiene.md
+      - Releasing: contribute/releasing.md
+      - Writing docs: contribute/writing-docs.md
+  - Legacy (migrating):
+      - Data contracts: contracts/data-contracts.md
+      - Security and acceptance: contracts/security-and-acceptance.md
+      - RAG API (proposed): contracts/rag-api.proposed.md
+      - Adding an application: development/adding-an-app.md
+      - Integrating the UI: development/ui-integration.md
+      - Package knowledge: development/package-knowledge.md
+      - Personal library: development/personal-library.md
+      - Model knowledge: development/model-knowledge.md
+      - Verification: development/verification.md
+      - Source hygiene: development/source-hygiene.md
+      - Releasing: development/releasing.md
+  - Internal (migrating):
+      - Demo scenarios: demo/scenarios.md
+      - Backend handoff: handoff/backend-handoff.md
+      - SQL handoff: handoff/backend-sql-handoff.md
+      - File lifecycle: handoff/file-lifecycle-runtime.md
+      - Frontend integration: handoff/frontend-integration.md
+      - Identity runtime: handoff/identity-runtime.md
+      - Integration compatibility: handoff/integration-compatibility.md
+      - Integration evidence: handoff/integration-evidence.md
+      - Integration setup: handoff/integration-setup.md
+      - Workflow runtime: handoff/workflow-runtime.md

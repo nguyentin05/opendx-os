@@ -1,0 +1,37 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright 2026 DX-OS Open-Core Contributors */
+
+/* Keep contract tables readable without hiding overflow. */
+.md-typeset table:not([class]) {
+  font-size: 0.72rem;
+}
+
+@media screen and (min-width: 76.25em) {
+  .md-typeset table:not([class]) {
+    display: table;
+    width: 100%;
+  }
+}
+
+/* Mermaid diagrams should never overflow the content column. */
+.md-typeset .mermaid {
+  overflow-x: auto;
+}
+
+/* Small status badge for pages that do not use the banner hook. */
+.docs-badge {
+  display: inline-block;
+  margin-inline-end: 0.4rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 0.25rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.docs-badge--draft { background: #e0e7ff; color: #1e3a8a; }
+.docs-badge--proposed { background: #dbeafe; color: #1d4ed8; }
+.docs-badge--deprecated { background: #fef3c7; color: #92400e; }
+.docs-badge--historical { background: #fee2e2; color: #991b1b; }
