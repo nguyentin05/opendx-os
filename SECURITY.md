@@ -9,8 +9,8 @@
 ## Security Architecture Invariants
 
 The intended security requirements and acceptance scenarios are defined in
-[security and acceptance criteria](docs/contracts/security-and-acceptance.md),
-with mechanisms in the [data contract](docs/contracts/data-contracts.md).
+[security and acceptance criteria](docs/reference/security/index.md),
+with mechanisms in the [data contract](docs/reference/data-contracts/index.md).
 The implementation is under development; those requirements are not a claim
 that all security properties have been verified in the running system.
 

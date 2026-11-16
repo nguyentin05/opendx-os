@@ -72,7 +72,7 @@ spec:
           spec:
             description: |-
               DXApplicationSpec mirrors the DXApplication manifest contract
-              (docs/contracts/data-contracts.md). JSON field names are identical to the
+              (docs/reference/manifest/schema.md). JSON field names are identical to the
               manifest so that both forms convert losslessly.
             properties:
               capabilities:

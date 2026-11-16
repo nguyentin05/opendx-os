@@ -25,7 +25,7 @@ acceptance verification remain incomplete. The UI currently uses placeholder
 context and empty app/record state; it is not a connected application portal.
 
 The [roadmap](ROADMAP.md) tracks planned milestones. The
-[data and manifest contract](docs/contracts/data-contracts.md) describes intended
+[data and manifest contract](docs/reference/data-contracts/index.md) describes intended
 behavior and known serialization gaps; existing code does not enforce every
 requirement yet.
 
@@ -44,7 +44,7 @@ python3 -m unittest discover -s tests -v
 ```
 
 `make test` also runs the available Go suites and, when UI dependencies are
-installed, UI tests and a build. See [verification](docs/development/verification.md)
+installed, UI tests and a build. See [verification](docs/contribute/verification.md)
 for module commands, prerequisites, and coverage limits.
 
 ## Run locally
@@ -71,11 +71,11 @@ uninstalls it (see the [installation guide](docs/operations/installation.md)).
 
 ## Documentation
 
-- [Architecture and ADRs](docs/architecture/README.md)
-- [Data and manifest contract](docs/contracts/data-contracts.md)
-- [Security and acceptance criteria](docs/contracts/security-and-acceptance.md)
-- [Adding an application](docs/development/adding-an-app.md)
-- [Release requirements](docs/development/releasing.md)
+- [Architecture](docs/architecture/README.md) and [ADRs](docs/adr/index.md)
+- [Data and manifest contract](docs/reference/data-contracts/index.md)
+- [Security and acceptance](docs/reference/security/index.md)
+- [Adding an application](docs/guides/adding-an-app.md)
+- [Release requirements](docs/contribute/releasing.md)
 - [Contributing](CONTRIBUTING.md) and [security reporting](SECURITY.md)
 
 ## License

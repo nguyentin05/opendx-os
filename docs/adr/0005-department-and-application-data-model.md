@@ -1,3 +1,13 @@
+---
+title: Department and application data model
+description: One organization per installation with application and department isolation.
+diataxis: explanation
+audience: [platform-developer, security-reviewer]
+status: active
+owner: platform
+last_reviewed: 2026-11-13
+---
+
 # ADR 0005: Department and application data model
 
 - **Status:** Accepted

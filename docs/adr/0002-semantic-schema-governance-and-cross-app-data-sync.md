@@ -1,3 +1,13 @@
+---
+title: Semantic schema governance
+description: Core schema purity and semantic cross-application data synchronization.
+diataxis: explanation
+audience: [platform-developer]
+status: active
+owner: platform
+last_reviewed: 2026-11-05
+---
+
 # ADR 0002: Core Schema Purity and Semantic Cross-App Data Synchronization
 
 - **Status:** Accepted

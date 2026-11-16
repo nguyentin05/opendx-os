@@ -1,3 +1,13 @@
+---
+title: Capability schema separation for IoT data
+description: Separating the core kernel schema from capability-owned data schemas.
+diataxis: explanation
+audience: [platform-developer]
+status: active
+owner: platform
+last_reviewed: 2026-11-05
+---
+
 # ADR 0003: Separation of Core Kernel Schema and Pluggable Capability Data Schemas (cap-data)
 
 - **Status:** Accepted

@@ -5,10 +5,10 @@ description: Use when designing, implementing, or reviewing H-P-D-I capabilities
 
 # Shared capabilities
 
-Read the relevant [data contract](../../../docs/contracts/data-contracts.md) and
-[acceptance groups](../../../docs/contracts/security-and-acceptance.md).
+Read the relevant [data contract](../../../docs/reference/data-contracts/index.md) and
+[acceptance groups](../../../docs/reference/security/index.md).
 
-Use the [capability interfaces](../../../docs/contracts/data-contracts.md#9-capability-interfaces)
+Use the [capability interfaces](../../../docs/reference/api/capability-routes.md)
 to locate the relevant handler and schema before connecting callers.
 
 1. Identify affected acceptance groups and read the app's configured fields,
@@ -23,4 +23,4 @@ to locate the relevant handler and schema before connecting callers.
 Useful cases: concurrent commands with the same version allow one transition;
 committed retries return the recorded result after a current-permission check;
 two entity types sharing a UUID stay distinct in BI. Use Go tests and the
-integration checks described in [verification](../../../docs/development/verification.md).
+integration checks described in [verification](../../../docs/contribute/verification.md).

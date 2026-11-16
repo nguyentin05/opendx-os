@@ -1,3 +1,13 @@
+---
+title: Three-tier composable architecture
+description: Shared core with isolated domain tables, the original three-tier decision.
+diataxis: explanation
+audience: [platform-developer, security-reviewer]
+status: active
+owner: platform
+last_reviewed: 2026-11-05
+---
+
 # ADR 0001: Three-Tier Composable Architecture with Shared Core and Isolated Domain Tables
 
 - **Status:** Accepted; the one-table-per-application rule of decision 2 is

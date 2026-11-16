@@ -58,7 +58,20 @@ plugins:
   - minify:
       minify_html: true
   - redirects:
-      redirect_maps: {}
+      redirect_maps:
+        contracts/data-contracts.md: reference/data-contracts/index.md
+        contracts/security-and-acceptance.md: reference/security/index.md
+        contracts/rag-api.proposed.md: reference/rag/api.md
+        development/adding-an-app.md: guides/adding-an-app.md
+        development/ui-integration.md: guides/integrating-the-ui.md
+        development/package-knowledge.md: guides/knowledge/package-knowledge.md
+        development/personal-library.md: guides/knowledge/personal-library.md
+        development/model-knowledge.md: guides/knowledge/models.md
+        development/verification.md: contribute/verification.md
+        development/source-hygiene.md: contribute/source-hygiene.md
+        development/releasing.md: contribute/releasing.md
+        architecture/rag-authorization-proposal.md: reference/rag/authorization.md
+        operations/runbook.md: operations/backup-restore.md
 
 hooks:
   - hooks/status_banner.py
@@ -119,16 +132,37 @@ nav:
   - Reference:
       - Overview: reference/index.md
       - Runtime rules: reference/runtime-rules.md
-      - Manifest: reference/manifest/index.md
-      - Data contracts: reference/data-contracts/index.md
-      - Security and acceptance: reference/security/index.md
-      - API: reference/api/index.md
+      - Manifest:
+          - Overview: reference/manifest/index.md
+          - Schema: reference/manifest/schema.md
+          - Lifecycle: reference/manifest/lifecycle.md
+      - Data contracts:
+          - Overview: reference/data-contracts/index.md
+          - Identity, roles, and scope: reference/data-contracts/identity-and-roles.md
+          - Shared tables: reference/data-contracts/shared-tables.md
+          - Domain tables: reference/data-contracts/domain-tables.md
+          - Writes, versions, and audit: reference/data-contracts/writes-and-versions.md
+          - Files, OT, and BI: reference/data-contracts/files-ot-bi.md
+          - Semantic concepts: reference/data-contracts/semantic-concepts.md
+      - Security and acceptance:
+          - Overview: reference/security/index.md
+          - Invariants: reference/security/invariants.md
+          - Acceptance scenarios: reference/security/acceptance.md
+      - API:
+          - Overview: reference/api/index.md
+          - Capability routes: reference/api/capability-routes.md
+          - Workflow deployment and events: reference/api/events.md
+      - RAG:
+          - Overview: reference/rag/index.md
+          - Knowledge contract: reference/rag/knowledge-contract.md
+          - Native metadata: reference/rag/native-metadata.md
+          - Model answers: reference/rag/answers.md
+          - API (proposed): reference/rag/api.md
+          - Authorization (proposed): reference/rag/authorization.md
       - dxos-operator CLI: reference/cli/dxos-operator.md
-      - RAG: reference/rag/index.md
   - Architecture:
       - Overview: architecture/README.md
       - Anti-patterns: architecture/anti-patterns.md
-      - RAG authorization (proposed): architecture/rag-authorization-proposal.md
   - Decisions:
       - ADR index: adr/index.md
       - ADR 0001: adr/0001-three-tier-composable-architecture.md
@@ -141,34 +175,12 @@ nav:
       - ADR 0008: adr/0008-an-application-declares-several-tables.md
       - ADR 0009: adr/0009-native-rag-identity-and-source-boundaries.md
   - Operate:
+      - Overview: operations/index.md
       - Installation: operations/installation.md
-      - Runbook: operations/runbook.md
+      - Backup and restore: operations/backup-restore.md
   - Contribute:
       - Overview: contribute/index.md
       - Verification: contribute/verification.md
       - Source hygiene: contribute/source-hygiene.md
       - Releasing: contribute/releasing.md
       - Writing docs: contribute/writing-docs.md
-  - Legacy (migrating):
-      - Data contracts: contracts/data-contracts.md
-      - Security and acceptance: contracts/security-and-acceptance.md
-      - RAG API (proposed): contracts/rag-api.proposed.md
-      - Adding an application: development/adding-an-app.md
-      - Integrating the UI: development/ui-integration.md
-      - Package knowledge: development/package-knowledge.md
-      - Personal library: development/personal-library.md
-      - Model knowledge: development/model-knowledge.md
-      - Verification: development/verification.md
-      - Source hygiene: development/source-hygiene.md
-      - Releasing: development/releasing.md
-  - Internal (migrating):
-      - Demo scenarios: demo/scenarios.md
-      - Backend handoff: handoff/backend-handoff.md
-      - SQL handoff: handoff/backend-sql-handoff.md
-      - File lifecycle: handoff/file-lifecycle-runtime.md
-      - Frontend integration: handoff/frontend-integration.md
-      - Identity runtime: handoff/identity-runtime.md
-      - Integration compatibility: handoff/integration-compatibility.md
-      - Integration evidence: handoff/integration-evidence.md
-      - Integration setup: handoff/integration-setup.md
-      - Workflow runtime: handoff/workflow-runtime.md

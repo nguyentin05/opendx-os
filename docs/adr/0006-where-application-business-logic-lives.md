@@ -1,3 +1,13 @@
+---
+title: Where application business logic lives
+description: Declarative commands, payloads, and workflows instead of per-application code.
+diataxis: explanation
+audience: [platform-developer, app-author]
+status: active
+owner: platform
+last_reviewed: 2026-11-15
+---
+
 # ADR 0006: Where Application Business Logic Lives
 
 - **Status:** Accepted
@@ -38,7 +48,7 @@ logic:
    declared effects, run by a Kestra flow of the package through the capability
    effect endpoints. A flow is limited to the platform's trigger, branching,
    logging and those endpoints
-   ([workflow deployment](../contracts/data-contracts.md#workflow-deployment)).
+   ([workflow deployment](../reference/api/events.md#workflow-deployment)).
    A workflow never decides whether a command is accepted: that would move the
    decision out of the command's transaction.
 3. **No application service.** A package does not ship code that the platform

@@ -3,11 +3,11 @@
 Contributions should follow the [architecture and accepted decisions](docs/architecture/README.md)
 and the contracts relevant to the change:
 
-- [Data and manifests](docs/contracts/data-contracts.md)
-- [Security and acceptance criteria](docs/contracts/security-and-acceptance.md)
-- [Licensing and source hygiene](docs/development/source-hygiene.md)
-- [Verification and evidence](docs/development/verification.md)
-- [Adding an app](docs/development/adding-an-app.md) and [releasing](docs/development/releasing.md)
+- [Data and manifests](docs/reference/data-contracts/index.md)
+- [Security and acceptance criteria](docs/reference/security/index.md)
+- [Licensing and source hygiene](docs/contribute/source-hygiene.md)
+- [Verification and evidence](docs/contribute/verification.md)
+- [Adding an app](docs/guides/adding-an-app.md) and [releasing](docs/contribute/releasing.md)
 
 For a shared interface change, identify affected producers and consumers, update
 the canonical contract and examples, and describe compatibility or migration

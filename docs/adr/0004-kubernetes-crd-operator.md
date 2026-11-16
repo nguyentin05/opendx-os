@@ -1,3 +1,13 @@
+---
+title: Kubernetes CRD operator
+description: A cluster-scoped DXApplication definition reconciled by dxos-operator.
+diataxis: explanation
+audience: [platform-developer, operator]
+status: proposed
+owner: platform
+last_reviewed: 2026-11-11
+---
+
 # ADR 0004: Kubernetes CRD Operator with a Cluster-Scoped Application Definition
 
 - **Status:** Proposed

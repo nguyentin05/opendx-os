@@ -1,13 +1,22 @@
+---
+title: Installation
+description: Install OpenDX-OS on a workstation or a development cluster.
+diataxis: how-to
+audience: [operator]
+status: active
+owner: platform
+last_reviewed: 2026-11-16
+---
+
 # OpenDX-OS Installation Guide
 
-For the qualified local backend/platform environment use the
-[guarded disposable integration setup](../handoff/integration-setup.md) and
-[final evidence](../handoff/integration-evidence.md). That path provisions restricted
-roles before Hasura/process and delays persistent Kestra until its database is
-created. The generic archive procedure below is a release procedure, **NOT_RUN**
-in this handoff; it must not be used as evidence of clean-machine installation or
-frontend readiness. Only procurement/process_fixture are supported in this scope;
-registry discovery and beta automatic-workflow readiness remain open.
+A qualified local environment is disposable and provisions restricted roles before
+Hasura and cap-process, and delays persistent Kestra until its database is created.
+Use [Verification](../contribute/verification.md) to record evidence. The generic
+archive procedure below is a release procedure; it does not by itself establish
+clean-machine installation or frontend readiness. Only procurement/process_fixture
+are supported in this scope; registry discovery and beta automatic-workflow
+readiness remain open.
 
 ## Prerequisites
 
@@ -56,7 +65,7 @@ registry discovery and beta automatic-workflow readiness remain open.
    the installation: its first sign-in makes it the platform operator
    (`role_operator`), once, while nobody holds that role. Operators then grant
    and revoke roles through `/api/auth/users/{id}/roles/{role}`
-   ([integrating the UI](../development/ui-integration.md#8-administration)),
+   ([integrating the UI](../guides/integrating-the-ui.md#8-administration)),
    and users holding `role_hr_admin` maintain departments and staff through
    `/api/cap/hr`. Roles take
    effect within `ROLE_CACHE_TTL` (default 5s), with no new token
@@ -91,7 +100,7 @@ registry discovery and beta automatic-workflow readiness remain open.
    them there: a flow deleted or edited in Kestra is put back on the next pass,
    and cap-process starts sending an application's events to its flow as soon
    as it is deployed. Nothing is uploaded by hand
-   ([workflow deployment](../contracts/data-contracts.md#workflow-deployment)).
+   ([workflow deployment](../reference/api/events.md#workflow-deployment)).
 
    Each new or changed package is installed on its own, so a refused one (for
    example, a capability that is not enabled) does not hold back the others; it

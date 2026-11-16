@@ -1,3 +1,13 @@
+---
+title: Architecture overview
+description: Tiers, components, the control plane, and how decisions change contracts.
+diataxis: explanation
+audience: [evaluator, platform-developer, security-reviewer]
+status: active
+owner: platform
+last_reviewed: 2026-11-16
+---
+
 # OpenDX-OS System Architecture Overview
 
 This document defines the intended architecture of **OpenDX-OS (DX-OS Open-Core)**.
@@ -84,7 +94,7 @@ scope. Likewise, disabling optional storage does not imply dropping tables.
 ## Decisions and contract changes
 
 The [ADRs below](#2-architecture-decision-records-adrs) record accepted decisions
-and rationale; this document and the [data contract](../contracts/data-contracts.md)
+and rationale; this document and the [data contract](../reference/data-contracts/index.md)
 describe their current application. ADR 0002 refines domain-attribute ownership;
 ADR 0003 refines optional capability storage while retaining the three tiers.
 ADR 0004 (proposed) separates global definitions from per-workspace publication
@@ -112,7 +122,7 @@ Verify plugging an app beyond the three examples without core edits, runtime
 operation while the Operator is stopped, capability disablement, and reconcile
 across apps sharing resources. Check for circular dependencies and domain logic
 leaking into shared code. Report a finding's location, failure scenario, impact,
-and fix direction using the [verification guidance](../development/verification.md).
+and fix direction using the [verification guidance](../contribute/verification.md).
 
 ---
 
@@ -186,13 +196,13 @@ implementation context pending coordinated follow-up; they do not override ADR 0
 [ADR 0009: Native RAG identity and source boundaries](../adr/0009-native-rag-identity-and-source-boundaries.md)
 records conversation-approved RAG decisions under accepted ADR 0005; remaining
 shared-contract and runtime convergence is tracked separately. It does not supersede accepted workspace contracts
-by itself. See the [authorization proposal](rag-authorization-proposal.md),
-[RAG contracts](../contracts/rag-api.proposed.md) and shared
-[verification guidance](../development/verification.md). Detailed execution plans
+by itself. See the [authorization proposal](../reference/rag/authorization.md),
+[RAG contracts](../reference/rag/api.md) and shared
+[verification guidance](../contribute/verification.md). Detailed execution plans
 and handoffs are user-local, outside the committed documentation.
 
 ## 3. Key References
 
-- [Data and manifest contract](../contracts/data-contracts.md)
-- [Security and acceptance scenarios S01–S08](../contracts/security-and-acceptance.md)
+- [Data and manifest contract](../reference/data-contracts/index.md)
+- [Security and acceptance scenarios S01–S08](../reference/security/index.md)
 - [Design mistakes to recognize](anti-patterns.md)

@@ -1,3 +1,13 @@
+---
+title: Native RAG identity and source boundaries
+description: RAG identity, source authorization, and model boundaries.
+diataxis: explanation
+audience: [platform-developer, security-reviewer]
+status: proposed
+owner: platform
+last_reviewed: 2026-11-13
+---
+
 # ADR 0009: Native RAG identity and source boundaries
 
 - **Status:** Proposed — conversation decisions recorded; RAG decisions recorded; ADR 0005 is accepted locally, while shared-contract/runtime convergence remains partial.
@@ -31,10 +41,10 @@ Nested `access` keeps the security declaration together and removes ambiguity be
 
 ## Consequences and canonical sources
 
-- [Authorization](../architecture/rag-authorization-proposal.md) is the single source for access/source predicates and revocation behavior.
-- [RAG contracts](../contracts/rag-api.proposed.md) own serialization, metadata/version ownership, job/publication and Gateway boundaries.
+- [Authorization](../reference/rag/authorization.md) is the single source for access/source predicates and revocation behavior.
+- [RAG contracts](../reference/rag/api.md) own serialization, metadata/version ownership, job/publication and Gateway boundaries.
 - Migration preserves retained data and blocks unclear identity/source mappings; capability disablement never implies deletion. Detailed migration/run evidence is user-local.
-- [Security and acceptance](../contracts/security-and-acceptance.md) defines shared security requirements; [verification](../development/verification.md) defines evidence standards. Detailed RAG test plans and handoffs are user-local.
+- [Security and acceptance](../reference/security/index.md) defines shared security requirements; [verification](../contribute/verification.md) defines evidence standards. Detailed RAG test plans and handoffs are user-local.
 
 The personal library can ship local full-text search before hosted RAG. App Ready and Knowledge Source Ready are independent. Revocation denies through canonical policy even if derived indexes remain stored. Implementation must preserve previous eligible source versions on failed indexing, but a late worker must never reactivate a removed source.
 

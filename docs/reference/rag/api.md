@@ -1,6 +1,16 @@
+---
+title: Knowledge API (proposed)
+description: Proposed HTTP contract for scoped knowledge ingestion and retrieval.
+diataxis: reference
+audience: [app-author, security-reviewer]
+status: proposed
+owner: platform
+last_reviewed: 2026-11-16
+---
+
 # Native RAG canonical contracts (proposed)
 
-**Status:** contract specification, not implemented API/schema. [ADR 0009](../adr/0009-native-rag-identity-and-source-boundaries.md) records decisions; [authorization](../architecture/rag-authorization-proposal.md) alone defines access predicates. Historical design packages and implementation plans are user-local and do not override this contract. Formal ADR 0005 alignment is required before identity/FK-dependent implementation.
+**Status:** contract specification, not implemented API/schema. [ADR 0009](../../adr/0009-native-rag-identity-and-source-boundaries.md) records decisions; [authorization](authorization.md) alone defines access predicates. Historical design packages and implementation plans are user-local and do not override this contract. Formal ADR 0005 alignment is required before identity/FK-dependent implementation.
 
 ## Knowledge manifest serialization
 
@@ -80,7 +90,7 @@ artifacts before reconciling. Stale/replayed generations cannot restore removed
 sources. Ready publication and durable notification commit together; delivery
 retries survive Operator downtime. Reads and activation validate current Core,
 source incarnation and authorization generation independently of delivery.
-See [package knowledge integration](../development/package-knowledge.md).
+See [package knowledge integration](../../guides/knowledge/package-knowledge.md).
 
 **App Ready** means app configuration was published successfully. **Knowledge Source Ready** means the source has complete eligible lexical content and protected provenance. Embedding readiness is a separate derived-index state. Operator never waits on parser/model calls within apply and is not a request-time dependency.
 

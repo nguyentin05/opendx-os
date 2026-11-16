@@ -1,3 +1,13 @@
+---
+title: Backup and restore
+description: Operational procedures for backup, restore, and recovery.
+diataxis: how-to
+audience: [operator]
+status: draft
+owner: platform
+last_reviewed: 2026-11-16
+---
+
 # OpenDX-OS Operational Runbook
 
 ## Coordinated Backup & Restore Procedure
@@ -41,7 +51,7 @@ Because `core.file_objects` stores immutable SHA-256 digests and S3 object keys,
 
 For optional semantic retrieval, model policy, conservative reservations and
 uncertain-charge reconciliation, follow
-[model retrieval and answers](../development/model-knowledge.md). Keep model
+[model retrieval and answers](../guides/knowledge/models.md). Keep model
 features disabled until predecessor and model gates pass and classification,
 provider/retention and deployment-adapter approvals exist. Disable model profiles
 or `RAG_MODELS_ENABLED` to retain scoped lexical search and protected originals.
