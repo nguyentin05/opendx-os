@@ -6,6 +6,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OpenDX-OS</title>
+<link rel="icon" href="assets/logo.png">
 <meta name="description" content="Composable open-core platform where business applications are declarations: a manifest, workflows and knowledge on shared infrastructure.">
 <style>
 :root {
@@ -27,10 +28,11 @@ a { color: var(--accent); }
 .wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
 header.top { border-bottom: 1px solid var(--line); }
 header.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 56px; }
-.brand { font-weight: 700; color: var(--text); text-decoration: none; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--text); text-decoration: none; }
 nav a { margin-left: 20px; color: var(--muted); text-decoration: none; }
 nav a:hover { color: var(--text); }
 .hero { padding: 72px 0 56px; }
+.hero-logo { display: block; height: auto; margin-bottom: 20px; }
 .eyebrow { color: var(--accent); font-weight: 600; font-size: 14px; letter-spacing: .04em; text-transform: uppercase; }
 h1 { font-size: clamp(32px, 6vw, 52px); line-height: 1.1; margin: 12px 0 16px; letter-spacing: -.02em; }
 .lead { font-size: 19px; color: var(--muted); max-width: 640px; margin: 0 0 28px; }
@@ -68,10 +70,10 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: s
 <body>
 <header class="top">
   <div class="wrap">
-    <a class="brand" href="./">OpenDX-OS</a>
+    <a class="brand" href="./"><img src="assets/logo.png" alt="" width="32" height="26">OpenDX-OS</a>
     <nav>
-      <a href="docs/">Docs</a>
-      <a class="hide-sm" href="docs/architecture/">Architecture</a>
+      <a href="get-started/">Docs</a>
+      <a class="hide-sm" href="architecture/">Architecture</a>
       <a href="https://github.com/nguyentin05/opendx-os">GitHub</a>
     </nav>
   </div>
@@ -79,12 +81,13 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: s
 
 <main>
   <div class="wrap hero">
+    <img class="hero-logo" src="assets/logo.png" alt="OpenDX-OS logo" width="140" height="112">
     <div class="eyebrow">Open-core · Apache-2.0 · OLP PMNM 2026</div>
     <h1>Business applications as declarations</h1>
     <p class="lead">OpenDX-OS is a composable three-tier platform for an organization's internal digital transformation. An application is a package of declarations (data, roles, state machine, workflows and knowledge), and the platform turns it into tables, permissions, APIs and flows.</p>
     <div class="cta">
-      <a class="btn primary" href="docs/get-started/">Get started</a>
-      <a class="btn" href="docs/">Read the docs</a>
+      <a class="btn primary" href="get-started/">Get started</a>
+      <a class="btn" href="architecture/">Read the architecture</a>
       <a class="btn" href="https://github.com/nguyentin05/opendx-os">View source</a>
     </div>
   </div>
@@ -201,7 +204,7 @@ spec:
       <div>
         <h2>Run it locally</h2>
         <p class="sub">Docker Compose starts the whole platform on your machine. The seed script creates a demo organization and walks one request through the approval chain.</p>
-        <p><a href="docs/get-started/">Full setup guide →</a></p>
+        <p><a href="get-started/">Full setup guide →</a></p>
       </div>
       <pre><code>git clone https://github.com/nguyentin05/opendx-os
 cd opendx-os
@@ -217,7 +220,7 @@ scripts/seed-demo.py flow</code></pre>
 <footer>
   <div class="wrap">
     <span>OpenDX-OS · Apache-2.0 · Under active development</span>
-    <span><a href="docs/">Documentation</a> · <a href="docs/adr/">ADRs</a> · <a href="https://github.com/nguyentin05/opendx-os">GitHub</a></span>
+    <span><a href="get-started/">Documentation</a> · <a href="adr/">ADRs</a> · <a href="https://github.com/nguyentin05/opendx-os">GitHub</a></span>
   </div>
 </footer>
 </body>

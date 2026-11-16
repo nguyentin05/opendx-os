@@ -10,7 +10,6 @@
 
 # Documentation build
 /site/
-/_site/
 /.venv-docs/
 
 # Build & release artifacts
