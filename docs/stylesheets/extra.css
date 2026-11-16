@@ -42,3 +42,10 @@
   margin: 0 0.4rem;
   border-radius: 0.2rem;
 }
+
+/* Material sets a 20px root font size; DocSearch's form padding then leaves
+   the input 15px tall and clips Vietnamese diacritics. DocSearch's stylesheet
+   loads after this one, hence the extra class for precedence. */
+.DocSearch-Modal .DocSearch-Form {
+  padding-block: 0;
+}
