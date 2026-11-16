@@ -11,6 +11,15 @@ on:
       - "mkdocs.yml"
       - "hooks/**"
       - "requirements-docs.txt"
+      - "tests/test_docs.py"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "hooks/**"
+      - "requirements-docs.txt"
+      - "tests/test_docs.py"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -24,12 +33,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy-docs:
-    name: Build & Deploy MkDocs Site
+  check-docs:
+    name: Check MkDocs Site
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v7
@@ -47,11 +53,25 @@ jobs:
       - name: Build MkDocs Site
         run: mkdocs build --strict
 
-      - uses: actions/configure-pages@v6
+      - name: Run Docs Tests
+        run: python3 -m unittest tests.test_docs -v
 
-      - uses: actions/upload-pages-artifact@v5
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/configure-pages@v6
+
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
+  deploy-docs:
+    name: Deploy MkDocs Site
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: check-docs
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v5
