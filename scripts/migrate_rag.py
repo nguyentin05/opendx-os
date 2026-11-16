@@ -14,7 +14,8 @@ from urllib.parse import urlsplit, unquote, parse_qs
 p = argparse.ArgumentParser()
 p.add_argument('--database-url-env', required=True)
 p.add_argument('--scope', choices=['core', 'cap-ai'], required=True)
-p.add_argument('--through', required=True)
+p.add_argument('--through', required=True,
+               help='inclusive migration version; cap-ai 0004 opts into models, 0005 also opts into the registry')
 a = p.parse_args()
 if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', a.database_url_env) or not os.environ.get(a.database_url_env):
     sys.exit('NOT_RUN: database URL environment variable required')
@@ -27,6 +28,9 @@ versions = [f.name[:4] for f in files]
 if len(set(versions)) != len(versions) or a.through not in versions:
     sys.exit('unknown or duplicate migration version')
 selected = [f for f in files if f.name[:4] <= a.through]
+# Registry opt-in is explicit via --through 0005; always retain its predecessor.
+if a.scope == 'cap-ai' and a.through >= '0005' and '0004' not in versions:
+    sys.exit('model registry requires migration 0004')
 sql = ["BEGIN; SELECT pg_advisory_xact_lock(782634901);", (root / "platform/postgres/migrations/ledger.sql").read_text()]
 # Check every checksum before executing any domain mutation.
 for f in selected:

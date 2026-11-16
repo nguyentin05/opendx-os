@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 DX-OS Open-Core Contributors
 set -eu
+if [ "${RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED:-false}" = true ] && [ "${RAG_MODELS_SCHEMA_ENABLED:-false}" != true ]; then
+ echo "registry schema requires RAG_MODELS_SCHEMA_ENABLED=true" >&2
+ exit 2
+fi
 migration_dir="$(dirname "$0")/../migrations"
 if [ -d /docker-entrypoint-initdb.d/migrations ]; then migration_dir=/docker-entrypoint-initdb.d/migrations; fi
 umask 077
@@ -22,6 +26,7 @@ for phase in check apply; do
    [ -f "$file" ] || continue
    filename=$(basename "$file");
    if [ "$folder" = cap_ai ] && [ "$filename" = 0004_models_vectors.sql ] && [ "${RAG_MODELS_SCHEMA_ENABLED:-false}" != true ]; then continue; fi
+   if [ "$folder" = cap_ai ] && [ "$filename" = 0005_model_registry.sql ] && [ "${RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED:-false}" != true ]; then continue; fi
    version=$(printf '%s' "$filename" | cut -c1-4)
    checksum=$(sha256sum "$file" | cut -d ' ' -f1)
    if [ "$phase" = check ]; then

@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-func TestAnswerCurrentDatabaseRevocation(t *testing.T) {
+func TestRegistryAnswerCurrentDatabaseRevocation(t *testing.T) {
 	db, s, a, profile := semanticFixture(t)
 	// The new revision is independently approved for GENERATE, with no vectors.
 	if _, e := db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,pricing_revision,enabled) SELECT 'gen',revision,'GENERATE',execution,provider_id,model_id,limits,pricing_revision,enabled FROM cap_ai.model_profiles WHERE id='embed';INSERT INTO cap_ai.processing_policy_profiles VALUES('reviewed',1,'gen',1,now());`); e != nil {
@@ -39,7 +39,7 @@ func TestAnswerCurrentDatabaseRevocation(t *testing.T) {
 		t.Fatal(e)
 	}
 	g := &models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Budget: &models.Budget{DB: db}, Providers: map[string]models.Provider{"fake": provider}}
-	service := AnswerService{Search: s, Reader: NewPolicy(db), Policy: g.Policy, Gateway: g, Profile: profile}
+	service := AnswerService{Search: s, Reader: NewPolicy(db), Policy: g.Policy, Gateway: g, Resolver: &fixedResolver{profile: profile}}
 	response, e := service.Answer(context.Background(), a, AnswerRequest{Scope: Scope{Kind: "APP", AppID: "library"}, Query: "Director"})
 	if e != nil || !called || response.Reason != "AUTHORIZATION_CHANGED" || response.Answer != nil || len(response.Results) != 0 || len(response.Citations) != 0 {
 		t.Fatal(response, e, called)
@@ -110,7 +110,7 @@ func TestQualifiedLocalPersonalAnswer(t *testing.T) {
 	profile.Dimension = 0
 	provider := &localAnswerProvider{}
 	g := &models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Budget: &models.Budget{DB: db}, Providers: map[string]models.Provider{"fake": provider}}
-	service := AnswerService{Search: s, Reader: NewPolicy(db), Policy: g.Policy, Gateway: g, Profile: profile}
+	service := AnswerService{Search: s, Reader: NewPolicy(db), Policy: g.Policy, Gateway: g, Resolver: &fixedResolver{profile: profile}}
 	response, e := service.Answer(context.Background(), a, AnswerRequest{Scope: Scope{Kind: "PERSONAL"}, Query: "Director", RequireGeneration: true})
 	if e != nil || response.Status != "ANSWERED" || provider.calls != 1 {
 		t.Fatal("qualified local personal answer failed", response, e, provider.calls)

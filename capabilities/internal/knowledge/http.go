@@ -297,7 +297,7 @@ func (s *Store) answersHTTP(w http.ResponseWriter, r *http.Request) {
 		httpError(w, ErrNotFound)
 		return
 	}
-	service := AnswerService{Search: s, Reader: NewPolicy(s.db), Profile: s.generateProfile}
+	service := AnswerService{Search: s, Reader: NewPolicy(s.db), Profile: s.generateProfile, Resolver: s.modelResolver}
 	if s.gateway != nil {
 		service.Gateway = s.gateway
 		service.Policy = s.gateway.Policy

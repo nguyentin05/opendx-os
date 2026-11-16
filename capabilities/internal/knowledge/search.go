@@ -126,7 +126,7 @@ func (s *Store) searchCandidates(ctx context.Context, actor *auth.Identity, req 
 	if limit == 0 {
 		limit = 10
 	}
-	if req.Scope.Kind == "APP" && req.Retrieval == "HYBRID" && s.gateway != nil && s.embedProfile.ID != "" {
+	if req.Scope.Kind == "APP" && req.Retrieval == "HYBRID" && s.gateway != nil && (s.embedProfile.ID != "" || s.modelResolver != nil) {
 		err := decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.hybrid_lexical($1,$2,$3,$4,$5,$6)`, actor.UserID, actor.Role, req.Scope.AppID, req.Query, 50, pq.Array(req.Scope.CollectionIDs)), &rows)
 		return rows, err
 	}

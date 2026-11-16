@@ -21,6 +21,27 @@ func (s *Store) ConfigureModels(gateway *models.Gateway, embed, generate models.
 	s.generateProfile = generate
 }
 
+// ModelResolver selects the installation-wide immutable revision, never an app selector.
+type ModelResolver interface {
+	Resolve(context.Context, models.Capability) (models.ActiveBinding, error)
+}
+
+func (s *Store) ConfigureModelResolver(resolver ModelResolver) { s.modelResolver = resolver }
+
+func (s *Store) modelProfile(ctx context.Context, capability models.Capability) (models.Profile, error) {
+	if s.modelResolver != nil {
+		binding, err := s.modelResolver.Resolve(ctx, capability)
+		if err != nil {
+			return models.Profile{}, err
+		}
+		return binding.Profile, nil
+	}
+	if capability == models.CapabilityEmbedding {
+		return s.embedProfile, nil
+	}
+	return s.generateProfile, nil
+}
+
 func modelOperationKey() string {
 	var b [24]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -30,6 +51,13 @@ func modelOperationKey() string {
 }
 
 func (s *Store) EnqueueEmbeddings(ctx context.Context, actor *auth.Identity, profile models.Profile) error {
+	if s.modelResolver != nil {
+		var err error
+		profile, err = s.modelProfile(ctx, models.CapabilityEmbedding)
+		if err != nil {
+			return err
+		}
+	}
 	if s.gateway == nil || profile.ID == "" {
 		return models.ErrPolicy
 	}
@@ -109,7 +137,10 @@ func (s *Store) BuildEmbeddings(ctx context.Context, lease Lease, profile models
 }
 
 func (s *Store) semanticCandidates(ctx context.Context, actor *auth.Identity, req SearchRequest) ([]candidate, error) {
-	profile := s.embedProfile
+	profile, resolveErr := s.modelProfile(ctx, models.CapabilityEmbedding)
+	if resolveErr != nil {
+		return nil, resolveErr
+	}
 	if s.gateway == nil || profile.ID == "" || req.Scope.Kind != "APP" {
 		return nil, models.ErrPolicy
 	}

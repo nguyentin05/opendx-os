@@ -50,14 +50,28 @@ func FromEnvironment(ctx context.Context, getenv func(string) string) (*Gateway,
 		return fail()
 	}
 	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, 65537))
-	if err != nil || len(data) > 65536 {
+	data, err := io.ReadAll(io.LimitReader(file, maxCatalogBytes+1))
+	if err != nil || len(data) > maxCatalogBytes {
 		return fail()
 	}
 	var config Deployment
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
-	if dec.Decode(&config) != nil || dec.Decode(new(any)) != io.EOF || len(config.Providers) > 10 {
+	registryEnabled := getenv("RAG_GLOBAL_MODEL_REGISTRY_ENABLED") == "true"
+	if registryEnabled {
+		catalog, e := ParseCatalog(data)
+		if e != nil {
+			return fail()
+		}
+		for _, provider := range catalog.Providers {
+			config.Providers = append(config.Providers, struct {
+				ID            string `json:"id"`
+				Endpoint      string `json:"endpoint"`
+				CredentialRef string `json:"credential_ref"`
+				LoopbackTest  bool   `json:"loopback_test"`
+			}{provider.ID, provider.Endpoint, provider.CredentialRef, provider.LoopbackTest})
+		}
+	} else if dec.Decode(&config) != nil || dec.Decode(new(any)) != io.EOF || len(config.Providers) > 10 {
 		return fail()
 	}
 	db, err := sql.Open("postgres", getenv("AI_GATEWAY_DATABASE_URL"))
@@ -96,7 +110,7 @@ func FromEnvironment(ctx context.Context, getenv func(string) string) (*Gateway,
 			return fail()
 		}
 	}
-	if profiles[0].ID == "" && profiles[1].ID == "" {
+	if !registryEnabled && profiles[0].ID == "" && profiles[1].ID == "" {
 		closeDB()
 		return fail()
 	}
@@ -104,7 +118,11 @@ func FromEnvironment(ctx context.Context, getenv func(string) string) (*Gateway,
 	secretRefs := map[string]string{}
 	refPattern := regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,99}$`)
 	for _, p := range config.Providers {
-		if p.ID == "" || providers[p.ID] != nil || p.LoopbackTest && getenv("RAG_MODEL_TEST_MODE") != "true" || p.CredentialRef != "" && !refPattern.MatchString(p.CredentialRef) {
+		validRef := refPattern.MatchString(p.CredentialRef)
+		if registryEnabled {
+			validRef = catalogSecretRef.MatchString(p.CredentialRef)
+		}
+		if p.ID == "" || providers[p.ID] != nil || p.LoopbackTest && getenv("RAG_MODEL_TEST_MODE") != "true" || p.CredentialRef != "" && !validRef {
 			closeDB()
 			return fail()
 		}
@@ -121,7 +139,11 @@ func FromEnvironment(ctx context.Context, getenv func(string) string) (*Gateway,
 			closeDB()
 			return fail()
 		}
-		providers[p.ID] = provider
+		if registryEnabled {
+			providers[p.ID] = &configuredProvider{Provider: provider, credentialRef: p.CredentialRef, config: ProviderConfig{ID: p.ID, Adapter: "bounded-http-v1", Endpoint: p.Endpoint, CredentialRef: p.CredentialRef, LoopbackTest: p.LoopbackTest}}
+		} else {
+			providers[p.ID] = provider
+		}
 		secretRefs[p.ID] = p.CredentialRef
 	}
 	for _, profile := range profiles {
@@ -131,4 +153,76 @@ func FromEnvironment(ctx context.Context, getenv func(string) string) (*Gateway,
 		}
 	}
 	return &Gateway{Policy: &Policy{Authority: DatabaseAuthority{DB: db}, Enabled: true}, Budget: &Budget{DB: db}, Providers: providers}, profiles[0], profiles[1], closeDB, nil
+}
+
+// RuntimeFromEnvironment preserves the legacy configuration contract while wiring
+// a read-only resolver on the existing narrow gateway connection. It never imports.
+func RuntimeFromEnvironment(ctx context.Context, getenv func(string) string) (*Gateway, Profile, Profile, *RuntimeResolver, func(), error) {
+	gateway, embed, generate, closeDB, err := FromEnvironment(ctx, getenv)
+	var resolver *RuntimeResolver
+	if err == nil && gateway != nil && getenv("RAG_GLOBAL_MODEL_REGISTRY_ENABLED") == "true" {
+		authority, ok := gateway.Policy.Authority.(DatabaseAuthority)
+		if !ok {
+			closeDB()
+			return nil, Profile{}, Profile{}, nil, func() {}, ErrPolicy
+		}
+		refs := map[string]string{}
+		configs := map[string]ProviderConfig{}
+		// The validated file is read once by FromEnvironment; provider metadata is
+		// retained by the runtime provider wrapper without retaining raw credentials.
+		for id, provider := range gateway.Providers {
+			bound, ok := provider.(*configuredProvider)
+			if !ok {
+				closeDB()
+				return nil, Profile{}, Profile{}, nil, func() {}, ErrPolicy
+			}
+			refs[id] = bound.credentialRef
+			configs[id] = bound.config
+		}
+		resolver = &RuntimeResolver{registry: &Registry{DB: authority.DB}, credentialRefs: refs, providers: configs}
+	}
+	return gateway, embed, generate, resolver, closeDB, err
+}
+
+// RuntimeResolver additionally requires a locally configured bounded adapter and
+// the exact credential reference declared by the immutable active revision.
+type RuntimeResolver struct {
+	registry       *Registry
+	credentialRefs map[string]string
+	providers      map[string]ProviderConfig
+}
+
+func (r *RuntimeResolver) Resolve(ctx context.Context, capability Capability) (ActiveBinding, error) {
+	binding, err := r.registry.resolve(ctx, capability, r.validDeclaration)
+	if err != nil {
+		return ActiveBinding{}, err
+	}
+	ref, ok := r.credentialRefs[binding.Profile.ProviderID]
+	if !ok || ref != binding.Profile.CredentialRef {
+		return ActiveBinding{}, ErrUnavailable
+	}
+	return binding, nil
+}
+
+type configuredProvider struct {
+	Provider
+	credentialRef string
+	config        ProviderConfig
+}
+
+func (r *RuntimeResolver) ResolveEmbeddingLease(ctx context.Context, lease LeaseRef) (Profile, error) {
+	profile, err := r.registry.resolveEmbeddingLease(ctx, lease, r.validDeclaration)
+	if err != nil {
+		return Profile{}, err
+	}
+	ref, ok := r.credentialRefs[profile.ProviderID]
+	if !ok || ref != profile.CredentialRef {
+		return Profile{}, ErrUnavailable
+	}
+	return profile, nil
+}
+
+func (r *RuntimeResolver) validDeclaration(p Profile, adapter, digest string) bool {
+	provider, ok := r.providers[p.ProviderID]
+	return ok && digest == declarationDigest(p, adapter, provider)
 }

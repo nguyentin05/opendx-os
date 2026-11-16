@@ -107,13 +107,16 @@ func main() {
 		log.Fatal("invalid package source configuration")
 	}
 	modelCtx, modelCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	gateway, embed, generate, closeGateway, modelErr := models.FromEnvironment(modelCtx, os.Getenv)
+	gateway, embed, generate, resolver, closeGateway, modelErr := models.RuntimeFromEnvironment(modelCtx, os.Getenv)
 	modelCancel()
 	if modelErr != nil {
 		log.Fatal("invalid model gateway configuration")
 	}
 	defer closeGateway()
 	store.ConfigureModels(gateway, embed, generate)
+	if resolver != nil {
+		store.ConfigureModelResolver(resolver)
+	}
 	personal := os.Getenv("RAG_PERSONAL_ENABLED") == "true" && os.Getenv("RAG_SOURCE_QUALIFIED") == "true" && os.Getenv("RAG_METADATA_QUALIFIED") == "true" && os.Getenv("RAG_PARSER_QUALIFIED") == "true"
 	if err = store.ConfigurePersonal(personal, os.Getenv("RAG_FILE_API_URL"), os.Getenv("KNOWLEDGE_ARTIFACT_ROOT")); err != nil {
 		log.Fatal("invalid personal-source configuration")
