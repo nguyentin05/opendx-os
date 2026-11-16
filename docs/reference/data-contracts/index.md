@@ -13,7 +13,7 @@ last_reviewed: 2026-11-16
 These pages are the canonical data contract shared by the Operator, capabilities,
 UI, and application packages. The implementation is partial; existing Go types and
 sample YAML are not evidence that every requirement is enforced. See
-[architecture and contract changes](../../architecture/README.md#decisions-and-contract-changes)
+[architecture and contract changes](../../architecture/index.md#decisions-and-contract-changes)
 and [security acceptance criteria](../security/index.md).
 
 | Page | Covers |

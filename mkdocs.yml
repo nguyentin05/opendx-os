@@ -161,7 +161,11 @@ nav:
           - Authorization (proposed): reference/rag/authorization.md
       - dxos-operator CLI: reference/cli/dxos-operator.md
   - Architecture:
-      - Overview: architecture/README.md
+      - Overview: architecture/index.md
+      - Three tiers: architecture/tiers.md
+      - Control plane: architecture/control-plane.md
+      - Runtime: architecture/runtime.md
+      - Security model: architecture/security-model.md
       - Anti-patterns: architecture/anti-patterns.md
   - Decisions:
       - ADR index: adr/index.md

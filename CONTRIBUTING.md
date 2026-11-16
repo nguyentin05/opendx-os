@@ -1,6 +1,6 @@
 # Contributing to OpenDX-OS
 
-Contributions should follow the [architecture and accepted decisions](docs/architecture/README.md)
+Contributions should follow the [architecture and accepted decisions](docs/architecture/index.md)
 and the contracts relevant to the change:
 
 - [Data and manifests](docs/reference/data-contracts/index.md)

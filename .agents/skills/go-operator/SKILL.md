@@ -5,7 +5,7 @@ description: Use when designing, implementing, or reviewing dxos-operator, DDL/H
 
 # Go Operator
 
-Use the [architecture](../../../docs/architecture/README.md) and
+Use the [architecture](../../../docs/architecture/index.md) and
 [data/manifest contract](../../../docs/reference/data-contracts/index.md).
 
 1. Inspect the current parser, planner, CLI, and sample manifests. Identify

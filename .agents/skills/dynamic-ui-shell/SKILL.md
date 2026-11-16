@@ -5,7 +5,7 @@ description: Use when designing, implementing, or reviewing the React/TypeScript
 
 # Dynamic App Shell
 
-Use the [architecture](../../../docs/architecture/README.md),
+Use the [architecture](../../../docs/architecture/index.md),
 [registry/manifest contract](../../../docs/reference/data-contracts/index.md), and
 [security criteria](../../../docs/reference/security/index.md).
 

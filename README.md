@@ -12,7 +12,7 @@ workflows, and UI configuration while sharing infrastructure and capabilities.
 | `capabilities/`, `workspace-ui/` | Reusable H-P-D-I services and a React/TypeScript App Shell |
 | `apps/` | Maintenance, procurement, and timesheet example packages |
 
-See the [architecture](docs/architecture/README.md) for tier boundaries, planned
+See the [architecture](docs/architecture/index.md) for tier boundaries, planned
 components, and accepted design decisions.
 
 ## Development status
@@ -71,7 +71,7 @@ uninstalls it (see the [installation guide](docs/operations/installation.md)).
 
 ## Documentation
 
-- [Architecture](docs/architecture/README.md) and [ADRs](docs/adr/index.md)
+- [Architecture](docs/architecture/index.md) and [ADRs](docs/adr/index.md)
 - [Data and manifest contract](docs/reference/data-contracts/index.md)
 - [Security and acceptance](docs/reference/security/index.md)
 - [Adding an application](docs/guides/adding-an-app.md)

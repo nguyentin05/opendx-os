@@ -13,10 +13,10 @@ Follow links as needed; there is no requirement to load the entire set.
 
 | Task involves | Project sources | Practical skill |
 | --- | --- | --- |
-| Architecture, infrastructure, tier boundaries | [Architecture](docs/architecture/README.md), [ADRs](docs/adr/index.md) | Use the relevant component skill below |
+| Architecture, infrastructure, tier boundaries | [Architecture](docs/architecture/index.md), [ADRs](docs/adr/index.md) | Use the relevant component skill below |
 | Operator, DDL, Hasura, reconcile | [Manifest](docs/reference/manifest/index.md), [data contracts](docs/reference/data-contracts/index.md) | [go-operator](.agents/skills/go-operator/SKILL.md) |
 | Commands, files, OT, BI, OCR/RAG | [Data contracts](docs/reference/data-contracts/index.md), [security/acceptance](docs/reference/security/index.md) | [hpdi-capability](.agents/skills/hpdi-capability/SKILL.md) |
-| App Shell, schema rendering, context changes | [UI integration](docs/guides/integrating-the-ui.md), [architecture](docs/architecture/README.md), [data](docs/reference/data-contracts/index.md), [security](docs/reference/security/index.md) | [dynamic-ui-shell](.agents/skills/dynamic-ui-shell/SKILL.md) |
+| App Shell, schema rendering, context changes | [UI integration](docs/guides/integrating-the-ui.md), [architecture](docs/architecture/index.md), [data](docs/reference/data-contracts/index.md), [security](docs/reference/security/index.md) | [dynamic-ui-shell](.agents/skills/dynamic-ui-shell/SKILL.md) |
 | App packages, manifests, workflows | [Adding an app](docs/guides/adding-an-app.md) | [declarative-app](.agents/skills/declarative-app/SKILL.md) |
 | License metadata, hygiene, release artifacts | [Source hygiene](docs/contribute/source-hygiene.md), [releasing](docs/contribute/releasing.md) | [pof-compliance](.agents/skills/pof-compliance/SKILL.md) |
 | Verification or hand-off | [Verification](docs/contribute/verification.md) | Select checks for the affected behavior |
@@ -26,7 +26,7 @@ Follow links as needed; there is no requirement to load the entire set.
 - Project requirements live in `docs/`; skills explain how to apply them. Define
   each detailed requirement once and link to it.
 - For shared contract changes, identify affected producers/consumers and follow
-  [decision and contract changes](docs/architecture/README.md#decisions-and-contract-changes).
+  [decision and contract changes](docs/architecture/index.md#decisions-and-contract-changes).
   Distinguish intended behavior from partial implementation.
 - Verify the requested output and report evidence, limits, and open decisions.
   A design review is not a runtime test result; use actual module runners.

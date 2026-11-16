@@ -1,0 +1,68 @@
+---
+title: Control plane
+description: The Operator, reconcile, upgrade rules, and the Kubernetes controller.
+diataxis: explanation
+audience: [platform-developer, operator]
+status: active
+owner: platform
+last_reviewed: 2026-11-16
+---
+
+# Control plane
+
+The `dxos-operator` is the control plane. It plans and applies application
+configuration out of band; it is not on the synchronous request path.
+
+The intended interface includes `plan`, `apply`, `reconcile`, `uninstall`, and
+`verify-audit`. `plan` has no side effects. Configuration progresses through
+`Pending -> Applying -> Ready | Failed`, with manifest versions and structured
+errors. Publish only ready configuration; a failed update must keep desired and
+active state distinguishable. Runtime consumers read published configuration
+without calling the Operator for each request. The CLI is not fully implemented;
+check the actual command set before use.
+
+## Reconcile
+
+Reconcile adds missing and revokes excess configuration within managed resources
+and roles, using the active manifest set. Multiple applications sharing `core.*`
+require combined valid permissions; reconciling one application must not remove
+another's grants.
+
+Global resources (domain tables, triggers, Hasura metadata) are planned from the
+active application definitions in `core.apps`, never from a single deployment
+registry. Unpublishing one application does not remove another application's
+grants.
+
+Before applying, the Operator compares each live domain table with its manifest.
+Adding a nullable column is converged automatically; a type or nullability change,
+a new required column, or an undeclared live column blocks publication with a
+structured error while the previous version keeps serving. CHECK constraints are
+not compared yet.
+
+## Install, upgrade, and uninstall
+
+Installing an application writes, in one transaction after its DDL and Hasura
+metadata succeed, the `core.apps` row (`Ready`), its roles in `core.roles`, and
+its capabilities in `core.app_capabilities`. Each attempt is recorded in
+`core.app_deployments`. A failed upgrade keeps the previous version `Ready` and
+records `last_error`; a failed first install leaves the row `Failed`.
+
+An upgrade may add a table, a nullable column, or a state. A table that is no
+longer declared loses its Hasura permissions and keeps its rows. A changed type
+or nullability, a new required column, a column that is no longer declared, or a
+removed state still used by records refuses the upgrade.
+
+Uninstall marks the row `Removed`, drops Hasura permissions and routes, releases
+capabilities, and deletes the application's flows. Domain tables, data, roles, and
+role assignments are kept. Deleting domain data is a separate operation requiring
+an explicit retention policy and authorized scope.
+
+## Kubernetes controller
+
+On Kubernetes, `dxos-operator controller` reconciles cluster-scoped
+`DXApplication` resources with the same planner and applier as the CLI and reports
+progress in status conditions. See
+[installation](../operations/installation.md#kubernetes-operator-development-cluster).
+The CLI keeps working without a cluster.
+
+For the exact lifecycle rules, see [Manifest lifecycle](../reference/manifest/lifecycle.md).

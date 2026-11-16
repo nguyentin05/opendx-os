@@ -10,7 +10,7 @@ last_reviewed: 2026-11-16
 
 # Adding a declarative application
 
-Use the [architecture](../architecture/README.md) and
+Use the [architecture](../architecture/index.md) and
 [manifest contract](../reference/manifest/schema.md)
 to choose supported capabilities and the serialization shared by the Operator,
 services, and UI. Resolve relevant contract gaps before extending independent
