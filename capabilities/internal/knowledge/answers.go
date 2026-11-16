@@ -46,11 +46,12 @@ type ModelCaller interface {
 	Call(context.Context, *auth.Identity, models.Operation, models.Payload) (models.Result, error)
 }
 type AnswerService struct {
-	Search  AnswerSearch
-	Reader  AnswerReader
-	Policy  ModelPolicy
-	Gateway ModelCaller
-	Profile models.Profile
+	Resolver ModelResolver
+	Search   AnswerSearch
+	Reader   AnswerReader
+	Policy   ModelPolicy
+	Gateway  ModelCaller
+	Profile  models.Profile
 }
 
 func emptyAnswer(reason string) AnswerResponse {
@@ -92,7 +93,15 @@ func (s *AnswerService) Answer(ctx context.Context, actor *auth.Identity, req An
 		}
 		return AnswerResponse{Status: "SEARCH_ONLY", Reason: cause.Error(), Results: result.Results, Citations: []Citation{}}, nil
 	}
-	if s.Gateway == nil || s.Policy == nil || s.Profile.ID == "" || req.Scope.Kind == "PERSONAL" && s.Profile.Execution != "LOCAL" {
+	profile := s.Profile
+	if s.Resolver != nil {
+		binding, resolveErr := s.Resolver.Resolve(ctx, models.CapabilityLLM)
+		if resolveErr != nil {
+			return fallback(resolveErr)
+		}
+		profile = binding.Profile
+	}
+	if s.Gateway == nil || s.Policy == nil || profile.ID == "" || req.Scope.Kind == "PERSONAL" && profile.Execution != "LOCAL" {
 		return fallback(models.ErrPolicy)
 	}
 	if s.Reader == nil {
@@ -111,7 +120,7 @@ func (s *AnswerService) Answer(ctx context.Context, actor *auth.Identity, req An
 			return empty, err
 		}
 	}
-	op := models.Operation{Key: modelOperationKey(), AppID: modelApp, ScopeKind: req.Scope.Kind, Purpose: "GENERATE", ProfileID: s.Profile.ID, ProfileRevision: s.Profile.Revision}
+	op := models.Operation{Key: modelOperationKey(), AppID: modelApp, ScopeKind: req.Scope.Kind, Purpose: "GENERATE", ProfileID: profile.ID, ProfileRevision: profile.Revision}
 	// Obtain authoritative profile limits before assembling whole chunks; never
 	// truncate a table in order to fit a prompt. Gateway checks again before send.
 	approval, err := s.Policy.Check(ctx, actor, op)
@@ -203,5 +212,5 @@ func (s *AnswerService) Answer(ctx context.Context, actor *auth.Identity, req An
 	}
 	// Results outside the context were not checked after generation. Return only
 	// the freshly checked evidence. IDs validate provenance, not semantic truth.
-	return AnswerResponse{Status: "ANSWERED", Answer: &generated.Text, Results: evidence, Citations: citations, ModelProfile: &AnswerProfile{ID: s.Profile.ID, Revision: s.Profile.Revision}, Usage: &generated.Usage}, nil
+	return AnswerResponse{Status: "ANSWERED", Answer: &generated.Text, Results: evidence, Citations: citations, ModelProfile: &AnswerProfile{ID: profile.ID, Revision: profile.Revision}, Usage: &generated.Usage}, nil
 }

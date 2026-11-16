@@ -5,9 +5,13 @@
 package models
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"fmt"
 	"github.com/opendx-os/opendx-os/capabilities/internal/testutil"
+	"net/url"
 	"os"
+	"os/exec"
 	"testing"
 )
 
@@ -67,5 +71,108 @@ func TestFTSWithoutVectorExtension(t *testing.T) {
 		if _, e = tx.Exec(string(raw)); e == nil {
 			t.Fatal("model migration accepted missing extension")
 		}
+	}
+}
+
+func applyRegistry(t *testing.T, db *sql.DB) {
+	t.Helper()
+	raw, e := os.ReadFile("../../../../platform/postgres/migrations/cap_ai/0005_model_registry.sql")
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = db.Exec(string(raw)); e != nil {
+		t.Fatal(e)
+	}
+}
+func TestRegistryOptionalSchemaAndFTS(t *testing.T) {
+	db := modelDB(t, false)
+	var n int
+	db.QueryRow(`SELECT count(*) FROM pg_tables WHERE schemaname='cap_ai' AND tablename IN('model_profiles','model_candidates','global_model_slots')`).Scan(&n)
+	if n != 0 {
+		t.Fatal(n)
+	}
+	raw, e := os.ReadFile("../../../../platform/postgres/migrations/cap_ai/0005_model_registry.sql")
+	if e != nil {
+		t.Fatal(e)
+	}
+	tx, e := db.Begin()
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = tx.Exec(string(raw)); e == nil {
+		t.Fatal("accepted missing 0004")
+	}
+	tx.Rollback()
+	applyModels(t, db)
+	applyRegistry(t, db)
+	for _, q := range []string{`SELECT count(*) FROM cap_ai.model_profiles`, `SELECT count(*) FROM cap_ai.model_candidates`, `SELECT count(*) FROM cap_ai.model_slot_events`, `SELECT count(*) FROM cap_ai.global_model_slots WHERE profile_id IS NOT NULL`} {
+		if e = db.QueryRow(q).Scan(&n); e != nil || n != 0 {
+			t.Fatal(q, n, e)
+		}
+	}
+	if e = db.QueryRow(`SELECT count(*) FROM cap_ai.global_model_slots WHERE capability IN('EMBEDDING','LLM','VLM','RERANKING') AND slot_revision=0 AND profile_id IS NULL AND profile_revision IS NULL`).Scan(&n); e != nil || n != 4 {
+		t.Fatal(n, e)
+	}
+}
+
+func TestRegistryExplicitMigrationRunner(t *testing.T) {
+	db := modelDB(t, false)
+	ledger, e := os.ReadFile("../../../../platform/postgres/migrations/ledger.sql")
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = db.Exec(string(ledger)); e != nil {
+		t.Fatal(e)
+	}
+	// modelDB owns the base migrations; record their actual checksums before the runner.
+	for _, file := range []string{"0001_metadata_jobs.sql", "0002_docir_fts.sql", "0003_package_knowledge.sql"} {
+		raw, e := os.ReadFile("../../../../platform/postgres/migrations/cap_ai/" + file)
+		if e != nil {
+			t.Fatal(e)
+		}
+		sum := sha256.Sum256(raw)
+		if _, e = db.Exec(`INSERT INTO core.schema_migrations(scope,version,checksum) VALUES('cap-ai',$1,$2)`, file[:4], fmt.Sprintf("%x", sum)); e != nil {
+			t.Fatal(e)
+		}
+	}
+	var name string
+	if e = db.QueryRow(`SELECT current_database()`).Scan(&name); e != nil {
+		t.Fatal(e)
+	}
+	u, e := url.Parse(os.Getenv("TEST_DATABASE_URL"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	u.Path = "/" + name
+	run := func(version string) error {
+		command := exec.Command("python3", "../../../../scripts/migrate_rag.py", "--database-url-env", "REGISTRY_MIGRATION_TEST_URL", "--scope", "cap-ai", "--through", version)
+		command.Env = append(os.Environ(), "REGISTRY_MIGRATION_TEST_URL="+u.String())
+		raw, e := command.CombinedOutput()
+		if e != nil {
+			return fmt.Errorf("runner: %w: %s", e, raw)
+		}
+		return nil
+	}
+	if e = run("0003"); e != nil {
+		t.Fatal(e)
+	}
+	var present bool
+	if e = db.QueryRow(`SELECT to_regclass('cap_ai.global_model_slots') IS NOT NULL`).Scan(&present); e != nil || present {
+		t.Fatal(present, e)
+	}
+	for i := 0; i < 2; i++ {
+		if e = run("0005"); e != nil {
+			t.Fatal(e)
+		}
+	}
+	var count int
+	if e = db.QueryRow(`SELECT count(*) FROM core.schema_migrations WHERE scope='cap-ai' AND version IN('0004','0005')`).Scan(&count); e != nil || count != 2 {
+		t.Fatal(count, e)
+	}
+	if _, e = db.Exec(`UPDATE core.schema_migrations SET checksum=repeat('0',64) WHERE scope='cap-ai' AND version='0005'`); e != nil {
+		t.Fatal(e)
+	}
+	if e = run("0005"); e == nil {
+		t.Fatal("runner accepted registry checksum mismatch")
 	}
 }

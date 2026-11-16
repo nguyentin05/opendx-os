@@ -104,6 +104,87 @@ DocIR preserves heading hierarchy, code fences, logical table rows with headers/
 
 Event envelope: event_id, event_type `ai.document.version.registered`, schema_version 1, app_id, document_id, version_id, source_kind, source_ref, occurred_at. No document bytes, private text, credentials or client role claims. DB job poller is sufficient for MVP; effects idempotent under duplicate delivery.
 
+## Global model registry foundation (R1)
+
+This is the canonical contract for the implemented optional registry foundation;
+implementation does not establish production qualification. `RAG_GLOBAL_MODEL_REGISTRY_ENABLED`
+defaults to `false`. It does not replace the existing model/source qualification
+or policy gates. While OFF, preserve the current Plan05 deployment-file behavior:
+`embed_profile` and `generate_profile` may select exact existing profile revisions
+under the existing gates. They are legacy deployment configuration, never app or
+user overrides. Authorized lexical search remains available without models or
+pgvector.
+
+While ON, the database is the sole authority for installation-wide `ACTIVE`
+slot bindings. There is exactly one slot for each of `EMBEDDING`, `LLM`, and
+`VLM`; a slot may be unbound. `RERANKING` is reserved and disabled until a
+separate increment. No model choice belongs in an app manifest, workflow, UI
+request or user preference. Capability names map to existing database profile
+`purpose` values as follows:
+
+| Capability | Existing profile purpose | R1 binding |
+| --- | --- | --- |
+| `EMBEDDING` | `EMBED` | Exact profile ID and revision |
+| `LLM` | `GENERATE` | Exact profile ID and revision |
+| `VLM` | None | Reserved, unbound; never alias to text generation |
+| `RERANKING` | None | Reserved, disabled |
+
+An absent binding, disabled/ineligible profile or unavailable configured adapter
+returns `MODEL_UNAVAILABLE` for the required model operation. Never silently
+fall back to `embed_profile`/`generate_profile`, another revision, provider or
+capability while ON. Search degrades to authorized FTS when embedding is
+unavailable. Answers retain the existing scoped SEARCH_ONLY fallback when
+generation is optional; with accessible evidence and `require_generation=true`,
+unavailable generation returns 503 `MODEL_UNAVAILABLE`. No evidence remains
+NO_EVIDENCE without a model call. Policy denial remains distinct from model
+unavailability. Personal content **and questions** remain prohibited from hosted
+processing regardless of which model is active.
+
+Startup configuration may declare candidates and adapter/secret references only;
+it cannot override an `ACTIVE` database pointer or auto-promote candidates. Raw
+credentials never enter the database, browser, logs or app packages. Endpoints
+and adapters are deployment-allowlisted, never request-selected. Hosted APIs are
+the first supported adapters; local serving in Tier 1 is future work, with no
+bundled local model.
+
+Retain `cap_ai.model_profiles`, policy allowlists, the usage ledger, conservative
+uncertain-charge accounting and exact profile revision identity. Embedding
+query/index generations must agree on that identity and dimensions; a slot change
+does not relabel or silently mix existing vectors. Registry migrations are
+additive after optional `0004_models_vectors.sql`; applied migration checksums
+must never change. `dxos_ai_gateway` retains its scoped policy/accounting rights
+and gains only read-only slot-resolution and fenced embedding lease-profile
+execution. Both reads return the stored immutable declaration digest. Runtime
+checks it against normalized profile, adapter and validated provider metadata
+before accepting a slot or lease pin. Endpoint or loopback drift fails unavailable
+even with an empty candidate list; enabled state is excluded from declaration
+identity. No endpoint or raw secret is persisted. Candidate imports use a
+distinct narrow deployment identity; neither identity gets blanket `cap_ai`
+table writes. Future qualification, promotion and rollback require Platform
+Admin authority, never application-admin authority. This foundation exposes no
+production mutation route and grants no such administration permission.
+
+### Consumer impact and contract review
+
+| Consumer | Required integration when registry is enabled |
+| --- | --- |
+| cap-ai HTTP and worker model setup | Respect the default-off flag; resolve DB slots while ON without file-reference fallback |
+| Embedding query and index generation | Resolve EMBEDDING, pin exact revision/dimensions, preserve independent lexical readiness |
+| Answer service | Resolve LLM and distinguish unavailable models from policy denial; preserve scoped fallback and final authorization |
+| Future evaluation worker | Consume the same slot/revision identity and existing policy/accounting gates; no separate model override |
+| Future admin route | Separate Platform Admin authorization and audited lifecycle; no production mutation in R1 |
+| Model provisioning role | Narrow candidate import only, no activation or blanket table writes |
+| App Shell/UI | No model selector or credentials; display existing unavailable/search-only outcomes and discard stale context |
+
+Review the contract with the registry OFF and ON: OFF preserves legacy exact
+profile references; ON uses a single DB slot authority even when file references
+are present. Confirm manifests and requests cannot choose models, absent slots
+preserve authorized FTS, and required generation returns the unavailable outcome.
+These are review/implementation acceptance cases, not runtime authorization test
+results. This foundation refines optional capability storage and the existing
+platform authorization boundary; it changes no accepted ADR. Production provider
+approval and future lifecycle routes remain separate work.
+
 ## Model Gateway
 
 Configured generation/embedding profiles only; no caller keys, provider URLs or credential refs. Gateway independently verifies processing policy, current authority and user/app/installation quotas before every external operation. Reserve estimated spend before dispatch, settle idempotently with actual/estimated usage after response. Unknown provider outcome retains conservative reservation for bounded reconciliation; retries cannot release all reserved spend or double-settle one successful request. Budget/policy outage fails closed. Kill switch keeps authorized FTS available.

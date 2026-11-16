@@ -125,5 +125,7 @@ spec:
                 path: migrations/cap_ai/0003_package_knowledge.sql
               - key: cap_ai-0004_models_vectors.sql
                 path: migrations/cap_ai/0004_models_vectors.sql
+              - key: cap_ai-0005_model_registry.sql
+                path: migrations/cap_ai/0005_model_registry.sql
       - name: data
         emptyDir: {}

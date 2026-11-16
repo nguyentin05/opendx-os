@@ -14,6 +14,7 @@ import (
 )
 
 type Store struct {
+	modelResolver                 ModelResolver
 	gateway                       *models.Gateway
 	embedProfile, generateProfile models.Profile
 	dispatcherStore               *Store

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/docir"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
 )
 
 type ParseAdapter interface {
@@ -28,9 +29,15 @@ type Worker struct {
 }
 
 func (w *Worker) Once(ctx context.Context) error {
+	// Resolve the current slot only to schedule new embedding jobs.
+	profile, resolveErr := w.Store.modelProfile(ctx, models.CapabilityEmbedding)
+	// Unavailable models must not stop ordinary parsing.
+	if resolveErr != nil {
+		profile = models.Profile{}
+	}
 	// Enqueue only profile-allowlisted current sources; no model dependency for PARSE.
-	if w.Store.gateway != nil && w.Store.embedProfile.ID != "" {
-		_, err := w.Store.db.ExecContext(ctx, `SELECT cap_ai.queue_embeddings(NULL,NULL,$1,$2)`, w.Store.embedProfile.ID, w.Store.embedProfile.Revision)
+	if w.Store.gateway != nil && profile.ID != "" {
+		_, err := w.Store.db.ExecContext(ctx, `SELECT cap_ai.queue_embeddings(NULL,NULL,$1,$2)`, profile.ID, profile.Revision)
 		if err != nil {
 			return dbError(err)
 		}
@@ -40,14 +47,26 @@ func (w *Worker) Once(ctx context.Context) error {
 		return err
 	}
 	if lease == nil {
-		if w.Store.gateway == nil || w.Store.embedProfile.ID == "" {
+		if w.Store.gateway == nil || profile.ID == "" && w.Store.modelResolver == nil {
 			return nil
 		}
 		embedLease, e := w.Store.ClaimEmbedding(ctx, w.WorkerID)
 		if e != nil || embedLease == nil {
 			return e
 		}
-		return w.Store.BuildEmbeddings(ctx, *embedLease, w.Store.embedProfile)
+		if w.Store.modelResolver != nil {
+			resolver, ok := w.Store.modelResolver.(interface {
+				ResolveEmbeddingLease(context.Context, models.LeaseRef) (models.Profile, error)
+			})
+			if !ok {
+				return models.ErrUnavailable
+			}
+			profile, e = resolver.ResolveEmbeddingLease(ctx, models.LeaseRef{JobID: embedLease.JobID, WorkerID: embedLease.WorkerID, RunID: embedLease.RunID, Fence: embedLease.Fence})
+			if e != nil {
+				return e
+			}
+		}
+		return w.Store.BuildEmbeddings(ctx, *embedLease, profile)
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
