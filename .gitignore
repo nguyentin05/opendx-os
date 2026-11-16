@@ -42,7 +42,6 @@ Thumbs.db
 .idea/
 .vscode/
 
-# Vale packages downloaded by `vale sync`; only the vocabulary is tracked.
-/.vale/styles/*
-!/.vale/styles/config/
+# Vale style packages downloaded by `vale sync`.
+/.vale/
 /.cache/

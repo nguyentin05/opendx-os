@@ -36,3 +36,16 @@
 .docs-badge--deprecated { background: #fef3c7; color: #92400e; }
 .docs-badge--historical { background: #fee2e2; color: #991b1b; }
 
+
+/* Algolia DocSearch button in the header (docs/overrides/main.html). */
+.dx-docsearch .DocSearch-Button {
+  margin: 0 0.4rem;
+  border-radius: 0.2rem;
+}
+
+/* Material sets a 20px root font size; DocSearch's form padding then leaves
+   the input 15px tall and clips Vietnamese diacritics. DocSearch's stylesheet
+   loads after this one, hence the extra class for precedence. */
+.DocSearch-Modal .DocSearch-Form {
+  padding-block: 0;
+}

@@ -59,8 +59,8 @@ def iter_repo_files(root: pathlib.Path):
         parts = path.relative_to(root).parts
         if any(part in BANNED_DIRS for part in parts):
             continue
-        # Vale style packages are downloaded by `vale sync`; only config/ is ours.
-        if parts[:2] == (".vale", "styles") and parts[2:3] != ("config",):
+        # Vale style packages are downloaded by `vale sync`.
+        if parts[:1] == (".vale",):
             continue
         yield path
 

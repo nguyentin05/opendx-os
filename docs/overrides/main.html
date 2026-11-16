@@ -1,0 +1,56 @@
+{#- SPDX-License-Identifier: Apache-2.0 -#}
+{#- Copyright 2026 DX-OS Open-Core Contributors -#}
+{#- Algolia DocSearch replaces the built-in search when extra.algolia is set. -#}
+{% extends "base.html" %}
+
+{% block extrahead %}
+  {{ super() }}
+  {% if config.extra.algolia %}
+    <link rel="preconnect" href="https://{{ config.extra.algolia.app_id }}-dsn.algolia.net" crossorigin>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@docsearch/css@5.2.0/dist/style.css">
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  {% if config.extra.algolia %}
+    {% set algolia = config.extra.algolia %}
+    {% set vietnamese = config.theme.language == "vi" %}
+    <script src="https://cdn.jsdelivr.net/npm/@docsearch/js@5.2.0/dist/umd/docsearch.js"></script>
+    <script>
+      (function () {
+        var source = document.querySelector(".md-header__source");
+        if (!source || !window.docsearch) return;
+        var container = document.createElement("div");
+        container.id = "docsearch";
+        container.className = "md-header__option dx-docsearch";
+        source.parentNode.insertBefore(container, source);
+        var site = "{{ algolia.site_origin }}";
+        window.docsearch({
+          container: "#docsearch",
+          appId: "{{ algolia.app_id }}",
+          apiKey: "{{ algolia.api_key }}",
+          indices: [{
+            name: "{{ algolia.index_name }}",
+            // Only pages of the language being read.
+            searchParameters: { facetFilters: ["lang:{{ config.theme.language }}"] }
+          }],
+          placeholder: "{{ 'Tìm kiếm tài liệu' if vietnamese else 'Search docs' }}",
+          translations: {
+            button: {
+              buttonText: "{{ 'Tìm kiếm' if vietnamese else 'Search' }}",
+              buttonAriaLabel: "{{ 'Tìm kiếm' if vietnamese else 'Search' }}"
+            }
+          },
+          // The index holds published URLs; keep results on a local preview's host.
+          transformItems: function (items) {
+            if (location.origin === site) return items;
+            return items.map(function (item) {
+              return Object.assign({}, item, { url: item.url.replace(site, location.origin) });
+            });
+          }
+        });
+      })();
+    </script>
+  {% endif %}
+{% endblock %}

@@ -19,11 +19,13 @@ exclude_docs: |
   /*.py
   /__pycache__/
   /_internal/
+  /overrides/
   /_snippets/
   /superpowers/
 
 theme:
   name: material
+  custom_dir: docs/overrides
   # Vietnamese is the default site language; mkdocs.en.yml builds English.
   language: vi
   logo: assets/logo.png
@@ -39,8 +41,6 @@ theme:
     - content.code.annotate
     - content.tabs.link
     - content.action.edit
-    - search.suggest
-    - search.highlight
     - toc.follow
   palette:
     - media: "(prefers-color-scheme: light)"
@@ -59,8 +59,7 @@ theme:
         name: Switch to light mode
 
 plugins:
-  - search:
-      lang: [vi, en]
+  # Search is Algolia DocSearch (extra.algolia, docs/overrides/main.html).
   # Link preview images; needs Cairo. Set DOCS_SOCIAL=false to skip locally.
   - social:
       enabled: !ENV [DOCS_SOCIAL, true]
@@ -155,6 +154,12 @@ extra_css:
   - stylesheets/extra.css
 
 extra:
+  # Algolia DocSearch. The key is the search-only key, safe to publish.
+  algolia:
+    app_id: EP0ZG5RPLO
+    api_key: 9d8d2a626f586479d35bceb349b4e464
+    index_name: opendx_opendx-os crawler
+    site_origin: https://nguyentin05.github.io
   # The logo and site title lead to the Vietnamese landing page (docs/index.html).
   homepage: /opendx-os/
   # Replaced per page by docs/i18n.py so switching keeps the current page.
