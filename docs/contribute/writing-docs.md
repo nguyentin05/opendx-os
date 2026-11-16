@@ -52,7 +52,7 @@ last_reviewed: 2026-11-16
 | `last_reviewed` | `YYYY-MM-DD` |
 
 `draft`, `proposed`, `deprecated`, and `historical` pages get a banner from
-`hooks/status_banner.py`. Do not claim more than the implementation supports.
+`docs/status_banner.py`. Do not claim more than the implementation supports.
 
 ## Add the page to navigation
 
