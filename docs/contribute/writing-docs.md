@@ -92,6 +92,17 @@ Vietnamese-only landing page `/index.html`.
 Social preview cards need the Cairo library. Without it, build with
 `DOCS_SOCIAL=false`. The build also writes `llms.txt` for AI agents.
 
+## Search
+
+Search is [Algolia DocSearch](https://docsearch.algolia.com/). The Algolia crawler
+indexes the published site weekly; results are filtered to the language being
+read through the `lang` facet. `extra.algolia` in `mkdocs.yml` holds the
+application ID, the search-only key, and the index name, and
+`docs/overrides/main.html` mounts the search button. Without `extra.algolia` the
+site has no search. A local preview searches the published index and links
+results to the local host. `mkdocs serve` does not reload changes under
+`docs/overrides/`; restart it.
+
 ## Write links
 
 - Use relative links between pages, including the `.md` extension.
