@@ -5,9 +5,9 @@ description: Use when designing, implementing, or reviewing the React/TypeScript
 
 # Dynamic App Shell
 
-Use the [architecture](../../../docs/architecture/README.md),
-[registry/manifest contract](../../../docs/contracts/data-contracts.md), and
-[security criteria](../../../docs/contracts/security-and-acceptance.md).
+Use the [architecture](../../../docs/architecture/index.md),
+[registry/manifest contract](../../../docs/reference/data-contracts/index.md), and
+[security criteria](../../../docs/reference/security/index.md).
 
 1. Trace published registry data and authenticated context into navigation,
    tables, forms, and commands. Identify placeholder data before wiring APIs.
@@ -24,4 +24,4 @@ Use the [architecture](../../../docs/architecture/README.md),
 Useful cases: a timesheet-only token cannot select a manager grant or recover
 maintenance data from stale cache; disabling cap-ai leaves independent H/P/D
 features working. Check switching and stale approvals using the actual UI runner
-and [verification guidance](../../../docs/development/verification.md).
+and [verification guidance](../../../docs/contribute/verification.md).

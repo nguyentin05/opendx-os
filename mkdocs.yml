@@ -1,0 +1,191 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+
+site_name: OpenDX-OS
+site_description: Composable three-tier platform for business applications.
+site_url: https://nguyentin05.github.io/opendx-os/docs/
+repo_url: https://github.com/nguyentin05/opendx-os
+repo_name: nguyentin05/opendx-os
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+site_dir: site
+strict: true
+
+# Internal material stays in the repository but is never published.
+exclude_docs: |
+  /README.md
+  /_internal/
+  /superpowers/
+  *.vi.md
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - content.action.edit
+    - search.suggest
+    - search.highlight
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search
+  - git-revision-date-localized:
+      enable_creation_date: false
+      type: date
+      exclude:
+        - "_internal/**"
+        - "**/*.vi.md"
+  - minify:
+      minify_html: true
+  - redirects:
+      redirect_maps:
+        contracts/data-contracts.md: reference/data-contracts/index.md
+        contracts/security-and-acceptance.md: reference/security/index.md
+        contracts/rag-api.proposed.md: reference/rag/api.md
+        development/adding-an-app.md: guides/adding-an-app.md
+        development/ui-integration.md: guides/integrating-the-ui.md
+        development/package-knowledge.md: guides/knowledge/package-knowledge.md
+        development/personal-library.md: guides/knowledge/personal-library.md
+        development/model-knowledge.md: guides/knowledge/models.md
+        development/verification.md: contribute/verification.md
+        development/source-hygiene.md: contribute/source-hygiene.md
+        development/releasing.md: contribute/releasing.md
+        architecture/rag-authorization-proposal.md: reference/rag/authorization.md
+        operations/runbook.md: operations/backup-restore.md
+
+hooks:
+  - hooks/status_banner.py
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+    absolute_links: warn
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: warn
+    unrecognized_links: warn
+
+extra_css:
+  - stylesheets/extra.css
+
+nav:
+  - Home: index.md
+  - Get started:
+      - Overview: get-started/index.md
+      - Prerequisites: get-started/prerequisites.md
+      - Run the local stack: get-started/local-stack.md
+      - First request: get-started/first-request.md
+  - Guides:
+      - Overview: guides/index.md
+      - Adding an application: guides/adding-an-app.md
+      - Integrating the UI: guides/integrating-the-ui.md
+      - Running workflows: guides/running-workflows.md
+      - Knowledge:
+          - Package knowledge: guides/knowledge/package-knowledge.md
+          - Personal library: guides/knowledge/personal-library.md
+          - Model answers: guides/knowledge/models.md
+  - Reference:
+      - Overview: reference/index.md
+      - Runtime rules: reference/runtime-rules.md
+      - Manifest:
+          - Overview: reference/manifest/index.md
+          - Schema: reference/manifest/schema.md
+          - Lifecycle: reference/manifest/lifecycle.md
+      - Data contracts:
+          - Overview: reference/data-contracts/index.md
+          - Identity, roles, and scope: reference/data-contracts/identity-and-roles.md
+          - Shared tables: reference/data-contracts/shared-tables.md
+          - Domain tables: reference/data-contracts/domain-tables.md
+          - Writes, versions, and audit: reference/data-contracts/writes-and-versions.md
+          - Files, OT, and BI: reference/data-contracts/files-ot-bi.md
+          - Semantic concepts: reference/data-contracts/semantic-concepts.md
+      - Security and acceptance:
+          - Overview: reference/security/index.md
+          - Invariants: reference/security/invariants.md
+          - Acceptance scenarios: reference/security/acceptance.md
+      - API:
+          - Overview: reference/api/index.md
+          - Capability routes: reference/api/capability-routes.md
+          - Workflow deployment and events: reference/api/events.md
+      - RAG:
+          - Overview: reference/rag/index.md
+          - Knowledge contract: reference/rag/knowledge-contract.md
+          - Native metadata: reference/rag/native-metadata.md
+          - Model answers: reference/rag/answers.md
+          - API (proposed): reference/rag/api.md
+          - Authorization (proposed): reference/rag/authorization.md
+      - dxos-operator CLI: reference/cli/dxos-operator.md
+  - Architecture:
+      - Overview: architecture/index.md
+      - Three tiers: architecture/tiers.md
+      - Control plane: architecture/control-plane.md
+      - Runtime: architecture/runtime.md
+      - Security model: architecture/security-model.md
+      - Anti-patterns: architecture/anti-patterns.md
+  - Decisions:
+      - ADR index: adr/index.md
+      - ADR 0001: adr/0001-three-tier-composable-architecture.md
+      - ADR 0002: adr/0002-semantic-schema-governance-and-cross-app-data-sync.md
+      - ADR 0003: adr/0003-modular-capability-schema-separation-for-iot-data.md
+      - ADR 0004: adr/0004-kubernetes-crd-operator.md
+      - ADR 0005: adr/0005-department-and-application-data-model.md
+      - ADR 0006: adr/0006-where-application-business-logic-lives.md
+      - ADR 0007: adr/0007-keycloak-authenticates-platform-authorizes.md
+      - ADR 0008: adr/0008-an-application-declares-several-tables.md
+      - ADR 0009: adr/0009-native-rag-identity-and-source-boundaries.md
+  - Operate:
+      - Overview: operations/index.md
+      - Installation: operations/installation.md
+      - Backup and restore: operations/backup-restore.md
+  - Contribute:
+      - Overview: contribute/index.md
+      - Verification: contribute/verification.md
+      - Source hygiene: contribute/source-hygiene.md
+      - Releasing: contribute/releasing.md
+      - Writing docs: contribute/writing-docs.md

@@ -1,0 +1,224 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 DX-OS Open-Core Contributors -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenDX-OS</title>
+<meta name="description" content="Composable open-core platform where business applications are declarations: a manifest, workflows and knowledge on shared infrastructure.">
+<style>
+:root {
+  --bg: #fbfbfd; --surface: #ffffff; --text: #16202b; --muted: #5a6876;
+  --line: #e2e6ec; --accent: #3949ab; --accent-soft: #e8eaf6; --code-bg: #f3f5f8;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11151b; --surface: #181e26; --text: #e6eaef; --muted: #9aa6b2;
+    --line: #2a323d; --accent: #8c9eff; --accent-soft: #232a45; --code-bg: #0d1116;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+a { color: var(--accent); }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+header.top { border-bottom: 1px solid var(--line); }
+header.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 56px; }
+.brand { font-weight: 700; color: var(--text); text-decoration: none; }
+nav a { margin-left: 20px; color: var(--muted); text-decoration: none; }
+nav a:hover { color: var(--text); }
+.hero { padding: 72px 0 56px; }
+.eyebrow { color: var(--accent); font-weight: 600; font-size: 14px; letter-spacing: .04em; text-transform: uppercase; }
+h1 { font-size: clamp(32px, 6vw, 52px); line-height: 1.1; margin: 12px 0 16px; letter-spacing: -.02em; }
+.lead { font-size: 19px; color: var(--muted); max-width: 640px; margin: 0 0 28px; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; }
+.btn { display: inline-block; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; border: 1px solid var(--line); color: var(--text); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+@media (prefers-color-scheme: dark) { .btn.primary { color: #11151b; } }
+section { padding: 48px 0; border-top: 1px solid var(--line); }
+h2 { font-size: 26px; margin: 0 0 8px; letter-spacing: -.01em; }
+.sub { color: var(--muted); margin: 0 0 28px; max-width: 680px; }
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+.card h3 { margin: 0 0 8px; font-size: 17px; }
+.card p { margin: 0; color: var(--muted); }
+.tag { display: inline-block; font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 2px 10px; margin-bottom: 10px; }
+ul.plain { margin: 8px 0 0; padding-left: 18px; color: var(--muted); }
+.split { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; }
+pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px; padding: 16px; overflow-x: auto; font-size: 13.5px; line-height: 1.5; margin: 0; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.c { color: var(--muted); }
+ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 0; }
+ol.steps li { counter-increment: s; position: relative; padding: 0 0 18px 44px; }
+ol.steps li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; display: grid; place-items: center; font-size: 14px; }
+ol.steps strong { display: block; }
+ol.steps span { color: var(--muted); }
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 20px; }
+.state { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.state.end { border-color: var(--accent); color: var(--accent); }
+.arrow { color: var(--muted); }
+footer { border-top: 1px solid var(--line); padding: 28px 0 40px; color: var(--muted); font-size: 14px; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+@media (max-width: 560px) { nav a.hide-sm { display: none; } .hero { padding: 48px 0 40px; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./">OpenDX-OS</a>
+    <nav>
+      <a href="docs/">Docs</a>
+      <a class="hide-sm" href="docs/architecture/">Architecture</a>
+      <a href="https://github.com/nguyentin05/opendx-os">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <div class="eyebrow">Open-core · Apache-2.0 · OLP PMNM 2026</div>
+    <h1>Business applications as declarations</h1>
+    <p class="lead">OpenDX-OS is a composable three-tier platform for an organization's internal digital transformation. An application is a package of declarations (data, roles, state machine, workflows and knowledge), and the platform turns it into tables, permissions, APIs and flows.</p>
+    <div class="cta">
+      <a class="btn primary" href="docs/get-started/">Get started</a>
+      <a class="btn" href="docs/">Read the docs</a>
+      <a class="btn" href="https://github.com/nguyentin05/opendx-os">View source</a>
+    </div>
+  </div>
+
+  <section>
+    <div class="wrap">
+      <h2>Three tiers, clear boundaries</h2>
+      <p class="sub">Applications never ship backend code. They use shared capabilities, which run on a headless platform.</p>
+      <div class="grid">
+        <div class="card">
+          <span class="tag">Tier 1 · Platform</span>
+          <h3>Headless infrastructure</h3>
+          <ul class="plain">
+            <li>PostgreSQL 17 and Hasura GraphQL</li>
+            <li>Keycloak SSO and APISIX gateway</li>
+            <li>Kestra workflow engine</li>
+            <li>SeaweedFS storage with ClamAV scanning</li>
+            <li>Go operator that installs app packages</li>
+          </ul>
+        </div>
+        <div class="card">
+          <span class="tag">Tier 2 · Capabilities</span>
+          <h3>Shared H-P-D-I services</h3>
+          <ul class="plain">
+            <li><code>cap-process</code>: versioned commands and files</li>
+            <li><code>cap-hr</code>: departments and staff</li>
+            <li><code>cap-ai</code>: scoped knowledge search</li>
+            <li><code>dxos-authz</code>: role resolution per request</li>
+            <li>Schema-driven App Shell</li>
+          </ul>
+        </div>
+        <div class="card">
+          <span class="tag">Tier 3 · Applications</span>
+          <h3>Declarative packages</h3>
+          <ul class="plain">
+            <li>Procurement approvals</li>
+            <li>Equipment maintenance</li>
+            <li>Timesheets</li>
+            <li>Personal knowledge library</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap split">
+      <div>
+        <h2>Declare it, the operator builds it</h2>
+        <p class="sub">A manifest names the roles, tables, columns each role may see and the commands that move a record between states.</p>
+        <ol class="steps">
+          <li><strong>Write the package</strong><span>A <code>manifest.yaml</code>, optional Kestra flows and knowledge files.</span></li>
+          <li><strong>Drop it in <code>apps/</code></strong><span>The operator generates <code>domain.*</code> tables, Hasura row and column permissions, roles, routes and flows.</span></li>
+          <li><strong>Use it</strong><span>Reads go through GraphQL; state changes go through <code>cap-process</code> commands with an expected version.</span></li>
+        </ol>
+      </div>
+      <pre><code><span class="c"># apps/procurement/manifest.yaml (excerpt)</span>
+kind: DXApplication
+metadata:
+  name: procurement
+spec:
+  roles:
+  - name: role_procurement_requester
+  - name: role_procurement_manager
+  - name: role_procurement_finance
+  ...
+      commands:
+      - name: approve
+        from: [SUBMITTED]
+        to: BUDGET_REVIEW
+        allowedRoles: [role_procurement_manager]
+        recordFilter:   <span class="c"># no self-approval</span>
+          created_by:
+            _neq: X-Hasura-User-Id
+      - name: reject
+        payload:
+        - column: rejection_reason
+          required: true</code></pre>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2>Demo: cross-department purchase approval</h2>
+      <p class="sub">A requester files a purchase request with a scanned quote. Their department manager approves it, then finance reviews the budget. Each step is a versioned command, written to the audit log and published to workflows.</p>
+      <div class="flow" aria-label="Procurement states">
+        <span class="state">DRAFT</span><span class="arrow">→</span>
+        <span class="state">SUBMITTED</span><span class="arrow">→</span>
+        <span class="state">BUDGET_REVIEW</span><span class="arrow">→</span>
+        <span class="state end">APPROVED</span>
+      </div>
+      <div class="grid">
+        <div class="card"><h3>Department scope</h3><p>Managers see and approve only requests from their own department.</p></div>
+        <div class="card"><h3>No self-approval</h3><p>A manager cannot approve a request they created; the platform refuses it.</p></div>
+        <div class="card"><h3>Stale writes refused</h3><p>A command with an outdated version fails instead of overwriting a newer decision.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2>Design principles</h2>
+      <div class="grid">
+        <div class="card"><h3>Keycloak authenticates, the platform authorizes</h3><p>Roles live in <code>core.user_roles</code> and are resolved on every request.</p></div>
+        <div class="card"><h3>One organization, isolated apps</h3><p>Data is separated by application and department, not by a tenant key.</p></div>
+        <div class="card"><h3>Declarations over code</h3><p>Business rules sit in the manifest and in workflows, so an app installs without a deploy.</p></div>
+        <div class="card"><h3>Open source throughout</h3><p>Apache-2.0 code on open-source infrastructure you can run yourself.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap split">
+      <div>
+        <h2>Run it locally</h2>
+        <p class="sub">Docker Compose starts the whole platform on your machine. The seed script creates a demo organization and walks one request through the approval chain.</p>
+        <p><a href="docs/get-started/">Full setup guide →</a></p>
+      </div>
+      <pre><code>git clone https://github.com/nguyentin05/opendx-os
+cd opendx-os
+scripts/init-env.sh
+docker compose up -d --build
+scripts/test-compose.sh
+scripts/seed-demo.py seed
+scripts/seed-demo.py flow</code></pre>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>OpenDX-OS · Apache-2.0 · Under active development</span>
+    <span><a href="docs/">Documentation</a> · <a href="docs/adr/">ADRs</a> · <a href="https://github.com/nguyentin05/opendx-os">GitHub</a></span>
+  </div>
+</footer>
+</body>
+</html>

@@ -5,8 +5,8 @@ description: Use when designing, creating, or editing a Tier 3 application packa
 
 # Declarative application packages
 
-Follow [adding an app](../../../docs/development/adding-an-app.md) and the
-[manifest contract](../../../docs/contracts/data-contracts.md#7-dxapplication-manifest-contract).
+Follow [adding an app](../../../docs/guides/adding-an-app.md) and the
+[manifest contract](../../../docs/reference/manifest/schema.md).
 
 1. Compare the schema, current parser, consumers, and a sample before writing
    the package; settle any serialization change in the shared contract.
@@ -21,4 +21,4 @@ Follow [adding an app](../../../docs/development/adding-an-app.md) and the
 Use a fourth app with employees, files, and OT events to verify composite FKs,
 attachment bindings, and retry-safe workflow delivery. Record illustrative
 examples separately from validator and integration evidence using
-[verification](../../../docs/development/verification.md).
+[verification](../../../docs/contribute/verification.md).

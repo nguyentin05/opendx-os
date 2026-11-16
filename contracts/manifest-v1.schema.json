@@ -42,7 +42,7 @@
       }
     },
     "spec": {
-      "description": "DXApplicationSpec mirrors the DXApplication manifest contract\n(docs/contracts/data-contracts.md). JSON field names are identical to the\nmanifest so that both forms convert losslessly.",
+      "description": "DXApplicationSpec mirrors the DXApplication manifest contract\n(docs/reference/manifest/schema.md). JSON field names are identical to the\nmanifest so that both forms convert losslessly.",
       "properties": {
         "capabilities": {
           "description": "Capabilities lists the Tier 2 capabilities the application depends on.\ncap-process is required.",

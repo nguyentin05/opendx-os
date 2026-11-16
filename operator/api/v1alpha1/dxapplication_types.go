@@ -44,7 +44,7 @@ const (
 const UUIDPattern = `^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`
 
 // DXApplicationSpec mirrors the DXApplication manifest contract
-// (docs/contracts/data-contracts.md). JSON field names are identical to the
+// (docs/reference/manifest/schema.md). JSON field names are identical to the
 // manifest so that both forms convert losslessly.
 type DXApplicationSpec struct {
 	Knowledge *KnowledgeDef `yaml:"knowledge,omitempty" json:"knowledge,omitempty"`

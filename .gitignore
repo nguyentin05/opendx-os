@@ -8,6 +8,11 @@
 /docs/superpowers/
 .scratch/
 
+# Documentation build
+/site/
+/_site/
+/.venv-docs/
+
 # Build & release artifacts
 bin/
 dist/

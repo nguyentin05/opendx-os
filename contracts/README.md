@@ -1,7 +1,7 @@
 # Backend contracts
 
 Machine-readable contracts between the operator, the capability services, the
-UI and workflows. The rationale is in [data contracts](../docs/contracts/data-contracts.md);
+UI and workflows. The rationale is in [data contracts](../docs/reference/data-contracts/index.md);
 identity and authorization follow
 [ADR 0007](../docs/adr/0007-keycloak-authenticates-platform-authorizes.md).
 
@@ -9,7 +9,7 @@ identity and authorization follow
 | --- | --- |
 | `runtime-v1.openapi.yaml` | cap-process HTTP boundary: commands, workflow effects, file upload and download |
 | `events-v1.schema.json` | the `command.committed` event envelope |
-| `manifest-v1.schema.json` | structural schema of the application manifest, generated from the `DXApplication` CRD by `scripts/gen-manifest-schema.py`; the operator's validator enforces the semantic rules ([data contracts, section 7](../docs/contracts/data-contracts.md#7-dxapplication-manifest-contract)) |
+| `manifest-v1.schema.json` | structural schema of the application manifest, generated from the `DXApplication` CRD by `scripts/gen-manifest-schema.py`; the operator's validator enforces the semantic rules ([manifest schema](../docs/reference/manifest/schema.md)) |
 | `fixtures/procurement.yaml` | equals `apps/procurement/manifest.yaml` |
 | `fixtures/app-ready.json` | its `core.apps` row (status `Ready`), as cap-process reads it |
 | `fixtures/procurement-ddl.sql` | the DDL of its domain tables as the operator generates it; capability integration tests install it, and an operator test fails when it is stale |
@@ -56,7 +56,7 @@ caller holding exactly one role may omit it. Raw `X-Hasura-User-Id` headers
 never create authority. Workflow effect calls come from the workflow engine,
 which presents the workflow service credential instead of a user token and
 acts as the platform's workflow service account
-([workflow deployment](../docs/contracts/data-contracts.md#workflow-deployment)).
+([workflow deployment](../docs/reference/api/events.md#workflow-deployment)).
 
 `dxos-authz` serves two read-only calls for the UI: `GET /api/auth/me` (the
 caller's identity and roles) and `GET /api/auth/apps` (the installed
@@ -64,7 +64,7 @@ applications the caller holds a role in, with those roles and each
 application's tables as its manifest declares them). Neither grants anything.
 For platform operators (`role_operator`) it also lists accounts and roles and
 grants or revokes a role, each change audited in the `core` chain; see
-[integrating the UI](../docs/development/ui-integration.md).
+[integrating the UI](../docs/guides/integrating-the-ui.md).
 
 A command is accepted when:
 

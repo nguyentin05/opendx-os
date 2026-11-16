@@ -13,20 +13,21 @@ Follow links as needed; there is no requirement to load the entire set.
 
 | Task involves | Project sources | Practical skill |
 | --- | --- | --- |
-| Architecture, infrastructure, tier boundaries | [Architecture and ADRs](docs/architecture/README.md) | Use the relevant component skill below |
-| Operator, DDL, Hasura, reconcile | [Data/manifest contract](docs/contracts/data-contracts.md) | [go-operator](.agents/skills/go-operator/SKILL.md) |
-| Commands, files, OT, BI, OCR/RAG | [Data](docs/contracts/data-contracts.md), [security/acceptance](docs/contracts/security-and-acceptance.md) | [hpdi-capability](.agents/skills/hpdi-capability/SKILL.md) |
-| App Shell, schema rendering, context changes | [UI integration](docs/development/ui-integration.md), [architecture](docs/architecture/README.md), [data](docs/contracts/data-contracts.md), [security](docs/contracts/security-and-acceptance.md) | [dynamic-ui-shell](.agents/skills/dynamic-ui-shell/SKILL.md) |
-| App packages, manifests, workflows | [Adding an app](docs/development/adding-an-app.md) | [declarative-app](.agents/skills/declarative-app/SKILL.md) |
-| License metadata, hygiene, release artifacts | [Source hygiene](docs/development/source-hygiene.md), [releasing](docs/development/releasing.md) | [pof-compliance](.agents/skills/pof-compliance/SKILL.md) |
-| Verification or hand-off | [Verification](docs/development/verification.md) | Select checks for the affected behavior |
+| Architecture, infrastructure, tier boundaries | [Architecture](docs/architecture/index.md), [ADRs](docs/adr/index.md) | Use the relevant component skill below |
+| Operator, DDL, Hasura, reconcile | [Manifest](docs/reference/manifest/index.md), [data contracts](docs/reference/data-contracts/index.md) | [go-operator](.agents/skills/go-operator/SKILL.md) |
+| Commands, files, OT, BI, OCR/RAG | [Data contracts](docs/reference/data-contracts/index.md), [security/acceptance](docs/reference/security/index.md) | [hpdi-capability](.agents/skills/hpdi-capability/SKILL.md) |
+| App Shell, schema rendering, context changes | [UI integration](docs/guides/integrating-the-ui.md), [architecture](docs/architecture/index.md), [data](docs/reference/data-contracts/index.md), [security](docs/reference/security/index.md) | [dynamic-ui-shell](.agents/skills/dynamic-ui-shell/SKILL.md) |
+| App packages, manifests, workflows | [Adding an app](docs/guides/adding-an-app.md) | [declarative-app](.agents/skills/declarative-app/SKILL.md) |
+| License metadata, hygiene, release artifacts | [Source hygiene](docs/contribute/source-hygiene.md), [releasing](docs/contribute/releasing.md) | [pof-compliance](.agents/skills/pof-compliance/SKILL.md) |
+| Verification or hand-off | [Verification](docs/contribute/verification.md) | Select checks for the affected behavior |
+| Documentation site, front matter, navigation | [Writing docs](docs/contribute/writing-docs.md) | Run `tests.test_docs` and a strict MkDocs build |
 
 ## Working principles
 
 - Project requirements live in `docs/`; skills explain how to apply them. Define
   each detailed requirement once and link to it.
 - For shared contract changes, identify affected producers/consumers and follow
-  [decision and contract changes](docs/architecture/README.md#decisions-and-contract-changes).
+  [decision and contract changes](docs/architecture/index.md#decisions-and-contract-changes).
   Distinguish intended behavior from partial implementation.
 - Verify the requested output and report evidence, limits, and open decisions.
   A design review is not a runtime test result; use actual module runners.

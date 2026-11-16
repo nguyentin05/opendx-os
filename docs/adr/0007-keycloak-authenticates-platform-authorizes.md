@@ -1,3 +1,13 @@
+---
+title: Keycloak authenticates, the platform authorizes
+description: Identity from Keycloak and effective permissions from core.user_roles.
+diataxis: explanation
+audience: [platform-developer, security-reviewer]
+status: active
+owner: platform
+last_reviewed: 2026-11-13
+---
+
 # ADR 0007: Keycloak Authenticates, the Platform Authorizes
 
 - **Status:** Accepted
@@ -87,7 +97,7 @@ provide the endpoint the webhook calls.
    schema and is the only row of `core.users` that does not mirror a Keycloak
    identity. The credential reaches only the effect endpoints, which the gateway
    does not route, and an effect is limited to what installed applications
-   declare ([workflow deployment](../contracts/data-contracts.md#workflow-deployment)).
+   declare ([workflow deployment](../reference/api/events.md#workflow-deployment)).
 
 8. **Operators assign roles through `dxos-authz`.** A user holding the platform
    role `role_operator` lists accounts and roles and grants or revokes a role

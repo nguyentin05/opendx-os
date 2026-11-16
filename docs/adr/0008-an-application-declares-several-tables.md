@@ -1,3 +1,13 @@
+---
+title: An application declares several tables
+description: Process, plain, and child tables replacing the single-table rule.
+diataxis: explanation
+audience: [platform-developer, app-author]
+status: active
+owner: platform
+last_reviewed: 2026-11-14
+---
+
 # ADR 0008: An Application Declares Several Tables
 
 - **Status:** Accepted
@@ -133,8 +143,8 @@ spec:
   behaves as before.
 - The UI builds one list and form per table from its `ui` block and shows child
   tables inside their parent record.
-- The data contract ([section 3](../contracts/data-contracts.md#3-domain-tables-and-initial-state)
-  and [section 7](../contracts/data-contracts.md#7-dxapplication-manifest-contract))
+- The data contract ([section 3](../reference/data-contracts/domain-tables.md)
+  and [section 7](../reference/manifest/schema.md))
   is rewritten with the implementation.
 
 Not decided here, and not supported until decided:
@@ -171,5 +181,5 @@ roles and cap-process/cap-ai dependencies and cannot declare table commands or
 workflows without tables. No dummy domain table is required. There may be only
 one enabled personal library in the installation, checked at managed-set planning
 and under the registry publication lock. Existing table-bearing applications keep
-their access rules. The [knowledge contract](../contracts/data-contracts.md#knowledge-v1)
+their access rules. The [knowledge contract](../reference/rag/knowledge-contract.md)
 defines the single nested serialization consumed by manifest, CRD, registry and UI.

@@ -5,8 +5,8 @@ description: Use when checking project licensing, source hygiene, PoF evidence, 
 
 # Licensing and release evidence
 
-Apply [source hygiene](../../../docs/development/source-hygiene.md) and
-[release requirements](../../../docs/development/releasing.md).
+Apply [source hygiene](../../../docs/contribute/source-hygiene.md) and
+[release requirements](../../../docs/contribute/releasing.md).
 
 1. Identify the revision/artifact and applicable official PoF rules. Separate
    project requirements from claims that need official judging criteria.
@@ -15,5 +15,5 @@ Apply [source hygiene](../../../docs/development/source-hygiene.md) and
 3. Run available hygiene checks, then inspect the archive, SBOM, checksum, and
    out-of-tree installation for a release task. Static checks alone do not prove
    artifact completeness or all dependency licenses.
-4. Report reproducible findings and [evidence statuses](../../../docs/development/verification.md#recording-results).
+4. Report reproducible findings and [evidence statuses](../../../docs/contribute/verification.md#recording-results).
    Identify missing rules/checks instead of assigning an unsupported score.
