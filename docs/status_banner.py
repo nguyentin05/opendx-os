@@ -17,7 +17,8 @@ STATUS = {
 
 def on_page_markdown(markdown, page, config, files):
     meta = page.meta or {}
-    status = meta.get("status")
+    # Material shows its own nav icon for any `status`; the banner replaces it.
+    status = meta.pop("status", None)
     if status not in STATUS:
         return markdown
 

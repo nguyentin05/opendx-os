@@ -3,7 +3,7 @@ title: Get started
 description: Run OpenDX-OS locally and complete a first business flow.
 diataxis: tutorial
 audience: [evaluator, operator]
-status: draft
+status: active
 owner: platform
 last_reviewed: 2026-11-16
 ---
