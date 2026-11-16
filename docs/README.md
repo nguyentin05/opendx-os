@@ -1,7 +1,7 @@
 # Documentation map
 
 This file is for readers browsing the repository on GitHub. It is excluded from
-the published site; the site entry point is the hand-written landing page [`index.html`](index.html).
+the published site; the site entry point is the Vietnamese landing page [`index.html`](index.html).
 
 ## Published documentation
 

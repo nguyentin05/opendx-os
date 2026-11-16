@@ -13,28 +13,31 @@ site_dir: site
 strict: true
 
 # Internal material stays in the repository but is never published.
+# mkdocs.en.yml repeats this list and adds `*.vi.md`.
 exclude_docs: |
   /README.md
-  /status_banner.py
+  /*.py
+  /__pycache__/
   /_internal/
+  /_snippets/
   /superpowers/
-  *.vi.md
 
 theme:
   name: material
-  language: en
+  # Vietnamese is the default site language; mkdocs.en.yml builds English.
+  language: vi
   logo: assets/logo.png
   favicon: assets/logo.png
   icon:
     repo: fontawesome/brands/github
   features:
-    - navigation.instant
     - navigation.tracking
-    - navigation.sections
     - navigation.indexes
     - navigation.top
     - navigation.footer
     - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
     - content.action.edit
     - search.suggest
     - search.highlight
@@ -56,13 +59,35 @@ theme:
         name: Switch to light mode
 
 plugins:
-  - search
+  - search:
+      lang: [vi, en]
+  # Link preview images; needs Cairo. Set DOCS_SOCIAL=false to skip locally.
+  - social:
+      enabled: !ENV [DOCS_SOCIAL, true]
+  - llmstxt:
+      markdown_description: >-
+        OpenDX-OS is a composable three-tier platform where business applications
+        are declarative packages (manifest, workflows, knowledge) installed by an
+        operator onto shared capabilities and infrastructure.
+      sections:
+        Get started:
+          - get-started/*.md
+        Guides:
+          - guides/*.md
+          - guides/knowledge/*.md
+        Reference:
+          - reference/*.md
+          - reference/*/*.md
+        Architecture and decisions:
+          - architecture/*.md
+          - adr/*.md
   - git-revision-date-localized:
       enable_creation_date: false
+      fallback_to_build_date: true
+      strict: false  # uncommitted pages have no git date yet; not an error
       type: date
       exclude:
         - "_internal/**"
-        - "**/*.vi.md"
   - minify:
       minify_html: true
   - redirects:
@@ -83,8 +108,10 @@ plugins:
 
 hooks:
   - docs/status_banner.py
+  - docs/i18n.py
 
 markdown_extensions:
+  - abbr
   - admonition
   - attr_list
   - def_list
@@ -97,6 +124,14 @@ markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  # Appends the glossary to every page so abbreviations get a tooltip.
+  - pymdownx.snippets:
+      check_paths: true
+      auto_append:
+        - docs/_snippets/abbreviations.md
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
@@ -118,6 +153,69 @@ validation:
 
 extra_css:
   - stylesheets/extra.css
+
+extra:
+  # The logo and site title lead to the Vietnamese landing page (docs/index.html).
+  homepage: /opendx-os/
+  # Replaced per page by docs/i18n.py so switching keeps the current page.
+  alternate:
+    - name: Tiếng Việt
+      link: ./
+      lang: vi
+    - name: English
+      link: en/
+      lang: en
+  # Vietnamese navigation titles, applied by docs/i18n.py.
+  nav_vi:
+    Get started: Bắt đầu
+    Overview: Tổng quan
+    Prerequisites: Yêu cầu
+    Run the local stack: Chạy stack trên máy
+    First request: Yêu cầu đầu tiên
+    Guides: Hướng dẫn
+    Adding an application: Thêm một ứng dụng
+    Integrating the UI: Tích hợp giao diện
+    Running workflows: Chạy workflow
+    Knowledge: Tri thức
+    Package knowledge: Tri thức của gói
+    Personal library: Thư viện cá nhân
+    Model answers: Trả lời bằng model
+    Reference: Tham chiếu
+    Runtime rules: Quy tắc runtime
+    Schema: Schema
+    Lifecycle: Vòng đời
+    Data contracts: Contract dữ liệu
+    Identity, roles, and scope: Danh tính, vai trò và phạm vi
+    Shared tables: Bảng dùng chung
+    Domain tables: Bảng nghiệp vụ
+    Writes, versions, and audit: Ghi, version và audit
+    Files, OT, and BI: File, OT và BI
+    Semantic concepts: Khái niệm ngữ nghĩa
+    Security and acceptance: Bảo mật và nghiệm thu
+    Invariants: Bất biến
+    Acceptance scenarios: Kịch bản nghiệm thu
+    Capability routes: Route của capability
+    Workflow deployment and events: Triển khai workflow và sự kiện
+    Knowledge contract: Contract tri thức
+    Native metadata: Metadata gốc
+    API (proposed): API (đề xuất)
+    Authorization (proposed): Phân quyền (đề xuất)
+    Architecture: Kiến trúc
+    Three tiers: Ba tầng
+    Control plane: Control plane
+    Runtime: Runtime
+    Security model: Mô hình bảo mật
+    Anti-patterns: Anti-pattern
+    Decisions: Quyết định
+    ADR index: Danh sách ADR
+    Operate: Vận hành
+    Installation: Cài đặt
+    Backup and restore: Sao lưu và khôi phục
+    Contribute: Đóng góp
+    Verification: Kiểm chứng
+    Source hygiene: Vệ sinh mã nguồn
+    Releasing: Phát hành
+    Writing docs: Viết tài liệu
 
 nav:
   - Get started:

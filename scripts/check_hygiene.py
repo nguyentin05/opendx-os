@@ -44,7 +44,7 @@ HEADER_EXTENSIONS = {
 }
 HEADER_FILENAMES = {"Makefile", "Dockerfile"}
 
-BANNED_DIRS = {"node_modules", "vendor", ".venv", "venv", "__pycache__", ".git", ".scratch"}
+BANNED_DIRS = {"node_modules", "vendor", ".venv", ".venv-docs", "venv", "__pycache__", ".git", ".scratch"}
 RUNTIME_NON_DOMAIN_PATHS = ("platform", "operator/internal", "capabilities", "workspace-ui/src")
 DOMAIN_APP_NAMES = ("maintenance", "procurement", "timesheet")
 SYSTEM_MANAGED_COLUMNS = {"id", "created_by", "org_unit_id", "status", "version", "created_at", "updated_at"}
@@ -56,7 +56,11 @@ def iter_repo_files(root: pathlib.Path):
             continue
         if path.relative_to(root) == pathlib.Path("AGENTS.local.md"):
             continue
-        if any(part in BANNED_DIRS for part in path.relative_to(root).parts):
+        parts = path.relative_to(root).parts
+        if any(part in BANNED_DIRS for part in parts):
+            continue
+        # Vale style packages are downloaded by `vale sync`; only config/ is ours.
+        if parts[:2] == (".vale", "styles") and parts[2:3] != ("config",):
             continue
         yield path
 

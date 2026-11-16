@@ -1,13 +1,13 @@
 <!doctype html>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright 2026 DX-OS Open-Core Contributors -->
-<html lang="en">
+<html lang="vi">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OpenDX-OS</title>
 <link rel="icon" href="assets/logo.png">
-<meta name="description" content="Composable open-core platform where business applications are declarations: a manifest, workflows and knowledge on shared infrastructure.">
+<meta name="description" content="Nền tảng mã nguồn mở dạng ghép nối: ứng dụng nghiệp vụ chỉ là các khai báo (manifest, workflow, tri thức) chạy trên hạ tầng dùng chung.">
 <style>
 :root {
   --bg: #fbfbfd; --surface: #ffffff; --text: #16202b; --muted: #5a6876;
@@ -72,8 +72,9 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: s
   <div class="wrap">
     <a class="brand" href="./"><img src="assets/logo.png" alt="" width="32" height="26">OpenDX-OS</a>
     <nav>
-      <a href="get-started/">Docs</a>
-      <a class="hide-sm" href="architecture/">Architecture</a>
+      <a href="get-started/">Tài liệu</a>
+      <a class="hide-sm" href="architecture/">Kiến trúc</a>
+      <a class="hide-sm" href="en/get-started/" hreflang="en">English</a>
       <a href="https://github.com/nguyentin05/opendx-os">GitHub</a>
     </nav>
   </div>
@@ -81,52 +82,52 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: s
 
 <main>
   <div class="wrap hero">
-    <img class="hero-logo" src="assets/logo.png" alt="OpenDX-OS logo" width="140" height="112">
-    <div class="eyebrow">Open-core · Apache-2.0 · OLP PMNM 2026</div>
-    <h1>Business applications as declarations</h1>
-    <p class="lead">OpenDX-OS is a composable three-tier platform for an organization's internal digital transformation. An application is a package of declarations (data, roles, state machine, workflows and knowledge), and the platform turns it into tables, permissions, APIs and flows.</p>
+    <img class="hero-logo" src="assets/logo.png" alt="Logo OpenDX-OS" width="140" height="112">
+    <div class="eyebrow">Open-core · Apache-2.0</div>
+    <h1>Ứng dụng nghiệp vụ chỉ là khai báo</h1>
+    <p class="lead">OpenDX-OS là nền tảng ba tầng dạng ghép nối cho chuyển đổi số nội bộ của tổ chức. Mỗi ứng dụng là một gói khai báo (dữ liệu, vai trò, máy trạng thái, workflow và tri thức), và nền tảng biến gói đó thành bảng, phân quyền, API và luồng xử lý.</p>
     <div class="cta">
-      <a class="btn primary" href="get-started/">Get started</a>
-      <a class="btn" href="architecture/">Read the architecture</a>
-      <a class="btn" href="https://github.com/nguyentin05/opendx-os">View source</a>
+      <a class="btn primary" href="get-started/">Bắt đầu</a>
+      <a class="btn" href="architecture/">Đọc kiến trúc</a>
+      <a class="btn" href="https://github.com/nguyentin05/opendx-os">Xem mã nguồn</a>
     </div>
   </div>
 
   <section>
     <div class="wrap">
-      <h2>Three tiers, clear boundaries</h2>
-      <p class="sub">Applications never ship backend code. They use shared capabilities, which run on a headless platform.</p>
+      <h2>Ba tầng, ranh giới rõ ràng</h2>
+      <p class="sub">Ứng dụng không bao giờ kèm code backend. Ứng dụng dùng các capability dùng chung, chạy trên một nền tảng headless.</p>
       <div class="grid">
         <div class="card">
-          <span class="tag">Tier 1 · Platform</span>
-          <h3>Headless infrastructure</h3>
+          <span class="tag">Tầng 1 · Nền tảng</span>
+          <h3>Hạ tầng headless</h3>
           <ul class="plain">
-            <li>PostgreSQL 17 and Hasura GraphQL</li>
-            <li>Keycloak SSO and APISIX gateway</li>
-            <li>Kestra workflow engine</li>
-            <li>SeaweedFS storage with ClamAV scanning</li>
-            <li>Go operator that installs app packages</li>
+            <li>PostgreSQL 17 và Hasura GraphQL</li>
+            <li>Keycloak SSO và gateway APISIX</li>
+            <li>Workflow engine Kestra</li>
+            <li>Lưu trữ SeaweedFS có quét ClamAV</li>
+            <li>Operator viết bằng Go để cài gói ứng dụng</li>
           </ul>
         </div>
         <div class="card">
-          <span class="tag">Tier 2 · Capabilities</span>
-          <h3>Shared H-P-D-I services</h3>
+          <span class="tag">Tầng 2 · Capability</span>
+          <h3>Dịch vụ H-P-D-I dùng chung</h3>
           <ul class="plain">
-            <li><code>cap-process</code>: versioned commands and files</li>
-            <li><code>cap-hr</code>: departments and staff</li>
-            <li><code>cap-ai</code>: scoped knowledge search</li>
-            <li><code>dxos-authz</code>: role resolution per request</li>
-            <li>Schema-driven App Shell</li>
+            <li><code>cap-process</code>: command có version và file</li>
+            <li><code>cap-hr</code>: phòng ban và nhân sự</li>
+            <li><code>cap-ai</code>: tìm kiếm tri thức theo phạm vi</li>
+            <li><code>dxos-authz</code>: xác định vai trò ở mỗi request</li>
+            <li>App Shell dựng giao diện từ schema</li>
           </ul>
         </div>
         <div class="card">
-          <span class="tag">Tier 3 · Applications</span>
-          <h3>Declarative packages</h3>
+          <span class="tag">Tầng 3 · Ứng dụng</span>
+          <h3>Gói khai báo</h3>
           <ul class="plain">
-            <li>Procurement approvals</li>
-            <li>Equipment maintenance</li>
-            <li>Timesheets</li>
-            <li>Personal knowledge library</li>
+            <li>Phê duyệt mua sắm</li>
+            <li>Bảo trì thiết bị</li>
+            <li>Chấm công</li>
+            <li>Thư viện tri thức cá nhân</li>
           </ul>
         </div>
       </div>
@@ -136,15 +137,15 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: s
   <section>
     <div class="wrap split">
       <div>
-        <h2>Declare it, the operator builds it</h2>
-        <p class="sub">A manifest names the roles, tables, columns each role may see and the commands that move a record between states.</p>
+        <h2>Khai báo, operator lo phần còn lại</h2>
+        <p class="sub">Manifest khai báo vai trò, các bảng, những cột mỗi vai trò được xem và các command chuyển bản ghi giữa các trạng thái.</p>
         <ol class="steps">
-          <li><strong>Write the package</strong><span>A <code>manifest.yaml</code>, optional Kestra flows and knowledge files.</span></li>
-          <li><strong>Drop it in <code>apps/</code></strong><span>The operator generates <code>domain.*</code> tables, Hasura row and column permissions, roles, routes and flows.</span></li>
-          <li><strong>Use it</strong><span>Reads go through GraphQL; state changes go through <code>cap-process</code> commands with an expected version.</span></li>
+          <li><strong>Viết gói ứng dụng</strong><span>Một <code>manifest.yaml</code>, kèm flow Kestra và file tri thức nếu cần.</span></li>
+          <li><strong>Thả vào <code>apps/</code></strong><span>Operator sinh bảng <code>domain.*</code>, phân quyền theo dòng và cột trong Hasura, vai trò, route và flow.</span></li>
+          <li><strong>Sử dụng</strong><span>Đọc dữ liệu qua GraphQL; đổi trạng thái qua command của <code>cap-process</code> kèm version mong đợi.</span></li>
         </ol>
       </div>
-      <pre><code><span class="c"># apps/procurement/manifest.yaml (excerpt)</span>
+      <pre><code><span class="c"># apps/procurement/manifest.yaml (trích)</span>
 kind: DXApplication
 metadata:
   name: procurement
@@ -159,7 +160,7 @@ spec:
         from: [SUBMITTED]
         to: BUDGET_REVIEW
         allowedRoles: [role_procurement_manager]
-        recordFilter:   <span class="c"># no self-approval</span>
+        recordFilter:   <span class="c"># cấm tự duyệt</span>
           created_by:
             _neq: X-Hasura-User-Id
       - name: reject
@@ -171,30 +172,30 @@ spec:
 
   <section>
     <div class="wrap">
-      <h2>Demo: cross-department purchase approval</h2>
-      <p class="sub">A requester files a purchase request with a scanned quote. Their department manager approves it, then finance reviews the budget. Each step is a versioned command, written to the audit log and published to workflows.</p>
-      <div class="flow" aria-label="Procurement states">
+      <h2>Demo: phê duyệt mua sắm liên phòng ban</h2>
+      <p class="sub">Người đề nghị tạo đề nghị mua sắm kèm báo giá đã quét virus. Trưởng phòng duyệt, sau đó tài chính xét ngân sách. Mỗi bước là một command có version, được ghi vào audit log và gửi tới workflow.</p>
+      <div class="flow" aria-label="Các trạng thái của đề nghị mua sắm">
         <span class="state">DRAFT</span><span class="arrow">→</span>
         <span class="state">SUBMITTED</span><span class="arrow">→</span>
         <span class="state">BUDGET_REVIEW</span><span class="arrow">→</span>
         <span class="state end">APPROVED</span>
       </div>
       <div class="grid">
-        <div class="card"><h3>Department scope</h3><p>Managers see and approve only requests from their own department.</p></div>
-        <div class="card"><h3>No self-approval</h3><p>A manager cannot approve a request they created; the platform refuses it.</p></div>
-        <div class="card"><h3>Stale writes refused</h3><p>A command with an outdated version fails instead of overwriting a newer decision.</p></div>
+        <div class="card"><h3>Phạm vi phòng ban</h3><p>Trưởng phòng chỉ thấy và duyệt đề nghị của phòng mình.</p></div>
+        <div class="card"><h3>Không tự duyệt</h3><p>Trưởng phòng không duyệt được đề nghị do chính mình tạo; nền tảng từ chối.</p></div>
+        <div class="card"><h3>Từ chối ghi đè dữ liệu cũ</h3><p>Command mang version đã cũ bị từ chối, không ghi đè lên quyết định mới hơn.</p></div>
       </div>
     </div>
   </section>
 
   <section>
     <div class="wrap">
-      <h2>Design principles</h2>
+      <h2>Nguyên tắc thiết kế</h2>
       <div class="grid">
-        <div class="card"><h3>Keycloak authenticates, the platform authorizes</h3><p>Roles live in <code>core.user_roles</code> and are resolved on every request.</p></div>
-        <div class="card"><h3>One organization, isolated apps</h3><p>Data is separated by application and department, not by a tenant key.</p></div>
-        <div class="card"><h3>Declarations over code</h3><p>Business rules sit in the manifest and in workflows, so an app installs without a deploy.</p></div>
-        <div class="card"><h3>Open source throughout</h3><p>Apache-2.0 code on open-source infrastructure you can run yourself.</p></div>
+        <div class="card"><h3>Keycloak xác thực, nền tảng phân quyền</h3><p>Vai trò nằm trong <code>core.user_roles</code> và được xác định lại ở mỗi request.</p></div>
+        <div class="card"><h3>Một tổ chức, ứng dụng tách biệt</h3><p>Dữ liệu được tách theo ứng dụng và phòng ban, không theo khóa tenant.</p></div>
+        <div class="card"><h3>Khai báo thay cho code</h3><p>Quy tắc nghiệp vụ nằm trong manifest và workflow, nên cài ứng dụng không cần deploy.</p></div>
+        <div class="card"><h3>Mã nguồn mở hoàn toàn</h3><p>Code Apache-2.0 chạy trên hạ tầng mã nguồn mở mà bạn tự vận hành được.</p></div>
       </div>
     </div>
   </section>
@@ -202,9 +203,9 @@ spec:
   <section>
     <div class="wrap split">
       <div>
-        <h2>Run it locally</h2>
-        <p class="sub">Docker Compose starts the whole platform on your machine. The seed script creates a demo organization and walks one request through the approval chain.</p>
-        <p><a href="get-started/">Full setup guide →</a></p>
+        <h2>Chạy trên máy</h2>
+        <p class="sub">Docker Compose khởi động toàn bộ nền tảng trên máy của bạn. Script seed tạo một tổ chức demo và chạy một đề nghị qua toàn bộ chuỗi phê duyệt.</p>
+        <p><a href="get-started/">Hướng dẫn cài đặt đầy đủ →</a></p>
       </div>
       <pre><code>git clone https://github.com/nguyentin05/opendx-os
 cd opendx-os
@@ -219,8 +220,8 @@ scripts/seed-demo.py flow</code></pre>
 
 <footer>
   <div class="wrap">
-    <span>OpenDX-OS · Apache-2.0 · Under active development</span>
-    <span><a href="get-started/">Documentation</a> · <a href="adr/">ADRs</a> · <a href="https://github.com/nguyentin05/opendx-os">GitHub</a></span>
+    <span>OpenDX-OS · Apache-2.0 · Đang phát triển</span>
+    <span><a href="get-started/">Tài liệu</a> · <a href="adr/">ADR</a> · <a href="en/get-started/" hreflang="en">English</a> · <a href="https://github.com/nguyentin05/opendx-os">GitHub</a></span>
   </div>
 </footer>
 </body>

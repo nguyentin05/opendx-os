@@ -68,7 +68,7 @@ readiness remain open.
    ([integrating the UI](../guides/integrating-the-ui.md#8-administration)),
    and users holding `role_hr_admin` maintain departments and staff through
    `/api/cap/hr`. Roles take
-   effect within `ROLE_CACHE_TTL` (default 5s), with no new token
+   effect within `ROLE_CACHE_TTL` (default `5s`), with no new token
    ([ADR 0007](../adr/0007-keycloak-authenticates-platform-authorizes.md)).
 
    For a demo organization, run `scripts/seed-demo.py seed`. It creates three
