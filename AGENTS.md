@@ -20,6 +20,7 @@ Follow links as needed; there is no requirement to load the entire set.
 | App packages, manifests, workflows | [Adding an app](docs/guides/adding-an-app.md) | [declarative-app](.agents/skills/declarative-app/SKILL.md) |
 | License metadata, hygiene, release artifacts | [Source hygiene](docs/contribute/source-hygiene.md), [releasing](docs/contribute/releasing.md) | [pof-compliance](.agents/skills/pof-compliance/SKILL.md) |
 | Verification or hand-off | [Verification](docs/contribute/verification.md) | Select checks for the affected behavior |
+| Documentation site, front matter, navigation | [Writing docs](docs/contribute/writing-docs.md) | Run `tests.test_docs` and a strict MkDocs build |
 
 ## Working principles
 

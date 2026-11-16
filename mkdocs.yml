@@ -55,6 +55,9 @@ plugins:
   - git-revision-date-localized:
       enable_creation_date: false
       type: date
+      exclude:
+        - "_internal/**"
+        - "**/*.vi.md"
   - minify:
       minify_html: true
   - redirects:
@@ -103,12 +106,10 @@ validation:
     not_found: warn
     absolute_links: warn
   links:
-    # Legacy pages still link to repository files outside docs_dir. Phase 4
-    # turns these checks back on once the content migration is complete.
-    not_found: ignore
-    anchors: ignore
-    absolute_links: ignore
-    unrecognized_links: ignore
+    not_found: warn
+    anchors: warn
+    absolute_links: warn
+    unrecognized_links: warn
 
 extra_css:
   - stylesheets/extra.css

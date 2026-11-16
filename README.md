@@ -71,6 +71,9 @@ uninstalls it (see the [installation guide](docs/operations/installation.md)).
 
 ## Documentation
 
+The published site is built from `docs/`; the repository map is
+[docs/README.md](docs/README.md).
+
 - [Architecture](docs/architecture/index.md) and [ADRs](docs/adr/index.md)
 - [Data and manifest contract](docs/reference/data-contracts/index.md)
 - [Security and acceptance](docs/reference/security/index.md)

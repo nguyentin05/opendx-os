@@ -36,7 +36,7 @@ parsers or app packages.
    initial state, stale commands, attachment checks, retry-safe events, and
    capability disablement. Reconcile must preserve other apps' valid grants.
 
-The [CLI](../../operator/cmd/dxos-operator/main.go) offers `validate`, `plan`,
+The `operator/cmd/dxos-operator` CLI offers `validate`, `plan`,
 `apply` (install or upgrade one app), `reconcile` (install exactly the apps of a
 directory; with `--interval` it keeps doing so, which is how the Compose
 `operator` service runs), `export-crd` and `controller`. Under Compose, copying

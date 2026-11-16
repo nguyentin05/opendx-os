@@ -3,13 +3,15 @@
 
 """Documentation checks for the MkDocs site.
 
-The tests mirror the guardrails in the implementation plan:
+The tests enforce the published-documentation contract:
 
-* every navigation target exists;
+* every public page is reachable from navigation;
 * internal pages are excluded and never linked from public pages;
-* new pages carry the required front matter;
-* relative links and ADR index entries resolve;
-* public pages do not reintroduce stale data-model names.
+* every public page carries valid front matter;
+* relative links resolve;
+* the ADR index lists every decision record;
+* public pages do not reintroduce stale data-model names;
+* every redirect target exists.
 """
 
 from __future__ import annotations
@@ -26,9 +28,6 @@ ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
 MKDOCS = ROOT / "mkdocs.yml"
 
-NEW_PREFIXES = ("get-started/", "guides/", "reference/", "contribute/")
-NEW_FILES = {"index.md", "adr/index.md"}
-
 DIATAXIS = {"tutorial", "how-to", "reference", "explanation"}
 STATUSES = {"draft", "proposed", "active", "deprecated", "historical"}
 REQUIRED_META = {
@@ -40,6 +39,9 @@ REQUIRED_META = {
     "owner",
     "last_reviewed",
 }
+
+# ADRs are historical records; their original vocabulary is preserved.
+STALE_TERM_ALLOWLIST = ("adr/",)
 
 STALE_TERMS = (
     "workspace_id",
@@ -114,10 +116,6 @@ def public_pages(patterns: list[str]) -> dict[str, Path]:
     return pages
 
 
-def is_new_page(rel: str) -> bool:
-    return rel in NEW_FILES or rel.startswith(NEW_PREFIXES)
-
-
 def front_matter(path: Path) -> dict | None:
     text = path.read_text(encoding="utf-8")
     if not text.startswith("---\n"):
@@ -154,6 +152,14 @@ def resolve_link(source: Path, target: str) -> Path | None:
     return resolved
 
 
+def redirect_maps(config: dict) -> dict[str, str]:
+    for plugin in config.get("plugins", []):
+        if isinstance(plugin, dict) and "redirects" in plugin:
+            value = plugin["redirects"] or {}
+            return value.get("redirect_maps") or {}
+    return {}
+
+
 class DocsTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -161,18 +167,22 @@ class DocsTest(unittest.TestCase):
         cls.patterns = excluded_patterns(cls.config)
         cls.pages = public_pages(cls.patterns)
         cls.nav = nav_targets(cls.config.get("nav", []))
-        cls.new_pages = {
-            rel: path for rel, path in cls.pages.items() if is_new_page(rel)
-        }
 
     def test_nav_targets_exist(self):
         for target in self.nav:
             if target.startswith(("http://", "https://")):
                 continue
-            self.assertTrue(
-                (DOCS / target).is_file(),
-                f"navigation target does not exist: {target}",
-            )
+            with self.subTest(target=target):
+                self.assertTrue(
+                    (DOCS / target).is_file(),
+                    f"navigation target does not exist: {target}",
+                )
+
+    def test_nav_reaches_every_public_page(self):
+        targets = set(self.nav)
+        for rel in self.pages:
+            with self.subTest(page=rel):
+                self.assertIn(rel, targets, f"{rel} is not reachable from nav")
 
     def test_internal_docs_are_excluded(self):
         self.assertTrue(
@@ -181,8 +191,8 @@ class DocsTest(unittest.TestCase):
         )
         self.assertTrue((DOCS / "_internal" / "README.md").is_file())
 
-    def test_new_pages_have_front_matter(self):
-        for rel, path in self.new_pages.items():
+    def test_public_pages_have_front_matter(self):
+        for rel, path in self.pages.items():
             with self.subTest(page=rel):
                 meta = front_matter(path)
                 self.assertIsNotNone(meta, f"{rel} is missing front matter")
@@ -198,14 +208,14 @@ class DocsTest(unittest.TestCase):
                 self.assertRegex(reviewed, r"^\d{4}-\d{2}-\d{2}$")
                 date.fromisoformat(reviewed)
 
-    def test_new_pages_do_not_link_internal(self):
-        for rel, path in self.new_pages.items():
+    def test_public_pages_do_not_link_internal(self):
+        for rel, path in self.pages.items():
             for target in markdown_links(path):
                 with self.subTest(page=rel, target=target):
                     self.assertNotIn("_internal", target)
 
-    def test_new_pages_links_resolve(self):
-        for rel, path in self.new_pages.items():
+    def test_public_pages_links_resolve(self):
+        for rel, path in self.pages.items():
             for target in markdown_links(path):
                 resolved = resolve_link(path, target)
                 if resolved is None:
@@ -227,8 +237,20 @@ class DocsTest(unittest.TestCase):
         for name in adrs:
             self.assertIn(name, index, f"ADR index does not list {name}")
 
-    def test_new_pages_have_no_stale_terms(self):
-        for rel, path in self.new_pages.items():
+    def test_redirect_targets_exist(self):
+        redirects = redirect_maps(self.config)
+        self.assertTrue(redirects, "redirect_maps must record moved pages")
+        for source, target in redirects.items():
+            with self.subTest(source=source, target=target):
+                self.assertTrue(
+                    (DOCS / target).is_file(),
+                    f"redirect target does not exist: {target}",
+                )
+
+    def test_public_pages_have_no_stale_terms(self):
+        for rel, path in self.pages.items():
+            if rel.startswith(STALE_TERM_ALLOWLIST):
+                continue
             text = path.read_text(encoding="utf-8")
             for term in STALE_TERMS:
                 with self.subTest(page=rel, term=term):
