@@ -34,4 +34,6 @@ Follow links as needed; there is no requirement to load the entire set.
 - Follow runtime permissions and the user's scope for external actions. Project
   documentation does not itself authorize publishing or contacting others.
 - Write project documentation in English, preserving technical names and API
-  identifiers. Keep the root README focused on the software project.
+  identifiers. English pages are the source; an optional Vietnamese translation
+  (`page.vi.md`) never adds requirements, and English wins when they differ.
+  Keep the root README focused on the software project.

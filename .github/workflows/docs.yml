@@ -9,6 +9,9 @@ on:
     paths:
       - "docs/**"
       - "mkdocs.yml"
+      - "mkdocs.en.yml"
+      - ".vale.ini"
+      - ".vale/styles/config/**"
       - "requirements-docs.txt"
       - "tests/test_docs.py"
       - ".github/workflows/docs.yml"
@@ -16,6 +19,9 @@ on:
     paths:
       - "docs/**"
       - "mkdocs.yml"
+      - "mkdocs.en.yml"
+      - ".vale.ini"
+      - ".vale/styles/config/**"
       - "requirements-docs.txt"
       - "tests/test_docs.py"
       - ".github/workflows/docs.yml"
@@ -38,12 +44,15 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0 # git-revision-date plugin needs full history
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+
+      - name: Install Cairo for social cards
+        run: sudo apt-get update && sudo apt-get install -y libcairo2
 
       - name: Install MkDocs Material & Extensions
         run: pip install -r requirements-docs.txt
@@ -53,6 +62,14 @@ jobs:
 
       - name: Run Docs Tests
         run: python3 -m unittest tests.test_docs -v
+
+      - name: Lint Prose with Vale
+        uses: errata-ai/vale-action@v3.0.0
+        with:
+          version: 3.27.0
+          files: docs
+          fail_on_error: true
+          filter_mode: nofilter
 
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/configure-pages@v6

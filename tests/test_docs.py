@@ -6,6 +6,8 @@
 The tests enforce the published-documentation contract:
 
 * every public page is reachable from navigation;
+* every Vietnamese translation has an English source and records the source
+  revision it was translated from, and the English site excludes translations;
 * internal pages are excluded and never linked from public pages;
 * every public page carries valid front matter;
 * relative links resolve;
@@ -27,6 +29,8 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
 MKDOCS = ROOT / "mkdocs.yml"
+MKDOCS_EN = ROOT / "mkdocs.en.yml"
+TRANSLATION = ".vi.md"
 
 DIATAXIS = {"tutorial", "how-to", "reference", "explanation"}
 STATUSES = {"draft", "proposed", "active", "deprecated", "historical"}
@@ -72,8 +76,11 @@ MkDocsLoader.add_multi_constructor(
 )
 
 
-def load_config() -> dict:
-    with MKDOCS.open(encoding="utf-8") as handle:
+MkDocsLoader.add_constructor("!ENV", lambda loader, node: None)
+
+
+def load_config(path: Path = MKDOCS) -> dict:
+    with path.open(encoding="utf-8") as handle:
         return yaml.load(handle, Loader=MkDocsLoader) or {}
 
 
@@ -92,7 +99,8 @@ def nav_targets(node) -> list[str]:
 
 def excluded_patterns(config: dict) -> list[str]:
     raw = config.get("exclude_docs") or ""
-    return [line.strip() for line in raw.splitlines() if line.strip()]
+    lines = (line.strip() for line in raw.splitlines())
+    return [line for line in lines if line and not line.startswith("#")]
 
 
 def is_excluded(rel: str, patterns: list[str]) -> bool:
@@ -166,6 +174,13 @@ class DocsTest(unittest.TestCase):
         cls.config = load_config()
         cls.patterns = excluded_patterns(cls.config)
         cls.pages = public_pages(cls.patterns)
+        # Translations are reached through their source page.
+        cls.sources = {
+            rel: path for rel, path in cls.pages.items() if not rel.endswith(TRANSLATION)
+        }
+        cls.translations = {
+            rel: path for rel, path in cls.pages.items() if rel.endswith(TRANSLATION)
+        }
         cls.nav = nav_targets(cls.config.get("nav", []))
 
     def test_nav_targets_exist(self):
@@ -180,7 +195,7 @@ class DocsTest(unittest.TestCase):
 
     def test_nav_reaches_every_public_page(self):
         targets = set(self.nav)
-        for rel in self.pages:
+        for rel in self.sources:
             with self.subTest(page=rel):
                 self.assertIn(rel, targets, f"{rel} is not reachable from nav")
 
@@ -192,7 +207,7 @@ class DocsTest(unittest.TestCase):
         self.assertTrue((DOCS / "_internal" / "README.md").is_file())
 
     def test_public_pages_have_front_matter(self):
-        for rel, path in self.pages.items():
+        for rel, path in {**self.sources, **self.translations}.items():
             with self.subTest(page=rel):
                 meta = front_matter(path)
                 self.assertIsNotNone(meta, f"{rel} is missing front matter")
@@ -207,6 +222,21 @@ class DocsTest(unittest.TestCase):
                 reviewed = str(meta["last_reviewed"])
                 self.assertRegex(reviewed, r"^\d{4}-\d{2}-\d{2}$")
                 date.fromisoformat(reviewed)
+
+    def test_translations_have_source_and_revision(self):
+        for rel, path in self.translations.items():
+            with self.subTest(page=rel):
+                source = rel[: -len(TRANSLATION)] + ".md"
+                self.assertIn(source, self.sources, f"{rel} has no English source")
+                reviewed = str((front_matter(path) or {}).get("source_reviewed", ""))
+                self.assertRegex(reviewed, r"^\d{4}-\d{2}-\d{2}$")
+                date.fromisoformat(reviewed)
+
+    def test_english_site_excludes_translations(self):
+        english = excluded_patterns(load_config(MKDOCS_EN))
+        # English skips translations and the Vietnamese-only landing page.
+        self.assertEqual(set(english) - set(self.patterns), {"*.vi.md", "/index.html"})
+        self.assertFalse(set(self.patterns) - set(english))
 
     def test_public_pages_do_not_link_internal(self):
         for rel, path in self.pages.items():

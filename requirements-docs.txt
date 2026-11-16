@@ -7,3 +7,7 @@ mkdocs-git-revision-date-localized-plugin==1.4.7
 mkdocs-minify-plugin==0.8.0
 mkdocs-redirects==1.2.2
 PyYAML==6.0.2
+mkdocs-llmstxt==0.5.1
+# Social cards (Material `social` plugin); also needs the system Cairo library.
+pillow==10.4.0
+cairosvg==2.9.1

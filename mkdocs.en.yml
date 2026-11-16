@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+
+# English site, built into en/ by docs/i18n.py after the Vietnamese build.
+INHERIT: mkdocs.yml
+
+site_url: https://nguyentin05.github.io/opendx-os/en/
+
+exclude_docs: |
+  /README.md
+  /*.py
+  /__pycache__/
+  /_internal/
+  /_snippets/
+  /superpowers/
+  *.vi.md
+  # The landing page is Vietnamese only; en/ redirects to it (docs/i18n.py).
+  /index.html
+
+theme:
+  language: en
