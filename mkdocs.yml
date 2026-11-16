@@ -3,7 +3,7 @@
 
 site_name: OpenDX-OS
 site_description: Composable three-tier platform for business applications.
-site_url: https://nguyentin05.github.io/opendx-os/
+site_url: https://nguyentin05.github.io/opendx-os/docs/
 repo_url: https://github.com/nguyentin05/opendx-os
 repo_name: nguyentin05/opendx-os
 edit_uri: edit/main/docs/
