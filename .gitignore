@@ -6,7 +6,6 @@
 # Private local planning and per-user agent guidance
 /AGENTS.local.md
 /docs/superpowers/
-/docs/_internal/plans/
 .scratch/
 
 # Documentation build
