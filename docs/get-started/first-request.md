@@ -53,10 +53,10 @@ scripts/seed-demo.py lines    # vendor list and request line items
 
 ## Inspect the result
 
-Open the App Shell at <http://localhost:5173> and sign in as a demo user. The
-record's state, version, and audit row should match the script output. In Hasura
-(<http://localhost:8080>) you can inspect `core.audit_logs` and the generated
-`domain.procurement_requests` row.
+Open the App Shell at <http://localhost:5173> and sign in as a demo user to see
+the requests your role may read. In Hasura (<http://localhost:8080>) you can
+inspect `core.audit_logs` and the generated `domain.procurement_requests` row; its
+state and version should match the script output.
 
 ## What you just used
 
