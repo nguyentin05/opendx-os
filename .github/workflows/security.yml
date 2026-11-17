@@ -1,0 +1,103 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Security
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  schedule:
+    # Mondays 03:17 UTC, off the hour to avoid the busiest runner window.
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  trivy:
+    name: trivy (${{ matrix.scan }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        scan: [fs, config]
+    steps:
+      - uses: actions/checkout@v7
+      # Report-only until #86 clears the findings that already exist on main.
+      - name: Scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: ${{ matrix.scan }}
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          format: sarif
+          # The action drops severity for SARIF unless this is enabled.
+          limit-severities-for-sarif: true
+          output: trivy-${{ matrix.scan }}.sarif
+          exit-code: "0"
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4 # v4.39.3
+        with:
+          sarif_file: trivy-${{ matrix.scan }}.sarif
+          category: trivy-${{ matrix.scan }}
+
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # The action writes its findings as a review comment on the pull request.
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Secrets are found in history, not only in the current tree.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  govulncheck:
+    name: govulncheck (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [operator, capabilities]
+    steps:
+      - uses: actions/checkout@v7
+      # Report-only until #86 upgrades x/net, x/text, goldmark, and Go itself.
+      - name: Run govulncheck
+        continue-on-error: true
+        uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
+        with:
+          repo-checkout: false
+          # The action always forwards its own go-version-input (default
+          # "stable"), and setup-go prefers it over go-version-file. An empty
+          # value leaves the file as the only source, so the scan uses the
+          # 1.27.3 declared by go.mod.
+          go-version-input: ""
+          check-latest: false
+          go-version-file: ${{ matrix.module }}/go.mod
+          work-dir: ${{ matrix.module }}
+          go-package: ./...
+          cache-dependency-path: ${{ matrix.module }}/go.sum
