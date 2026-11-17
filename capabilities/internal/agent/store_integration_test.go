@@ -7,6 +7,7 @@ package agent
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
@@ -125,5 +126,47 @@ func TestConversationStoreHistoryAndPagination(t *testing.T) {
 	}
 	if _, err = s.Messages(t.Context(), a, c.ID, 20, 0); !errors.Is(err, knowledge.ErrNotFound) {
 		t.Fatalf("deleted: %v", err)
+	}
+}
+
+func TestConversationStoreCompletedReplayRetainsSources(t *testing.T) {
+	db := agentDB(t)
+	s := &PostgresConversationStore{DB: db}
+	actor := Actor{alice}
+	if _, err := db.Exec(`INSERT INTO core.roles(name) VALUES ('role_source')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO core.user_roles(user_id,role_name) VALUES ($1,'role_source')`, alice); err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.Create(t.Context(), actor, "history")
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn, err := s.BeginTurn(t.Context(), actor, c.ID, "key", "question")
+	if err != nil || !turn.Created {
+		t.Fatalf("begin: %+v %v", turn, err)
+	}
+	ref := SourceRef{ScopeKind: "APP", AppID: "app", ActingRole: "role_source", DocumentID: "33333333-3333-3333-3333-333333333333", VersionID: "44444444-4444-4444-4444-444444444444", ChunkID: "55555555-5555-5555-5555-555555555555", CitationLabel: "[1]", ScopeSnapshot: knowledge.ReadScope{DocumentID: "33333333-3333-3333-3333-333333333333", VersionID: "44444444-4444-4444-4444-444444444444", RunID: "run", PolicyRevision: 7, AuthorizationGeneration: 8, SourceIncarnation: "incarnation", AppPublicationGeneration: 9, ProcessingPolicyID: "policy", ProcessingPolicyVersion: 10}}
+	want := []SourceRef{ref}
+	answer := "answer"
+	result := TurnResult{Status: "ANSWERED", Answer: &answer, Sources: want}
+	finished, err := s.FinishTurn(t.Context(), actor, turn.ID, result)
+	if err != nil || !reflect.DeepEqual(finished.Sources, want) {
+		t.Fatalf("finish sources: %+v %v", finished.Sources, err)
+	}
+	if _, err := db.Exec(`DELETE FROM core.user_roles WHERE user_id=$1 AND role_name='role_source'`, alice); err != nil {
+		t.Fatal(err)
+	}
+	replay, err := s.BeginTurn(t.Context(), actor, c.ID, "key", "question")
+	if err != nil || replay.Created || replay.Completion == nil || !reflect.DeepEqual(replay.Completion.Sources, want) {
+		t.Fatalf("replay: %+v %v", replay, err)
+	}
+	again, err := s.FinishTurn(t.Context(), actor, turn.ID, TurnResult{})
+	if err != nil || again.ID != finished.ID || !reflect.DeepEqual(again.Sources, want) {
+		t.Fatalf("finish replay: %+v %v", again, err)
+	}
+	if _, err := s.Messages(t.Context(), Actor{bob}, c.ID, 20, 0); !errors.Is(err, knowledge.ErrNotFound) {
+		t.Fatalf("foreign history: %v", err)
 	}
 }

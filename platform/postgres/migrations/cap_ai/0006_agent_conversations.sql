@@ -99,7 +99,7 @@ BEGIN
   IF FOUND THEN
     IF m.body_hash <> body_hash OR m.content <> query THEN RAISE EXCEPTION 'conflict' USING ERRCODE = 'P0409'; END IF;
     SELECT * INTO answer FROM cap_ai.agent_messages WHERE conversation_id = conversation AND seq = m.seq + 1 AND role = 'ASSISTANT';
-    RETURN to_jsonb(m) || jsonb_build_object('created', false, 'completion', CASE WHEN answer.id IS NULL THEN NULL ELSE to_jsonb(answer) END);
+    RETURN to_jsonb(m) || jsonb_build_object('created', false, 'completion', CASE WHEN answer.id IS NULL THEN NULL ELSE to_jsonb(answer) || jsonb_build_object('sources', (SELECT coalesce(jsonb_agg(to_jsonb(s) ORDER BY s.source_order), '[]'::jsonb) FROM cap_ai.agent_message_sources s WHERE s.message_id = answer.id)) END);
   END IF;
   IF EXISTS (SELECT 1 FROM cap_ai.agent_messages WHERE conversation_id = conversation AND status = 'PENDING') THEN RAISE EXCEPTION 'turn in progress' USING ERRCODE = 'P0409'; END IF;
   UPDATE cap_ai.agent_conversations SET last_seq = last_seq + 1, updated_at = now() WHERE id = conversation RETURNING * INTO c;
@@ -117,7 +117,7 @@ BEGIN
   SELECT * INTO m FROM cap_ai.agent_messages WHERE id = user_message;
   IF m.status = 'COMPLETE' THEN
     SELECT * INTO answer FROM cap_ai.agent_messages WHERE conversation_id = c.id AND seq = m.seq + 1 AND role = 'ASSISTANT';
-    RETURN to_jsonb(answer);
+    RETURN to_jsonb(answer) || jsonb_build_object('sources', (SELECT coalesce(jsonb_agg(to_jsonb(s) ORDER BY s.source_order), '[]'::jsonb) FROM cap_ai.agent_message_sources s WHERE s.message_id = answer.id));
   END IF;
   IF response IS NULL OR jsonb_typeof(response) <> 'object' OR jsonb_typeof(response->'response') IS DISTINCT FROM 'object' OR jsonb_typeof(response->'sources') IS DISTINCT FROM 'array' OR coalesce(jsonb_typeof(response->'response'->'answer'), '') NOT IN ('string', 'null') OR jsonb_array_length(response->'sources') > 100 THEN RAISE EXCEPTION 'invalid response' USING ERRCODE = 'P0400'; END IF;
   payload := response->'response';
@@ -129,7 +129,7 @@ BEGIN
     n := n + 1;
   END LOOP;
   UPDATE cap_ai.agent_messages SET status = 'COMPLETE' WHERE id = m.id;
-  RETURN to_jsonb(answer);
+  RETURN to_jsonb(answer) || jsonb_build_object('sources', (SELECT coalesce(jsonb_agg(to_jsonb(s) ORDER BY s.source_order), '[]'::jsonb) FROM cap_ai.agent_message_sources s WHERE s.message_id = answer.id));
 END $$;
 
 CREATE FUNCTION cap_ai.agent_delete_conversation(actor uuid, conversation uuid) RETURNS jsonb
