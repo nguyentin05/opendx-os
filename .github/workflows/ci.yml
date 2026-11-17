@@ -76,12 +76,11 @@ jobs:
       fail-fast: false
       matrix:
         module: [operator, capabilities]
-    permissions:
-      contents: read
-      # only-new-issues reads the pull request diff through the API.
-      pull-requests: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          # .golangci.yml baselines issues against a past revision.
+          fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
           go-version-file: ${{ matrix.module }}/go.mod
@@ -91,7 +90,6 @@ jobs:
         with:
           version: v2.15.0
           working-directory: ${{ matrix.module }}
-          only-new-issues: ${{ github.event_name == 'pull_request' }}
 
   python:
     name: python
@@ -156,21 +154,7 @@ jobs:
             operator/go.sum
             capabilities/go.sum
       - name: Provision cluster roles and platform schemas
-        env:
-          PGPASSWORD: ci-${{ github.run_id }}
-        run: |
-          for f in platform/postgres/init/01_core_schema.sql \
-                   platform/postgres/init/02_capability_registry.sql \
-                   platform/postgres/init/03_app_registry.sql \
-                   platform/postgres/init/05_operator_deployments.sql \
-                   platform/postgres/init/07_app_definitions.sql \
-                   platform/postgres/capabilities/cap_hr.sql \
-                   platform/postgres/capabilities/cap_work.sql \
-                   platform/postgres/capabilities/cap_process.sql \
-                   platform/postgres/capabilities/cap_data.sql \
-                   platform/postgres/init/06_runtime_roles.sql; do
-            psql -q -v ON_ERROR_STOP=1 -h localhost -U postgres -d postgres_test -f "$f"
-          done
+        run: scripts/ci/provision-test-db.sh
       - name: Integration tests (first run)
         run: |
           (cd operator && go test -tags=integration -p 1 -count=1 ./...)

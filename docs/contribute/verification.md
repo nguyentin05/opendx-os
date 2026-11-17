@@ -82,18 +82,7 @@ docker run -d --name ci-pg -e POSTGRES_USER=postgres \
   -p 5432:5432 pgvector/pgvector:pg17
 export TEST_DATABASE_URL='postgres://postgres:ci-local@localhost:5432/postgres_test?sslmode=disable'
 # The job's provisioning step: platform schemas, then the cluster runtime roles.
-for f in platform/postgres/init/01_core_schema.sql \
-         platform/postgres/init/02_capability_registry.sql \
-         platform/postgres/init/03_app_registry.sql \
-         platform/postgres/init/05_operator_deployments.sql \
-         platform/postgres/init/07_app_definitions.sql \
-         platform/postgres/capabilities/cap_hr.sql \
-         platform/postgres/capabilities/cap_work.sql \
-         platform/postgres/capabilities/cap_process.sql \
-         platform/postgres/capabilities/cap_data.sql \
-         platform/postgres/init/06_runtime_roles.sql; do
-  psql -q -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" -f "$f"
-done
+scripts/ci/provision-test-db.sh
 (cd operator && go test -tags=integration -p 1 -count=1 ./...)
 (cd capabilities && go test -tags=integration -p 1 -count=1 ./...)
 ```
