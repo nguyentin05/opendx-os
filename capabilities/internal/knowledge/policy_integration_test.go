@@ -143,6 +143,14 @@ func TestBootstrapMigrationLedger(t *testing.T) {
 	if _, e = upgraded.Exec(string(derivedSQL)); e != nil {
 		t.Fatal(e)
 	}
+	// Bootstrap also installs the model-independent conversation ledger.
+	ledgerSQL, readErr := os.ReadFile("../../../platform/postgres/migrations/cap_ai/0006_agent_conversations.sql")
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if _, e = upgraded.Exec(string(ledgerSQL)); e != nil {
+		t.Fatal(e)
+	}
 	const fingerprint = `SELECT jsonb_build_object('columns',(SELECT jsonb_agg(jsonb_build_array(table_name,column_name,data_type,is_nullable,column_default) ORDER BY table_name,ordinal_position) FROM information_schema.columns WHERE table_schema='cap_ai'),'constraints',(SELECT jsonb_agg(jsonb_build_array(t.relname,c.conname,pg_get_constraintdef(c.oid)) ORDER BY t.relname,c.conname) FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace WHERE n.nspname='cap_ai'))::text`
 	var freshSchema, upgradeSchema string
 	if e = db.QueryRow(fingerprint).Scan(&freshSchema); e != nil {
