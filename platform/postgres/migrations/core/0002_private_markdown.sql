@@ -3,5 +3,6 @@
 -- Atomic constraint replacement; existing identities/policies/bytes remain unchanged.
 ALTER TABLE core.files DROP CONSTRAINT files_mime_type_check;
 ALTER TABLE core.files ADD CONSTRAINT files_mime_type_check CHECK (
- mime_type IN ('application/pdf', 'image/png', 'image/jpeg')
- OR (mime_type='text/markdown' AND read_policy='OWNER_ONLY'));
+    mime_type IN ('application/pdf', 'image/png', 'image/jpeg')
+    OR (mime_type = 'text/markdown' AND read_policy = 'OWNER_ONLY')
+);
