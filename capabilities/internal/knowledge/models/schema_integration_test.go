@@ -145,21 +145,31 @@ func TestRegistryExplicitMigrationRunner(t *testing.T) {
 		t.Fatal(e)
 	}
 	u.Path = "/" + name
-	run := func(version string) error {
+	run := func(version string, flags ...string) error {
 		command := exec.Command("python3", "../../../../scripts/migrate_rag.py", "--database-url-env", "REGISTRY_MIGRATION_TEST_URL", "--scope", "cap-ai", "--through", version)
 		command.Env = append(os.Environ(), "REGISTRY_MIGRATION_TEST_URL="+u.String())
+		command.Env = append(command.Env, flags...)
 		raw, e := command.CombinedOutput()
 		if e != nil {
 			return fmt.Errorf("runner: %w: %s", e, raw)
 		}
 		return nil
 	}
-	if e = run("0003"); e != nil {
+	if e = run("0007"); e != nil {
 		t.Fatal(e)
 	}
 	var present bool
 	if e = db.QueryRow(`SELECT to_regclass('cap_ai.global_model_slots') IS NOT NULL`).Scan(&present); e != nil || present {
 		t.Fatal(present, e)
+	}
+	if e = db.QueryRow(`SELECT EXISTS(SELECT FROM pg_extension WHERE extname='vector')`).Scan(&present); e != nil || present {
+		t.Fatal("FTS upgrade installed vector", present, e)
+	}
+	if e = db.QueryRow(`SELECT to_regclass('cap_ai.agent_conversations') IS NOT NULL AND to_regprocedure('cap_ai.agent_authorized_scopes(uuid)') IS NOT NULL`).Scan(&present); e != nil || !present {
+		t.Fatal("FTS agent upgrade missing", present, e)
+	}
+	if e = run("0008"); e == nil {
+		t.Fatal("model-dependent upgrade accepted without gates")
 	}
 	for i := 0; i < 2; i++ {
 		if e = run("0005"); e != nil {
@@ -169,6 +179,15 @@ func TestRegistryExplicitMigrationRunner(t *testing.T) {
 	var count int
 	if e = db.QueryRow(`SELECT count(*) FROM core.schema_migrations WHERE scope='cap-ai' AND version IN('0004','0005')`).Scan(&count); e != nil || count != 2 {
 		t.Fatal(count, e)
+	}
+	flags := []string{"RAG_MODELS_SCHEMA_ENABLED=true", "RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED=true", "RAG_AGENT_MODELS_SCHEMA_ENABLED=true"}
+	for i := 0; i < 2; i++ {
+		if e = run("0008", flags...); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if e = db.QueryRow(`SELECT count(*) FROM cap_ai.agent_processing_approvals`).Scan(&count); e != nil || count != 0 {
+		t.Fatal("seeded approval", count, e)
 	}
 	if _, e = db.Exec(`UPDATE core.schema_migrations SET checksum=repeat('0',64) WHERE scope='cap-ai' AND version='0005'`); e != nil {
 		t.Fatal(e)

@@ -13,6 +13,8 @@ import (
 
 // DatabaseAuthority uses a fresh statement snapshot for every decision. SQL
 // repeats current identity, source and publication checks; no parent dependency.
+// PersonalApproved is decoded solely from this current SQL decision. Request
+// classification and active slot state never populate the approval bit.
 type DatabaseAuthority struct{ DB *sql.DB }
 
 func (a DatabaseAuthority) Current(ctx context.Context, actor *auth.Identity, op Operation) (Decision, error) {

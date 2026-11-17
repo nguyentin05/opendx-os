@@ -57,6 +57,8 @@ type Approval struct {
 	Fingerprint    string
 }
 type Decision struct {
+	// PersonalApproved is produced only by current database processing authority.
+	PersonalApproved    bool    `json:"personal_approved"`
 	Profile             Profile `json:"profile"`
 	PolicyRevision      int64   `json:"policy_revision"`
 	Allowed             bool    `json:"allowed"`

@@ -32,8 +32,15 @@ func (p *Policy) Check(ctx context.Context, actor *auth.Identity, req Operation)
 	if profile.Execution != "LOCAL" && profile.Execution != "HOSTED" {
 		return Approval{}, ErrPolicy
 	}
-	if profile.Execution == "HOSTED" && (req.ScopeKind == "PERSONAL" || d.Personal || d.QueryClassification != "NON_PERSONAL" && d.QueryClassification != "APPROVED") {
-		return Approval{}, ErrPolicy
+	if profile.Execution == "HOSTED" {
+		personal := req.ScopeKind == "PERSONAL" || d.Personal || d.QueryClassification == "PERSONAL"
+		if personal {
+			if !d.PersonalApproved || (req.Purpose != "EMBED" && req.Purpose != "GENERATE") || d.QueryClassification != "PERSONAL" {
+				return Approval{}, ErrPolicy
+			}
+		} else if d.QueryClassification != "NON_PERSONAL" && d.QueryClassification != "APPROVED" {
+			return Approval{}, ErrPolicy
+		}
 	}
 	// The authority, never the request's QueryClassification, approves query egress.
 	raw, _ := json.Marshal(struct {

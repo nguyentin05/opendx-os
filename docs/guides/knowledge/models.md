@@ -21,9 +21,8 @@ per-user hosted opt-in. Unapproved PERSONAL egress denies. Hosted RERANK,
 OCR/VLM and local-model serving are outside this increment. App selection is
 not a permission grant. Legacy `/rag` remains unavailable.
 
-This approval model, PERSONAL semantic retrieval, AGENT and chat snapshots are
-target behavior. The current Go/SQL still impose blanket hosted-PERSONAL denial
-and APP-only semantic queries. Follow the explicit
+Migration 0008 implements audited PERSONAL processing. PERSONAL semantic
+retrieval, AGENT and chat consumers require their separate changes. Follow the explicit
 [ADR 0009 migration/consumer delta](../../adr/0009-native-rag-identity-and-source-boundaries.md#contract-amendment-and-implementation-delta-2026-11-18)
 before enabling the new behavior; provisioning an active slot alone cannot
 implement or authorize it.
@@ -67,9 +66,9 @@ be disabled, but their definitions and allowlist history cannot be rewritten.
 Provision each new approved policy/profile revision through reviewed operations;
 record the audited Platform Admin approval and immutable review metadata in the
 same provisioning transaction. Document policies and query policy are checked
-separately. The existing implementation only supports enabled `NON_PERSONAL`,
-app-bound hosted query policies; the target adds separately approved PERSONAL
-queries and AGENT processing under the canonical authorization predicates.
+separately. Existing APP processing keeps enabled `NON_PERSONAL`, app-bound hosted query
+policies. Migration 0008 adds independently reviewed PERSONAL source and query
+processing. AGENT consumers must still apply the canonical per-source predicates.
 Mixed-source context retains PERSONAL handling requirements. Request JSON cannot
 assert classification or choose credentials/endpoints. Do not amend an existing
 local-only policy into a hosted approval; create a new reviewed revision and
@@ -82,6 +81,85 @@ materializes eligible active sources before ranking. No ANN or reranker is
 installed. Fusion uses top 50 per list, RRF constant 60, stable ties, four chunks
 per document and at most 20 results. Source policy/profile eligibility is checked
 again for vector retrieval. Role membership is never embedded into vectors.
+
+## Audited PERSONAL processing provisioning
+
+Migration `0008_personal_model_processing.sql` adds the approval interface to the
+existing `dxos_authz` deployment connection. Both approval and disable operations
+require an ACTIVE Core user with a current DB `role_operator` grant. Application
+admins, API, worker, Gateway and `dxos_ai_model_catalog` cannot approve processing.
+The functions authenticate `session_user`, reject substituted roles and privileged
+runtime logins, and audit the verified actor and deployment session. There is no
+management UI in this increment. The deployment operator runs these functions
+through a protected `dxos_authz` connection after authenticating the Platform Admin.
+
+For an FTS-only upgrade, `scripts/migrate-rag.sh --database-url-env DATABASE_URL
+--scope cap-ai --through 0007` skips optional 0004/0005. The existing explicit
+`--through 0004` and `--through 0005` opt-ins retain their meaning. To install 0008,
+set all three schema flags to `true` in the migration environment:
+`RAG_MODELS_SCHEMA_ENABLED`, `RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED`, and
+`RAG_AGENT_MODELS_SCHEMA_ENABLED`, then use `--through 0008`. The bootstrap runner
+uses the same prerequisites. The agent-model flag defaults to `false` and also
+gates later model-dependent migrations 0009/0010 when present. None of these flags
+activate a profile, slot or approval, and migration 0008 seeds no approvals.
+
+The minimal approval object binds one immutable provider/profile revision and
+purpose, one existing PERSONAL `LOCAL_ONLY` source-policy revision, and an
+independent PERSONAL query classification for one Ready library app. It records
+retention, training-use and region review evidence. This is a processing review,
+not a rewrite of the parsing policy: source ownership and `LOCAL_ONLY` parsing
+remain unchanged. A matching review is required for every supplied source;
+a query-only EMBED call independently requires an applicable query review.
+The SQL interface deliberately supports PERSONAL/PERSONAL only; APP reviews
+continue through their existing processing-policy contract.
+
+Provision the connection using deployment secrets in standard libpq environment
+variables (`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER=dxos_authz`, `PGPASSWORD`, and
+`PGSSLMODE`). Do not pass the password or connection URL on the command line.
+Set `APPROVER_CORE_USER_ID` to the authenticated Platform Admin Core UUID.
+With those variables already supplied, a reviewed operation has this form:
+
+```sh
+psql -X -v ON_ERROR_STOP=1 -v approver="$APPROVER_CORE_USER_ID" <<'SQL'
+SELECT cap_ai.approve_agent_processing(:'approver'::uuid, '{
+  "profile_id":"reviewed-generator",
+  "profile_revision":1,
+  "provider_id":"reviewed-provider",
+  "purpose":"GENERATE",
+  "source_policy_id":"local-only",
+  "source_policy_version":1,
+  "source_classification":"PERSONAL",
+  "query_app_id":"personal-library",
+  "query_classification":"PERSONAL",
+  "retention_evidence":"review-record/retention",
+  "training_use_evidence":"review-record/training-use",
+  "region_evidence":"review-record/processing-region"
+}'::jsonb) AS approval_id;
+SQL
+```
+
+Replace the example identities and review references with the actually reviewed
+immutable profile, library app and evidence. EMBED needs its own review with
+`purpose: EMBED` and the exact embedding profile revision. The returned UUID
+identifies the review; definitions and audit events are immutable. A new review
+creates a new revision. To withdraw a review, use the same protected connection:
+
+```sh
+psql -X -v ON_ERROR_STOP=1 -v approver="$APPROVER_CORE_USER_ID" \
+  -v approval="$PROCESSING_APPROVAL_ID" <<'SQL'
+SELECT cap_ai.disable_agent_processing(
+  :'approver'::uuid, :'approval'::uuid, 'Review withdrawn');
+SQL
+```
+
+Disable is idempotent and audited atomically; the disabled revision cannot be
+reactivated. Set `PROCESSING_APPROVAL_ID` to the returned review UUID before
+running the disable example. Disable every applicable review when withdrawing all permission for
+a provider/profile, including any separately issued EMBED/GENERATE reviews.
+No direct approval-table writes are needed or granted to this connection. Review
+records contain references to evidence, never credentials, prompts or source text.
+The Gateway rechecks current approval after reservation and call intent; workers
+also recheck the exact lease fence, source snapshot and current owner READ.
 
 ## Deployment configuration
 
@@ -103,8 +181,9 @@ required; redirects, URL credentials and query strings are rejected. An explicit
 `RAG_MODEL_TEST_MODE=true` permits a loopback HTTP test adapter. This is not a
 production provider approval. Existing LOCAL profiles additionally require
 `RAG_LOCAL_MODELS_QUALIFIED=true`; no local model is bundled or prequalified, and
-local-model serving is outside the new harness scope. Current personal queries
-use FTS and the existing answer path accepts only a qualified local generator.
+local-model serving is outside the new harness scope. Personal query retrieval uses FTS until its semantic consumer is installed.
+The existing answer path accepts a hosted generator only with current audited
+PERSONAL approval, or an already qualified local profile.
 The target supports bounded FTS + Embedding fusion for APP and owner-only
 PERSONAL under approved hosted EMBED/GENERATE policy. Absent or unqualified
 semantic models preserve authorized FTS. PERSONAL-only model operations retain

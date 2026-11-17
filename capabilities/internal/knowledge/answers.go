@@ -101,7 +101,7 @@ func (s *AnswerService) Answer(ctx context.Context, actor *auth.Identity, req An
 		}
 		profile = binding.Profile
 	}
-	if s.Gateway == nil || s.Policy == nil || profile.ID == "" || req.Scope.Kind == "PERSONAL" && profile.Execution != "LOCAL" {
+	if s.Gateway == nil || s.Policy == nil || profile.ID == "" {
 		return fallback(models.ErrPolicy)
 	}
 	if s.Reader == nil {

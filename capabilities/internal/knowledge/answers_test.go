@@ -4,6 +4,7 @@ package knowledge
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
@@ -82,6 +83,7 @@ func TestPromptInjectionNoTools(t *testing.T) {
 }
 func TestPersonalSearchOnly(t *testing.T) {
 	s, f := answerSetup()
+	s.Policy = &models.Policy{Authority: &personalAnswerAuthority{}, Enabled: true}
 	req := answerRequest
 	req.Scope = Scope{Kind: "PERSONAL"}
 	r, e := s.Answer(context.Background(), answerActor, req)
@@ -123,5 +125,49 @@ func TestGroundedAnswerCitationAndContextLimits(t *testing.T) {
 
 	if r.Citations[0].ChunkID != "chunk" {
 		t.Fatal("citation remapped")
+	}
+}
+
+// The real model policy, rather than a mock policy, determines hosted PERSONAL.
+type personalAnswerAuthority struct{ approved bool }
+
+func (a *personalAnswerAuthority) Current(_ context.Context, _ *auth.Identity, op models.Operation) (models.Decision, error) {
+	p := answerProfile()
+	p.Enabled = true
+	p.PricingRevision = "price-1"
+	raw := []byte(`{"personal_approved":false}`)
+	if a.approved {
+		raw = []byte(`{"personal_approved":true}`)
+	}
+	var d models.Decision
+	json.Unmarshal(raw, &d)
+	d.Profile = p
+	d.Allowed = true
+	d.Personal = true
+	d.QueryClassification = "PERSONAL"
+	return d, nil
+}
+func (f *answerFixture) ResolveModelApp(context.Context, *auth.Identity, Scope) (string, error) {
+	return "library", nil
+}
+func TestPersonalAnswerCanonicalApproval(t *testing.T) {
+	s, f := answerSetup()
+	a := &personalAnswerAuthority{}
+	s.Policy = &models.Policy{Authority: a, Enabled: true}
+	req := answerRequest
+	req.Scope = Scope{Kind: "PERSONAL"}
+	r, err := s.Answer(context.Background(), answerActor, req)
+	if err != nil || r.Status != "SEARCH_ONLY" || f.calls != 0 {
+		t.Fatal(r, err)
+	}
+	a.approved = true
+	r, err = s.Answer(context.Background(), answerActor, req)
+	if err != nil || r.Status != "ANSWERED" || f.calls != 1 {
+		t.Fatal("canonical approval ignored", r, err)
+	}
+	a.approved = false
+	r, err = s.Answer(context.Background(), answerActor, req)
+	if err != nil || r.Status != "SEARCH_ONLY" || f.calls != 1 {
+		t.Fatal("revoked approval reused", r, err)
 	}
 }
