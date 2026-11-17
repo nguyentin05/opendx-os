@@ -164,18 +164,21 @@ records contain references to evidence, never credentials, prompts or source tex
 The Gateway rechecks current approval after reservation and call intent; workers
 also recheck the exact lease fence, source snapshot and current owner READ.
 
-Migration `0009_personal_hybrid.sql` records the owner, source authority and
-exact hosted approval revision on each PERSONAL embedding generation. Search evaluates
-current owner READ and source approval before exact vector ranking. If the
-selected collections have no qualified READY generation, search returns
-`LEXICAL_ONLY` with `SEMANTIC_UNAVAILABLE` without sending the query.
+Migration `0009_personal_hybrid.sql` records the owner, source authority and exact
+hosted approval revision on each PERSONAL embedding job and generation. Search
+checks current owner READ and source approval before exact vector ranking.
+A generation qualifies only when every expected chunk has a usable vector of
+the pinned dimension. If the selected collections have no qualified READY
+generation, search returns `LEXICAL_ONLY` with `SEMANTIC_UNAVAILABLE` without
+sending the query.
 
-A new approval after withdrawal has a new revision. Hybrid search excludes
-generations bound to a previous approval or source policy revision, as well as
-pre-0009 PERSONAL generations that lack this record. For the same source version and embedding
-profile revision, re-enqueueing does not reopen a previous billable job. Build
-under a newly parsed source version or a new embedding profile revision to
-restore semantic coverage. Authorized FTS remains available in the meantime.
+A new approval after withdrawal has a new revision. The worker queues a separate
+build for the currently approved source snapshot, including when the parsed
+content and embedding profile are unchanged. Each build has its own billable job
+identity, and retries of that build keep the same identity. Hybrid search
+excludes generations tied to a superseded snapshot and pre-0009 PERSONAL
+generations that lack a recorded snapshot. Authorized FTS remains available
+while the current generation builds.
 
 ## Deployment configuration
 

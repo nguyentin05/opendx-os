@@ -268,15 +268,9 @@ func TestPersonalHybridNoApprovedEmbeddingFallback(t *testing.T) {
 	}
 	assertFallback()
 	approval = f.approve(t)
+	f.enqueue(t, f.owner)
 	f.build(t)
 	f.disable(t, approval)
-	assertFallback()
-
-	f.approve(t)
-	f.enqueue(t, f.owner)
-	if lease, err := f.worker.ClaimEmbedding(context.Background(), ownerID); err != nil || lease != nil {
-		t.Fatal("a new approval reopened an embedding pinned to the withdrawn review", lease, err)
-	}
 	assertFallback()
 }
 
@@ -379,8 +373,13 @@ func TestPersonalHybridDiscardsVectorAfterQueryApprovalRevocation(t *testing.T) 
 }
 
 func TestPersonalHybridMigrationPreservesAppEmbedding(t *testing.T) {
-	db, api, actor, profile := semanticFixture(t)
+	db, api, actor, _ := semanticFixture(t)
 	applyHybridFixtureMigrations(t, db, "0005_model_registry.sql", "0008_personal_model_processing.sql", "0009_personal_hybrid.sql")
+	if _, err := db.Exec(`INSERT INTO cap_ai.model_candidates(profile_id, revision, adapter_key, declaration_digest, declaration)
+	 VALUES ('embed',1,'bounded-http-v1',repeat('a',64),'{}');
+	 UPDATE cap_ai.global_model_slots SET profile_id='embed',profile_revision=1,slot_revision=1 WHERE capability='EMBEDDING'`); err != nil {
+		t.Fatal(err)
+	}
 	var name string
 	if err := db.QueryRow("SELECT current_database()").Scan(&name); err != nil {
 		t.Fatal(err)
@@ -399,7 +398,8 @@ func TestPersonalHybridMigrationPreservesAppEmbedding(t *testing.T) {
 	}
 	worker := workerStore(t, db)
 	for _, store := range []*Store{api, worker} {
-		store.ConfigureModels(gateway, profile, models.Profile{})
+		store.ConfigureModels(gateway, models.Profile{}, models.Profile{})
+		store.ConfigureModelResolver(&models.Registry{DB: gatewayDB})
 	}
 	if err := (&Worker{Store: worker, WorkerID: ownerID}).Once(context.Background()); err != nil {
 		t.Fatal("APP embedding after migration", err)
@@ -409,5 +409,159 @@ func TestPersonalHybridMigrationPreservesAppEmbedding(t *testing.T) {
 	})
 	if err != nil || result.Status != "HYBRID" || len(result.Results) != 1 || spy.calls != 2 {
 		t.Fatal("PERSONAL migration changed APP search", result, spy.calls, err)
+	}
+}
+
+func TestPersonalHybridRebuildsAfterApprovalRenewal(t *testing.T) {
+	f := newPersonalHybridFixture(t)
+	doc := f.activate(t, f.owner, "renewal", "director private")
+	ctx := context.Background()
+	worker := Worker{Store: f.worker, WorkerID: ownerID}
+	approval := f.approve(t)
+	if err := worker.Once(ctx); err != nil {
+		t.Fatal("first build", err)
+	}
+	var originalJob, originalRun, originalOperation string
+	err := f.db.QueryRow(`SELECT j.id, g.run_id, mr.operation_key
+	 FROM cap_ai.ingestion_jobs j JOIN cap_ai.embedding_generations g ON g.job_id=j.id
+	 JOIN cap_ai.model_reservations mr ON mr.operation_key LIKE 'embed:' || j.id::text || ':%'
+	 WHERE j.version_id=$1 AND g.state='READY'`, doc.VersionID).Scan(&originalJob, &originalRun, &originalOperation)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f.disable(t, approval)
+	f.approve(t)
+	f.enqueue(t, f.owner)
+	unready := f.search(t, f.owner, "director")
+	if unready.Status != "LEXICAL_ONLY" || len(unready.Results) != 1 || f.spy.calls != 1 {
+		t.Fatal("withdrawn generation qualified after replacement approval", unready, f.spy.calls)
+	}
+
+	lease, err := f.worker.ClaimEmbedding(ctx, ownerID)
+	if err != nil || lease == nil || lease.JobID == originalJob || lease.RunID != originalRun {
+		t.Fatal("replacement approval needs its own job on the same parse run", lease, err)
+	}
+	if _, err = f.db.Exec(`UPDATE cap_ai.ingestion_jobs SET lease_until=now()-interval '1 second' WHERE id=$1`, lease.JobID); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.Once(ctx); err != nil {
+		t.Fatal("recover replacement approval's embedding lease", err)
+	}
+	var buildCount, originalCount int
+	err = f.db.QueryRow(`SELECT count(*), count(*) FILTER (WHERE operation_key=$1)
+	 FROM cap_ai.model_reservations WHERE operation_key LIKE 'embed:%'`, originalOperation).Scan(&buildCount, &originalCount)
+	if err != nil || buildCount != 2 || originalCount != 1 || f.spy.calls != 2 {
+		t.Fatal("expected exactly one billable operation per authority snapshot", buildCount, originalCount, f.spy.calls, err)
+	}
+	var newRuns int
+	err = f.db.QueryRow(`SELECT count(*) FROM cap_ai.embedding_generations
+	 WHERE job_id=$1 AND run_id=$2 AND model_profile_id='embed' AND profile_revision=1 AND state='READY'`,
+		lease.JobID, originalRun).Scan(&newRuns)
+	if err != nil || newRuns != 1 {
+		t.Fatal("retry changed job, profile, or parse run", newRuns, err)
+	}
+	result := f.search(t, f.owner, "unmatched")
+	if result.Status != "HYBRID" || len(result.Results) != 1 || result.Results[0].DocumentID != doc.DocumentID || f.spy.calls != 3 {
+		t.Fatal("renewed approval did not restore owner-only semantic retrieval", result, f.spy.calls)
+	}
+	var rows []candidate
+	err = decodeRow(f.api.db.QueryRow(`SELECT cap_ai.search_personal_vectors($1,$2,'embed',1,'[1,0,0]'::public.vector,NULL)`,
+		f.owner.UserID, f.owner.Role), &rows)
+	if err != nil || len(rows) != 1 {
+		t.Fatal("replacement search ranked an old generation", rows, err)
+	}
+}
+
+type personalEmbeddingVectorProvider struct {
+	documentVector, queryVector []float32
+	documentCalls, queryCalls   int
+}
+
+func (p *personalEmbeddingVectorProvider) Invoke(_ context.Context, _ models.Profile, payload models.Payload) (models.Result, error) {
+	vector := p.queryVector
+	if len(payload.Texts) > 0 {
+		p.documentCalls++
+		vector = p.documentVector
+	} else {
+		p.queryCalls++
+	}
+	return models.Result{Vector: vector, Usage: models.Usage{InputTokens: 10}}, nil
+}
+
+func TestPersonalHybridZeroDocumentVectorFallback(t *testing.T) {
+	t.Run("provider", func(t *testing.T) {
+		f := newPersonalHybridFixture(t)
+		f.activate(t, f.owner, "zero", "director private")
+		f.approve(t)
+		spy := &personalEmbeddingVectorProvider{documentVector: []float32{0, 0, 0}, queryVector: []float32{1, 0, 0}}
+		f.worker.gateway.Providers["fake"] = spy
+		err := (&Worker{Store: f.worker, WorkerID: ownerID}).Once(context.Background())
+		if err != nil && err != ErrStaleLease {
+			t.Fatal("zero vector build returned unexpected error", err)
+		}
+
+		result := f.search(t, f.owner, "director")
+		if result.Status != "LEXICAL_ONLY" || !slices.Equal(result.Warnings, []string{"SEMANTIC_UNAVAILABLE"}) ||
+			len(result.Results) != 1 || spy.documentCalls != 1 || spy.queryCalls != 0 {
+			t.Fatal("a zero document vector qualified for query egress", result, spy.documentCalls, spy.queryCalls)
+		}
+		var vectors int
+		if err := f.db.QueryRow(`SELECT count(*) FROM cap_ai.chunk_embeddings`).Scan(&vectors); err != nil || vectors != 0 {
+			t.Fatal("zero vector persisted", vectors, err)
+		}
+	})
+	t.Run("stored-vector", func(t *testing.T) {
+		f := newPersonalHybridFixture(t)
+		f.activate(t, f.owner, "stored-zero", "director private")
+		f.approve(t)
+		f.enqueue(t, f.owner)
+		lease, profile := f.claim(t)
+		var work embeddingWork
+		err := decodeRow(f.worker.db.QueryRow(`SELECT cap_ai.embedding_work($1,$2,$3,$4,$5,$6)`,
+			lease.JobID, lease.WorkerID, lease.Fence, lease.RunID, profile.ID, profile.Revision), &work)
+		if err != nil || work.Chunk == nil {
+			t.Fatal("prepare chunk", work, err)
+		}
+		_, err = f.worker.db.Exec(`SELECT cap_ai.save_embedding($1,$2,$3,$4,$5,$6,$7,'[1,0,0]'::public.vector)`,
+			lease.JobID, lease.WorkerID, lease.Fence, lease.RunID, work.GenerationID, work.Chunk.ID, work.Chunk.Hash)
+		if err != nil {
+			t.Fatal("save nonzero vector", err)
+		}
+		if _, err := f.db.Exec(`UPDATE cap_ai.chunk_embeddings SET embedding='[0,0,0]'::public.vector`); err != nil {
+			t.Fatal(err)
+		}
+		_, err = f.worker.db.Exec(`SELECT cap_ai.finish_embedding($1,$2,$3,$4,$5,true)`,
+			lease.JobID, lease.WorkerID, lease.Fence, lease.RunID, work.GenerationID)
+		if dbError(err) != ErrStaleLease {
+			t.Fatal("zero vector activated", err)
+		}
+		// Simulate an unusable generation that was already stored as READY.
+		if _, err := f.db.Exec(`UPDATE cap_ai.embedding_generations SET state='READY' WHERE id=$1`, work.GenerationID); err != nil {
+			t.Fatal(err)
+		}
+		spy := &personalEmbeddingVectorProvider{queryVector: []float32{1, 0, 0}}
+		f.api.gateway.Providers["fake"] = spy
+		result := f.search(t, f.owner, "director")
+		if result.Status != "LEXICAL_ONLY" || !slices.Equal(result.Warnings, []string{"SEMANTIC_UNAVAILABLE"}) ||
+			len(result.Results) != 1 || spy.queryCalls != 0 {
+			t.Fatal("stored zero vector qualified for query egress", result, spy.queryCalls)
+		}
+	})
+}
+
+func TestPersonalHybridZeroQueryVectorFallback(t *testing.T) {
+	f := newPersonalHybridFixture(t)
+	f.activate(t, f.owner, "zero-query", "director private")
+	f.approve(t)
+	f.enqueue(t, f.owner)
+	f.build(t)
+	spy := &personalEmbeddingVectorProvider{queryVector: []float32{0, 0, 0}}
+	f.api.gateway.Providers["fake"] = spy
+
+	result := f.search(t, f.owner, "director")
+	if result.Status != "LEXICAL_ONLY" || !slices.Equal(result.Warnings, []string{"SEMANTIC_UNAVAILABLE"}) ||
+		len(result.Results) != 1 || spy.queryCalls != 1 {
+		t.Fatal("zero query vector qualified for hybrid search", result, spy.queryCalls)
 	}
 }

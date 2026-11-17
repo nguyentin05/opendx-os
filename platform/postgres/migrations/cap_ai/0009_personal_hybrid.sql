@@ -10,9 +10,18 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- APP generations keep NULL here. A legacy PERSONAL generation cannot attest
--- which source authority governed its writes and is ineligible for retrieval.
-ALTER TABLE cap_ai.embedding_generations ADD COLUMN personal_source jsonb;
+-- Only PERSONAL jobs and generations capture a source snapshot. A legacy
+-- PERSONAL generation lacks that proof and is ineligible for retrieval.
+ALTER TABLE cap_ai.ingestion_jobs ADD COLUMN personal_embedding_source jsonb
+  CHECK (personal_embedding_source IS NULL OR kind = 'EMBED');
+
+ALTER TABLE cap_ai.embedding_generations
+  ADD COLUMN personal_source jsonb CHECK (personal_source IS NULL OR job_id IS NOT NULL),
+  DROP CONSTRAINT embedding_generations_run_id_model_profile_id_profile_revis_key;
+CREATE UNIQUE INDEX embedding_generations_app_run_profile
+  ON cap_ai.embedding_generations(run_id, model_profile_id, profile_revision) WHERE personal_source IS NULL;
+CREATE UNIQUE INDEX embedding_generations_personal_job
+  ON cap_ai.embedding_generations(job_id) WHERE personal_source IS NOT NULL;
 
 -- Bind source authority to the owner, library, active run, current processing
 -- policy and, for hosted execution, the exact admin review.
@@ -52,20 +61,14 @@ WHERE r.id = run AND r.state = 'COMPLETE' AND v.state = 'READY'
        )))
 $$;
 
--- Until the first work call creates the generation, the current eligible source
--- is sufficient. Every subsequent lease/work/dispatch must match its pinned basis.
-CREATE FUNCTION cap_ai.personal_embedding_lease_source(run uuid, profile text, revision bigint)
-RETURNS jsonb
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = pg_catalog, cap_ai
+-- A PERSONAL job identifies one immutable source authority snapshot. A later
+-- approval or source-policy change gets a separate job and model operation key.
+CREATE FUNCTION cap_ai.embedding_profile_key(profile text, revision bigint, personal_source jsonb)
+RETURNS text
+LANGUAGE sql IMMUTABLE
+SET search_path = pg_catalog
 AS $$
-SELECT current_source
-FROM cap_ai.personal_embedding_source(run, profile, revision) current_source
-WHERE current_source IS NOT NULL AND NOT EXISTS (
-  SELECT FROM cap_ai.embedding_generations g
-  WHERE g.run_id = run AND g.model_profile_id = profile AND g.profile_revision = revision
-    AND (g.personal_source IS DISTINCT FROM current_source OR g.state IN ('FAILED', 'RETIRED'))
-)
+SELECT profile || '@' || revision || coalesce(':personal:' || encode(sha256(convert_to(personal_source::text, 'UTF8')), 'hex'), '')
 $$;
 
 -- API requests are always actor-scoped. The worker can schedule eligible owners.
@@ -81,15 +84,19 @@ BEGIN
   IF actor IS NULL AND session_user <> 'dxos_ai_worker' THEN
     RAISE EXCEPTION 'worker authority required' USING ERRCODE = '42501';
   END IF;
-  INSERT INTO cap_ai.ingestion_jobs(version_id, kind, profile_key) SELECT v.id, 'EMBED', profile || '@' || rev
+  INSERT INTO cap_ai.ingestion_jobs(version_id, kind, profile_key, personal_embedding_source)
+    SELECT v.id, 'EMBED', cap_ai.embedding_profile_key(profile, rev, authority.source), authority.source
     FROM cap_ai.document_versions v
     JOIN cap_ai.knowledge_documents d ON d.id = v.document_id
     JOIN cap_ai.processing_policies p ON p.id = d.processing_policy_id AND p.version = d.processing_policy_version
     JOIN cap_ai.model_profiles mp ON mp.id = profile AND mp.revision = rev
+    CROSS JOIN LATERAL (
+      SELECT CASE WHEN d.source_kind = 'UPLOAD' THEN cap_ai.personal_embedding_source(v.active_run_id, profile, rev) END AS source
+    ) authority
     WHERE d.active_version_id = v.id AND d.desired_version_id = v.id AND v.active_run_id IS NOT NULL
       AND cap_ai.eligible_version(v.id) AND mp.purpose = 'EMBED' AND mp.enabled AND p.enabled
       AND CASE WHEN d.source_kind = 'UPLOAD' THEN
-        cap_ai.personal_embedding_lease_source(v.active_run_id, profile, rev) IS NOT NULL
+        authority.source IS NOT NULL
       ELSE EXISTS (
         SELECT FROM cap_ai.processing_policy_profiles pp
         WHERE pp.policy_id = p.id AND pp.policy_version = p.version
@@ -131,11 +138,11 @@ BEGIN
     WHERE job.kind = 'EMBED' AND job.attempts < job.max_attempts AND((job.state IN('PENDING', 'RETRY_WAIT') AND job.next_attempt_at <= now())
     OR(job.state = 'LEASED' AND job.lease_until <= now())) AND d.active_version_id = v.id AND d.desired_version_id = v.id
     AND cap_ai.eligible_version(v.id)
-    AND (d.source_kind <> 'UPLOAD' OR EXISTS (
+    AND (d.source_kind <> 'UPLOAD' OR (job.personal_embedding_source IS NOT NULL AND EXISTS (
       SELECT FROM cap_ai.model_profiles mp
-      WHERE job.profile_key = mp.id || '@' || mp.revision
-        AND cap_ai.personal_embedding_lease_source(v.active_run_id, mp.id, mp.revision) IS NOT NULL
-    ))
+      WHERE job.profile_key = cap_ai.embedding_profile_key(mp.id, mp.revision, job.personal_embedding_source)
+        AND job.personal_embedding_source = cap_ai.personal_embedding_source(v.active_run_id, mp.id, mp.revision)
+    )))
     ORDER BY job.next_attempt_at, job.id FOR UPDATE OF job SKIP LOCKED
     LIMIT 1;
   IF NOT FOUND THEN
@@ -198,18 +205,20 @@ BEGIN
   SELECT * INTO mp
     FROM cap_ai.model_profiles
     WHERE id = profile AND revision = rev AND enabled AND purpose = 'EMBED';
-  IF NOT FOUND OR NOT EXISTS(SELECT FROM cap_ai.ingestion_jobs
-    WHERE id = job AND profile_key = profile || '@' || rev) THEN
-    RETURN '{}'::jsonb;
-  END IF;
+  IF NOT FOUND THEN RETURN '{}'::jsonb; END IF;
+  SELECT j.personal_embedding_source INTO personal_source
+    FROM cap_ai.ingestion_jobs j
+    WHERE j.id = job AND j.profile_key = cap_ai.embedding_profile_key(profile, rev, j.personal_embedding_source);
+  IF NOT FOUND THEN RETURN '{}'::jsonb; END IF;
   personal := d.access_mode = 'PRIVATE' OR d.owner_user_id IS NOT NULL;
   IF personal THEN
-    personal_source := cap_ai.personal_embedding_lease_source(run, profile, rev);
-    IF personal_source IS NULL OR personal_source->'scope' IS DISTINCT FROM scope THEN
+    IF personal_source IS NULL OR personal_source->'scope' IS DISTINCT FROM scope
+      OR personal_source IS DISTINCT FROM cap_ai.personal_embedding_source(run, profile, rev) THEN
       RETURN '{}'::jsonb;
     END IF;
     personal_approval := (personal_source->>'approval_revision')::bigint;
   ELSE
+    IF personal_source IS NOT NULL THEN RETURN '{}'::jsonb; END IF;
     IF NOT EXISTS(SELECT FROM cap_ai.processing_policy_profiles WHERE policy_id=p.id AND policy_version=p.version
       AND model_profile_id=profile AND profile_revision=rev) THEN RETURN '{}'::jsonb; END IF;
     IF mp.execution = 'HOSTED' AND (p.execution <> 'APPROVED_PROVIDER' OR p.classification <> 'NON_PERSONAL'
@@ -220,6 +229,26 @@ BEGIN
   RETURN jsonb_build_object('allowed', true, 'profile', to_jsonb(mp), 'personal', personal,
     'personal_approved', personal_approval IS NOT NULL, 'policy_revision', greatest(d.policy_revision,coalesce(personal_approval,0)), 'query_classification', p.classification);
 END
+$$;
+
+-- Resolve a recovered lease by its pinned job profile, independent of the active slot.
+CREATE OR REPLACE FUNCTION cap_ai.registry_embedding_lease_profile(
+    job uuid, worker text, fence bigint, run uuid
+)
+RETURNS jsonb
+LANGUAGE sql STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, cap_ai
+AS $$
+SELECT jsonb_build_object('profile', to_jsonb(mp), 'adapter_key', mc.adapter_key, 'declaration_digest', mc.declaration_digest)
+  FROM cap_ai.ingestion_jobs j
+  JOIN cap_ai.model_profiles mp ON j.profile_key = cap_ai.embedding_profile_key(mp.id, mp.revision, j.personal_embedding_source)
+  JOIN cap_ai.model_candidates mc ON mc.profile_id = mp.id AND mc.revision = mp.revision
+  JOIN cap_ai.document_versions v ON v.id = j.version_id
+  JOIN cap_ai.knowledge_documents d ON d.id = v.document_id
+  JOIN cap_ai.knowledge_collections c ON c.id = d.collection_id
+  WHERE j.id = job AND j.kind = 'EMBED' AND mp.enabled AND mp.purpose = 'EMBED' AND cap_ai.embedding_lease_valid(job, worker, fence, run)
+  AND coalesce((cap_ai.worker_model_policy(worker::uuid, job, worker, fence, run, mp.id, mp.revision, c.app_id, jsonb_build_array(cap_ai.embedding_scope(run)))->>'allowed')::boolean, false)
 $$;
 
 CREATE OR REPLACE FUNCTION cap_ai.embedding_work(
@@ -236,9 +265,9 @@ DECLARE
   app text;
   mp cap_ai.model_profiles;
   chunk jsonb;
-  personal_source jsonb;
+  pinned_source jsonb;
 BEGIN
-  PERFORM 1
+  SELECT personal_embedding_source INTO pinned_source
     FROM cap_ai.ingestion_jobs
     WHERE id = job FOR UPDATE;
   scope := cap_ai.embedding_scope(run);
@@ -253,20 +282,17 @@ BEGIN
   SELECT * INTO STRICT mp
     FROM cap_ai.model_profiles
     WHERE id = profile AND revision = rev;
-  IF scope->>'source_incarnation' = '' THEN
-    personal_source := cap_ai.personal_embedding_lease_source(run, profile, rev);
-    IF personal_source IS NULL OR personal_source->'scope' IS DISTINCT FROM scope THEN
-      RAISE EXCEPTION 'embedding authority unavailable' USING ERRCODE = 'P0410';
-    END IF;
-  END IF;
   INSERT INTO cap_ai.embedding_generations(run_id, model_profile_id, profile_revision, dimension, expected_count, job_id, fencing_token, personal_source)
-    SELECT run, profile, rev, mp.dimension, count(*), job, fence, personal_source
+    SELECT run, profile, rev, mp.dimension, count(*), job, fence, pinned_source
     FROM cap_ai.knowledge_chunks
-    WHERE run_id = run ON CONFLICT(run_id, model_profile_id, profile_revision) DO NOTHING;
-  SELECT * INTO STRICT g
-    FROM cap_ai.embedding_generations
-    WHERE run_id = run AND model_profile_id = profile AND profile_revision = rev FOR UPDATE;
-  IF g.state IN('FAILED', 'RETIRED') OR g.personal_source IS DISTINCT FROM personal_source
+    WHERE run_id = run ON CONFLICT DO NOTHING;
+  SELECT generation.* INTO STRICT g
+    FROM cap_ai.embedding_generations generation
+    WHERE generation.run_id = run AND generation.model_profile_id = profile AND generation.profile_revision = rev
+      AND generation.personal_source IS NOT DISTINCT FROM pinned_source
+      AND (pinned_source IS NULL OR generation.job_id = job)
+    FOR UPDATE;
+  IF g.state IN('FAILED', 'RETIRED')
     OR g.dimension <> mp.dimension THEN
     RAISE EXCEPTION 'generation unavailable' USING ERRCODE = 'P0410';
   END IF;
@@ -293,13 +319,32 @@ SET search_path = pg_catalog, cap_ai
 AS $$
 SELECT coalesce((
   SELECT CASE WHEN v.source_kind = 'UPLOAD' THEN
-    g.dimension = (g.personal_source->>'dimension')::integer AND g.personal_source =
-      cap_ai.personal_embedding_source(g.run_id, g.model_profile_id, g.profile_revision)
+    g.dimension = (g.personal_source->>'dimension')::integer
+      AND g.personal_source = cap_ai.personal_embedding_source(g.run_id, g.model_profile_id, g.profile_revision)
+      AND EXISTS (
+        SELECT FROM cap_ai.ingestion_jobs j
+        WHERE j.id = g.job_id AND j.version_id = v.id AND j.kind = 'EMBED'
+          AND j.personal_embedding_source = g.personal_source
+          AND j.profile_key = cap_ai.embedding_profile_key(g.model_profile_id, g.profile_revision, g.personal_source)
+      )
   ELSE true END
   FROM cap_ai.processing_runs r
   JOIN cap_ai.document_versions v ON v.id = r.version_id
   WHERE r.id = g.run_id
 ), false)
+$$;
+
+-- Every expected PERSONAL chunk must have a usable cosine vector.
+CREATE FUNCTION cap_ai.personal_generation_vectors_valid(g cap_ai.embedding_generations)
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, cap_ai
+AS $$
+SELECT count(*) = g.expected_count
+FROM cap_ai.chunk_embeddings e
+JOIN cap_ai.knowledge_chunks k ON k.id = e.chunk_id AND k.run_id = e.run_id AND k.content_hash = e.content_hash
+WHERE e.generation_id = g.id AND e.run_id = g.run_id
+  AND public.vector_dims(e.embedding) = g.dimension AND public.vector_norm(e.embedding) > 0
 $$;
 
 CREATE OR REPLACE FUNCTION cap_ai.save_embedding(
@@ -329,6 +374,7 @@ BEGIN
   IF NOT cap_ai.embedding_lease_valid(job, worker, fence, run) OR g.run_id IS DISTINCT FROM run
     OR g.job_id IS DISTINCT FROM job OR g.fencing_token IS DISTINCT FROM fence
     OR g.state <> 'BUILDING' OR public.vector_dims(value) IS DISTINCT FROM g.dimension
+    OR (g.personal_source IS NOT NULL AND public.vector_norm(value) <= 0)
     OR NOT cap_ai.embedding_generation_authorized(g) OR NOT EXISTS(SELECT FROM cap_ai.knowledge_chunks
     WHERE id = chunk AND run_id = run AND content_hash = hash) THEN
     RAISE EXCEPTION 'stale embedding' USING ERRCODE = 'P0410';
@@ -376,7 +422,8 @@ BEGIN
     IF NOT cap_ai.embedding_generation_authorized(g) THEN
       RAISE EXCEPTION 'embedding authority unavailable' USING ERRCODE = 'P0410';
     END IF;
-    IF g.completed_count <> g.expected_count OR g.expected_count <> (SELECT count(*)
+    IF (g.personal_source IS NOT NULL AND NOT cap_ai.personal_generation_vectors_valid(g))
+      OR g.completed_count <> g.expected_count OR g.expected_count <> (SELECT count(*)
       FROM cap_ai.knowledge_chunks
       WHERE run_id = run) OR EXISTS(SELECT FROM cap_ai.chunk_embeddings e
       JOIN cap_ai.knowledge_chunks k ON k.id = e.chunk_id
@@ -464,7 +511,7 @@ WHERE d.owner_user_id = actor AND c.owner_user_id = actor AND c.kind = 'PERSONAL
   AND v.state = 'READY' AND r.state = 'COMPLETE' AND g.state = 'READY'
   AND g.completed_count = g.expected_count AND g.expected_count = r.chunk_count
   AND g.model_profile_id = profile AND g.profile_revision = $4 AND g.dimension = mp.dimension
-  AND cap_ai.embedding_generation_authorized(g)
+  AND cap_ai.embedding_generation_authorized(g) AND cap_ai.personal_generation_vectors_valid(g)
 $$;
 
 -- NULL means the request has no authorized READY generation or query authority.
@@ -512,7 +559,7 @@ $$;
 DO $$ DECLARE f record; BEGIN
   FOR f IN SELECT p.oid::regprocedure signature FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'cap_ai' AND p.proname IN (
-      'personal_embedding_source', 'personal_embedding_lease_source', 'embedding_generation_authorized',
+      'personal_embedding_source', 'embedding_profile_key', 'embedding_generation_authorized', 'personal_generation_vectors_valid',
       'personal_vector_query_revision', 'personal_vector_generations', 'personal_vector_readiness', 'search_personal_vectors'
     ) LOOP
     EXECUTE format('ALTER FUNCTION %s OWNER TO dxos_ai_owner', f.signature);
