@@ -141,8 +141,10 @@ SQL
 Replace the example identities and review references with the actually reviewed
 immutable profile, library app and evidence. EMBED needs its own review with
 `purpose: EMBED` and the exact embedding profile revision. The returned UUID
-identifies the review; definitions and audit events are immutable. A new review
-creates a new revision. To withdraw a review, use the same protected connection:
+identifies the review. Definitions and audit events are immutable. Retrying an
+identical review while it is active returns its existing UUID, including
+after a lost response. Approving again after withdrawal creates a new revision.
+To withdraw a review, use the same protected connection.
 
 ```sh
 psql -X -v ON_ERROR_STOP=1 -v approver="$APPROVER_CORE_USER_ID" \

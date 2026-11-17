@@ -10,6 +10,7 @@ END $$;
 CREATE TABLE cap_ai.agent_processing_approvals (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     revision bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
+    review_digest bytea NOT NULL CHECK (octet_length(review_digest) = 32),
     profile_id text NOT NULL,
     profile_revision bigint NOT NULL,
     provider_id text NOT NULL,
@@ -29,6 +30,9 @@ CREATE TABLE cap_ai.agent_processing_approvals (
     FOREIGN KEY (profile_id,profile_revision) REFERENCES cap_ai.model_profiles(id,revision),
     FOREIGN KEY (source_policy_id,source_policy_version) REFERENCES cap_ai.processing_policies(id,version)
 );
+CREATE UNIQUE INDEX agent_processing_active_review ON cap_ai.agent_processing_approvals (review_digest)
+WHERE enabled;
+
 CREATE TABLE cap_ai.agent_processing_approval_events (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     approval_id uuid NOT NULL REFERENCES cap_ai.agent_processing_approvals(id),
@@ -66,7 +70,7 @@ END $$;
 
 CREATE FUNCTION cap_ai.approve_agent_processing(actor uuid, review jsonb) RETURNS uuid
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog,cap_ai AS $$
-DECLARE approval uuid; field text;
+DECLARE approval uuid; field text; review_key bytea;
 BEGIN
   PERFORM cap_ai.agent_processing_admin(actor);
   IF review IS NULL OR jsonb_typeof(review) <> 'object'
@@ -83,8 +87,17 @@ BEGIN
     OR jsonb_typeof(review->'source_policy_version') IS DISTINCT FROM 'number'
     OR (review->>'profile_revision') !~ '^[1-9][0-9]{0,17}$'
     OR (review->>'source_policy_version') !~ '^[1-9][0-9]{0,17}$'
-    OR review->>'source_classification' <> 'PERSONAL' OR review->>'query_classification' <> 'PERSONAL'
-    OR NOT EXISTS (SELECT FROM cap_ai.model_profiles mp WHERE mp.id=review->>'profile_id'
+    OR review->>'source_classification' <> 'PERSONAL' OR review->>'query_classification' <> 'PERSONAL' THEN
+    RAISE EXCEPTION 'invalid processing review' USING ERRCODE='22023';
+  END IF;
+  -- A committed review can be recovered even if its dependencies have since
+  -- stopped qualifying for processing. JSONB normalizes the field order.
+  review_key := sha256(convert_to(review::text, 'UTF8'));
+  SELECT id INTO approval FROM cap_ai.agent_processing_approvals
+    WHERE review_digest=review_key AND enabled FOR SHARE;
+  IF FOUND THEN RETURN approval; END IF;
+
+  IF NOT EXISTS (SELECT FROM cap_ai.model_profiles mp WHERE mp.id=review->>'profile_id'
       AND mp.revision=(review->>'profile_revision')::bigint AND mp.provider_id=review->>'provider_id'
       AND mp.purpose=review->>'purpose' AND mp.purpose IN ('EMBED','GENERATE') AND mp.execution='HOSTED')
     OR NOT EXISTS (SELECT FROM cap_ai.processing_policies p WHERE p.id=review->>'source_policy_id'
@@ -92,9 +105,17 @@ BEGIN
     OR NOT EXISTS (SELECT FROM core.apps WHERE app_id=review->>'query_app_id' AND status='Ready') THEN
     RAISE EXCEPTION 'processing review does not match authority' USING ERRCODE='22023';
   END IF;
-  INSERT INTO cap_ai.agent_processing_approvals(profile_id,profile_revision,provider_id,purpose,source_policy_id,source_policy_version,source_classification,query_app_id,query_classification,retention_evidence,training_use_evidence,region_evidence,approved_by,approved_session)
-  VALUES(review->>'profile_id',(review->>'profile_revision')::bigint,review->>'provider_id',review->>'purpose',review->>'source_policy_id',(review->>'source_policy_version')::bigint,review->>'source_classification',review->>'query_app_id',review->>'query_classification',review->>'retention_evidence',review->>'training_use_evidence',review->>'region_evidence',actor,session_user)
+  INSERT INTO cap_ai.agent_processing_approvals(review_digest,profile_id,profile_revision,provider_id,purpose,source_policy_id,source_policy_version,source_classification,query_app_id,query_classification,retention_evidence,training_use_evidence,region_evidence,approved_by,approved_session)
+  VALUES(review_key,review->>'profile_id',(review->>'profile_revision')::bigint,review->>'provider_id',review->>'purpose',review->>'source_policy_id',(review->>'source_policy_version')::bigint,review->>'source_classification',review->>'query_app_id',review->>'query_classification',review->>'retention_evidence',review->>'training_use_evidence',review->>'region_evidence',actor,session_user)
+  ON CONFLICT (review_digest) WHERE enabled DO NOTHING
   RETURNING id INTO approval;
+  IF NOT FOUND THEN
+    -- A concurrent identical request won the insert and recorded the audit.
+    SELECT id INTO approval FROM cap_ai.agent_processing_approvals
+      WHERE review_digest=review_key AND enabled FOR SHARE;
+    IF FOUND THEN RETURN approval; END IF;
+    RAISE EXCEPTION 'processing review changed concurrently' USING ERRCODE='40001';
+  END IF;
   INSERT INTO cap_ai.agent_processing_approval_events(approval_id,action,actor_id,session_identity,reason)
   VALUES(approval,'APPROVE',actor,session_user,'reviewed retention, training use and processing region');
   RETURN approval;
@@ -155,8 +176,11 @@ DECLARE
   source_approval bigint;
   source_personal boolean;
 BEGIN
-  IF jsonb_typeof(sources) <> 'array' OR jsonb_array_length(sources) > 50 OR scope_kind NOT IN('PERSONAL', 'APP')
-    THEN
+  IF scope_kind IS NULL OR scope_kind NOT IN ('PERSONAL', 'APP')
+    OR jsonb_typeof(sources) IS DISTINCT FROM 'array' THEN
+    RETURN '{}'::jsonb;
+  END IF;
+  IF jsonb_array_length(sources) > 50 THEN
     RETURN '{}'::jsonb;
   END IF;
   IF NOT EXISTS(SELECT FROM core.users u
@@ -260,7 +284,7 @@ BEGIN
     RETURN '{}'::jsonb;
   END IF;
   scope := cap_ai.embedding_scope(run);
-  IF scope IS NULL OR sources <> jsonb_build_array(scope) THEN
+  IF scope IS NULL OR sources IS DISTINCT FROM jsonb_build_array(scope) THEN
     RETURN '{}'::jsonb;
   END IF;
   SELECT doc.* INTO STRICT d

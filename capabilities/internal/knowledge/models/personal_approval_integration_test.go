@@ -121,6 +121,38 @@ func TestHostedPersonalApprovedGenerate(t *testing.T) {
 		t.Fatal("approval transferred revisions")
 	}
 }
+func TestModelPolicyRejectsMissingScopeAndSources(t *testing.T) {
+	db, admin, p, op := personalFixture(t, "GENERATE")
+	approvePersonal(t, admin, "GENERATE")
+	// With a valid APP review, an absent scope would otherwise still classify the query.
+	if _, err := db.Exec(
+		`INSERT INTO cap_ai.processing_policies(id,version,execution,classification,enabled,approved_by,approved_at,query_app_id,provider_id,retention_approved)
+		VALUES('app-query',1,'APPROVED_PROVIDER','NON_PERSONAL',true,'11111111-1111-4111-8111-111111111111',now(),'library','fake',true);
+		INSERT INTO cap_ai.processing_policy_profiles(policy_id,policy_version,model_profile_id,profile_revision)
+		VALUES('app-query',1,'personal',1)`); err != nil {
+		t.Fatal(err)
+	}
+	gateway := p.Authority.(DatabaseAuthority).DB
+	for _, tc := range []struct {
+		name, scope, sources string
+		wantAllowed          bool
+	}{
+		{"explicit empty list", "'PERSONAL'", "'[]'", true},
+		{"SQL null sources", "'PERSONAL'", "NULL", false},
+		{"JSON null sources", "'PERSONAL'", "'null'", false},
+		{"object sources", "'PERSONAL'", "'{}'", false},
+		{"missing scope", "NULL", "'[]'", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			query := `SELECT coalesce((cap_ai.model_policy($1,'role_library_user',$2,` + tc.scope + `,$3,$4,` + tc.sources + `)->>'allowed')::boolean,false)`
+			var allowed bool
+			if err := gateway.QueryRow(query, personalActor, op.AppID, op.ProfileID, op.ProfileRevision).Scan(&allowed); err != nil || allowed != tc.wantAllowed {
+				t.Fatalf("allowed=%v, want %v, error=%v", allowed, tc.wantAllowed, err)
+			}
+		})
+	}
+}
+
 func TestHostedPersonalApprovedEmbed(t *testing.T) {
 	db, admin, p, op := personalFixture(t, "EMBED")
 	approvePersonal(t, admin, "EMBED")
@@ -156,11 +188,17 @@ func TestHostedPersonalApprovedEmbed(t *testing.T) {
 	if err := checkPersonal(p, op, personalActor); err != nil {
 		t.Fatal("worker approval denied", err)
 	}
+	t.Run("missing lease source snapshot", func(t *testing.T) {
+		gateway := p.Authority.(DatabaseAuthority).DB
+		var allowed bool
+		err := gateway.QueryRow(`SELECT coalesce((cap_ai.worker_model_policy($1::uuid,$2,$1::text,$3,$4,$5,$6,$7,NULL)->>'allowed')::boolean,false)`,
+			personalActor, l.Job, l.Fence, l.Run, op.ProfileID, op.ProfileRevision, op.AppID).Scan(&allowed)
+		if err != nil || allowed {
+			t.Fatalf("missing snapshot: allowed=%v, error=%v", allowed, err)
+		}
+	})
 	id := approvePersonal(t, admin, "EMBED")
 	if _, err := admin.Exec(`SELECT cap_ai.disable_agent_processing($1,$2,'superseded')`, personalActor, id); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`UPDATE cap_ai.agent_processing_approvals SET enabled=false WHERE enabled`); err != nil {
 		t.Fatal(err)
 	}
 	if checkPersonal(p, op, personalActor) == nil {
@@ -172,6 +210,56 @@ func TestHostedPersonalApprovedEmbed(t *testing.T) {
 		t.Fatal("stale fence accepted")
 	}
 }
+func TestHostedPersonalApprovalConcurrentRetry(t *testing.T) {
+	db, admin, p, op := personalFixture(t, "GENERATE")
+	secondAdmin := personalLogin(t, db, "dxos_authz")
+	const query = `SELECT cap_ai.approve_agent_processing($1,$2::jsonb)`
+	review := personalReview("GENERATE")
+	type result struct {
+		id  string
+		err error
+	}
+	start := make(chan struct{})
+	results := make(chan result, 2)
+	for _, connection := range []*sql.DB{admin, secondAdmin} {
+		go func() {
+			<-start
+			var r result
+			r.err = connection.QueryRow(query, personalActor, review).Scan(&r.id)
+			results <- r
+		}()
+	}
+	close(start)
+	first, second := <-results, <-results
+	if first.err != nil || second.err != nil {
+		t.Fatalf("concurrent approval errors: %v, %v", first.err, second.err)
+	}
+	if first.id == "" || first.id != second.id {
+		t.Errorf("concurrent approvals returned different UUIDs: %q, %q", first.id, second.id)
+	}
+
+	// Treat the initial responses as lost and withdraw the review recovered by retry.
+	retried := approvePersonal(t, admin, "GENERATE")
+	if retried != first.id {
+		t.Errorf("retry returned %q, want %q", retried, first.id)
+	}
+	var disabled bool
+	if err := admin.QueryRow(`SELECT cap_ai.disable_agent_processing($1,$2,'review withdrawn')`, personalActor, retried).Scan(&disabled); err != nil || !disabled {
+		t.Fatal("could not withdraw recovered approval", disabled, err)
+	}
+	if checkPersonal(p, op, personalActor) == nil {
+		t.Error("withdrawing the retried approval left PERSONAL processing enabled")
+	}
+	var approvals, events int
+	if err := db.QueryRow(`SELECT (SELECT count(*) FROM cap_ai.agent_processing_approvals),
+		(SELECT count(*) FROM cap_ai.agent_processing_approval_events)`).Scan(&approvals, &events); err != nil || approvals != 1 || events != 2 {
+		t.Fatalf("expected one approval with two lifecycle events, got %d approvals, %d events: %v", approvals, events, err)
+	}
+	if renewed := approvePersonal(t, admin, "GENERATE"); renewed == retried {
+		t.Fatal("new approval reused the withdrawn revision")
+	}
+}
+
 func TestDisabledApprovalDeniesBeforeEgress(t *testing.T) {
 	db, admin, p, op := personalFixture(t, "GENERATE")
 	id := approvePersonal(t, admin, "GENERATE")
