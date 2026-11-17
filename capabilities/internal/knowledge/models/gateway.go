@@ -24,6 +24,12 @@ type Gateway struct {
 }
 
 func (g *Gateway) Call(ctx context.Context, actor *auth.Identity, op Operation, payload Payload) (Result, error) {
+	if op.ScopeKind == "AGENT" && (payload.Query == "" || len(payload.Evidence) == 0) {
+		return Result{}, ErrPolicy
+	}
+	if op.RequirePersonalQueryApproval && (payload.Query == "" || len(payload.Texts) != 0 || len(payload.Evidence) != 0) {
+		return Result{}, ErrPolicy
+	}
 	approval, err := g.Policy.Check(ctx, actor, op)
 	if err != nil {
 		return Result{}, err

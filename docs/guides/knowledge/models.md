@@ -21,8 +21,8 @@ per-user hosted opt-in. Unapproved PERSONAL egress denies. Hosted RERANK,
 OCR/VLM and local-model serving are outside this increment. App selection is
 not a permission grant. Legacy `/rag` remains unavailable.
 
-Migration 0008 implements audited PERSONAL processing. PERSONAL semantic
-retrieval, AGENT and chat consumers require their separate changes. Follow the explicit
+Migrations 0008–0010 add audited PERSONAL processing, PERSONAL semantic
+retrieval and the mixed-source AGENT model boundary. Follow the
 [ADR 0009 migration/consumer delta](../../adr/0009-native-rag-identity-and-source-boundaries.md#contract-amendment-and-implementation-delta-2026-11-18)
 before enabling the new behavior; provisioning an active slot alone cannot
 implement or authorize it.
@@ -96,17 +96,17 @@ through a protected `dxos_authz` connection after authenticating the Platform Ad
 For an FTS-only upgrade, `scripts/migrate-rag.sh --database-url-env DATABASE_URL
 --scope cap-ai --through 0007` skips optional 0004/0005. The existing explicit
 `--through 0004` and `--through 0005` opt-ins retain their meaning. To install
-audited PERSONAL processing and hybrid search, set all three schema flags to
-`true` in the migration environment: `RAG_MODELS_SCHEMA_ENABLED`,
+audited PERSONAL processing, hybrid search and AGENT model authority, set all
+three schema flags to `true` in the migration environment: `RAG_MODELS_SCHEMA_ENABLED`,
 `RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED`, and `RAG_AGENT_MODELS_SCHEMA_ENABLED`.
-Use `--through 0009` to apply both migrations. The bootstrap runner uses the
+Use `--through 0010` to apply these migrations. The bootstrap runner uses the
 same prerequisites. The agent-model flag defaults to `false` and also gates
 later model-dependent migrations when present. None of these flags activate a
 profile, slot or approval, and migration 0008 seeds no approvals.
 
 The minimal approval object binds one immutable provider/profile revision and
 purpose, one existing PERSONAL `LOCAL_ONLY` source-policy revision, and an
-independent PERSONAL query classification for one Ready library app. It records
+independent PERSONAL query classification for one Ready app. It records
 retention, training-use and region review evidence. This is a processing review,
 not a rewrite of the parsing policy: source ownership and `LOCAL_ONLY` parsing
 remain unchanged. A matching review is required for every supplied source;
@@ -140,7 +140,7 @@ SQL
 ```
 
 Replace the example identities and review references with the actually reviewed
-immutable profile, library app and evidence. EMBED needs its own review with
+immutable profile, Ready app and evidence. EMBED needs its own review with
 `purpose: EMBED` and the exact embedding profile revision. The returned UUID
 identifies the review. Definitions and audit events are immutable. Retrying an
 identical review while it is active returns its existing UUID, including
@@ -179,6 +179,27 @@ identity, and retries of that build keep the same identity. Hybrid search
 excludes generations tied to a superseded snapshot and pre-0009 PERSONAL
 generations that lack a recorded snapshot. Authorized FTS remains available
 while the current generation builds.
+
+Migration `0010_agent_model_authority.sql` checks each source's current app,
+role, READ snapshot and processing policy before a grounded AGENT generation.
+Use the audited provisioning function above for the following global-query reviews.
+
+- For hosted query-only EMBED, review the exact embedding provider and profile
+  revision with `purpose` set to `EMBED`, `query_app_id` set to the app being
+  searched, and `query_classification` set to `PERSONAL`. APP scopes also need
+  their ordinary app-bound processing approval. Repeat this review for each
+  eligible app where hosted global-query embedding is intended.
+- For AGENT GENERATE, review the exact generation provider and profile revision
+  with `purpose` set to `GENERATE`, `query_app_id` set to
+  `AI_AGENT_BILLING_APP_ID`, and `query_classification` set to `PERSONAL`.
+  Apply this review even when every selected source is APP. Each PERSONAL
+  source still needs its matching source-policy review for its library app.
+  Each APP source still needs its existing approved processing policy.
+
+Both operations require a current review for the question because any global
+question may contain PERSONAL information. The billing consumer needs its own
+review and budget, while READ and source processing authority come from each
+actual source.
 
 ## Deployment configuration
 
@@ -256,8 +277,9 @@ admin operations. The model call charges that APP account, the requesting
 actor's USER account and INSTALLATION account once. Missing/invalid config,
 missing budget or pricing mismatch denies the model call. This pragmatic MVP
 attribution reuses the APP ledger; a dedicated platform billing scope is
-deferred. The billing app supplies no source/query permission: every actual
-source app and PERSONAL source must pass independent policy checks. See
+deferred. The billing consumer requires the independent PERSONAL query review
+described above. Every actual source app and PERSONAL source must pass its own
+READ and processing checks. See
 [canonical billing attribution](../../reference/rag/authorization.md#model-operation-billing-attribution).
 Deployment integration must supply this new configuration; it is not currently
 consumed by the existing runtime. cap-ai is also absent from default Compose

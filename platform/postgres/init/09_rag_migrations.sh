@@ -31,6 +31,7 @@ for phase in check apply; do
    filename=$(basename "$file");
    if [ "$folder" = cap_ai ] && [ "$filename" = 0004_models_vectors.sql ] && [ "${RAG_MODELS_SCHEMA_ENABLED:-false}" != true ]; then continue; fi
    if [ "$folder" = cap_ai ] && [ "$filename" = 0005_model_registry.sql ] && [ "${RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED:-false}" != true ]; then continue; fi
+   # Audited approvals, PERSONAL hybrid, and AGENT model authority share this opt-in.
    version=$(printf '%s' "$filename" | cut -c1-4)
    if [ "$folder" = cap_ai ] && [ "$version" -ge 8 ] && [ "${RAG_AGENT_MODELS_SCHEMA_ENABLED:-false}" != true ]; then continue; fi
    checksum=$(sha256sum "$file" | cut -d ' ' -f1)
