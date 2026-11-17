@@ -161,7 +161,11 @@ func (s *Store) semanticCandidates(ctx context.Context, actor *auth.Identity, re
 		}
 	}
 
-	op := models.Operation{Key: modelOperationKey(), AppID: app, ScopeKind: req.Scope.Kind, Purpose: "EMBED", ProfileID: profile.ID, ProfileRevision: profile.Revision}
+	op := models.Operation{
+		Key: modelOperationKey(), AppID: app, ScopeKind: req.Scope.Kind, Purpose: "EMBED",
+		ProfileID: profile.ID, ProfileRevision: profile.Revision,
+		RequirePersonalQueryApproval: req.RequirePersonalQueryApproval,
+	}
 	result, err := s.gateway.Call(ctx, actor, op, models.Payload{Query: req.Query})
 	if err != nil {
 		return nil, err
