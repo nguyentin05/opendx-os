@@ -25,3 +25,7 @@ linters:
     - ineffassign
     - staticcheck
     - unused
+
+issues:
+  # shortcut: drop new-from-rev when #85 (52 pre-existing findings) is fixed.
+  new-from-rev: fff3f03
