@@ -144,7 +144,7 @@ func TestAgentBeginTurnIdempotent(t *testing.T) {
 	q := `SELECT cap_ai.agent_begin_turn($1,$2,$3,$4,$5)`
 	a := call(t, db, q, alice, id, "key", "hash", "question")
 	b := call(t, db, q, alice, id, "key", "hash", "question")
-	if a["id"] != b["id"] {
+	if a["id"] != b["id"] || a["created"] != true || b["created"] != false {
 		t.Fatal(a, b)
 	}
 	if _, e := db.Exec(q, alice, id, "key", "changed", "question"); e == nil {

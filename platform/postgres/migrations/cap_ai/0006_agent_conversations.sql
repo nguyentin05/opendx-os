@@ -99,12 +99,12 @@ BEGIN
   IF FOUND THEN
     IF m.body_hash <> body_hash OR m.content <> query THEN RAISE EXCEPTION 'conflict' USING ERRCODE = 'P0409'; END IF;
     SELECT * INTO answer FROM cap_ai.agent_messages WHERE conversation_id = conversation AND seq = m.seq + 1 AND role = 'ASSISTANT';
-    RETURN to_jsonb(m) || jsonb_build_object('completion', CASE WHEN answer.id IS NULL THEN NULL ELSE to_jsonb(answer) END);
+    RETURN to_jsonb(m) || jsonb_build_object('created', false, 'completion', CASE WHEN answer.id IS NULL THEN NULL ELSE to_jsonb(answer) END);
   END IF;
   IF EXISTS (SELECT 1 FROM cap_ai.agent_messages WHERE conversation_id = conversation AND status = 'PENDING') THEN RAISE EXCEPTION 'turn in progress' USING ERRCODE = 'P0409'; END IF;
   UPDATE cap_ai.agent_conversations SET last_seq = last_seq + 1, updated_at = now() WHERE id = conversation RETURNING * INTO c;
   INSERT INTO cap_ai.agent_messages(conversation_id,seq,role,content,status,client_key,body_hash) VALUES(conversation,c.last_seq,'USER',query,'PENDING',client_key,body_hash) RETURNING * INTO m;
-  RETURN to_jsonb(m) || jsonb_build_object('completion', NULL);
+  RETURN to_jsonb(m) || jsonb_build_object('created', true, 'completion', NULL);
 END $$;
 
 CREATE FUNCTION cap_ai.agent_finish_turn(actor uuid, user_message uuid, response jsonb) RETURNS jsonb
