@@ -25,3 +25,126 @@ updates:
     labels:
       - "dependencies"
       - "ci"
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "gomod"
+    directory: "/operator"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      go-operator:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "gomod"
+    directory: "/capabilities"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      go-capabilities:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "npm"
+    directory: "/workspace-ui"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      npm-workspace-ui:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "docker"
+    directory: "/operator"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      docker-operator:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "docker"
+    directory: "/capabilities"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      docker-capabilities:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "docker"
+    directory: "/workspace-ui"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      docker-workspace-ui:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
