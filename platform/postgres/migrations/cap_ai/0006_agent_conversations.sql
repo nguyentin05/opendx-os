@@ -119,10 +119,10 @@ BEGIN
     SELECT * INTO answer FROM cap_ai.agent_messages WHERE conversation_id = c.id AND seq = m.seq + 1 AND role = 'ASSISTANT';
     RETURN to_jsonb(answer);
   END IF;
-  IF response IS NULL OR jsonb_typeof(response) <> 'object' OR jsonb_typeof(response->'response') IS DISTINCT FROM 'object' OR jsonb_typeof(response->'sources') IS DISTINCT FROM 'array' OR jsonb_typeof(response->'response'->'answer') IS DISTINCT FROM 'string' OR jsonb_array_length(response->'sources') > 100 THEN RAISE EXCEPTION 'invalid response' USING ERRCODE = 'P0400'; END IF;
+  IF response IS NULL OR jsonb_typeof(response) <> 'object' OR jsonb_typeof(response->'response') IS DISTINCT FROM 'object' OR jsonb_typeof(response->'sources') IS DISTINCT FROM 'array' OR coalesce(jsonb_typeof(response->'response'->'answer'), '') NOT IN ('string', 'null') OR jsonb_array_length(response->'sources') > 100 THEN RAISE EXCEPTION 'invalid response' USING ERRCODE = 'P0400'; END IF;
   payload := response->'response';
   UPDATE cap_ai.agent_conversations SET last_seq = last_seq + 1, updated_at = now() WHERE id = c.id RETURNING * INTO c;
-  INSERT INTO cap_ai.agent_messages(conversation_id,seq,role,content,response,status) VALUES(c.id,c.last_seq,'ASSISTANT',payload->>'answer',payload,'COMPLETE') RETURNING * INTO answer;
+  INSERT INTO cap_ai.agent_messages(conversation_id,seq,role,content,response,status) VALUES(c.id,c.last_seq,'ASSISTANT',coalesce(payload->>'answer', ''),payload,'COMPLETE') RETURNING * INTO answer;
   FOR source IN SELECT value FROM jsonb_array_elements(response->'sources') LOOP
     INSERT INTO cap_ai.agent_message_sources(message_id,source_order,app_id,scope_kind,acting_role,document_id,version_id,chunk_id,citation_label,scope_snapshot)
     VALUES(answer.id,n,source->>'app_id',source->>'scope_kind',source->>'acting_role',(source->>'document_id')::uuid,(source->>'version_id')::uuid,(source->>'chunk_id')::uuid,source->>'citation_label',source->'scope_snapshot');

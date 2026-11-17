@@ -236,3 +236,24 @@ func TestAgentFinishTurnProvenanceAndReplay(t *testing.T) {
 		t.Fatal("other actor finished")
 	}
 }
+
+func TestAgentFinishTurnNullAnswerReplay(t *testing.T) {
+	db := agentDB(t)
+	id := create(t, db)
+	m := call(t, db, `SELECT cap_ai.agent_begin_turn($1,$2,'key','hash','question')`, alice, id)
+	body := `{"response":{"status":"SEARCH_ONLY","answer":null,"reason":"unavailable","citations":[{"label":"[1]"}]},"sources":[]}`
+	answer := call(t, db, `SELECT cap_ai.agent_finish_turn($1,$2,$3::jsonb)`, alice, m["id"], body)
+	if answer["content"] != "" {
+		t.Fatal(answer)
+	}
+	replay := call(t, db, `SELECT cap_ai.agent_begin_turn($1,$2,'key','hash','question')`, alice, id)
+	completion := replay["completion"].(map[string]any)
+	response := completion["response"].(map[string]any)
+	if completion["id"] != answer["id"] || response["answer"] != nil || response["status"] != "SEARCH_ONLY" || response["reason"] != "unavailable" || len(response["citations"].([]any)) != 1 {
+		t.Fatal(replay)
+	}
+	next := call(t, db, `SELECT cap_ai.agent_begin_turn($1,$2,'next','hash2','next')`, alice, id)
+	if next["seq"] != float64(3) {
+		t.Fatal(next)
+	}
+}
