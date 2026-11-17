@@ -57,6 +57,9 @@ test-unit: check-hygiene
 	if [ -d workspace-ui ] && [ -d workspace-ui/node_modules ]; then \
 		echo "[test-unit] Running workspace-ui tests..."; \
 		(cd workspace-ui && npm test && npm run build); \
+	elif [ "$$CI" = "true" ]; then \
+		echo "[test-unit] FAIL: workspace-ui/node_modules is missing and CI=true; run 'npm --prefix workspace-ui ci' first"; \
+		exit 1; \
 	else \
 		echo "[test-unit] workspace-ui/: SKIPPED (run 'npm --prefix workspace-ui install' to enable UI suite)"; \
 	fi

@@ -20,7 +20,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -o /out/dxos-operator ./cmd/dxos-operator
 
-FROM alpine:3.21
+FROM alpine:3.23
 RUN adduser -D -u 10001 dxos
 COPY --from=builder /out/dxos-operator /usr/local/bin/dxos-operator
 # Numeric user so Kubernetes can verify runAsNonRoot.

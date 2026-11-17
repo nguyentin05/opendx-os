@@ -14,16 +14,15 @@
 # limitations under the License.
 
 # One image per command under cmd/: build with --build-arg SERVICE=<command>.
-FROM golang:1.24-alpine AS builder
+FROM golang:1.27.3-alpine AS builder
 ARG SERVICE=cap-process
-ENV GOTOOLCHAIN=auto
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -o /out/service ./cmd/${SERVICE}
 
-FROM alpine:3.21
+FROM alpine:3.23
 RUN adduser -D -u 10001 dxos
 USER dxos
 COPY --from=builder /out/service /usr/local/bin/service
