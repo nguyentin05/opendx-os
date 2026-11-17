@@ -5,15 +5,28 @@ diataxis: how-to
 audience: [operator, platform-developer]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-18
 ---
 
 # Optional model retrieval and answers
 
 The model boundary is optional. Personal libraries and package lexical search
 continue without pgvector, profiles, credentials or model availability. Personal
-content **and questions** cannot use hosted EMBED, RERANK, GENERATE or OCR. App
-selection is not a permission grant. Legacy `/rag` remains unavailable.
+content and questions may use hosted EMBED/GENERATE only under the amended
+[processing policy](../../reference/rag/authorization.md#model-processing-policy):
+audited Platform Admin approval is separate from model-slot activation and
+requires purpose, provider/profile revision, enabled state, independent
+source/query classification and retention/training-use review. There is no
+per-user hosted opt-in. Unapproved PERSONAL egress denies. Hosted RERANK,
+OCR/VLM and local-model serving are outside this increment. App selection is
+not a permission grant. Legacy `/rag` remains unavailable.
+
+This approval model, PERSONAL semantic retrieval, AGENT and chat snapshots are
+target behavior. The current Go/SQL still impose blanket hosted-PERSONAL denial
+and APP-only semantic queries. Follow the explicit
+[ADR 0009 migration/consumer delta](../../adr/0009-native-rag-identity-and-source-boundaries.md#contract-amendment-and-implementation-delta-2026-11-18)
+before enabling the new behavior; provisioning an active slot alone cannot
+implement or authorize it.
 
 ## Storage and activation
 
@@ -52,11 +65,15 @@ The nine model tables hold immutable profile/policy revisions, policy allowlists
 independent embedding generations and accounting. Policy/profile revisions may
 be disabled, but their definitions and allowlist history cannot be rewritten.
 Provision each new approved policy/profile revision through reviewed operations;
-record approver, app query classification, provider/data-handling and retention
-approval, and an audit record in the same provisioning transaction. Document
-policies and query policy are checked separately. A hosted query requires an
-enabled `NON_PERSONAL`, app-bound policy with matching provider and profile;
-request JSON cannot assert classification or choose credentials/endpoints.
+record the audited Platform Admin approval and immutable review metadata in the
+same provisioning transaction. Document policies and query policy are checked
+separately. The existing implementation only supports enabled `NON_PERSONAL`,
+app-bound hosted query policies; the target adds separately approved PERSONAL
+queries and AGENT processing under the canonical authorization predicates.
+Mixed-source context retains PERSONAL handling requirements. Request JSON cannot
+assert classification or choose credentials/endpoints. Do not amend an existing
+local-only policy into a hosted approval; create a new reviewed revision and
+explicitly bind eligible sources. Disabled or mismatched approvals deny egress.
 
 EMBED jobs pin `profile@revision`, lexical run, chunk hashes and dimensions.
 Only a complete generation is READY; lease loss, source removal, a newer desired
@@ -84,11 +101,14 @@ contains `id`, `endpoint`, `credential_ref` (an environment-variable reference)
 and `loopback_test`. Profiles and deployment references must agree. HTTPS is
 required; redirects, URL credentials and query strings are rejected. An explicit
 `RAG_MODEL_TEST_MODE=true` permits a loopback HTTP test adapter. This is not a
-production provider approval. LOCAL profiles additionally require
-`RAG_LOCAL_MODELS_QUALIFIED=true`; no local model is bundled or prequalified. Personal semantic retrieval is deferred:
-personal queries use FTS, while a qualified local generator can consume that
-evidence. Local personal generation attributes budgets to the registered library
-app, regardless of UI context.
+production provider approval. Existing LOCAL profiles additionally require
+`RAG_LOCAL_MODELS_QUALIFIED=true`; no local model is bundled or prequalified, and
+local-model serving is outside the new harness scope. Current personal queries
+use FTS and the existing answer path accepts only a qualified local generator.
+The target supports bounded FTS + Embedding fusion for APP and owner-only
+PERSONAL under approved hosted EMBED/GENERATE policy. Absent or unqualified
+semantic models preserve authorized FTS. PERSONAL-only model operations retain
+the actual registered library app for billing, regardless of UI context.
 
 The HTTP adapter receives a fixed system instruction, model, purpose, bounded
 JSON input and pinned limits. It returns bounded `text`, `vector`,
@@ -117,6 +137,11 @@ generation with evidence returns 503 `MODEL_UNAVAILABLE`. VLM is reserved and
 unbound, and RERANKING remains disabled. Follow the canonical contract for
 provisioning identities, future Platform Admin lifecycle, and consumer impacts.
 
+For new chat, `AGENT` source selection is server-side across all current DB role
+memberships and owner-only PERSONAL sources. Request filters only narrow this
+set; role claims, client lists and LLM app suggestions confer no authority.
+Existing Hasura/capability APP routes keep ADR 0007's selected-role behavior.
+
 ## Budgets and uncertain charges
 
 Provision exactly one active INSTALLATION account (`installation`), APP account
@@ -126,6 +151,19 @@ or missing periods deny reservation. Accounts lock in UUID order in one
 transaction; reservation, allocations and RESERVE events commit together.
 Operation keys bind actor, profile, source/policy fingerprint and payload hash.
 Concurrent/replayed call intent cannot send the same operation twice.
+
+For cross-app AGENT model operations, configure `AI_AGENT_BILLING_APP_ID` to a
+genuine registered app currently `Ready` and provision its APP budget through
+admin operations. The model call charges that APP account, the requesting
+actor's USER account and INSTALLATION account once. Missing/invalid config,
+missing budget or pricing mismatch denies the model call. This pragmatic MVP
+attribution reuses the APP ledger; a dedicated platform billing scope is
+deferred. The billing app supplies no source/query permission: every actual
+source app and PERSONAL source must pass independent policy checks. See
+[canonical billing attribution](../../reference/rag/authorization.md#model-operation-billing-attribution).
+Deployment integration must supply this new configuration; it is not currently
+consumed by the existing runtime. cap-ai is also absent from default Compose
+and APISIX wiring, which remains separate implementation work.
 
 Reserve the bounded worst-case input/output price before persisting intent.
 Recheck authority after budget waits and after intent, immediately before send.
@@ -160,7 +198,11 @@ Policy/quota/outage returns scoped search-only unless `require_generation=true`,
 which returns 403 POLICY_BLOCKED, 429 QUOTA_EXCEEDED or 503 MODEL_UNAVAILABLE.
 No evidence makes no generation call. The app UI shows a grounded answer with
 protected citations, explicit abstention or search-only, and cancels old context
-on app/role change. Personal search has no hosted fallback.
+on app/role change. Missing PERSONAL approval never triggers hosted fallback.
+New chat history is owner-only: old snapshots remain readable after ordinary
+source revoke, while linked originals/citations require current source READ.
+Reauthorize source-derived history, including summaries, before new generation;
+readable history alone is not reusable evidence.
 
 ## Qualification
 
@@ -174,8 +216,13 @@ expose its controls publicly. The runner provisions reviewed fixture policy only
 for its new test app and `rag-test-fake`, never a real processor.
 
 R11/R12/R17/R18/R19/R20 cover scoped vectors, fresh final authority, independent
-readiness, personal zero egress, conservative accounting and answers. Earlier
-R01–R16 source/package gates remain prerequisites. A deterministic fake gold case
+readiness, the current personal zero-egress restriction, conservative accounting
+and answers. Those existing cases do not prove the amended approval policy.
+New behavior tests must cover approved PERSONAL EMBED/GENERATE, denied unapproved
+source/query egress, disabled/mismatched approval and retention/training-use
+review, per-source multi-role authority, retained owner-only snapshots without
+revoked-context reuse, and exact AGENT INSTALLATION/APP/USER charge attribution.
+Earlier R01–R16 source/package gates remain prerequisites. A deterministic fake gold case
 measures transport, citation/provenance plumbing and latency; it does not qualify
 real language-model groundedness, injection robustness, tokenizer limits or
 invoice reconciliation. Missing real-provider/classification approval leaves
