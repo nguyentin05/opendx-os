@@ -134,6 +134,10 @@ func (s *Store) searchCandidates(ctx context.Context, actor *auth.Identity, req 
 		err := decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.search_app($1,$2,$3,$4,$5,$6)`, actor.UserID, actor.Role, req.Scope.AppID, req.Query, limit, pq.Array(req.Scope.CollectionIDs)), &rows)
 		return rows, err
 	}
+	if req.Retrieval == "HYBRID" {
+		// Request the full bounded PERSONAL FTS list before final fusion.
+		limit = 50
+	}
 	err := decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.search_personal($1,$2,$3,$4,$5)`, actor.UserID, actor.Role, req.Query, limit, pq.Array(req.Scope.CollectionIDs)), &rows)
 	return rows, err
 }

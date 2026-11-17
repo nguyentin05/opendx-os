@@ -168,7 +168,7 @@ func TestRegistryExplicitMigrationRunner(t *testing.T) {
 	if e = db.QueryRow(`SELECT to_regclass('cap_ai.agent_conversations') IS NOT NULL AND to_regprocedure('cap_ai.agent_authorized_scopes(uuid)') IS NOT NULL`).Scan(&present); e != nil || !present {
 		t.Fatal("FTS agent upgrade missing", present, e)
 	}
-	if e = run("0008"); e == nil {
+	if e = run("0009"); e == nil {
 		t.Fatal("model-dependent upgrade accepted without gates")
 	}
 	for i := 0; i < 2; i++ {
@@ -182,9 +182,12 @@ func TestRegistryExplicitMigrationRunner(t *testing.T) {
 	}
 	flags := []string{"RAG_MODELS_SCHEMA_ENABLED=true", "RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED=true", "RAG_AGENT_MODELS_SCHEMA_ENABLED=true"}
 	for i := 0; i < 2; i++ {
-		if e = run("0008", flags...); e != nil {
+		if e = run("0009", flags...); e != nil {
 			t.Fatal(e)
 		}
+	}
+	if e = db.QueryRow(`SELECT to_regprocedure('cap_ai.search_personal_vectors(uuid,text,text,bigint,public.vector,uuid[])') IS NOT NULL`).Scan(&present); e != nil || !present {
+		t.Fatal("optional PERSONAL vector search missing", present, e)
 	}
 	if e = db.QueryRow(`SELECT count(*) FROM cap_ai.agent_processing_approvals`).Scan(&count); e != nil || count != 0 {
 		t.Fatal("seeded approval", count, e)

@@ -6,6 +6,7 @@ package knowledge
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"time"
@@ -137,21 +138,48 @@ func (s *Store) BuildEmbeddings(ctx context.Context, lease Lease, profile models
 }
 
 func (s *Store) semanticCandidates(ctx context.Context, actor *auth.Identity, req SearchRequest) ([]candidate, error) {
-	profile, resolveErr := s.modelProfile(ctx, models.CapabilityEmbedding)
-	if resolveErr != nil {
-		return nil, resolveErr
+	profile, err := s.modelProfile(ctx, models.CapabilityEmbedding)
+	if err != nil {
+		return nil, err
 	}
-	if s.gateway == nil || profile.ID == "" || req.Scope.Kind != "APP" {
+	if s.gateway == nil || profile.ID == "" || (req.Scope.Kind != "APP" && req.Scope.Kind != "PERSONAL") {
 		return nil, models.ErrPolicy
 	}
-	op := models.Operation{Key: modelOperationKey(), AppID: req.Scope.AppID, ScopeKind: req.Scope.Kind, Purpose: "EMBED", ProfileID: profile.ID, ProfileRevision: profile.Revision}
+
+	app := req.Scope.AppID
+	collections := pq.Array(req.Scope.CollectionIDs)
+	var review sql.NullInt64
+	if req.Scope.Kind == "PERSONAL" {
+		app, err = s.ResolveModelApp(ctx, actor, req.Scope)
+		if err != nil {
+			return nil, err
+		}
+		err = s.db.QueryRowContext(ctx, `SELECT cap_ai.personal_vector_readiness($1,$2,$3,$4,$5)`,
+			actor.UserID, actor.Role, profile.ID, profile.Revision, collections).Scan(&review)
+		if err != nil || !review.Valid {
+			return nil, models.ErrUnavailable
+		}
+	}
+
+	op := models.Operation{Key: modelOperationKey(), AppID: app, ScopeKind: req.Scope.Kind, Purpose: "EMBED", ProfileID: profile.ID, ProfileRevision: profile.Revision}
 	result, err := s.gateway.Call(ctx, actor, op, models.Payload{Query: req.Query})
 	if err != nil {
 		return nil, err
 	}
 	raw, _ := json.Marshal(result.Vector)
 	rows := []candidate{}
-	err = decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.search_vectors($1,$2,$3,$4,$5,$6::public.vector,$7)`, actor.UserID, actor.Role, req.Scope.AppID, profile.ID, profile.Revision, string(raw), pq.Array(req.Scope.CollectionIDs)), &rows)
+	if req.Scope.Kind == "PERSONAL" {
+		// The post-provider snapshot must keep the same query approval and library
+		// and still have an authorized, compatible generation to search.
+		err = decodeRow(s.db.QueryRowContext(ctx, `SELECT CASE WHEN
+			cap_ai.library_app($1,$2) = $8
+			AND cap_ai.personal_vector_readiness($1,$2,$3,$4,$6) = $7
+			THEN cap_ai.search_personal_vectors($1,$2,$3,$4,$5::public.vector,$6) END`,
+			actor.UserID, actor.Role, profile.ID, profile.Revision, string(raw), collections, review.Int64, app), &rows)
+	} else {
+		err = decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.search_vectors($1,$2,$3,$4,$5,$6::public.vector,$7)`,
+			actor.UserID, actor.Role, app, profile.ID, profile.Revision, string(raw), collections), &rows)
+	}
 	return rows, err
 }
 

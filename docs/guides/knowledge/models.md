@@ -95,13 +95,14 @@ through a protected `dxos_authz` connection after authenticating the Platform Ad
 
 For an FTS-only upgrade, `scripts/migrate-rag.sh --database-url-env DATABASE_URL
 --scope cap-ai --through 0007` skips optional 0004/0005. The existing explicit
-`--through 0004` and `--through 0005` opt-ins retain their meaning. To install 0008,
-set all three schema flags to `true` in the migration environment:
-`RAG_MODELS_SCHEMA_ENABLED`, `RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED`, and
-`RAG_AGENT_MODELS_SCHEMA_ENABLED`, then use `--through 0008`. The bootstrap runner
-uses the same prerequisites. The agent-model flag defaults to `false` and also
-gates later model-dependent migrations 0009/0010 when present. None of these flags
-activate a profile, slot or approval, and migration 0008 seeds no approvals.
+`--through 0004` and `--through 0005` opt-ins retain their meaning. To install
+audited PERSONAL processing and hybrid search, set all three schema flags to
+`true` in the migration environment: `RAG_MODELS_SCHEMA_ENABLED`,
+`RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED`, and `RAG_AGENT_MODELS_SCHEMA_ENABLED`.
+Use `--through 0009` to apply both migrations. The bootstrap runner uses the
+same prerequisites. The agent-model flag defaults to `false` and also gates
+later model-dependent migrations when present. None of these flags activate a
+profile, slot or approval, and migration 0008 seeds no approvals.
 
 The minimal approval object binds one immutable provider/profile revision and
 purpose, one existing PERSONAL `LOCAL_ONLY` source-policy revision, and an
@@ -163,6 +164,19 @@ records contain references to evidence, never credentials, prompts or source tex
 The Gateway rechecks current approval after reservation and call intent; workers
 also recheck the exact lease fence, source snapshot and current owner READ.
 
+Migration `0009_personal_hybrid.sql` records the owner, source authority and
+exact hosted approval revision on each PERSONAL embedding generation. Search evaluates
+current owner READ and source approval before exact vector ranking. If the
+selected collections have no qualified READY generation, search returns
+`LEXICAL_ONLY` with `SEMANTIC_UNAVAILABLE` without sending the query.
+
+A new approval after withdrawal has a new revision. Hybrid search excludes
+generations bound to a previous approval or source policy revision, as well as
+pre-0009 PERSONAL generations that lack this record. For the same source version and embedding
+profile revision, re-enqueueing does not reopen a previous billable job. Build
+under a newly parsed source version or a new embedding profile revision to
+restore semantic coverage. Authorized FTS remains available in the meantime.
+
 ## Deployment configuration
 
 API and worker independently load `models.FromEnvironment`. Defaults are off.
@@ -183,13 +197,13 @@ required; redirects, URL credentials and query strings are rejected. An explicit
 `RAG_MODEL_TEST_MODE=true` permits a loopback HTTP test adapter. This is not a
 production provider approval. Existing LOCAL profiles additionally require
 `RAG_LOCAL_MODELS_QUALIFIED=true`; no local model is bundled or prequalified, and
-local-model serving is outside the new harness scope. Personal query retrieval uses FTS until its semantic consumer is installed.
-The existing answer path accepts a hosted generator only with current audited
-PERSONAL approval, or an already qualified local profile.
-The target supports bounded FTS + Embedding fusion for APP and owner-only
-PERSONAL under approved hosted EMBED/GENERATE policy. Absent or unqualified
-semantic models preserve authorized FTS. PERSONAL-only model operations retain
-the actual registered library app for billing, regardless of UI context.
+local-model serving is outside the new harness scope. APP and owner-only
+PERSONAL search use bounded FTS and embedding fusion with qualified profiles.
+PERSONAL hybrid search requires migration 0009. Hosted PERSONAL embedding and
+generation each require a current audited approval for that purpose. Absent or
+unqualified semantic models preserve authorized FTS. PERSONAL-only model
+operations retain the actual registered library app for billing, regardless of
+UI context.
 
 The HTTP adapter receives a fixed system instruction, model, purpose, bounded
 JSON input and pinned limits. It returns bounded `text`, `vector`,
