@@ -1,7 +1,9 @@
 -- SPDX-License-Identifier: Apache-2.0
 -- Copyright 2026 DX-OS Open-Core Contributors
 
-ALTER TABLE core.files ADD COLUMN IF NOT EXISTS read_policy TEXT NOT NULL DEFAULT 'APP_ATTACHMENT' CHECK (read_policy IN ('APP_ATTACHMENT', 'OWNER_ONLY'));
+ALTER TABLE core.files ADD COLUMN IF NOT EXISTS read_policy TEXT NOT NULL DEFAULT 'APP_ATTACHMENT' CHECK (
+    read_policy IN ('APP_ATTACHMENT', 'OWNER_ONLY')
+);
 
 CREATE OR REPLACE FUNCTION core.enforce_file_immutability()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
