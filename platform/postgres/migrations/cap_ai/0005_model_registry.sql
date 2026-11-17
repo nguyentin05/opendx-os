@@ -108,7 +108,7 @@ AS $$
 SELECT coalesce((SELECT CASE WHEN p.id IS NOT NULL THEN jsonb_build_object('capability', s.capability, 'slot_revision', s.slot_revision, 'profile', to_jsonb(p), 'adapter_key', c.adapter_key, 'declaration_digest', c.declaration_digest)
   ELSE jsonb_build_object('capability', s.capability, 'slot_revision', s.slot_revision, 'status', 'MODEL_UNAVAILABLE') END FROM cap_ai.global_model_slots s LEFT JOIN cap_ai.model_profiles p
   ON p.id = s.profile_id AND p.revision = s.profile_revision AND p.enabled AND p.purpose = CASE s.capability WHEN 'EMBEDDING'
-  THEN 'EMBED' WHEN 'LLM' THEN 'GENERATE' END LEFT JOIN cap_ai.model_candidates c ON c.profile_id = p.id AND c.revision = p.revision WHERE s.capability = $ 1), jsonb_build_object('capability', $ 1, 'slot_revision', 0, 'status', 'MODEL_UNAVAILABLE'))
+  THEN 'EMBED' WHEN 'LLM' THEN 'GENERATE' END LEFT JOIN cap_ai.model_candidates c ON c.profile_id = p.id AND c.revision = p.revision WHERE s.capability = $1), jsonb_build_object('capability', $1, 'slot_revision', 0, 'status', 'MODEL_UNAVAILABLE'))
 $$;
 
 CREATE FUNCTION cap_ai.registry_import_candidates(payload jsonb)
