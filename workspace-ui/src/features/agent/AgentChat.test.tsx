@@ -1,24 +1,309 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 DX-OS Open-Core Contributors
 // @vitest-environment jsdom
-import {afterEach,expect,it,vi} from 'vitest';
-import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
-import {AgentChat} from './AgentChat';
-afterEach(()=>{cleanup();vi.unstubAllGlobals()});
-it('continues a conversation with cited answers and safely handles denied previews',async()=>{
- const calls:{url:string;init?:RequestInit}[]=[];
- vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{const url=String(input);calls.push({url,init});if(url.includes('/citations/'))return new Response('',{status:404});if(init?.method==='POST')return Response.json({status:'ANSWERED',answer:'Across apps',citations:[{title:'Policy',url:'/api/cap/ai/conversations/c1/citations/k?document_id=d&version_id=v&message_seq=2'}]});if(url.endsWith('/c1'))return Response.json({messages:[],next_after_seq:null});return Response.json({conversations:[{id:'c1',title:'Existing'}],next_cursor:null})}));
- render(<AgentChat token="token"/>);fireEvent.click(await screen.findByRole('button',{name:'Existing'}));fireEvent.change(await screen.findByLabelText('Question'),{target:{value:'What changed?'}});fireEvent.click(screen.getByRole('button',{name:'Send'}));await screen.findByText('Across apps');fireEvent.click(screen.getByRole('button',{name:'Policy'}));await screen.findByText(/citation is unavailable/i);expect(screen.queryByRole('combobox')).toBeNull();expect(calls.every(c=>new Headers(c.init?.headers).get('X-Hasura-Role')===null)).toBe(true);
+import { afterEach, expect, it, vi } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { AgentChat } from "./AgentChat";
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
 });
-it('does not display a delayed response after unmount',async()=>{
- let resolve!:(r:Response)=>void;vi.stubGlobal('fetch',vi.fn(()=>new Promise<Response>(r=>{resolve=r})));const view=render(<AgentChat token="token"/>);view.unmount();resolve(Response.json({conversations:[{id:'c',title:'Secret'}],next_cursor:null}));await waitFor(()=>expect(screen.queryByText('Secret')).toBeNull());
+it("continues a conversation with cited answers and safely handles denied previews", async () => {
+  const calls: { url: string; init?: RequestInit }[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, init });
+      if (url.includes("/citations/")) return new Response("", { status: 404 });
+      if (init?.method === "POST")
+        return Response.json({
+          status: "ANSWERED",
+          answer: "Across apps",
+          citations: [
+            {
+              title: "Policy",
+              url: "/api/cap/ai/conversations/c1/citations/k?document_id=d&version_id=v&message_seq=2",
+            },
+          ],
+        });
+      if (url.endsWith("/c1"))
+        return Response.json({ messages: [], next_after_seq: null });
+      return Response.json({
+        conversations: [{ id: "c1", title: "Existing" }],
+        next_cursor: null,
+      });
+    }),
+  );
+  render(<AgentChat token="token" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
+  fireEvent.change(await screen.findByLabelText("Question"), {
+    target: { value: "What changed?" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText("Across apps");
+  fireEvent.click(screen.getByRole("button", { name: "Policy" }));
+  await screen.findByText(/citation is unavailable/i);
+  expect(screen.queryByRole("combobox")).toBeNull();
+  expect(
+    calls.every(
+      (c) => new Headers(c.init?.headers).get("X-Hasura-Role") === null,
+    ),
+  ).toBe(true);
+});
+it("does not display a delayed response after unmount", async () => {
+  let resolve!: (r: Response) => void;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise<Response>((r) => {
+          resolve = r;
+        }),
+    ),
+  );
+  const view = render(<AgentChat token="token" />);
+  view.unmount();
+  resolve(
+    Response.json({
+      conversations: [{ id: "c", title: "Secret" }],
+      next_cursor: null,
+    }),
+  );
+  await waitFor(() => expect(screen.queryByText("Secret")).toBeNull());
 });
 
-it('retries a pending or uncertain turn with the same idempotency key',async()=>{
- const keys:string[]=[];let tries=0;vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{const url=String(input);if(init?.method==='POST'){keys.push(new Headers(init.headers).get('Idempotency-Key')!);tries++;if(tries===1)throw new TypeError('network');if(tries===2)return Response.json({status:'SEARCH_ONLY',answer:null,citations:[],reason:'TURN_PENDING'});return Response.json({status:'ANSWERED',answer:'Done',citations:[]})}if(url.endsWith('/c1'))return Response.json({messages:[],next_after_seq:null});return Response.json({conversations:[{id:'c1',title:'Existing'}],next_cursor:null})}));
- render(<AgentChat token="token"/>);fireEvent.click(await screen.findByRole('button',{name:'Existing'}));fireEvent.change(await screen.findByLabelText('Question'),{target:{value:'Question'}});fireEvent.click(screen.getByRole('button',{name:'Send'}));await screen.findByText(/UNCERTAIN/);fireEvent.click(screen.getByRole('button',{name:'Retry'}));await screen.findByText(/turn is pending/i);fireEvent.click(screen.getByRole('button',{name:'Retry'}));await screen.findByText('Done');expect(new Set(keys).size).toBe(1);
+it("retries a pending or uncertain turn with the same idempotency key", async () => {
+  const keys: string[] = [];
+  let tries = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "POST") {
+        keys.push(new Headers(init.headers).get("Idempotency-Key")!);
+        tries++;
+        if (tries === 1) throw new TypeError("network");
+        if (tries === 2)
+          return Response.json({
+            status: "SEARCH_ONLY",
+            answer: null,
+            citations: [],
+            reason: "TURN_PENDING",
+          });
+        return Response.json({
+          status: "ANSWERED",
+          answer: "Done",
+          citations: [],
+        });
+      }
+      if (url.endsWith("/c1"))
+        return Response.json({ messages: [], next_after_seq: null });
+      return Response.json({
+        conversations: [{ id: "c1", title: "Existing" }],
+        next_cursor: null,
+      });
+    }),
+  );
+  render(<AgentChat token="token" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
+  fireEvent.change(await screen.findByLabelText("Question"), {
+    target: { value: "Question" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText(/UNCERTAIN/);
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByText(/turn is pending/i);
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByText("Done");
+  expect(new Set(keys).size).toBe(1);
 });
-it('rejects an external citation without sending credentials',async()=>{
- const fetcher=vi.fn(async(input:RequestInfo|URL)=>{const url=String(input);if(url.endsWith('/c1'))return Response.json({messages:[{id:'m',seq:2,role:'ASSISTANT',content:'',status:'COMPLETE',response:{status:'ANSWERED',answer:'Old answer',citations:[{title:'External',url:'https://example.invalid/steal'}]}}],next_after_seq:null});return Response.json({conversations:[{id:'c1',title:'Existing'}],next_cursor:null})});vi.stubGlobal('fetch',fetcher);
- render(<AgentChat token="secret"/>);fireEvent.click(await screen.findByRole('button',{name:'Existing'}));fireEvent.click(await screen.findByRole('button',{name:'External'}));await screen.findByText(/citation is unavailable/i);expect(fetcher).toHaveBeenCalledTimes(2);
+it("rejects an external citation without sending credentials", async () => {
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/c1"))
+      return Response.json({
+        messages: [
+          {
+            id: "m",
+            seq: 2,
+            role: "ASSISTANT",
+            content: "",
+            status: "COMPLETE",
+            response: {
+              status: "ANSWERED",
+              answer: "Old answer",
+              citations: [
+                { title: "External", url: "https://example.invalid/steal" },
+              ],
+            },
+          },
+        ],
+        next_after_seq: null,
+      });
+    return Response.json({
+      conversations: [{ id: "c1", title: "Existing" }],
+      next_cursor: null,
+    });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  render(<AgentChat token="secret" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
+  fireEvent.click(await screen.findByRole("button", { name: "External" }));
+  await screen.findByText(/citation is unavailable/i);
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
+it("cancels the active transcript when leaving after selecting a conversation", async () => {
+  let signal: AbortSignal | undefined;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/c1")) {
+        signal = init?.signal as AbortSignal;
+        return new Promise<Response>(() => {});
+      }
+      return Response.json({
+        conversations: [{ id: "c1", title: "Existing" }],
+        next_cursor: null,
+      });
+    }),
+  );
+  const view = render(<AgentChat token="token" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
+  await waitFor(() => expect(signal).toBeDefined());
+  view.unmount();
+  expect(signal!.aborted).toBe(true);
+});
+it("can create another conversation after deletion", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "DELETE") return new Response(null, { status: 204 });
+      if (String(input).endsWith("/c1"))
+        return Response.json({ messages: [], next_after_seq: null });
+      return Response.json({
+        conversations: [{ id: "c1", title: "Existing" }],
+        next_cursor: null,
+      });
+    }),
+  );
+  render(<AgentChat token="token" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Delete conversation" }),
+  );
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "New conversation",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+});
+it("shows uncertain charge without resending automatically", async () => {
+  let sent = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        sent++;
+        return Response.json({
+          status: "SEARCH_ONLY",
+          answer: null,
+          citations: [],
+          reason: "MODEL_CHARGE_UNCERTAIN",
+        });
+      }
+      if (String(input).endsWith("/c1"))
+        return Response.json({ messages: [], next_after_seq: null });
+      return Response.json({
+        conversations: [{ id: "c1", title: "Existing" }],
+        next_cursor: null,
+      });
+    }),
+  );
+  render(<AgentChat token="token" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
+  fireEvent.change(await screen.findByLabelText("Question"), {
+    target: { value: "Question" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText(/UNCERTAIN/);
+  expect(sent).toBe(1);
+});
+it("merges a sent turn with its canonical transcript when paging", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "POST")
+        return Response.json({
+          status: "ANSWERED",
+          answer: "New answer",
+          citations: [],
+        });
+      if (url.includes("after_seq="))
+        return Response.json({
+          messages: [
+            {
+              id: "u2",
+              seq: 3,
+              role: "USER",
+              content: "New question",
+              status: "COMPLETE",
+            },
+            {
+              id: "a2",
+              seq: 4,
+              role: "ASSISTANT",
+              content: "New answer",
+              status: "COMPLETE",
+              response: {
+                status: "ANSWERED",
+                answer: "New answer",
+                citations: [],
+              },
+            },
+          ],
+          next_after_seq: null,
+        });
+      if (url.endsWith("/c1"))
+        return Response.json({
+          messages: [
+            {
+              id: "u1",
+              seq: 1,
+              role: "USER",
+              content: "Old question",
+              status: "COMPLETE",
+            },
+          ],
+          next_after_seq: 1,
+        });
+      return Response.json({
+        conversations: [{ id: "c1", title: "Existing" }],
+        next_cursor: null,
+      });
+    }),
+  );
+  render(<AgentChat token="token" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
+  fireEvent.change(await screen.findByLabelText("Question"), {
+    target: { value: "New question" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText("New answer");
+  fireEvent.click(screen.getByRole("button", { name: "More messages" }));
+  await waitFor(() =>
+    expect(screen.getAllByText("New answer")).toHaveLength(1),
+  );
+  expect(screen.getAllByText("New question")).toHaveLength(1);
 });
