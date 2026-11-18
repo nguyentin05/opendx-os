@@ -35,7 +35,9 @@ tar -C "${REPO_ROOT}" \
     --exclude=".superpowers" \
     --exclude=".scratch" \
     --exclude="CLAUDE.md" \
+    --exclude=".claude" \
     --exclude="docs/superpowers" \
+    --exclude="docs/_internal" \
     --exclude="dist" \
     --exclude="build" \
     --exclude="bin" \

@@ -5,7 +5,7 @@ diataxis: how-to
 audience: [platform-developer]
 status: active
 owner: platform
-last_reviewed: 2026-11-17
+last_reviewed: 2026-11-18
 ---
 
 # Verification and evidence
@@ -91,6 +91,45 @@ Run `actionlint .github/workflows/*.yml` after editing a workflow; it checks
 syntax, expressions, and the declared permissions. A local `make test` is not CI
 evidence: the `go` job adds the race detector, and the `integration` and `parser`
 jobs need their own environment.
+
+## Images and release
+
+`.github/workflows/images.yml` builds the nine image targets in
+[releasing](releasing.md#3-tag-and-run-the-release-workflow). Pull requests build
+without pushing; pushes to `main` and `v*` tags publish to
+`ghcr.io/nguyentin05/<image>` and attest the image digest.
+`.github/workflows/release.yml` runs on `v*` tags and manual dispatch, verifies
+the tag through `ci.yml`, packs the source tree, checks the archive exclusions,
+generates a CycloneDX SBOM and `SHA256SUMS`, attests both, and attaches the
+assets to a release. It never publishes the release.
+
+Reproduce the local parts:
+
+```sh
+actionlint .github/workflows/*.yml
+scripts/package_release.sh 0.2.0-local
+for forbidden in /.agents/ /AGENTS.md /AGENTS.local.md /CLAUDE.md /.scratch/ /docs/_internal/; do
+  tar -tzf dist/dxos-open-core-0.2.0-local.tar.gz | grep -Fq "$forbidden" && exit 1
+done
+docker buildx build --platform linux/amd64 -f capabilities/Dockerfile \
+  --build-arg SERVICE=cap-ai -t opendx-cap-ai:local capabilities
+docker buildx build --platform linux/amd64 -f workspace-ui/Dockerfile \
+  -t opendx-workspace-ui:local workspace-ui
+```
+
+Dispatch the workflows and verify a downloaded artifact:
+
+```sh
+gh workflow run images.yml
+gh workflow run release.yml -f tag=vX.Y.Z
+gh attestation verify dxos-open-core-X.Y.Z.tar.gz --repo nguyentin05/opendx-os
+gh attestation verify oci://ghcr.io/nguyentin05/opendx-operator:X.Y.Z --repo nguyentin05/opendx-os
+```
+
+A local image build proves the Dockerfile target resolves; it does not prove the
+registry push, attestation, SBOM, or release upload. Dispatch `release.yml` for a
+tag only while its release is still a draft, and review the assets before
+publishing.
 
 ## Recording results
 

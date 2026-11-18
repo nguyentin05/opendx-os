@@ -1,0 +1,152 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to package and attach to (for example v0.2.0)
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate the tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "FAIL: ${TAG} is not a vX.Y.Z tag."
+            exit 1
+          fi
+          gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null
+
+  verify:
+    name: verify
+    needs: validate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ github.event.inputs.tag || github.ref }}
+
+  package:
+    name: package
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+      - name: Resolve the version
+        id: version
+        run: |
+          version="${TAG#v}"
+          echo "VERSION=${version}" >> "${GITHUB_ENV}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+      - name: Package the source tree
+        run: scripts/package_release.sh "${VERSION}"
+      - name: Inspect the archive
+        run: |
+          set -euo pipefail
+          archive="dist/dxos-open-core-${VERSION}.tar.gz"
+          test -f "${archive}"
+          listing="$(tar -tzf "${archive}")"
+          status=0
+          for forbidden in "/.agents/" "/AGENTS.md" "/AGENTS.local.md" "/CLAUDE.md" "/.scratch/" "/docs/_internal/"; do
+            if grep -Fq "${forbidden}" <<<"${listing}"; then
+              echo "FAIL: ${archive} contains ${forbidden}"
+              status=1
+            fi
+          done
+          exit "${status}"
+      - name: Generate a CycloneDX SBOM
+        uses: anchore/sbom-action@fffec3d851af758d56fee099cf3fbf8aa8779843 # v0.24.3
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: dist/opendx-os-${{ steps.version.outputs.version }}.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Write SHA256SUMS
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum "dxos-open-core-${VERSION}.tar.gz" \
+            "opendx-os-${VERSION}.cdx.json" > SHA256SUMS
+          sha256sum -c SHA256SUMS
+      - name: Attest the tarball and SBOM
+        uses: actions/attest-build-provenance@v4 # v4.2.2
+        with:
+          subject-path: |
+            dist/dxos-open-core-${{ steps.version.outputs.version }}.tar.gz
+            dist/opendx-os-${{ steps.version.outputs.version }}.cdx.json
+      - name: Upload the release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-assets
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: release
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-assets
+          path: dist
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum -c SHA256SUMS
+          cd ..
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            # A Release Drafter draft already exists for this tag; refresh its
+            # assets. This step never changes the draft/published state.
+            gh release upload "${TAG}" dist/* --clobber --repo "${GITHUB_REPOSITORY}"
+          else
+            gh release create "${TAG}" --draft --verify-tag --generate-notes \
+              --repo "${GITHUB_REPOSITORY}" dist/*
+          fi
