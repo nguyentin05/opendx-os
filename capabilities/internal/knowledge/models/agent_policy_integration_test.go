@@ -111,11 +111,17 @@ func newAgentFixture(t *testing.T, purpose string) agentFixture {
 	SELECT 'APP',app_id,now()-interval '1 day',now()+interval '1 day',100000,'price-1'
 	FROM core.apps WHERE app_id IN ('agent_billing','hr','procurement','library')`)
 	provider := &agentProvider{}
+	op := Operation{Key: "agent-call", AppID: "agent_billing", ScopeKind: "AGENT", Purpose: purpose, ProfileID: "personal", ProfileRevision: 1}
+	if purpose == "GENERATE" {
+		agentExec(t, db, `UPDATE cap_ai.global_model_slots SET profile_id='personal',
+			profile_revision=1,slot_revision=1 WHERE capability='LLM'`)
+		op.LLMSlotRevision = 1
+	}
 	return agentFixture{
 		db: db, admin: admin, actor: &auth.Identity{UserID: personalActor, Role: "role_hr_reader"},
 		provider: provider, proofs: proofs,
 		gateway: Gateway{Policy: policy, Budget: &Budget{DB: policy.Authority.(DatabaseAuthority).DB}, Providers: map[string]Provider{"fake": provider}},
-		op:      Operation{Key: "agent-call", AppID: "agent_billing", ScopeKind: "AGENT", Purpose: purpose, ProfileID: "personal", ProfileRevision: 1},
+		op:      op,
 	}
 }
 
@@ -333,8 +339,8 @@ func TestAgentModelPolicyRejectsMalformedSQLProofs(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var allowed bool
-			err := gateway.QueryRow(`SELECT coalesce((cap_ai.agent_model_policy($1,$2,$3,$4,$5)->>'allowed')::boolean,false)`,
-				f.actor.UserID, f.op.AppID, f.op.ProfileID, f.op.ProfileRevision, tc.proofs).Scan(&allowed)
+			err := gateway.QueryRow(`SELECT coalesce((cap_ai.agent_model_policy($1,$2,$3,$4,$5,$6)->>'allowed')::boolean,false)`,
+				f.actor.UserID, f.op.AppID, f.op.ProfileID, f.op.ProfileRevision, f.op.LLMSlotRevision, tc.proofs).Scan(&allowed)
 			if err != nil || allowed != tc.allowed {
 				t.Fatalf("allowed=%t, want %t, err=%v", allowed, tc.allowed, err)
 			}
@@ -354,6 +360,8 @@ func TestAgentModelPolicyRequiresGroundedGeneration(t *testing.T) {
 	}{
 		{"missing evidence", func(_ *Operation, p *Payload) { p.Evidence = nil }},
 		{"missing question", func(_ *Operation, p *Payload) { p.Query = "" }},
+		{"missing LLM slot pin", func(o *Operation, _ *Payload) { o.LLMSlotRevision = 0 }},
+		{"stale LLM slot pin", func(o *Operation, _ *Payload) { o.LLMSlotRevision++ }},
 		{"legacy sources mixed in", func(o *Operation, _ *Payload) { o.Sources = []contracts.ReadScope{f.proofs[0].ReadScope} }},
 		{"worker lease mixed in", func(o *Operation, _ *Payload) { o.Lease = &LeaseRef{} }},
 		{"AGENT proofs on APP", func(o *Operation, _ *Payload) { o.ScopeKind, o.AppID = "APP", "hr" }},

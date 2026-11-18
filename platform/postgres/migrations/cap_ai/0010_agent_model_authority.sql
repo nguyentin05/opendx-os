@@ -51,7 +51,7 @@ $$;
 -- Bill a single generation to the configured consumer, retaining each source's
 -- current READ and processing decision under the role that gave it access.
 CREATE FUNCTION cap_ai.agent_model_policy(
-    actor uuid, billing_app text, profile text, revision bigint, proofs jsonb
+    actor uuid, billing_app text, profile text, revision bigint, slot_revision bigint, proofs jsonb
 )
 RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, cap_ai AS $$
@@ -81,8 +81,12 @@ BEGIN
     RETURN '{}'::jsonb;
   END IF;
 
-  SELECT mp_row.* INTO mp FROM cap_ai.model_profiles mp_row
-    WHERE mp_row.id = profile AND mp_row.revision = $4 AND mp_row.enabled AND mp_row.purpose = 'GENERATE';
+  -- Each Gateway check must see the same active binding as the caller resolved.
+  -- An enabled profile alone may remain usable elsewhere after slot withdrawal.
+  SELECT mp_row.* INTO mp FROM cap_ai.global_model_slots slot
+    JOIN cap_ai.model_profiles mp_row ON mp_row.id = slot.profile_id AND mp_row.revision = slot.profile_revision
+    WHERE slot.capability = 'LLM' AND slot.slot_revision = $5 AND $5 > 0
+      AND mp_row.id = $3 AND mp_row.revision = $4 AND mp_row.enabled AND mp_row.purpose = 'GENERATE';
   IF NOT FOUND THEN
     RETURN '{}'::jsonb;
   END IF;
@@ -157,11 +161,11 @@ $$;
 
 ALTER FUNCTION cap_ai.agent_model_gateway_session() OWNER TO dxos_ai_owner;
 ALTER FUNCTION cap_ai.agent_query_model_policy(uuid,text,text,text,text,bigint) OWNER TO dxos_ai_owner;
-ALTER FUNCTION cap_ai.agent_model_policy(uuid,text,text,bigint,jsonb) OWNER TO dxos_ai_owner;
+ALTER FUNCTION cap_ai.agent_model_policy(uuid,text,text,bigint,bigint,jsonb) OWNER TO dxos_ai_owner;
 
 REVOKE ALL ON FUNCTION cap_ai.agent_model_gateway_session(),
   cap_ai.agent_query_model_policy(uuid,text,text,text,text,bigint),
-  cap_ai.agent_model_policy(uuid,text,text,bigint,jsonb) FROM PUBLIC;
+  cap_ai.agent_model_policy(uuid,text,text,bigint,bigint,jsonb) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION cap_ai.agent_query_model_policy(uuid,text,text,text,text,bigint),
-  cap_ai.agent_model_policy(uuid,text,text,bigint,jsonb) TO dxos_ai_gateway;
+  cap_ai.agent_model_policy(uuid,text,text,bigint,bigint,jsonb) TO dxos_ai_gateway;

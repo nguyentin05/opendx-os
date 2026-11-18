@@ -419,3 +419,87 @@ func TestAgentTurnRequiresCurrentBillingBudget(t *testing.T) {
 		t.Fatalf("budget denial left ledger entries: %d, err=%v", ledger, err)
 	}
 }
+
+func TestAgentTurnSlotWithdrawalWhileReserving(t *testing.T) {
+	var sends atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		sends.Add(1)
+		_, _ = w.Write([]byte(`{"text":"Old slot answer","citation_ids":["E1"],"usage":{"input_tokens":3,"output_tokens":2}}`))
+	}))
+	defer server.Close()
+	provider, err := models.NewHTTPProvider(server.URL, "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newAgentTurnFixture(t, provider)
+	f.addPackage(t, "procurement", "role_procurement", "New hires can request a laptop.")
+	f.approveGeneration(t, "agent_billing", "reviewed fixture")
+	conversation, err := f.store.Create(t.Context(), f.actor, "Laptop policy")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	tx, err := f.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SELECT id FROM cap_ai.budget_accounts WHERE scope='APP' FOR UPDATE`); err != nil {
+		t.Fatal(err)
+	}
+	type outcome struct {
+		result TurnResult
+		err    error
+	}
+	reply := make(chan outcome, 1)
+	o := f.orchestrator(f.retrieval)
+	go func() {
+		out, err := o.Reply(ctx, f.actor, TurnRequest{conversation.ID, "slot withdrawn", "laptop"})
+		reply <- outcome{out, err}
+	}()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var waiting bool
+		err = f.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+			WHERE datname=current_database()
+			AND wait_event_type='Lock' AND query LIKE 'SELECT cap_ai.reserve_model(%')`).Scan(&waiting)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		select {
+		case early := <-reply:
+			t.Fatalf("turn finished before entering reservation: %+v, err=%v", early.result, early.err)
+		case <-ctx.Done():
+			t.Fatal("Gateway did not block on the reserved budget account")
+		case <-ticker.C:
+		}
+	}
+	// Withdraw the slot from a separate committed session while the reservation
+	// is blocked. The old model profile and processing approvals stay enabled.
+	if _, err := f.db.ExecContext(ctx, `UPDATE cap_ai.global_model_slots SET
+		profile_id=NULL,profile_revision=NULL,slot_revision=slot_revision+1 WHERE capability='LLM'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	got := <-reply
+	if got.err != nil || got.result.Status != "SEARCH_ONLY" || got.result.Reason != "AUTHORIZATION_CHANGED" ||
+		got.result.Answer != nil || len(got.result.Citations) != 0 || sends.Load() != 0 {
+		t.Fatalf("withdrawn slot reached provider: reply=%+v, err=%v, sends=%d", got.result, got.err, sends.Load())
+	}
+	var state string
+	var reserved, calls int
+	err = f.db.QueryRowContext(ctx, `SELECT state,
+		(SELECT sum(reserved_units) FROM cap_ai.budget_accounts),
+		(SELECT count(*) FROM cap_ai.model_calls) FROM cap_ai.model_reservations`).Scan(&state, &reserved, &calls)
+	if err != nil || state != "CANCELLED" || reserved != 0 || calls != 0 {
+		t.Fatalf("withdrawn slot retained funds or attempted send: state=%s reserved=%d calls=%d err=%v", state, reserved, calls, err)
+	}
+}

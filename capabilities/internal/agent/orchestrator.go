@@ -64,7 +64,7 @@ func NewSourcePolicyChecker(reader knowledge.AnswerReader, resolver knowledge.Mo
 		if err != nil {
 			return false, err
 		}
-		op := agentOperation("agent-memory:"+ref.ChunkID, billingAppID, binding.Profile, []models.AgentSourceProof{agentProof(ref)})
+		op := agentOperation("agent-memory:"+ref.ChunkID, billingAppID, binding, []models.AgentSourceProof{agentProof(ref)})
 		_, err = policy.Check(ctx, &auth.Identity{UserID: actor.UserID}, op)
 		return err == nil, err
 	}
@@ -163,7 +163,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, actor Actor, user Message) T
 	}
 
 	identity := &auth.Identity{UserID: actor.UserID}
-	op := agentOperation("agent-turn:"+user.ID, o.billing, binding.Profile, proofs)
+	op := agentOperation("agent-turn:"+user.ID, o.billing, binding, proofs)
 	approval, err := o.policy.Check(ctx, identity, op)
 	if err != nil {
 		return fallback(safeModelReason(err))
@@ -173,7 +173,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, actor Actor, user Message) T
 	}
 
 	generated, callErr := o.gateway.Call(ctx, identity, op, payload)
-	if ctx.Err() != nil && errors.Is(callErr, models.ErrUncertain) {
+	if errors.Is(callErr, models.ErrUncertain) {
 		return emptyTurn("SEARCH_ONLY", models.ErrUncertain.Error(), search)
 	}
 	for _, source := range sources {
@@ -222,9 +222,10 @@ func safeModelReason(err error) string {
 	}
 }
 
-func agentOperation(key, billing string, profile models.Profile, sources []models.AgentSourceProof) models.Operation {
+func agentOperation(key, billing string, binding models.ActiveBinding, sources []models.AgentSourceProof) models.Operation {
 	return models.Operation{Key: key, AppID: billing, ScopeKind: "AGENT", Purpose: "GENERATE",
-		ProfileID: profile.ID, ProfileRevision: profile.Revision, AgentSources: sources}
+		ProfileID: binding.Profile.ID, ProfileRevision: binding.Profile.Revision, LLMSlotRevision: binding.SlotRevision,
+		AgentSources: sources}
 }
 
 func agentProof(ref SourceRef) models.AgentSourceProof {

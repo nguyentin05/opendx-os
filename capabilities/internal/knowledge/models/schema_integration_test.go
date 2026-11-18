@@ -189,7 +189,7 @@ func TestRegistryExplicitMigrationRunner(t *testing.T) {
 	if e = db.QueryRow(`SELECT to_regprocedure('cap_ai.search_personal_vectors(uuid,text,text,bigint,public.vector,uuid[])') IS NOT NULL`).Scan(&present); e != nil || !present {
 		t.Fatal("optional PERSONAL vector search missing", present, e)
 	}
-	if e = db.QueryRow(`SELECT to_regprocedure('cap_ai.agent_model_policy(uuid,text,text,bigint,jsonb)') IS NOT NULL
+	if e = db.QueryRow(`SELECT to_regprocedure('cap_ai.agent_model_policy(uuid,text,text,bigint,bigint,jsonb)') IS NOT NULL
 		AND to_regprocedure('cap_ai.agent_query_model_policy(uuid,text,text,text,text,bigint)') IS NOT NULL`).Scan(&present); e != nil || !present {
 		t.Fatal("optional AGENT model authority missing", present, e)
 	}

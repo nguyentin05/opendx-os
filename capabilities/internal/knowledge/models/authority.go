@@ -33,7 +33,8 @@ func (a DatabaseAuthority) Current(ctx context.Context, actor *auth.Identity, op
 		if marshalErr != nil {
 			return d, ErrPolicy
 		}
-		err = a.DB.QueryRowContext(ctx, `SELECT cap_ai.agent_model_policy($1,$2,$3,$4,$5)`, actor.UserID, op.AppID, op.ProfileID, op.ProfileRevision, string(raw)).Scan(&value)
+		err = a.DB.QueryRowContext(ctx, `SELECT cap_ai.agent_model_policy($1,$2,$3,$4,$5,$6)`,
+			actor.UserID, op.AppID, op.ProfileID, op.ProfileRevision, op.LLMSlotRevision, string(raw)).Scan(&value)
 	case op.RequirePersonalQueryApproval:
 		err = a.DB.QueryRowContext(ctx, `SELECT cap_ai.agent_query_model_policy($1,$2,$3,$4,$5,$6)`, actor.UserID, actor.Role, op.AppID, op.ScopeKind, op.ProfileID, op.ProfileRevision).Scan(&value)
 	default:

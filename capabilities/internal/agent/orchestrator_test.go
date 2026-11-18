@@ -123,7 +123,7 @@ func unitTurn(t *testing.T, store *turnStore, evidence ...Evidence) (*Orchestrat
 	policy := turnPolicyFunc(func(_ context.Context, actor *auth.Identity, op models.Operation) (models.Approval, error) {
 		if actor.UserID != retrievalActor.UserID || actor.Role != "" || op.Key == "" || op.AppID != "agent_billing" ||
 			op.ScopeKind != "AGENT" || op.Purpose != "GENERATE" || op.ProfileID != binding.Profile.ID ||
-			op.ProfileRevision != binding.Profile.Revision || len(op.AgentSources) == 0 {
+			op.ProfileRevision != binding.Profile.Revision || op.LLMSlotRevision != binding.SlotRevision || len(op.AgentSources) == 0 {
 			t.Fatalf("operation lacks server authority: %+v, actor=%+v", op, actor)
 		}
 		return models.Approval{Profile: binding.Profile, Fingerprint: "approved"}, nil
@@ -292,25 +292,37 @@ func TestOrchestratorKeepsAuthorizedEvidenceWhenGatewayCannotSend(t *testing.T) 
 	}
 }
 
-func TestOrchestratorRetainsUncertainReasonAfterDisconnect(t *testing.T) {
-	s := &turnStore{}
-	o, _ := unitTurn(t, s, turnEvidence(1))
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	read := o.reader
-	o.reader = retrievalReaderFunc(func(ctx context.Context, actor *auth.Identity, doc string) (knowledge.ReadScope, error) {
-		if err := ctx.Err(); err != nil {
-			return knowledge.ReadScope{}, err
-		}
-		return read.CanRead(ctx, actor, doc)
-	})
-	o.gateway = turnCallerFunc(func(context.Context, *auth.Identity, models.Operation, models.Payload) (models.Result, error) {
-		cancel()
-		return models.Result{}, models.ErrUncertain
-	})
-	reply, err := o.Reply(ctx, retrievalActor, TurnRequest{turnConversation, "disconnected", "Laptop"})
-	if err != nil || reply.Answer != nil || reply.Reason != models.ErrUncertain.Error() || len(reply.Citations) != 0 || s.finishErr != nil {
-		t.Fatalf("uncertain completion after disconnect: %+v, err=%v", reply, err)
+func TestOrchestratorRetainsUncertainOutcome(t *testing.T) {
+	for _, mode := range []string{"prior disconnect", "READ fails", "disconnect during READ"} {
+		t.Run(mode, func(t *testing.T) {
+			s := &turnStore{}
+			o, _ := unitTurn(t, s, turnEvidence(1))
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			sent := false
+			read := o.reader
+			o.reader = retrievalReaderFunc(func(ctx context.Context, actor *auth.Identity, doc string) (knowledge.ReadScope, error) {
+				if sent {
+					if mode == "disconnect during READ" {
+						cancel()
+					}
+					return knowledge.ReadScope{}, knowledge.ErrAuthorityUnavailable
+				}
+				return read.CanRead(ctx, actor, doc)
+			})
+			o.gateway = turnCallerFunc(func(context.Context, *auth.Identity, models.Operation, models.Payload) (models.Result, error) {
+				sent = true
+				if mode == "prior disconnect" {
+					cancel()
+				}
+				return models.Result{}, models.ErrUncertain
+			})
+			reply, err := o.Reply(ctx, retrievalActor, TurnRequest{turnConversation, "uncertain", "Laptop"})
+			if err != nil || !sent || reply.Answer != nil || reply.Reason != models.ErrUncertain.Error() ||
+				len(reply.Citations) != 0 || reply.Usage != nil || len(s.finished.Sources) != 0 || s.finishErr != nil {
+				t.Fatalf("uncertain billing outcome lost: %+v, err=%v", reply, err)
+			}
+		})
 	}
 }
 
