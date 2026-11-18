@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -364,6 +365,62 @@ func TestOrchestratorKeepsLatestHistoryWithinInputAndProofLimits(t *testing.T) {
 			reply, err := o.Reply(t.Context(), retrievalActor, TurnRequest{turnConversation, "bounded", "Laptop"})
 			if err != nil || reply.Status != "ANSWERED" || len(s.finished.Sources) != 3 || s.finished.Sources[2].ChunkID != otherChunk.ChunkID {
 				t.Fatalf("lost exact, transitive chunk provenance: %+v err=%v", s.finished.Sources, err)
+			}
+		})
+	}
+}
+
+func TestOrchestratorDistinguishesSearchOutageFromNoEvidence(t *testing.T) {
+	const backendDetail = "database timeout in internal-never-disclose role_secret"
+	hr := SourceScope{Kind: "APP", AppID: "hr", ActingRole: "role_hr"}
+	procurement := SourceScope{Kind: "APP", AppID: "procurement", ActingRole: "role_procurement"}
+	success := knowledge.SearchResult{Status: "HYBRID", Results: []knowledge.SearchHit{turnEvidence(1).Hit}}
+	for _, tc := range []struct {
+		name                  string
+		hrErr, procurementErr error
+		procurementResult     knowledge.SearchResult
+		status, reason        string
+		warnings              []string
+		citations             int
+	}{
+		{name: "all searches fail", hrErr: errors.New(backendDetail), procurementErr: context.DeadlineExceeded,
+			status: "SEARCH_ONLY", reason: "SEARCH_UNAVAILABLE"},
+		{name: "outage plus concealed denial", hrErr: errors.New(backendDetail), procurementErr: knowledge.ErrNotFound,
+			status: "SEARCH_ONLY", reason: "SEARCH_UNAVAILABLE"},
+		{name: "partial outage preserves authorized evidence", hrErr: errors.New(backendDetail), procurementResult: success,
+			status: "SEARCH_ONLY", reason: "MODEL_UNAVAILABLE", warnings: []string{"SEARCH_INCOMPLETE"}, citations: 1},
+		{name: "partial outage with empty successful scope", hrErr: errors.New(backendDetail), procurementResult: knowledge.SearchResult{Status: "HYBRID"},
+			status: "NO_EVIDENCE", reason: "NO_EVIDENCE", warnings: []string{"SEARCH_INCOMPLETE"}},
+		{name: "concealed denials", hrErr: knowledge.ErrNotFound, procurementErr: fmt.Errorf("concealed: %w", knowledge.ErrNotFound),
+			status: "NO_EVIDENCE", reason: "NO_EVIDENCE"},
+		{name: "successful empty searches", procurementResult: knowledge.SearchResult{Status: "HYBRID"},
+			status: "NO_EVIDENCE", reason: "NO_EVIDENCE"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			read := retrievalReaderFunc(func(_ context.Context, actor *auth.Identity, document string) (knowledge.ReadScope, error) {
+				if actor.UserID == retrievalActor.UserID && actor.Role == procurement.ActingRole && document == success.Results[0].DocumentID {
+					return success.Results[0].ReadScope, nil
+				}
+				return knowledge.ReadScope{}, knowledge.ErrNotFound
+			})
+			retrieval := &RetrievalCoordinator{Scopes: retrievalScopeList(hr, procurement), Reader: read,
+				Search: retrievalSearchFunc(func(_ context.Context, _ *auth.Identity, req knowledge.SearchRequest) (knowledge.SearchResult, error) {
+					if req.Scope.AppID == hr.AppID {
+						return knowledge.SearchResult{Status: "HYBRID"}, tc.hrErr
+					}
+					return tc.procurementResult, tc.procurementErr
+				})}
+			store := &turnStore{}
+			o := NewOrchestrator(store, NewWorkingMemory(nil, 0), retrieval, read, nil, nil, "")
+			result, err := o.Reply(t.Context(), retrievalActor, TurnRequest{turnConversation, "search", "laptop"})
+			if err != nil || result.Status != tc.status || result.Reason != tc.reason ||
+				strings.Join(result.Warnings, ",") != strings.Join(tc.warnings, ",") || len(result.Citations) != tc.citations ||
+				!reflect.DeepEqual(result, store.finished) {
+				t.Fatalf("reply=%+v persisted=%+v error=%v", result, store.finished, err)
+			}
+			raw, err := json.Marshal(result)
+			if err != nil || strings.Contains(string(raw), "internal-never-disclose") || strings.Contains(string(raw), "role_secret") {
+				t.Fatalf("search exposed backend details: %s err=%v", raw, err)
 			}
 		})
 	}

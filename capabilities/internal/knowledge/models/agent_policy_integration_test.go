@@ -116,6 +116,9 @@ func newAgentFixture(t *testing.T, purpose string) agentFixture {
 		agentExec(t, db, `UPDATE cap_ai.global_model_slots SET profile_id='personal',
 			profile_revision=1,slot_revision=1 WHERE capability='LLM'`)
 		op.LLMSlotRevision = 1
+	} else {
+		agentExec(t, db, `UPDATE cap_ai.global_model_slots SET profile_id='personal',
+            profile_revision=1,slot_revision=1 WHERE capability='EMBEDDING'`)
 	}
 	return agentFixture{
 		db: db, admin: admin, actor: &auth.Identity{UserID: personalActor, Role: "role_hr_reader"},
@@ -290,6 +293,7 @@ func TestAgentModelPolicyGlobalQueryEmbedRequiresPersonalReview(t *testing.T) {
 	}
 	op.Key = "global-query"
 	op.RequirePersonalQueryApproval = true
+	op.EmbeddingSlotRevision = 1
 	if _, err := f.gateway.Call(context.Background(), f.actor, op, payload); !errors.Is(err, ErrPolicy) || f.provider.calls != 1 {
 		t.Fatalf("APP approval sent flagged query: calls=%d err=%v", f.provider.calls, err)
 	}
@@ -422,12 +426,12 @@ func TestAgentModelPolicyRejectsOtherRuntimeSessions(t *testing.T) {
 	for _, role := range []string{"dxos_ai_api", "dxos_ai_worker", "dxos_authz"} {
 		t.Run(role, func(t *testing.T) {
 			runtime := personalLogin(t, f.db, role)
-			const query = `SELECT coalesce((cap_ai.agent_query_model_policy($1,'role_hr_reader','hr','APP','personal',1)->>'allowed')::boolean,false)`
+			const query = `SELECT coalesce((cap_ai.agent_query_model_policy($1,'role_hr_reader','hr','APP','personal',1,1)->>'allowed')::boolean,false)`
 			var allowed bool
 			if err := runtime.QueryRow(query, personalActor).Scan(&allowed); err == nil {
 				t.Fatal("unexpected default EXECUTE grant")
 			}
-			agentExec(t, f.db, `GRANT EXECUTE ON FUNCTION cap_ai.agent_query_model_policy(uuid,text,text,text,text,bigint) TO `+role)
+			agentExec(t, f.db, `GRANT EXECUTE ON FUNCTION cap_ai.agent_query_model_policy(uuid,text,text,text,text,bigint,bigint) TO `+role)
 			if err := runtime.QueryRow(query, personalActor).Scan(&allowed); err != nil || allowed {
 				t.Fatalf("accidental grant authorized query: allowed=%t err=%v", allowed, err)
 			}

@@ -6,9 +6,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"testing"
+
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
-	"testing"
 )
 
 type answerFixture struct {
@@ -47,6 +48,7 @@ func answerProfile() models.Profile {
 }
 func answerSetup() (*AnswerService, *answerFixture) {
 	f := &answerFixture{scope: ReadScope{DocumentID: "doc", VersionID: "version", RunID: "run"}, hits: []SearchHit{{DocumentID: "doc", VersionID: "version", ChunkID: "chunk", Snippet: "At least 10000000 VND requires Director approval.", Title: "Policy", ElementIDs: []string{"element"}, Positions: []Position{{Provenance: "EXTRACTED"}}}}, result: models.Result{Text: "Director approval is required.", CitationIDs: []string{"E1"}}}
+	f.hits[0].ReadScope = f.scope
 	return &AnswerService{Search: f, Reader: f, Policy: f, Gateway: f, Profile: answerProfile()}, f
 }
 
@@ -169,5 +171,25 @@ func TestPersonalAnswerCanonicalApproval(t *testing.T) {
 	r, err = s.Answer(context.Background(), answerActor, req)
 	if err != nil || r.Status != "SEARCH_ONLY" || f.calls != 1 {
 		t.Fatal("revoked approval reused", r, err)
+	}
+}
+
+func TestAnswerSearchOnlyDiscardsRetiredReadScope(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*ReadScope)
+	}{
+		{"new run for same version", func(scope *ReadScope) { scope.RunID = "replacement" }},
+		{"new processing policy for same run", func(scope *ReadScope) { scope.PolicyRevision++ }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service, f := answerSetup()
+			service.Gateway = nil
+			tc.change(&f.scope)
+			out, err := service.Answer(t.Context(), answerActor, answerRequest)
+			if err != nil || out.Reason != "AUTHORIZATION_CHANGED" || len(out.Results) != 0 || len(out.Citations) != 0 {
+				t.Fatalf("search-only returned stale evidence: %+v err=%v", out, err)
+			}
+		})
 	}
 }

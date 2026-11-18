@@ -36,7 +36,8 @@ func (a DatabaseAuthority) Current(ctx context.Context, actor *auth.Identity, op
 		err = a.DB.QueryRowContext(ctx, `SELECT cap_ai.agent_model_policy($1,$2,$3,$4,$5,$6)`,
 			actor.UserID, op.AppID, op.ProfileID, op.ProfileRevision, op.LLMSlotRevision, string(raw)).Scan(&value)
 	case op.RequirePersonalQueryApproval:
-		err = a.DB.QueryRowContext(ctx, `SELECT cap_ai.agent_query_model_policy($1,$2,$3,$4,$5,$6)`, actor.UserID, actor.Role, op.AppID, op.ScopeKind, op.ProfileID, op.ProfileRevision).Scan(&value)
+		err = a.DB.QueryRowContext(ctx, `SELECT cap_ai.agent_query_model_policy($1,$2,$3,$4,$5,$6,$7)`,
+			actor.UserID, actor.Role, op.AppID, op.ScopeKind, op.ProfileID, op.ProfileRevision, op.EmbeddingSlotRevision).Scan(&value)
 	default:
 		raw, marshalErr := json.Marshal(op.Sources)
 		if marshalErr != nil {

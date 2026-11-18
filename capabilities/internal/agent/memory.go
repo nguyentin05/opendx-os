@@ -180,7 +180,7 @@ func antecedentTerms(words []string, budget int) string {
 		}
 		length := utf8.RuneCountInString(word)
 		if length > budget {
-			break
+			continue
 		}
 		terms = append(terms, word)
 		budget -= length + 1 // Reserve the space before a possible next term.

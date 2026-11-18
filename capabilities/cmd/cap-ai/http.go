@@ -6,6 +6,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 
@@ -46,7 +47,9 @@ func newHandlerWithKnowledge(a access.Authenticator, store *knowledge.Store, ena
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if isChatPath(r.URL.Path) || isChatPath(path.Clean(r.URL.Path)) {
+		// ServeMux normalizes the escaped path before decoding route segments.
+		cleaned, _ := url.PathUnescape(path.Clean(r.URL.EscapedPath()))
+		if isChatPath(r.URL.Path) || isChatPath(path.Clean(r.URL.Path)) || isChatPath(cleaned) {
 			w.Header().Set("Cache-Control", "no-store")
 		}
 		mux.ServeHTTP(w, r)

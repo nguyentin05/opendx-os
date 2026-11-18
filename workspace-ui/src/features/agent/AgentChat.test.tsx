@@ -465,3 +465,61 @@ it("preserves two identical sent turns while canonical pages arrive separately",
   await waitFor(() => expect(pages).toBe(2));
   expect(screen.getAllByText("Same answer")).toHaveLength(2);
 });
+
+it("keeps a reopened completed turn singular after an uncertain retry", async () => {
+  const result = { status: "ANSWERED", answer: "Stored answer", citations: [], message_seq: 2 };
+  const send = vi.fn(async () => Response.json(result));
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === "POST") return send();
+    if (String(input).endsWith("/c1")) {
+      return Response.json({
+        messages: [
+          { id: "u1", seq: 1, role: "USER", content: "Stored question", status: "COMPLETE" },
+          { id: "a1", seq: 2, role: "ASSISTANT", content: "Stored answer", status: "COMPLETE", response: result },
+        ],
+        next_after_seq: null,
+      });
+    }
+    return Response.json({ conversations: [{id: "c1", title: "Existing"}], next_cursor: null });
+  }));
+  render(<AgentChat token="token" pendingTurns={{c1: {query: "Stored question", key: "accepted-key"}}} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
+  await screen.findByText("Stored answer");
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await waitFor(() => expect(screen.queryByRole("button", {name: "Retry"})).toBeNull());
+  expect(send).toHaveBeenCalledOnce();
+  expect(screen.getAllByText("Stored question")).toHaveLength(1);
+  expect(screen.getAllByText("Stored answer")).toHaveLength(1);
+});
+
+it("shows search outage and partial coverage without implying all sources were searched", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).endsWith("/c1")) {
+      const common = { role: "ASSISTANT", content: "", status: "COMPLETE" };
+      return Response.json({ messages: [
+        { ...common, id: "a1", seq: 2, response: { status: "SEARCH_ONLY", reason: "SEARCH_UNAVAILABLE", answer: null, citations: [] } },
+        { ...common, id: "a2", seq: 4, response: { status: "NO_EVIDENCE", warnings: ["SEARCH_INCOMPLETE"], answer: null, citations: [] } },
+      ], next_after_seq: null });
+    }
+    return Response.json({ conversations: [{id: "c1", title: "Existing"}], next_cursor: null });
+  }));
+  render(<AgentChat token="token" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
+  expect(await screen.findByText("Search is temporarily unavailable.")).toBeTruthy();
+  expect(screen.getByText("Some sources could not be searched.")).toBeTruthy();
+  expect(screen.getByText("No evidence found in the sources searched.")).toBeTruthy();
+});
+
+it("distinguishes conversations with the same default title by creation time", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+    conversations: [
+      { id: "c1", title: "Private conversation", created_at: "2026-11-17T03:00:00Z" },
+      { id: "c2", title: "Private conversation", created_at: "2026-11-18T04:00:00Z" },
+    ],
+    next_cursor: null,
+  })));
+  render(<AgentChat token="token" />);
+  const entries = await screen.findAllByRole("button", { name: /^Private conversation/ });
+  expect(entries).toHaveLength(2);
+  expect(entries[0].textContent).not.toBe(entries[1].textContent);
+});

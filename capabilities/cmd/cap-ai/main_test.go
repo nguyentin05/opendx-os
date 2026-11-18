@@ -233,6 +233,7 @@ func TestChatHTTPCachePolicyDuringPathNormalization(t *testing.T) {
 		"/api/cap/ai/conversations//test?cursor=private",
 		"/api/cap/ai/conversations/./test",
 		"/api/cap/ai/./conversations",
+		"/api/cap/ai/%2e/../%63onversations//test?cursor=private",
 	} {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))

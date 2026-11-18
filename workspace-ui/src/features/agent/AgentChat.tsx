@@ -10,6 +10,35 @@ import {
   Result,
 } from "./client";
 export type Pending = { query: string; key: string };
+
+function mergeMessages(messages: Message[], incoming: Message[]): Message[] {
+  const sequences = new Set(incoming.map((message) => message.seq));
+  return [
+    ...messages.filter((message) => !message.seq || !sequences.has(message.seq)),
+    ...incoming,
+  ].sort(
+    (a, b) =>
+      (a.seq || Number.MAX_SAFE_INTEGER) -
+      (b.seq || Number.MAX_SAFE_INTEGER),
+  );
+}
+
+function emptyResultMessage(result: Result, incomplete: boolean) {
+  switch (result.reason) {
+    case "MODEL_CHARGE_UNCERTAIN":
+      return "UNCERTAIN: The model charge could not be confirmed.";
+    case "TURN_PENDING":
+      return "Turn pending";
+    case "SEARCH_UNAVAILABLE":
+      return "Search is temporarily unavailable.";
+  }
+  if (result.status === "NO_EVIDENCE")
+    return incomplete
+      ? "No evidence found in the sources searched."
+      : "No evidence found.";
+  return "No generated answer available.";
+}
+
 export function AgentChat({
   token,
   pendingTurns,
@@ -134,24 +163,25 @@ export function AgentChat({
           );
           return;
         }
-        setMessages((m) => [
-          ...m,
-          {
-            id: turn.key + "u",
-            seq: result.message_seq ? result.message_seq - 1 : 0,
-            role: "USER",
-            content: turn.query,
-            status: "COMPLETE",
-          },
-          {
-            id: turn.key + "a",
-            seq: result.message_seq ?? 0,
-            role: "ASSISTANT",
-            content: result.answer ?? "",
-            status: "COMPLETE",
-            response: result,
-          },
-        ]);
+        setMessages((messages) =>
+          mergeMessages(messages, [
+            {
+              id: turn.key + "u",
+              seq: result.message_seq ? result.message_seq - 1 : 0,
+              role: "USER",
+              content: turn.query,
+              status: "COMPLETE",
+            },
+            {
+              id: turn.key + "a",
+              seq: result.message_seq ?? 0,
+              role: "ASSISTANT",
+              content: result.answer ?? "",
+              status: "COMPLETE",
+              response: result,
+            },
+          ]),
+        );
         delete pendingByConversation.current[selected];
         setPending(null);
         setQuestion("");
@@ -184,27 +214,20 @@ export function AgentChat({
           );
       });
   };
-  const resultView = (result: Result) => (
-    <>
-      {result.answer && <p>{result.answer}</p>}
-      {!result.answer && (
-        <p>
-          {result.reason === "MODEL_CHARGE_UNCERTAIN"
-            ? "UNCERTAIN: The model charge could not be confirmed."
-            : result.reason === "TURN_PENDING"
-              ? "Turn pending"
-              : result.status === "NO_EVIDENCE"
-                ? "No evidence found."
-                : "No generated answer available."}
-        </p>
-      )}
-      {result.citations?.map((c, i) => (
-        <button key={i} onClick={() => showCitation(c)}>
-          {c.title || "Citation"}
-        </button>
-      ))}
-    </>
-  );
+  const resultView = (result: Result) => {
+    const incomplete = result.warnings?.includes("SEARCH_INCOMPLETE") ?? false;
+    return (
+      <>
+        <p>{result.answer || emptyResultMessage(result, incomplete)}</p>
+        {incomplete && <p>Some sources could not be searched.</p>}
+        {result.citations?.map((c, i) => (
+          <button key={i} onClick={() => showCitation(c)}>
+            {c.title || "Citation"}
+          </button>
+        ))}
+      </>
+    );
+  };
   return (
     <section>
       <h1>Assistant</h1>
@@ -235,6 +258,12 @@ export function AgentChat({
               onClick={() => choose(c.id)}
             >
               {c.title}
+              {c.created_at && (
+                <time dateTime={c.created_at}>
+                  {" · "}
+                  {new Date(c.created_at).toLocaleString()}
+                </time>
+              )}
             </button>
           </li>
         ))}
@@ -297,22 +326,9 @@ export function AgentChat({
                 void run(async (signal) => {
                   const r = await client.transcript(selected, signal, after);
                   if (!signal.aborted) {
-                    setMessages((v) => {
-                      const canonicalSeqs = new Set(
-                        r.messages.map((m) => m.seq),
-                      );
-                      const merged = [
-                        ...v.filter(
-                          (m) => m.seq === 0 || !canonicalSeqs.has(m.seq),
-                        ),
-                        ...r.messages,
-                      ];
-                      return merged.sort(
-                        (a, b) =>
-                          (a.seq || Number.MAX_SAFE_INTEGER) -
-                          (b.seq || Number.MAX_SAFE_INTEGER),
-                      );
-                    });
+                    setMessages((messages) =>
+                      mergeMessages(messages, r.messages),
+                    );
                     setAfter(r.next_after_seq);
                   }
                 })

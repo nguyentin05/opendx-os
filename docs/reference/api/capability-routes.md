@@ -28,8 +28,8 @@ source-app roles. Its base path is `/api/cap/ai/conversations`.
 
 | Method and relative path | Request and response |
 | --- | --- |
-| `POST` (base path) | Send `{"title":"…"}` to create an owned conversation. Returns 201 and its ID. |
-| `GET` (base path) | List owned conversations. Optional `limit` and `cursor`. Returns `conversations` and nullable `next_cursor`. |
+| `POST` (base path) | Send `{"title":"…"}` to create an owned conversation. Returns 201 with the conversation ID and `created_at` timestamp. |
+| `GET` (base path) | List owned conversations. Optional `limit` and `cursor`. Returns `conversations` with their creation timestamps and nullable `next_cursor`. |
 | `GET /{id}` | Read ordered owner history. Optional `limit` and `after_seq`. Returns `conversation_id`, `messages` and nullable `next_after_seq`. |
 | `DELETE /{id}` | End access to the conversation. Returns 204. |
 | `POST /{id}/messages` | Send `{"query":"…"}` and one `Idempotency-Key` per intent. Returns a non-streaming turn. Reuse that key and question on transport retry. |
@@ -40,6 +40,10 @@ nullable `answer`, and `citations`. They may include `search_status`, `warnings`
 `reason` and `usage`. A terminal response and its replay carry the durable
 assistant `message_seq`; the adjacent USER sequence is one less. A pending
 replay returns `SEARCH_ONLY` with `TURN_PENDING` and omits the sequence.
+When a search fails and no scope completes successfully, the terminal response
+is `SEARCH_ONLY` with `SEARCH_UNAVAILABLE`. When some scopes complete and
+others fail, the response carries the generic `SEARCH_INCOMPLETE` warning and
+may still use authorized evidence. Scope denials are concealed.
 Reusing a key with different text or posting a competing intent returns 409.
 Unauthorized callers receive 401, foreign conversations and inaccessible
 citations return 404, and disabled chat on cap-ai returns 503. Source

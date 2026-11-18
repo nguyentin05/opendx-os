@@ -58,11 +58,16 @@ func (p *Policy) Check(ctx context.Context, actor *auth.Identity, req Operation)
 func (op Operation) validScope() bool {
 	switch op.ScopeKind {
 	case "APP", "PERSONAL":
-		return op.LLMSlotRevision == 0 && len(op.AgentSources) == 0 && len(op.Sources) <= 50 &&
-			(!op.RequirePersonalQueryApproval || op.Purpose == "EMBED" && len(op.Sources) == 0 && op.Lease == nil)
+		if op.LLMSlotRevision != 0 || len(op.AgentSources) != 0 {
+			return false
+		}
+		if op.RequirePersonalQueryApproval {
+			return op.Purpose == "EMBED" && op.EmbeddingSlotRevision > 0 && len(op.Sources) == 0 && op.Lease == nil
+		}
+		return op.EmbeddingSlotRevision == 0 && len(op.Sources) <= 50
 	case "AGENT":
 		return op.Purpose == "GENERATE" && op.AppID != "" && op.LLMSlotRevision > 0 && op.Lease == nil && len(op.Sources) == 0 &&
-			!op.RequirePersonalQueryApproval && len(op.AgentSources) > 0 && len(op.AgentSources) <= 50
+			op.EmbeddingSlotRevision == 0 && !op.RequirePersonalQueryApproval && len(op.AgentSources) > 0 && len(op.AgentSources) <= 50
 	default:
 		return false
 	}

@@ -100,6 +100,9 @@ func TestConversationStoreHistoryAndPagination(t *testing.T) {
 	if err != nil || len(first) != 1 || cursor != first[0].ID {
 		t.Fatalf("first page: %+v %q %v", first, cursor, err)
 	}
+	if c.CreatedAt.IsZero() || first[0].CreatedAt.IsZero() {
+		t.Fatalf("creation time missing from owned conversation: %+v %+v", c, first[0])
+	}
 	second, cursor, err := s.List(t.Context(), a, 1, cursor)
 	if err != nil || len(second) != 1 || cursor != "" || first[0].ID <= second[0].ID {
 		t.Fatalf("second page: %+v %q %v", second, cursor, err)

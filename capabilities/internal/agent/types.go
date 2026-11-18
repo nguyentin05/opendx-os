@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
@@ -13,11 +14,12 @@ import (
 
 type Actor struct{ UserID string }
 type Conversation struct {
-	ID          string `json:"id"`
-	OwnerUserID string `json:"owner_user_id"`
-	Title       string `json:"title"`
-	State       string `json:"state"`
-	LastSeq     int64  `json:"last_seq"`
+	ID          string    `json:"id"`
+	OwnerUserID string    `json:"owner_user_id"`
+	Title       string    `json:"title"`
+	State       string    `json:"state"`
+	LastSeq     int64     `json:"last_seq"`
+	CreatedAt   time.Time `json:"created_at,omitzero"`
 }
 type SourceRef struct {
 	ScopeKind     string              `json:"scope_kind"`

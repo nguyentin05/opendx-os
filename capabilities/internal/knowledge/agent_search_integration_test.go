@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
 	"github.com/opendx-os/opendx-os/capabilities/internal/testutil"
@@ -40,7 +41,13 @@ INSERT INTO core.user_roles(user_id, role_name) VALUES($1, 'role_operator');`, a
 	}
 	if _, err := db.Exec(`
 INSERT INTO core.apps(app_id,display_name,version,status,spec)
-VALUES ('elsewhere','Other app','1','Ready','{}');`); err != nil {
+VALUES ('elsewhere','Other app','1','Ready','{}');
+INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,dimension,limits,pricing_revision,enabled)
+SELECT 'other-embed',revision,purpose,execution,provider_id,model_id,dimension,limits,pricing_revision,enabled
+FROM cap_ai.model_profiles WHERE id='embed';
+INSERT INTO cap_ai.model_candidates(profile_id,revision,adapter_key,declaration_digest,declaration)
+VALUES ('embed',1,'bounded-http-v1',repeat('a',64),'{}'),('other-embed',1,'bounded-http-v1',repeat('b',64),'{}');
+UPDATE cap_ai.global_model_slots SET profile_id='embed',profile_revision=1,slot_revision=1 WHERE capability='EMBEDDING';`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -50,6 +57,7 @@ VALUES ('elsewhere','Other app','1','Ready','{}');`); err != nil {
 		Budget: &models.Budget{DB: gatewayDB}, Providers: map[string]models.Provider{"fake": spy},
 	}
 	api.ConfigureModels(gateway, profile, models.Profile{})
+	api.ConfigureModelResolver(&models.Registry{DB: gatewayDB})
 	worker := workerStore(t, db)
 	worker.ConfigureModels(gateway, profile, models.Profile{})
 	ctx := context.Background()
@@ -115,11 +123,114 @@ VALUES ('elsewhere','Other app','1','Ready','{}');`); err != nil {
 		t.Fatalf("authority snapshot exposed in search JSON: %s, %v", encoded, err)
 	}
 
+	for _, change := range []struct{ name, binding string }{
+		{"withdrawal", "profile_id=NULL,profile_revision=NULL"},
+		{"switch", "profile_id='other-embed',profile_revision=1"},
+		{"same-profile rebinding", "profile_id='embed',profile_revision=1"},
+	} {
+		t.Run(change.name, func(t *testing.T) {
+			req := req
+			req.Query = "Director"
+			var previousCalls int
+			if err := db.QueryRow(`SELECT count(*) FROM cap_ai.model_calls`).Scan(&previousCalls); err != nil {
+				t.Fatal(err)
+			}
+			before := spy.queryCalls
+			defer func() {
+				if _, err := db.Exec(`UPDATE cap_ai.global_model_slots SET profile_id='embed',profile_revision=1,
+                 slot_revision=slot_revision+1 WHERE capability='EMBEDDING'`); err != nil {
+					t.Fatal(err)
+				}
+			}()
+			waitCtx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			tx, err := db.BeginTx(waitCtx, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = tx.Rollback() }()
+			if _, err := tx.ExecContext(waitCtx, `SELECT id FROM cap_ai.budget_accounts WHERE scope='APP' FOR UPDATE`); err != nil {
+				t.Fatal(err)
+			}
+			type outcome struct {
+				result SearchResult
+				err    error
+			}
+			done := make(chan outcome, 1)
+			go func() {
+				result, err := api.Search(waitCtx, actor, req)
+				done <- outcome{result, err}
+			}()
+			ticker := time.NewTicker(5 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				var locked bool
+				err := db.QueryRowContext(waitCtx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+                 WHERE datname=current_database() AND wait_event_type='Lock'
+                 AND query LIKE 'SELECT cap_ai.reserve_model(%')`).Scan(&locked)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if locked {
+					break
+				}
+				select {
+				case early := <-done:
+					t.Fatalf("search completed before reservation: %+v", early)
+				case <-waitCtx.Done():
+					t.Fatal("search never reached the budget reservation")
+				case <-ticker.C:
+				}
+			}
+			if _, err := db.ExecContext(waitCtx, `UPDATE cap_ai.global_model_slots SET `+change.binding+
+				`,slot_revision=slot_revision+1 WHERE capability='EMBEDDING'`); err != nil {
+				t.Fatal(err)
+			}
+			if err := tx.Commit(); err != nil {
+				t.Fatal(err)
+			}
+			got := <-done
+			var state string
+			var reserved, calls int
+			err = db.QueryRow(`SELECT state,(SELECT sum(reserved_units) FROM cap_ai.budget_accounts),
+             (SELECT count(*) FROM cap_ai.model_calls)
+             FROM cap_ai.model_reservations ORDER BY created_at DESC,id DESC LIMIT 1`).Scan(&state, &reserved, &calls)
+			if got.err != nil || got.result.Status != "LEXICAL_ONLY" || len(got.result.Results) != 1 ||
+				got.result.Results[0].DocumentID != hit.DocumentID || spy.queryCalls != before ||
+				err != nil || state != "CANCELLED" || reserved != 0 || calls != previousCalls {
+				t.Fatalf("search=%+v err=%v sends=%d state=%q reserved=%d new calls=%d ledger err=%v",
+					got.result, got.err, spy.queryCalls-before, state, reserved, calls-previousCalls, err)
+			}
+		})
+	}
+
+	t.Run("withdrawal after dispatch", func(t *testing.T) {
+		provider := &embeddingProvider{before: func() {
+			if _, err := db.Exec(`UPDATE cap_ai.global_model_slots SET profile_id=NULL,profile_revision=NULL,
+             slot_revision=slot_revision+1 WHERE capability='EMBEDDING'`); err != nil {
+				t.Error(err)
+			}
+		}}
+		gateway.Providers["fake"] = provider
+		defer func() {
+			gateway.Providers["fake"] = spy
+			if _, err := db.Exec(`UPDATE cap_ai.global_model_slots SET profile_id='embed',profile_revision=1,
+             slot_revision=slot_revision+1 WHERE capability='EMBEDDING'`); err != nil {
+				t.Fatal(err)
+			}
+		}()
+		got, err := api.Search(ctx, actor, req) // The unmatched query has only a semantic result.
+		if err != nil || got.Status != "LEXICAL_ONLY" || len(got.Results) != 0 || provider.calls != 1 {
+			t.Fatalf("dispatched search retained semantic results after withdrawal: %+v err=%v sends=%d",
+				got, err, provider.calls)
+		}
+	})
+
 	var disabled bool
 	err = adminDB.QueryRow(`SELECT cap_ai.disable_agent_processing($1,$2,'fixture review withdrawn')`, actor.UserID, review).Scan(&disabled)
 	if err != nil || !disabled {
 		t.Fatal("disable exact query review", disabled, err)
 	}
 	req.Query = "Director"
-	verifyLexicalOnly(2)
+	verifyLexicalOnly(spy.queryCalls)
 }

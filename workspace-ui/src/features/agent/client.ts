@@ -6,6 +6,7 @@ export type Result = {
   answer: string | null;
   citations: Citation[];
   reason?: string;
+  warnings?: string[];
   message_seq?: number;
 };
 export type Message = {
@@ -16,7 +17,7 @@ export type Message = {
   status: string;
   response?: Result;
 };
-export type Conversation = { id: string; title: string };
+export type Conversation = { id: string; title: string; created_at?: string };
 const base = "/api/cap/ai/conversations";
 export class AgentError extends Error {
   constructor(public status: number) {

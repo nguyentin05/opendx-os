@@ -12,7 +12,7 @@ $$;
 -- Query-only authority for global retrieval. Keep the ordinary scope and
 -- profile checks and classify every hosted global query as potentially PERSONAL.
 CREATE FUNCTION cap_ai.agent_query_model_policy(
-    actor uuid, acting_role text, app text, scope_kind text, profile text, profile_rev bigint
+    actor uuid, acting_role text, app text, scope_kind text, profile text, profile_rev bigint, slot_revision bigint
 )
 RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, cap_ai AS $$
@@ -22,7 +22,12 @@ DECLARE
 BEGIN
   IF NOT cap_ai.agent_model_gateway_session() OR NOT cap_ai.agent_chat_user_active(actor)
     OR scope_kind IS NULL OR scope_kind NOT IN ('APP', 'PERSONAL')
-    OR app IS NULL OR acting_role IS NULL THEN
+    OR app IS NULL OR acting_role IS NULL
+    OR NOT EXISTS (
+      SELECT FROM cap_ai.global_model_slots slot
+      WHERE slot.capability = 'EMBEDDING' AND slot.slot_revision = $7 AND $7 > 0
+        AND slot.profile_id = $5 AND slot.profile_revision = $6
+    ) THEN
     RETURN '{}'::jsonb;
   END IF;
   IF NOT cap_ai.agent_authorized_scopes(actor) @> jsonb_build_array(
@@ -160,12 +165,12 @@ END
 $$;
 
 ALTER FUNCTION cap_ai.agent_model_gateway_session() OWNER TO dxos_ai_owner;
-ALTER FUNCTION cap_ai.agent_query_model_policy(uuid,text,text,text,text,bigint) OWNER TO dxos_ai_owner;
+ALTER FUNCTION cap_ai.agent_query_model_policy(uuid,text,text,text,text,bigint,bigint) OWNER TO dxos_ai_owner;
 ALTER FUNCTION cap_ai.agent_model_policy(uuid,text,text,bigint,bigint,jsonb) OWNER TO dxos_ai_owner;
 
 REVOKE ALL ON FUNCTION cap_ai.agent_model_gateway_session(),
-  cap_ai.agent_query_model_policy(uuid,text,text,text,text,bigint),
+  cap_ai.agent_query_model_policy(uuid,text,text,text,text,bigint,bigint),
   cap_ai.agent_model_policy(uuid,text,text,bigint,bigint,jsonb) FROM PUBLIC;
 
-GRANT EXECUTE ON FUNCTION cap_ai.agent_query_model_policy(uuid,text,text,text,text,bigint),
+GRANT EXECUTE ON FUNCTION cap_ai.agent_query_model_policy(uuid,text,text,text,text,bigint,bigint),
   cap_ai.agent_model_policy(uuid,text,text,bigint,bigint,jsonb) TO dxos_ai_gateway;

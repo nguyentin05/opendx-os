@@ -58,6 +58,8 @@ type scopeRetrieval struct {
 	evidence    []rankedEvidence
 	status      string
 	authChanged bool
+	searched    bool
+	failed      bool
 }
 
 func (r *RetrievalCoordinator) Retrieve(ctx context.Context, actor Actor, query string) (RetrievalResult, error) {
@@ -109,14 +111,22 @@ func (r *RetrievalCoordinator) Retrieve(ctx context.Context, actor Actor, query 
 	}
 
 	var ranked []rankedEvidence
-	var lexicalOnly, authChanged bool
+	var lexicalOnly, authChanged, searched, failed bool
 	for _, result := range results {
 		if result.status == "HYBRID" {
 			out.SearchStatus = "HYBRID"
 		}
 		lexicalOnly = lexicalOnly || result.status == "LEXICAL_ONLY"
 		authChanged = authChanged || result.authChanged
+		searched = searched || result.searched
+		failed = failed || result.failed
 		ranked = append(ranked, result.evidence...)
+	}
+	if failed {
+		if !searched {
+			return out, knowledge.ErrAuthorityUnavailable
+		}
+		out.Warnings = append(out.Warnings, "SEARCH_INCOMPLETE")
 	}
 	if lexicalOnly {
 		out.Warnings = append(out.Warnings, "SEMANTIC_UNAVAILABLE")
@@ -163,10 +173,11 @@ func (r *RetrievalCoordinator) retrieveScope(ctx context.Context, actor Actor, s
 		Scope: publicScope, Query: query, Limit: hitsPerScope, Retrieval: "HYBRID", RequirePersonalQueryApproval: true,
 	})
 	if err != nil {
-		return scopeRetrieval{}
+		// Native search conceals authorization denials as not found.
+		return scopeRetrieval{failed: !errors.Is(err, knowledge.ErrNotFound)}
 	}
 
-	out := scopeRetrieval{status: got.Status, authChanged: slices.Contains(got.Warnings, "AUTHORIZATION_CHANGED")}
+	out := scopeRetrieval{searched: true, status: got.Status, authChanged: slices.Contains(got.Warnings, "AUTHORIZATION_CHANGED")}
 	for rank, hit := range got.Results[:min(len(got.Results), hitsPerScope)] {
 		current, err := r.Reader.CanRead(ctx, identity, hit.DocumentID)
 		if err != nil || current != hit.ReadScope || current.DocumentID != hit.DocumentID ||

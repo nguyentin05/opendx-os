@@ -6,10 +6,9 @@ package knowledge
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
-	"github.com/opendx-os/opendx-os/capabilities/internal/testutil"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -17,6 +16,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
+	"github.com/opendx-os/opendx-os/capabilities/internal/testutil"
 )
 
 func TestRegistryAnswerCurrentDatabaseRevocation(t *testing.T) {
@@ -120,6 +123,43 @@ func TestQualifiedLocalPersonalAnswer(t *testing.T) {
 	}
 }
 
+// answerRunReplacement changes the real database snapshot at the assembly READ.
+type answerRunReplacement struct {
+	AnswerReader
+	db      *sql.DB
+	changed bool
+}
+
+func (r *answerRunReplacement) CanRead(ctx context.Context, actor *auth.Identity, doc string) (ReadScope, error) {
+	if !r.changed {
+		previous, err := r.AnswerReader.CanRead(ctx, actor, doc)
+		if err != nil {
+			return ReadScope{}, err
+		}
+		result, err := r.db.ExecContext(ctx, `WITH replacement AS (
+            INSERT INTO cap_ai.processing_runs(version_id,ingestion_job_id,attempt_no,fencing_token,state)
+            SELECT run.version_id,run.ingestion_job_id,run.attempt_no+1,run.fencing_token+1,'COMPLETE'
+            FROM cap_ai.knowledge_documents d
+            JOIN cap_ai.document_versions v ON v.id=d.active_version_id
+            JOIN cap_ai.processing_runs run ON run.id=v.active_run_id
+            WHERE d.id=$1
+            RETURNING id,version_id
+        )
+        UPDATE cap_ai.document_versions v SET active_run_id=r.id FROM replacement r WHERE v.id=r.version_id`, doc)
+		if err != nil {
+			return ReadScope{}, err
+		}
+		rows, err := result.RowsAffected()
+		if err != nil || rows != 1 {
+			return ReadScope{}, fmt.Errorf("replaced %d active runs: %v", rows, err)
+		}
+		current, err := r.AnswerReader.CanRead(ctx, actor, doc)
+		r.changed = err == nil && current.VersionID == previous.VersionID && current.RunID != previous.RunID
+		return current, err
+	}
+	return r.AnswerReader.CanRead(ctx, actor, doc)
+}
+
 func TestHostedPersonalAnswerAuditedApproval(t *testing.T) {
 	db, s, a, _ := semanticFixture(t)
 	activateText(t, s, workerStore(t, db), a, fileID, "hosted-personal", "Director approval private evidence")
@@ -174,4 +214,20 @@ func TestHostedPersonalAnswerAuditedApproval(t *testing.T) {
 	if _, err = service.Answer(context.Background(), a, req); err != models.ErrPolicy || provider.calls != 1 {
 		t.Fatal("disabled review sent content", err, provider.calls)
 	}
+	if err := admin.QueryRow(`SELECT cap_ai.approve_agent_processing($1,'{"profile_id":"hosted-gen","profile_revision":1,"provider_id":"fake","purpose":"GENERATE","source_policy_id":"local-only","source_policy_version":1,"source_classification":"PERSONAL","query_app_id":"library","query_classification":"PERSONAL","retention_evidence":"renewed-retention","training_use_evidence":"review-training","region_evidence":"review-region"}')`, a.UserID).Scan(&approval); err != nil {
+		t.Fatal(err)
+	}
+	t.Run("same version reparse before hosted PERSONAL assembly", func(t *testing.T) {
+		provider.calls = 0
+		reg := service.Reader
+		reader := &answerRunReplacement{AnswerReader: reg, db: db}
+		service.Reader = reader
+		defer func() { service.Reader = reg }()
+		got, err := service.Answer(t.Context(), a, req)
+		if !reader.changed || err != nil || got.Reason != "AUTHORIZATION_CHANGED" || got.Answer != nil ||
+			len(got.Results) != 0 || len(got.Citations) != 0 || provider.calls != 0 {
+			t.Fatalf("retired run reached the hosted provider or response: %+v err=%v sends=%d", got, err, provider.calls)
+		}
+	})
+
 }

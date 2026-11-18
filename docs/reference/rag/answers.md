@@ -25,8 +25,8 @@ generation. Profile references expose only ID/revision. A client cannot choose
 classification, provider, credentials, tools or endpoints. Every supplied context
 source and its processing policy are freshly checked immediately before egress
 and immediately before the non-streaming response, including uncited context.
-Any revocation discards the whole new answer and retrieved titles/citations with
-`AUTHORIZATION_CHANGED`. Missing DB/policy/model authority denies the affected
+A changed source READ snapshot, including a replacement run of the same version,
+discards the new answer and retrieved titles/citations with `AUTHORIZATION_CHANGED`. Missing DB/policy/model authority denies the affected
 operation; no-evidence returns NO_EVIDENCE without a generation call.
 
 Hosted processing requires independent current query and per-source approval.

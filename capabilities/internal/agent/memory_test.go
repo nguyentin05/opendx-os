@@ -185,3 +185,11 @@ func TestMemorySearchQueryPreservesCurrentQuestionAtRuneLimit(t *testing.T) {
 			utf8.RuneCountInString(got.Query), utf8.RuneCountInString(got.SearchQuery), err)
 	}
 }
+
+func TestMemoryKeepsShortAntecedentAfterOversizedWord(t *testing.T) {
+	history := memoryTurn(1, strings.Repeat("x", 200)+" procurement", "earlier answer")
+	got, err := NewWorkingMemory(nil, 0).Build(t.Context(), Actor{memoryUserID}, "What about new hires?", history)
+	if err != nil || got.SearchQuery != "procurement OR What about new hires?" {
+		t.Fatalf("follow-up lost the usable topic: %+v err=%v", got, err)
+	}
+}

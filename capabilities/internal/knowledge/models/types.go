@@ -61,6 +61,8 @@ type Operation struct {
 	Lease                                                          *LeaseRef
 	// LLMSlotRevision pins the server-resolved active LLM binding for AGENT.
 	LLMSlotRevision int64 `json:"llm_slot_revision,omitempty"`
+	// EmbeddingSlotRevision pins the active binding for a global query.
+	EmbeddingSlotRevision int64 `json:"embedding_slot_revision,omitempty"`
 	// AgentSources apply only to AGENT generation. AppID is its configured billing consumer.
 	AgentSources []AgentSourceProof `json:"agent_sources,omitempty"`
 	// RequirePersonalQueryApproval narrows query-only global EMBED processing.

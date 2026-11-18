@@ -30,17 +30,19 @@ type ModelResolver interface {
 func (s *Store) ConfigureModelResolver(resolver ModelResolver) { s.modelResolver = resolver }
 
 func (s *Store) modelProfile(ctx context.Context, capability models.Capability) (models.Profile, error) {
+	binding, err := s.modelBinding(ctx, capability)
+	return binding.Profile, err
+}
+
+func (s *Store) modelBinding(ctx context.Context, capability models.Capability) (models.ActiveBinding, error) {
 	if s.modelResolver != nil {
-		binding, err := s.modelResolver.Resolve(ctx, capability)
-		if err != nil {
-			return models.Profile{}, err
-		}
-		return binding.Profile, nil
+		return s.modelResolver.Resolve(ctx, capability)
 	}
+	profile := s.generateProfile
 	if capability == models.CapabilityEmbedding {
-		return s.embedProfile, nil
+		profile = s.embedProfile
 	}
-	return s.generateProfile, nil
+	return models.ActiveBinding{Capability: capability, Profile: profile}, nil
 }
 
 func modelOperationKey() string {
@@ -138,9 +140,13 @@ func (s *Store) BuildEmbeddings(ctx context.Context, lease Lease, profile models
 }
 
 func (s *Store) semanticCandidates(ctx context.Context, actor *auth.Identity, req SearchRequest) ([]candidate, error) {
-	profile, err := s.modelProfile(ctx, models.CapabilityEmbedding)
+	binding, err := s.modelBinding(ctx, models.CapabilityEmbedding)
 	if err != nil {
 		return nil, err
+	}
+	profile := binding.Profile
+	if req.RequirePersonalQueryApproval && (binding.Capability != models.CapabilityEmbedding || binding.SlotRevision < 1) {
+		return nil, models.ErrUnavailable
 	}
 	if s.gateway == nil || profile.ID == "" || (req.Scope.Kind != "APP" && req.Scope.Kind != "PERSONAL") {
 		return nil, models.ErrPolicy
@@ -165,6 +171,9 @@ func (s *Store) semanticCandidates(ctx context.Context, actor *auth.Identity, re
 		Key: modelOperationKey(), AppID: app, ScopeKind: req.Scope.Kind, Purpose: "EMBED",
 		ProfileID: profile.ID, ProfileRevision: profile.Revision,
 		RequirePersonalQueryApproval: req.RequirePersonalQueryApproval,
+	}
+	if req.RequirePersonalQueryApproval {
+		op.EmbeddingSlotRevision = binding.SlotRevision
 	}
 	result, err := s.gateway.Call(ctx, actor, op, models.Payload{Query: req.Query})
 	if err != nil {

@@ -122,6 +122,14 @@ func (g *Gateway) Call(ctx context.Context, actor *auth.Identity, op Operation, 
 	if err = g.Budget.Settle(finishCtx, r.ID, "provider-complete", u); err != nil {
 		return Result{}, ErrUncertain
 	}
+	// A global query vector is usable only while its dispatch approval remains
+	// current. The completed provider call is still settled if approval changed.
+	if op.RequirePersonalQueryApproval {
+		fresh, err := g.Policy.Check(ctx, actor, op)
+		if err != nil || fresh.Fingerprint != approval.Fingerprint {
+			return Result{}, ErrPolicy
+		}
+	}
 	result.Usage = u
 	result.ProviderRequestID = ""
 	return result, nil
