@@ -142,7 +142,9 @@ func (a *personalAnswerAuthority) Current(_ context.Context, _ *auth.Identity, o
 		raw = []byte(`{"personal_approved":true}`)
 	}
 	var d models.Decision
-	json.Unmarshal(raw, &d)
+	if err := json.Unmarshal(raw, &d); err != nil {
+		return models.Decision{}, err
+	}
 	d.Profile = p
 	d.Allowed = true
 	d.Personal = true
