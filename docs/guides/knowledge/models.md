@@ -42,8 +42,8 @@ the same file order and project name throughout an installation.
    The models overlay also requires `AI_GATEWAY_DATABASE_PASSWORD` and selects
    PostgreSQL 17 with pgvector. Both PG17 images use the same data directory.
    To upgrade retained data, use the checksummed migration procedure below,
-   provision the missing restricted role passwords through deployment admin
-   operations, and back up the volume before changing its image. Init scripts
+   register cap-ai and provision its restricted roles and passwords before app
+   reconciliation, and back up the volume before changing its image. Init scripts
    run only on an empty volume.
 2. Supply distinct OIDC UUIDs and renewable audience-matched access tokens
    for the worker, File Service and dispatcher in the variables in
@@ -67,9 +67,11 @@ the same file order and project name throughout an installation.
    Use `docker compose -f compose.yaml -f compose.rag.yaml up -d --build` for
    FTS-only mode. For model storage, also pass `-f compose.models.yaml` before
    `up`, supply the schema flags below and configure `RAG_MODEL_CATALOG_FILE`
-   and `RAG_MODEL_CREDENTIAL_ENV_FILE`. The latter is a private env file
-   containing only credentials named by the catalog, readable by API and
-   worker. An empty file suffices when the catalog references no secrets.
+   and `RAG_MODEL_CREDENTIAL_ENV_FILE`. The credential-free catalog is a
+   file-backed secret: its host ownership and mode must allow runtime UID 10001
+   to read it. The latter is a private env file containing only credentials
+   named by the catalog; Compose reads it to supply environment variables to
+   API and worker. An empty file suffices when the catalog references no secrets.
    Keep vendor credentials in the approved adapter deployment.
 5. Select an actual registered `Ready` app for `AI_AGENT_BILLING_APP_ID`.
    Confirm its state through the application registry before enabling chat.
@@ -159,6 +161,43 @@ The functions authenticate `session_user`, reject substituted roles and privileg
 runtime logins, and audit the verified actor and deployment session. There is no
 management UI in this increment. The deployment operator runs these functions
 through a protected `dxos_authz` connection after authenticating the Platform Admin.
+
+For a retained default volume, back up first and connect as the deployment database
+administrator using standard libpq environment variables (`PGHOST`, `PGPORT`,
+`PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGSSLMODE`). Set nonempty, URL-safe
+`AI_DATABASE_PASSWORD`, `AI_WORKER_DATABASE_PASSWORD` and
+`AI_DISPATCHER_DATABASE_PASSWORD` in the same protected environment. From the
+repository root, run the following before reconciling apps. The registry upsert
+and role creation are idempotent; rerunning updates these three passwords.
+
+```sh
+psql -X -v ON_ERROR_STOP=1 -f platform/postgres/capabilities/cap_ai.sql
+psql -X -v ON_ERROR_STOP=1 <<'SQL'
+DO $$
+DECLARE name text;
+BEGIN
+  FOREACH name IN ARRAY ARRAY['dxos_ai_api','dxos_ai_worker','dxos_ai_dispatcher'] LOOP
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = name) THEN
+      EXECUTE format('CREATE ROLE %I LOGIN', name);
+    END IF;
+    EXECUTE format('ALTER ROLE %I LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT', name);
+  END LOOP;
+END $$;
+\getenv api_password AI_DATABASE_PASSWORD
+\getenv worker_password AI_WORKER_DATABASE_PASSWORD
+\getenv dispatcher_password AI_DISPATCHER_DATABASE_PASSWORD
+ALTER ROLE dxos_ai_api PASSWORD :'api_password';
+ALTER ROLE dxos_ai_worker PASSWORD :'worker_password';
+ALTER ROLE dxos_ai_dispatcher PASSWORD :'dispatcher_password';
+SQL
+```
+
+Use deployment secrets to supply these same passwords to the runtime services.
+For model storage, additionally provision the restricted `dxos_ai_gateway`
+login and its password through deployment administration before applying the
+model migrations; the fresh-volume bootstrap uses `08_runtime_passwords.sh`.
+Set `DATABASE_URL` in the protected environment to the administrator connection
+URL for the migration runner.
 
 For an FTS-only upgrade, `scripts/migrate-rag.sh --database-url-env DATABASE_URL
 --scope cap-ai --through 0007` skips optional 0004/0005. The existing explicit

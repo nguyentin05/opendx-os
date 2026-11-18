@@ -1,16 +1,16 @@
 ---
-title: RAG authorization (proposed)
-description: Proposed source authorization and identity model for native RAG.
+title: RAG authorization
+description: Source authorization and identity model for native RAG.
 diataxis: reference
 audience: [security-reviewer, platform-developer]
-status: proposed
+status: active
 owner: platform
 last_reviewed: 2026-11-18
 ---
 
 # RAG authorization and source trust
 
-**Status:** canonical proposed policy for [ADR 0009](../../adr/0009-native-rag-identity-and-source-boundaries.md); approved conversation decisions are recorded there. No runtime enforcement claimed.
+**Status:** canonical policy for [ADR 0009](../../adr/0009-native-rag-identity-and-source-boundaries.md). The opt-in runtime enforces the implemented source and model boundaries; deployment qualification and remaining implementation limits are described in the ADR and [model guide](../../guides/knowledge/models.md).
 
 ## Document access
 
