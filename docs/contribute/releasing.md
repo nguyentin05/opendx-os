@@ -1,23 +1,26 @@
 ---
 title: Releasing
-description: Release gates, artifacts, and acceptance evidence.
+description: Release gates, artifacts, container images, and acceptance evidence.
 diataxis: how-to
 audience: [platform-developer]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-18
 ---
 
 # Preparing a release
 
 Select the version, revision, target environment, and applicable official PoF
 rules. Project hygiene checks support release verification; they do not establish
-a competition score. The release process below defines required evidence; a
-complete packager and release verification environment are still needed.
+a competition score.
+
+## 1. Prepare the revision
 
 1. Run [verification](verification.md) for the release revision, including all
    [S01–S08 groups](../reference/security/acceptance.md#eight-mandatory-acceptance-groups).
-   A mandatory check marked `NOT_RUN` prevents a readiness conclusion.
+   A mandatory check marked `NOT_RUN` prevents a readiness conclusion. The
+   release workflow runs the continuous-integration checks on the tag; it does
+   not replace the acceptance groups.
 2. Complete `LICENSE`, `NOTICE`, `COPYRIGHT.txt`, `README.md`, `CHANGELOG.md`,
    `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `Makefile`,
    `.env.example`, installation instructions, and CycloneDX SBOMs in
@@ -28,30 +31,116 @@ complete packager and release verification environment are still needed.
    Verify the full Apache-2.0 text in `LICENSE`, licensing purpose and attribution
    in `NOTICE`, and the third-party inventory with OSI-approved licenses in
    `COPYRIGHT.txt`; report any dependency whose license has not been verified.
-3. Package `dist/dxos-open-core-X.Y.Z.tar.gz`, extracting into
-   `dxos-open-core-X.Y.Z/`, and produce `SHA256SUMS`. Use the actual packager;
-   `scripts/package_release.sh` is the source-tree packager in this checkout.
-   Artifact changes require repackaging and checksum verification.
-4. Inspect the archive itself. Exclude internal agent guidance (`.agents/`,
-   `AGENTS.md`, `AGENTS.local.md`, `CLAUDE.md` if present, and local `.scratch/`)
-   using actual paths and the packager's
-   exclusion mechanism. Existing `.gitattributes` excludes `.agents/` and
-   `AGENTS.md` for `git archive`. Keep project contracts, architecture, and
-   development documentation, including shared designs and integration handoffs,
-   in the distribution. Only user-local material in `.scratch/` and the existing
-   private `docs/superpowers/` workspace are excluded; do not classify a whole
-   documentation directory as private solely because it is named design or handoff.
-   An `export-ignore` entry
-   does not prove exclusion when another packager is used.
-5. Extract into a fresh temporary directory, then run the extracted
-   `scripts/install.sh <target-dir>` into a separate target. Verify the target's
-   required runtime/configuration without relying on the original checkout.
-   The current installer copies a source scaffold and attempts builds; it does
-   not establish a fully configured production deployment. Record those limits.
-   Keep evidence before cleaning only temporary directories created for this run.
-6. Hand off the artifact, checksum, provenance, and evidence. Publishing is a
-   separate action within the assigned scope, on the exact verified revision.
 
-Check archive contents and installation rather than relying on the source tree
-alone. Record missing rules, unverified dependencies, and unavailable checks
+## 2. Draft the release notes
+
+`.github/workflows/release-drafter.yml` runs on every push to `main` and keeps a
+draft release for the next semantic version. `.github/release-drafter.yml`
+autolabels pull requests from their conventional-commit title prefixes and
+groups them into Added, Fixed, Security, Docs, Maintenance, and Breaking
+sections. A breaking change below 1.0 bumps the minor version; a feature bumps
+the minor version; everything else bumps the patch version.
+
+Confirm the draft contains the changes for the revision you verified. The draft
+tag is the `vX.Y.Z` to use in the next step. The autolabeler reads the
+repository labels `feature`, `fix`, `docs`, `maintenance`, `breaking`, and
+`security`; create them first in a fork that does not have them.
+
+## 3. Tag and run the release workflow
+
+Create an annotated tag on the verified `main` commit and push it:
+
+```sh
+git switch main
+git pull --ff-only
+git tag -a vX.Y.Z -m "vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+`.github/workflows/release.yml` then:
+
+1. validates the tag and runs `ci.yml` against it (the reusable workflow accepts
+   a `ref`, so a manual dispatch verifies the requested tag rather than `main`);
+2. packs `dist/dxos-open-core-X.Y.Z.tar.gz` with `scripts/package_release.sh`,
+   fails if the archive contains `.agents/`, `AGENTS.md`, `AGENTS.local.md`,
+   `CLAUDE.md`, `.scratch/`, or `docs/_internal/`, and writes
+   `dist/SHA256SUMS`;
+3. generates `dist/opendx-os-X.Y.Z.cdx.json` with `anchore/sbom-action`;
+4. attests the tarball and SBOM with `actions/attest-build-provenance`;
+5. uploads the assets to the existing draft release, or creates a draft with
+   `--generate-notes` when no release exists for the tag. The workflow never
+   publishes a release.
+
+To re-run the pipeline for a tag that already exists, dispatch it with the tag:
+
+```sh
+gh workflow run release.yml -f tag=vX.Y.Z
+```
+
+Dispatch attaches assets to any existing release for that tag, including a
+published release. Prefer dispatching only while the release is still a draft.
+
+## 4. Review the generated assets
+
+The draft release must contain the tarball, `SHA256SUMS`, the CycloneDX SBOM,
+and the packager's `.tar.gz.sha256` file. Verify the checksums and the build
+provenance before publishing:
+
+```sh
+gh release download vX.Y.Z --pattern 'dxos-open-core-*.tar.gz' \
+  --pattern 'opendx-os-*.cdx.json' --pattern 'SHA256SUMS'
+sha256sum -c SHA256SUMS
+gh attestation verify dxos-open-core-X.Y.Z.tar.gz --repo nguyentin05/opendx-os
+gh attestation verify opendx-os-X.Y.Z.cdx.json --repo nguyentin05/opendx-os
+```
+
+The Images workflow publishes `ghcr.io/nguyentin05/<image>` for each supported
+image when `main` or a `v*` tag is pushed:
+
+| Image | Build context | Dockerfile | Build argument |
+| --- | --- | --- | --- |
+| `opendx-operator` | `operator` | `operator/Dockerfile` | |
+| `opendx-dxos-authz` | `capabilities` | `capabilities/Dockerfile` | `SERVICE=dxos-authz` |
+| `opendx-cap-process` | `capabilities` | `capabilities/Dockerfile` | `SERVICE=cap-process` |
+| `opendx-cap-hr` | `capabilities` | `capabilities/Dockerfile` | `SERVICE=cap-hr` |
+| `opendx-cap-data` | `capabilities` | `capabilities/Dockerfile` | `SERVICE=cap-data` |
+| `opendx-cap-ai` | `capabilities` | `capabilities/Dockerfile` | `SERVICE=cap-ai` |
+| `opendx-cap-ai-worker` | `capabilities` | `capabilities/Dockerfile` | `SERVICE=cap-ai-worker` |
+| `opendx-cap-ai-parser` | `capabilities` | `capabilities/Dockerfile.parser` | |
+| `opendx-workspace-ui` | `workspace-ui` | `workspace-ui/Dockerfile` | |
+
+Tag pushes publish `X.Y.Z` and `X.Y` tags; `main` pushes publish `main` and a
+`sha-*` tag. Pull requests build every image but never push. Verify an image's
+provenance with
+`gh attestation verify oci://ghcr.io/nguyentin05/opendx-operator:X.Y.Z --repo nguyentin05/opendx-os`.
+
+## 5. Inspect and install the archive
+
+Extract the archive into a fresh temporary directory, then run the extracted
+`scripts/install.sh <target-dir>` into a separate target. Verify the target's
+required runtime/configuration without relying on the original checkout. The
+installer copies a source scaffold and attempts builds; it does not establish a
+fully configured production deployment. Record those limits. Keep evidence
+before cleaning only temporary directories created for this run.
+
+Keep project contracts, architecture, and development documentation, including
+shared designs and integration handoffs, in the distribution. The packager
+excludes only user-local material (`.scratch/`, `.claude/`), agent guidance
+(`.agents/`, `AGENTS.md`, `AGENTS.local.md`, `CLAUDE.md`), the private
+`docs/superpowers/` workspace, and the internal planning notes in
+`docs/_internal/`; do not exclude a documentation directory solely because its
+name sounds like design or handoff. A `.gitattributes` `export-ignore` entry
+does not prove exclusion when another packager is used, so inspect the archive
+produced by the actual packager. Artifact changes require repackaging and
+checksum verification.
+
+Check the archive contents and the installation, not the source tree alone.
+Record missing rules, unverified dependencies, and unavailable checks
 explicitly; a list of expected files is not proof of compliance.
+
+## 6. Publish
+
+Review the draft, its notes, assets, checksums, and attestations, then publish it
+in the GitHub UI or with `gh release edit vX.Y.Z --draft=false`. Publishing is a
+separate action within the assigned scope, on the exact verified revision. Hand
+off the artifact, checksum, provenance, and evidence with the release.
