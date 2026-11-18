@@ -17,16 +17,13 @@ name: CI
 
 on:
   push:
-    branches: ["main"]
+    branches: [main, "release/**"]
+    paths-ignore:
+      - 'docs/**'
   pull_request:
-  workflow_dispatch:
-  workflow_call:
-    inputs:
-      ref:
-        description: Git ref to check out; empty uses the caller's ref.
-        required: false
-        type: string
-        default: ""
+    branches: [main, "release/**"]
+    paths-ignore:
+      - 'docs/**'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -37,114 +34,123 @@ permissions:
 
 jobs:
   hygiene:
-    name: hygiene
+    name: Hygiene
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref }}
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.12"
-      - name: Install PyYAML
-        run: python3 -m pip install pyyaml
+
       - name: Run repository hygiene checks
         run: make check-hygiene
 
-  go:
-    name: go (${{ matrix.module }})
+  architecture:
+    name: Architecture
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        module: [operator, capabilities]
-    env:
-      # A go.mod bump must fail here instead of downloading another toolchain.
-      GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-python@v7.1.0
         with:
-          ref: ${{ inputs.ref }}
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: ${{ matrix.module }}/go.mod
-          cache-dependency-path: ${{ matrix.module }}/go.sum
-      - name: Vet
-        working-directory: ${{ matrix.module }}
-        run: go vet ./...
-      - name: Test with the race detector
-        working-directory: ${{ matrix.module }}
-        run: go test -race -count=1 ./...
-      - name: Build
-        working-directory: ${{ matrix.module }}
-        run: CGO_ENABLED=0 go build ./...
+          python-version: "3.12"
+
+      - name: Run tier boundary checks
+        run: make check-architecture
 
   lint:
-    name: lint (${{ matrix.module }})
+    name: Lint Go (${{ matrix.module }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         module: [operator, capabilities]
     steps:
-      - uses: actions/checkout@v7
-        with:
-          # .golangci.yml baselines issues against a past revision.
-          fetch-depth: 0
-          ref: ${{ inputs.ref }}
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-go@v7.1.0
         with:
           go-version-file: ${{ matrix.module }}/go.mod
-          cache-dependency-path: ${{ matrix.module }}/go.sum
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+          cache: false
+
+      - uses: golangci/golangci-lint-action@v9.3.0
         with:
           version: v2.15.0
           working-directory: ${{ matrix.module }}
 
-  python:
-    name: python
+  backend:
+    name: Backend Go (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [operator, capabilities]
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-go@v7.1.0
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test with the race detector
+        run: go test -race -count=1 ./...
+
+      - name: Build
+        run: CGO_ENABLED=0 go build ./...
+
+  unit-test:
+    name: Unit test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref }}
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.12"
+
       - name: Install PyYAML
         run: python3 -m pip install pyyaml
+
       - name: Run contract, hygiene, and docs tests
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
 
   ui:
-    name: ui
+    name: UI
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workspace-ui
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.1.0
         with:
-          ref: ${{ inputs.ref }}
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "22"
+          node-version: 22
           cache: npm
           cache-dependency-path: workspace-ui/package-lock.json
+
       - name: Install dependencies
-        working-directory: workspace-ui
         run: npm ci
+
       - name: Run tests
-        working-directory: workspace-ui
         run: npm test
+
       - name: Build
-        working-directory: workspace-ui
         run: npm run build
 
   integration:
     name: integration
     runs-on: ubuntu-latest
     env:
-      GOTOOLCHAIN: local
-      # testutil refuses a DSN whose database name does not contain "test".
       TEST_DATABASE_URL: postgres://postgres:ci-${{ github.run_id }}@localhost:5432/postgres_test?sslmode=disable
     services:
       postgres:
@@ -153,25 +159,24 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: ci-${{ github.run_id }}
           POSTGRES_DB: postgres_test
-          # Knowledge and model tests log in as the runtime roles they create,
-          # which have no password in a disposable database.
           POSTGRES_HOST_AUTH_METHOD: trust
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref }}
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-go@v7.1.0
         with:
           go-version-file: operator/go.mod
           cache-dependency-path: |
             operator/go.sum
             capabilities/go.sum
+
       - name: Provision cluster roles and platform schemas
         run: scripts/ci/provision-test-db.sh
+
       - name: Integration tests (first run)
         run: |
           (cd operator && go test -tags=integration -p 1 -count=1 ./...)
@@ -185,9 +190,7 @@ jobs:
     name: parser
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref }}
+      - uses: actions/checkout@v7.0.1
       # The parser runs on Alpine in production. GitHub's JavaScript actions need
       # glibc and cannot run inside an Alpine job container, so the tests execute
       # through docker against the same image and pinned poppler-utils version.

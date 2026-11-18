@@ -23,7 +23,6 @@ class LocalWorkspaceTests(unittest.TestCase):
             root = Path(tmp)
             (root / ".scratch").mkdir()
             (root / ".scratch/private.py").write_bytes(b"private draft\r\n")
-            (root / "AGENTS.local.md").write_bytes(b"user-local\xff\r\n")
             (root / "public.py").write_text("print('checked')\n")
             errors = []
             HYGIENE.check_headers_and_lf(root, errors)

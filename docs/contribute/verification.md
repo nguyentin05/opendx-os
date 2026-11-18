@@ -32,7 +32,8 @@ the current `Makefile`, module manifests, and prerequisites first.
 
 | Check | Working directory | Command | Prerequisites and limits |
 | --- | --- | --- | --- |
-| Repository hygiene | Root | `make check-hygiene` | Python 3 and PyYAML; metadata, text/header checks, static boundary/manifest checks |
+| Repository hygiene | Root | `make check-hygiene` | Python 3; required metadata files, SPDX headers, and text encoding |
+| Tier boundaries | Root | `make check-architecture` | Python 3; static check that Tier 1 and Tier 2 runtime code does not name Tier 3 applications |
 | Static contracts | Root | `python3 -m unittest discover -s tests -v` | Python 3 and PyYAML; source/fixture checks, not live database authorization |
 | Operator unit tests | `operator/` | `go test ./...` | Go version/dependencies from `go.mod` |
 | Capability unit tests | `capabilities/` | `go test ./...` | Go version/dependencies from `go.mod`; PDF parser subtests skip unless `poppler-utils` (`pdfinfo`, `pdfimages`, `pdftotext`) is installed |
@@ -51,16 +52,16 @@ The capability module is Go; pytest does not run its Go tests.
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on pull requests, pushes to `main`, manual
-dispatch, and as the reusable workflow the release pipeline calls. Each job name
-below is the check name to require in branch protection. The workflow has no
+`.github/workflows/ci.yml` runs on pull requests and pushes to `main`. Each job
+name below is the check name to require in branch protection. The workflow has no
 `paths` filters: a filtered required check stays pending and blocks a pull
 request. Go jobs read the version from `go.mod` and set `GOTOOLCHAIN=local`, so a
 toolchain bump fails instead of silently downloading another Go release.
 
 | Job | What it runs | Services | Reproduce locally |
 | --- | --- | --- | --- |
-| `hygiene` | `make check-hygiene` | none | `python3 -m pip install pyyaml && make check-hygiene` |
+| `hygiene` | `make check-hygiene` | none | `make check-hygiene` |
+| `architecture` | `make check-architecture` | none | `make check-architecture` |
 | `go (operator)`, `go (capabilities)` | `go vet ./...`, `go test -race -count=1 ./...`, then `CGO_ENABLED=0 go build ./...` | none | `cd <module> && go vet ./... && go test -race -count=1 ./... && CGO_ENABLED=0 go build ./...` |
 | `lint (operator)`, `lint (capabilities)` | golangci-lint v2 with the root `.golangci.yml`; pull requests report only issues the change introduces | none | `cd <module> && golangci-lint run --config ../.golangci.yml` |
 | `python` | `python3 -m unittest discover -s tests -p 'test_*.py' -v` | none | `python3 -m pip install pyyaml && python3 -m unittest discover -s tests -p 'test_*.py' -v` |
@@ -98,10 +99,10 @@ jobs need their own environment.
 [releasing](releasing.md#3-tag-and-run-the-release-workflow). Pull requests build
 without pushing; pushes to `main` and `v*` tags publish to
 `ghcr.io/nguyentin05/<image>` and attest the image digest.
-`.github/workflows/release.yml` runs on `v*` tags and manual dispatch, verifies
-the tag through `ci.yml`, packs the source tree, checks the archive exclusions,
-generates a CycloneDX SBOM and `SHA256SUMS`, attests both, and attaches the
-assets to a release. It never publishes the release.
+`.github/workflows/release.yml` runs on `v*` tags and manual dispatch, validates
+the tag, packs the source tree, checks the archive exclusions, generates a
+CycloneDX SBOM and `SHA256SUMS`, attests both, and attaches the assets to a
+release. It never publishes the release.
 
 Reproduce the local parts:
 

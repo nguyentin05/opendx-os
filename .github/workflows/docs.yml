@@ -23,12 +23,10 @@ on:
       - "requirements-docs.txt"
       - "tests/test_docs.py"
       - ".github/workflows/docs.yml"
-  workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
+  pages: read
 
 concurrency:
   group: pages
@@ -39,13 +37,11 @@ jobs:
     name: Check MkDocs Site
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v7
+      - uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.12"
 
@@ -70,10 +66,10 @@ jobs:
           filter_mode: nofilter
 
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/configure-pages@v6
+        uses: actions/configure-pages@v6.0.0
 
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@v5.0.0
         with:
           path: site
 
@@ -82,9 +78,12 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: check-docs
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@v5.0.1

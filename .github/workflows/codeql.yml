@@ -17,10 +17,15 @@ name: CodeQL
 
 on:
   push:
-    branches: ["main"]
+    branches: [main, "release/**"]
+    paths-ignore:
+      - 'docs/**'
   pull_request:
+    branches: [main, "release/**"]
+    paths-ignore:
+      - 'docs/**'
   schedule:
-    # Mondays 03:43 UTC, after the security scans.
+    # Mondays 03:43 UTC.
     - cron: "43 3 * * 1"
 
 permissions:
@@ -31,7 +36,6 @@ jobs:
     name: analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
     permissions:
-      contents: read
       security-events: write
     strategy:
       fail-fast: false
@@ -44,26 +48,31 @@ jobs:
           - language: python
             build-mode: none
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+
       - name: Set up Go
         if: matrix.language == 'go'
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@v7.1.0
         with:
-          go-version-file: operator/go.mod
+          go-version-file: go.work
           cache-dependency-path: |
             operator/go.sum
             capabilities/go.sum
+
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4 # v4.39.3
+        uses: github/codeql-action/init@v4.39.3
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
+          queries: security-extended
+
       - name: Build Go modules
         if: matrix.language == 'go'
         run: |
           (cd operator && go build ./...)
           (cd capabilities && go build ./...)
+
       - name: Analyze
-        uses: github/codeql-action/analyze@v4 # v4.39.3
+        uses: github/codeql-action/analyze@v4.39.3
         with:
           category: "/language:${{ matrix.language }}"

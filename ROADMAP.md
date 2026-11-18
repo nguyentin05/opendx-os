@@ -35,5 +35,5 @@ This roadmap tracks the phased progression of **OpenDX-OS (DX-OS Open-Core)** fr
 ## Phase 4: Hardening, GitOps & Release Packaging (`v1.0.0`)
 
 - [ ] **Audit & Checkpoints:** Serialized per-workspace SHA-256 hash-chain verification anchored in OpenBao (`verify-audit`).
-- [ ] **GitOps & Out-of-Tree Installation:** Kubernetes/Argo CD overlays (`gitops/`), `scripts/check_pof.py`, `scripts/install.sh`, and `scripts/package_release.sh`.
+- [ ] **GitOps & Out-of-Tree Installation:** Kubernetes/Argo CD overlays (`gitops/`), `scripts/check_hygiene.py`, `scripts/install.sh`, and `scripts/package_release.sh`.
 - [ ] **Release Gate:** Full `S01`–`S08` passing evidence on the release revision, CycloneDX SBOMs (`sbom/*.cdx.json`), and verified out-of-tree installation from `dxos-open-core-1.0.0.tar.gz`.
