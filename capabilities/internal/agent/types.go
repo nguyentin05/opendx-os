@@ -43,12 +43,14 @@ type Message struct {
 	Created bool `json:"-"`
 }
 type TurnResult struct {
-	Status    string               `json:"status"`
-	Answer    *string              `json:"answer"`
-	Citations []knowledge.Citation `json:"citations"`
-	Sources   []SourceRef          `json:"-"`
-	Reason    string               `json:"reason"`
-	Usage     *models.Usage        `json:"usage"`
+	SearchStatus string               `json:"search_status,omitempty"`
+	Warnings     []string             `json:"warnings,omitempty"`
+	Status       string               `json:"status"`
+	Answer       *string              `json:"answer"`
+	Citations    []knowledge.Citation `json:"citations"`
+	Sources      []SourceRef          `json:"-"`
+	Reason       string               `json:"reason"`
+	Usage        *models.Usage        `json:"usage"`
 }
 type ConversationStore interface {
 	Create(context.Context, Actor, string) (Conversation, error)
