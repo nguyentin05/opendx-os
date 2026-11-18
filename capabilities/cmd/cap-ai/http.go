@@ -5,9 +5,14 @@ package main
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/url"
+	"path"
+	"strings"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/agent"
 	"github.com/opendx-os/opendx-os/capabilities/internal/ai/access"
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
-	"net/http"
 )
 
 func unavailable(w http.ResponseWriter, r *http.Request) {
@@ -17,8 +22,10 @@ func unavailable(w http.ResponseWriter, r *http.Request) {
 }
 
 // newHandler deliberately has no AI engine, filesystem or source-store dependency.
-func newHandler(a access.Authenticator) http.Handler { return newHandlerWithKnowledge(a, nil, false) }
-func newHandlerWithKnowledge(a access.Authenticator, store *knowledge.Store, enabled bool) http.Handler {
+func newHandler(a access.Authenticator) http.Handler {
+	return newHandlerWithKnowledge(a, nil, false, nil)
+}
+func newHandlerWithKnowledge(a access.Authenticator, store *knowledge.Store, enabled bool, chat http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -26,6 +33,11 @@ func newHandlerWithKnowledge(a access.Authenticator, store *knowledge.Store, ena
 	})
 	mux.HandleFunc("POST /api/cap/ai/rag", unavailable)
 	mux.Handle("POST /api/cap/ai/extract", a.Middleware(http.HandlerFunc(unavailable)))
+	if chat == nil {
+		chat = agent.NewHandler(nil, nil, nil, nil, nil)
+	}
+	mux.Handle(agent.ConversationsPath, chat)
+	mux.Handle(agent.ConversationsPath+"/", chat)
 	for _, path := range []string{"/api/cap/ai/app-knowledge", "/api/cap/ai/documents", "/api/cap/ai/documents/", "/api/cap/ai/collections", "/api/cap/ai/ingestions/", "/api/cap/ai/search", "/api/cap/ai/answers"} {
 		if enabled && store != nil {
 			mux.Handle(path, a.Middleware(store.Handler()))
@@ -34,5 +46,16 @@ func newHandlerWithKnowledge(a access.Authenticator, store *knowledge.Store, ena
 		}
 	}
 
-	return mux
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// ServeMux normalizes the escaped path before decoding route segments.
+		cleaned, _ := url.PathUnescape(path.Clean(r.URL.EscapedPath()))
+		if isChatPath(r.URL.Path) || isChatPath(path.Clean(r.URL.Path)) || isChatPath(cleaned) {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		mux.ServeHTTP(w, r)
+	})
+}
+
+func isChatPath(path string) bool {
+	return path == agent.ConversationsPath || strings.HasPrefix(path, agent.ConversationsPath+"/")
 }

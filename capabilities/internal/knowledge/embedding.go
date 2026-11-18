@@ -6,6 +6,7 @@ package knowledge
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"time"
@@ -29,17 +30,19 @@ type ModelResolver interface {
 func (s *Store) ConfigureModelResolver(resolver ModelResolver) { s.modelResolver = resolver }
 
 func (s *Store) modelProfile(ctx context.Context, capability models.Capability) (models.Profile, error) {
+	binding, err := s.modelBinding(ctx, capability)
+	return binding.Profile, err
+}
+
+func (s *Store) modelBinding(ctx context.Context, capability models.Capability) (models.ActiveBinding, error) {
 	if s.modelResolver != nil {
-		binding, err := s.modelResolver.Resolve(ctx, capability)
-		if err != nil {
-			return models.Profile{}, err
-		}
-		return binding.Profile, nil
+		return s.modelResolver.Resolve(ctx, capability)
 	}
+	profile := s.generateProfile
 	if capability == models.CapabilityEmbedding {
-		return s.embedProfile, nil
+		profile = s.embedProfile
 	}
-	return s.generateProfile, nil
+	return models.ActiveBinding{Capability: capability, Profile: profile}, nil
 }
 
 func modelOperationKey() string {
@@ -137,21 +140,59 @@ func (s *Store) BuildEmbeddings(ctx context.Context, lease Lease, profile models
 }
 
 func (s *Store) semanticCandidates(ctx context.Context, actor *auth.Identity, req SearchRequest) ([]candidate, error) {
-	profile, resolveErr := s.modelProfile(ctx, models.CapabilityEmbedding)
-	if resolveErr != nil {
-		return nil, resolveErr
+	binding, err := s.modelBinding(ctx, models.CapabilityEmbedding)
+	if err != nil {
+		return nil, err
 	}
-	if s.gateway == nil || profile.ID == "" || req.Scope.Kind != "APP" {
+	profile := binding.Profile
+	if req.RequirePersonalQueryApproval && (binding.Capability != models.CapabilityEmbedding || binding.SlotRevision < 1) {
+		return nil, models.ErrUnavailable
+	}
+	if s.gateway == nil || profile.ID == "" || (req.Scope.Kind != "APP" && req.Scope.Kind != "PERSONAL") {
 		return nil, models.ErrPolicy
 	}
-	op := models.Operation{Key: modelOperationKey(), AppID: req.Scope.AppID, ScopeKind: req.Scope.Kind, Purpose: "EMBED", ProfileID: profile.ID, ProfileRevision: profile.Revision}
+
+	app := req.Scope.AppID
+	collections := pq.Array(req.Scope.CollectionIDs)
+	var review sql.NullInt64
+	if req.Scope.Kind == "PERSONAL" {
+		app, err = s.ResolveModelApp(ctx, actor, req.Scope)
+		if err != nil {
+			return nil, err
+		}
+		err = s.db.QueryRowContext(ctx, `SELECT cap_ai.personal_vector_readiness($1,$2,$3,$4,$5)`,
+			actor.UserID, actor.Role, profile.ID, profile.Revision, collections).Scan(&review)
+		if err != nil || !review.Valid {
+			return nil, models.ErrUnavailable
+		}
+	}
+
+	op := models.Operation{
+		Key: modelOperationKey(), AppID: app, ScopeKind: req.Scope.Kind, Purpose: "EMBED",
+		ProfileID: profile.ID, ProfileRevision: profile.Revision,
+		RequirePersonalQueryApproval: req.RequirePersonalQueryApproval,
+	}
+	if req.RequirePersonalQueryApproval {
+		op.EmbeddingSlotRevision = binding.SlotRevision
+	}
 	result, err := s.gateway.Call(ctx, actor, op, models.Payload{Query: req.Query})
 	if err != nil {
 		return nil, err
 	}
 	raw, _ := json.Marshal(result.Vector)
 	rows := []candidate{}
-	err = decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.search_vectors($1,$2,$3,$4,$5,$6::public.vector,$7)`, actor.UserID, actor.Role, req.Scope.AppID, profile.ID, profile.Revision, string(raw), pq.Array(req.Scope.CollectionIDs)), &rows)
+	if req.Scope.Kind == "PERSONAL" {
+		// The post-provider snapshot must keep the same query approval and library
+		// and still have an authorized, compatible generation to search.
+		err = decodeRow(s.db.QueryRowContext(ctx, `SELECT CASE WHEN
+			cap_ai.library_app($1,$2) = $8
+			AND cap_ai.personal_vector_readiness($1,$2,$3,$4,$6) = $7
+			THEN cap_ai.search_personal_vectors($1,$2,$3,$4,$5::public.vector,$6) END`,
+			actor.UserID, actor.Role, profile.ID, profile.Revision, string(raw), collections, review.Int64, app), &rows)
+	} else {
+		err = decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.search_vectors($1,$2,$3,$4,$5,$6::public.vector,$7)`,
+			actor.UserID, actor.Role, app, profile.ID, profile.Revision, string(raw), collections), &rows)
+	}
 	return rows, err
 }
 

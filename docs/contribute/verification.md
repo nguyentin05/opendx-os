@@ -112,5 +112,12 @@ The optional model slice uses `scripts/test-rag.sh models` with real PostgreSQL
 17/pgvector, Operator, File/scanner/Hasura and controlled HTTP model spies; see
 [model qualification](../guides/knowledge/models.md#qualification). Run Go integration
 packages with `-p 1` when fixtures share PostgreSQL cluster-global roles.
+After provisioning the disposable `TEST_DATABASE_URL`, run
+`(cd capabilities && go test -tags=integration -p 1 ./internal/agent -run TestAgentEndToEnd -count=1)`
+for signed identity, mixed-source turns, revocation and missing approval.
+These tests install parsed fixture chunks. The full `models` gate separately
+requires actual worker/parser processing, three authenticated user fixtures,
+two loopback adapter spies and browser state. Its preflight prints each missing
+environment variable and exits 2 before starting the test.
 Deterministic fake responses establish boundary/accounting/citation behavior,
 not real-provider groundedness or invoice qualification.

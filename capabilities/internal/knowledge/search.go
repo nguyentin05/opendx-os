@@ -23,6 +23,8 @@ type SearchRequest struct {
 	Query     string `json:"query"`
 	Limit     int    `json:"limit,omitempty"`
 	Retrieval string `json:"retrieval,omitempty"`
+	// RequirePersonalQueryApproval is set only by in-process global retrieval.
+	RequirePersonalQueryApproval bool `json:"-"`
 }
 type Position struct {
 	ElementID   string      `json:"element_id"`
@@ -45,6 +47,8 @@ type SearchHit struct {
 	PageEnd     int        `json:"page_end,omitempty"`
 	Warnings    []string   `json:"warnings"`
 	URL         string     `json:"url"`
+	// ReadScope lets in-process consumers detect changes after native search.
+	ReadScope ReadScope `json:"-"`
 }
 type SearchResult struct {
 	Status   string      `json:"status"`
@@ -134,6 +138,10 @@ func (s *Store) searchCandidates(ctx context.Context, actor *auth.Identity, req 
 		err := decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.search_app($1,$2,$3,$4,$5,$6)`, actor.UserID, actor.Role, req.Scope.AppID, req.Query, limit, pq.Array(req.Scope.CollectionIDs)), &rows)
 		return rows, err
 	}
+	if req.Retrieval == "HYBRID" {
+		// Request the full bounded PERSONAL FTS list before final fusion.
+		limit = 50
+	}
 	err := decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.search_personal($1,$2,$3,$4,$5)`, actor.UserID, actor.Role, req.Query, limit, pq.Array(req.Scope.CollectionIDs)), &rows)
 	return rows, err
 }
@@ -154,6 +162,7 @@ func (s *Store) finalizeSearch(ctx context.Context, actor *auth.Identity, rows [
 			continue
 		}
 		row.Hit.RunID = ""
+		row.Hit.ReadScope = scope
 		row.Hit.URL = citationURL(row.Hit.DocumentID, row.Hit.VersionID, row.Hit.ChunkID)
 		result.Results = append(result.Results, row.Hit)
 	}

@@ -5,15 +5,89 @@ diataxis: how-to
 audience: [operator, platform-developer]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-18
 ---
 
 # Optional model retrieval and answers
 
 The model boundary is optional. Personal libraries and package lexical search
 continue without pgvector, profiles, credentials or model availability. Personal
-content **and questions** cannot use hosted EMBED, RERANK, GENERATE or OCR. App
-selection is not a permission grant. Legacy `/rag` remains unavailable.
+content and questions may use hosted EMBED/GENERATE only under the amended
+[processing policy](../../reference/rag/authorization.md#model-processing-policy):
+audited Platform Admin approval is separate from model-slot activation and
+requires purpose, provider/profile revision, enabled state, independent
+source/query classification and retention/training-use review. There is no
+per-user hosted opt-in. Unapproved PERSONAL egress denies. Hosted RERANK,
+OCR/VLM and local-model serving are outside this increment. App selection is
+not a permission grant. Legacy `/rag` remains unavailable.
+
+Migrations 0008–0010 add audited PERSONAL processing, PERSONAL semantic
+retrieval and the mixed-source AGENT model boundary. Follow the
+[ADR 0009 migration/consumer delta](../../adr/0009-native-rag-identity-and-source-boundaries.md#contract-amendment-and-implementation-delta-2026-11-18)
+before enabling the new behavior; provisioning an active slot alone cannot
+implement or authorize it.
+
+## Compose installation
+
+The base `compose.yaml` runs the regular stack. Add `compose.rag.yaml` for the
+knowledge API, private File Service delegation, package dispatcher, parser and
+worker. Add `compose.models.yaml` only for model schema/runtime support. Use
+the same file order and project name throughout an installation.
+
+1. On a fresh deployment, include `cap-ai` alongside the existing
+   `ENABLED_CAPABILITIES`. The RAG overlay supplies that list by default when
+   the variable is absent. If using `.env.example`, edit its explicit list.
+   Provide separate URL-safe secrets in `AI_DATABASE_PASSWORD`,
+   `AI_WORKER_DATABASE_PASSWORD` and `AI_DISPATCHER_DATABASE_PASSWORD`.
+   The models overlay also requires `AI_GATEWAY_DATABASE_PASSWORD` and selects
+   PostgreSQL 17 with pgvector. Both PG17 images use the same data directory.
+   To upgrade retained data, use the checksummed migration procedure below,
+   register cap-ai and provision its restricted roles and passwords before app
+   reconciliation, and back up the volume before changing its image. Init scripts
+   run only on an empty volume.
+2. Supply distinct OIDC UUIDs and renewable audience-matched access tokens
+   for the worker, File Service and dispatcher in the variables in
+   `.env.example`. Register the worker subject as an ACTIVE Core identity.
+   Configure the same issuer, JWKS and audience on the services. Use a separate
+   random `PARSER_SERVICE_TOKEN` of at least 32 characters. Renew tokens and
+   recreate their consumers before expiry. API, worker and dispatcher each
+   connect under the corresponding restricted DB login. Inside cap-ai the
+   private delegation/reconcile handlers use the worker and dispatcher
+   connections. The model Gateway has a separate restricted login.
+3. Set `RAG_SOURCE_QUALIFIED`, `RAG_METADATA_QUALIFIED` and
+   `RAG_PARSER_QUALIFIED` only after verifying the source and parser
+   prerequisites in the deployment. Set `RAG_METADATA_ENABLED=true` and
+   enable `RAG_PACKAGE_ENABLED`, `RAG_PERSONAL_ENABLED`, or both.
+   Enable `RAG_PRIVATE_UPLOAD_ENABLED` for private uploads. The Operator scans
+   declared package sources and writes approved bytes into a private named
+   volume. cap-ai reads those bytes. The parser and worker share a separate
+   private socket volume and UID 10001. File Service and cap-ai delegation
+   listeners have no published host ports or gateway routes.
+4. With the agent off, bootstrap the stack and reconcile the intended app packages.
+   Use `docker compose -f compose.yaml -f compose.rag.yaml up -d --build` for
+   FTS-only mode. For model storage, also pass `-f compose.models.yaml` before
+   `up`, supply the schema flags below and configure `RAG_MODEL_CATALOG_FILE`
+   and `RAG_MODEL_CREDENTIAL_ENV_FILE`. The credential-free catalog is a
+   file-backed secret: its host ownership and mode must allow runtime UID 10001
+   to read it. The latter is a private env file containing only credentials
+   named by the catalog; Compose reads it to supply environment variables to
+   API and worker. An empty file suffices when the catalog references no secrets.
+   Keep vendor credentials in the approved adapter deployment.
+5. Select an actual registered `Ready` app for `AI_AGENT_BILLING_APP_ID`.
+   Confirm its state through the application registry before enabling chat.
+   Set `RAG_AGENT_ENABLED=true` and rerun the same Compose command. cap-ai
+   validates the configured billing app at startup. With models off, chat
+   returns owner-scoped lexical evidence. The Assistant uses the UI origin,
+   which proxies protected requests through APISIX.
+6. Before enabling model calls, qualify the bounded adapter, import disabled
+   candidates, complete Platform Admin review and activate the exact EMBEDDING
+   and/or LLM revisions through the deployment's audited slot procedure.
+   Provision the processing reviews and budget accounts below. Then enable
+   `RAG_MODELS_QUALIFIED`, `RAG_MODELS_ENABLED` and
+   `RAG_GLOBAL_MODEL_REGISTRY_ENABLED` for the API and worker and recreate
+   them. The agent only resolves global slots. Missing review, binding, budget
+   or adapter keeps the affected operation unavailable. The optional overlays
+   provide no active slot, budget, account identity or provider approval.
 
 ## Storage and activation
 
@@ -45,18 +119,29 @@ candidate subset is HOSTED EMBED/GENERATE; it stores only adapter keys and
 credential environment-variable references, with no endpoint or credential value.
 The caller-supplied declaration digest is metadata; full normalized declarations
 are also compared, so equal digests never authorize conflicting definitions.
-Only future Platform Admin operations may qualify or activate bindings; this
-foundation provides no production mutation route.
+Activation requires an independently reviewed Platform Admin deployment operation.
+R1 supplies candidate import and runtime slot resolution. The deployment must
+provide its audited promotion/rollback procedure before enabling hosted models.
+Authenticate the Platform Admin, verify the candidate digest, purpose, limits,
+pricing and adapter, and record the review. The administration transaction
+enables the reviewed profile, advances the expected slot revision to bind that
+exact profile ID and revision, and records the actor and action in
+`cap_ai.model_slot_events`. Concurrent revisions require a fresh review of
+the current slot. API, worker, catalog and Gateway logins cannot do this.
 
 The nine model tables hold immutable profile/policy revisions, policy allowlists,
 independent embedding generations and accounting. Policy/profile revisions may
 be disabled, but their definitions and allowlist history cannot be rewritten.
 Provision each new approved policy/profile revision through reviewed operations;
-record approver, app query classification, provider/data-handling and retention
-approval, and an audit record in the same provisioning transaction. Document
-policies and query policy are checked separately. A hosted query requires an
-enabled `NON_PERSONAL`, app-bound policy with matching provider and profile;
-request JSON cannot assert classification or choose credentials/endpoints.
+record the audited Platform Admin approval and immutable review metadata in the
+same provisioning transaction. Document policies and query policy are checked
+separately. Existing APP processing keeps enabled `NON_PERSONAL`, app-bound hosted query
+policies. Migration 0008 adds independently reviewed PERSONAL source and query
+processing. AGENT consumers must still apply the canonical per-source predicates.
+Mixed-source context retains PERSONAL handling requirements. Request JSON cannot
+assert classification or choose credentials/endpoints. Do not amend an existing
+local-only policy into a hosted approval; create a new reviewed revision and
+explicitly bind eligible sources. Disabled or mismatched approvals deny egress.
 
 EMBED jobs pin `profile@revision`, lexical run, chunk hashes and dimensions.
 Only a complete generation is READY; lease loss, source removal, a newer desired
@@ -65,6 +150,162 @@ materializes eligible active sources before ranking. No ANN or reranker is
 installed. Fusion uses top 50 per list, RRF constant 60, stable ties, four chunks
 per document and at most 20 results. Source policy/profile eligibility is checked
 again for vector retrieval. Role membership is never embedded into vectors.
+
+## Audited PERSONAL processing provisioning
+
+Migration `0008_personal_model_processing.sql` adds the approval interface to the
+existing `dxos_authz` deployment connection. Both approval and disable operations
+require an ACTIVE Core user with a current DB `role_operator` grant. Application
+admins, API, worker, Gateway and `dxos_ai_model_catalog` cannot approve processing.
+The functions authenticate `session_user`, reject substituted roles and privileged
+runtime logins, and audit the verified actor and deployment session. There is no
+management UI in this increment. The deployment operator runs these functions
+through a protected `dxos_authz` connection after authenticating the Platform Admin.
+
+For a retained default volume, back up first and connect as the deployment database
+administrator using standard libpq environment variables (`PGHOST`, `PGPORT`,
+`PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGSSLMODE`). Set nonempty, URL-safe
+`AI_DATABASE_PASSWORD`, `AI_WORKER_DATABASE_PASSWORD` and
+`AI_DISPATCHER_DATABASE_PASSWORD` in the same protected environment. From the
+repository root, run the following before reconciling apps. The registry upsert
+and role creation are idempotent; rerunning updates these three passwords.
+
+```sh
+psql -X -v ON_ERROR_STOP=1 -f platform/postgres/capabilities/cap_ai.sql
+psql -X -v ON_ERROR_STOP=1 <<'SQL'
+DO $$
+DECLARE name text;
+BEGIN
+  FOREACH name IN ARRAY ARRAY['dxos_ai_api','dxos_ai_worker','dxos_ai_dispatcher'] LOOP
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = name) THEN
+      EXECUTE format('CREATE ROLE %I LOGIN', name);
+    END IF;
+    EXECUTE format('ALTER ROLE %I LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT', name);
+  END LOOP;
+END $$;
+\getenv api_password AI_DATABASE_PASSWORD
+\getenv worker_password AI_WORKER_DATABASE_PASSWORD
+\getenv dispatcher_password AI_DISPATCHER_DATABASE_PASSWORD
+ALTER ROLE dxos_ai_api PASSWORD :'api_password';
+ALTER ROLE dxos_ai_worker PASSWORD :'worker_password';
+ALTER ROLE dxos_ai_dispatcher PASSWORD :'dispatcher_password';
+SQL
+```
+
+Use deployment secrets to supply these same passwords to the runtime services.
+For model storage, additionally provision the restricted `dxos_ai_gateway`
+login and its password through deployment administration before applying the
+model migrations; the fresh-volume bootstrap uses `08_runtime_passwords.sh`.
+Set `DATABASE_URL` in the protected environment to the administrator connection
+URL for the migration runner.
+
+For an FTS-only upgrade, `scripts/migrate-rag.sh --database-url-env DATABASE_URL
+--scope cap-ai --through 0007` skips optional 0004/0005. The existing explicit
+`--through 0004` and `--through 0005` opt-ins retain their meaning. To install
+audited PERSONAL processing, hybrid search and AGENT model authority, set all
+three schema flags to `true` in the migration environment: `RAG_MODELS_SCHEMA_ENABLED`,
+`RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED`, and `RAG_AGENT_MODELS_SCHEMA_ENABLED`.
+Use `--through 0010` to apply these migrations. The bootstrap runner uses the
+same prerequisites. The agent-model flag defaults to `false` and also gates
+later model-dependent migrations when present. None of these flags activate a
+profile, slot or approval, and migration 0008 seeds no approvals.
+
+The minimal approval object binds one immutable provider/profile revision and
+purpose, one existing PERSONAL `LOCAL_ONLY` source-policy revision, and an
+independent PERSONAL query classification for one Ready app. It records
+retention, training-use and region review evidence. This is a processing review,
+not a rewrite of the parsing policy: source ownership and `LOCAL_ONLY` parsing
+remain unchanged. A matching review is required for every supplied source;
+a query-only EMBED call independently requires an applicable query review.
+The SQL interface deliberately supports PERSONAL/PERSONAL only; APP reviews
+continue through their existing processing-policy contract.
+
+Provision the connection using deployment secrets in standard libpq environment
+variables (`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER=dxos_authz`, `PGPASSWORD`, and
+`PGSSLMODE`). Do not pass the password or connection URL on the command line.
+Set `APPROVER_CORE_USER_ID` to the authenticated Platform Admin Core UUID.
+With those variables already supplied, a reviewed operation has this form:
+
+```sh
+psql -X -v ON_ERROR_STOP=1 -v approver="$APPROVER_CORE_USER_ID" <<'SQL'
+SELECT cap_ai.approve_agent_processing(:'approver'::uuid, '{
+  "profile_id":"reviewed-generator",
+  "profile_revision":1,
+  "provider_id":"reviewed-provider",
+  "purpose":"GENERATE",
+  "source_policy_id":"local-only",
+  "source_policy_version":1,
+  "source_classification":"PERSONAL",
+  "query_app_id":"personal-library",
+  "query_classification":"PERSONAL",
+  "retention_evidence":"review-record/retention",
+  "training_use_evidence":"review-record/training-use",
+  "region_evidence":"review-record/processing-region"
+}'::jsonb) AS approval_id;
+SQL
+```
+
+Replace the example identities and review references with the actually reviewed
+immutable profile, Ready app and evidence. EMBED needs its own review with
+`purpose: EMBED` and the exact embedding profile revision. The returned UUID
+identifies the review. Definitions and audit events are immutable. Retrying an
+identical review while it is active returns its existing UUID, including
+after a lost response. Approving again after withdrawal creates a new revision.
+To withdraw a review, use the same protected connection.
+
+```sh
+psql -X -v ON_ERROR_STOP=1 -v approver="$APPROVER_CORE_USER_ID" \
+  -v approval="$PROCESSING_APPROVAL_ID" <<'SQL'
+SELECT cap_ai.disable_agent_processing(
+  :'approver'::uuid, :'approval'::uuid, 'Review withdrawn');
+SQL
+```
+
+Disable is idempotent and audited atomically; the disabled revision cannot be
+reactivated. Set `PROCESSING_APPROVAL_ID` to the returned review UUID before
+running the disable example. Disable every applicable review when withdrawing all permission for
+a provider/profile, including any separately issued EMBED/GENERATE reviews.
+No direct approval-table writes are needed or granted to this connection. Review
+records contain references to evidence, never credentials, prompts or source text.
+The Gateway rechecks current approval after reservation and call intent; workers
+also recheck the exact lease fence, source snapshot and current owner READ.
+
+Migration `0009_personal_hybrid.sql` records the owner, source authority and exact
+hosted approval revision on each PERSONAL embedding job and generation. Search
+checks current owner READ and source approval before exact vector ranking.
+A generation qualifies only when every expected chunk has a usable vector of
+the pinned dimension. If the selected collections have no qualified READY
+generation, search returns `LEXICAL_ONLY` with `SEMANTIC_UNAVAILABLE` without
+sending the query.
+
+A new approval after withdrawal has a new revision. The worker queues a separate
+build for the currently approved source snapshot, including when the parsed
+content and embedding profile are unchanged. Each build has its own billable job
+identity, and retries of that build keep the same identity. Hybrid search
+excludes generations tied to a superseded snapshot and pre-0009 PERSONAL
+generations that lack a recorded snapshot. Authorized FTS remains available
+while the current generation builds.
+
+Migration `0010_agent_model_authority.sql` checks each source's current app,
+role, READ snapshot and processing policy before a grounded AGENT generation.
+Use the audited provisioning function above for the following global-query reviews.
+
+- For hosted query-only EMBED, review the exact embedding provider and profile
+  revision with `purpose` set to `EMBED`, `query_app_id` set to the app being
+  searched, and `query_classification` set to `PERSONAL`. APP scopes also need
+  their ordinary app-bound processing approval. Repeat this review for each
+  eligible app where hosted global-query embedding is intended.
+- For AGENT GENERATE, review the exact generation provider and profile revision
+  with `purpose` set to `GENERATE`, `query_app_id` set to
+  `AI_AGENT_BILLING_APP_ID`, and `query_classification` set to `PERSONAL`.
+  Apply this review even when every selected source is APP. Each PERSONAL
+  source still needs its matching source-policy review for its library app.
+  Each APP source still needs its existing approved processing policy.
+
+Both operations require a current review for the question because any global
+question may contain PERSONAL information. The billing consumer needs its own
+review and budget, while READ and source processing authority come from each
+actual source.
 
 ## Deployment configuration
 
@@ -84,11 +325,15 @@ contains `id`, `endpoint`, `credential_ref` (an environment-variable reference)
 and `loopback_test`. Profiles and deployment references must agree. HTTPS is
 required; redirects, URL credentials and query strings are rejected. An explicit
 `RAG_MODEL_TEST_MODE=true` permits a loopback HTTP test adapter. This is not a
-production provider approval. LOCAL profiles additionally require
-`RAG_LOCAL_MODELS_QUALIFIED=true`; no local model is bundled or prequalified. Personal semantic retrieval is deferred:
-personal queries use FTS, while a qualified local generator can consume that
-evidence. Local personal generation attributes budgets to the registered library
-app, regardless of UI context.
+production provider approval. Existing LOCAL profiles additionally require
+`RAG_LOCAL_MODELS_QUALIFIED=true`; no local model is bundled or prequalified, and
+local-model serving is outside the new harness scope. APP and owner-only
+PERSONAL search use bounded FTS and embedding fusion with qualified profiles.
+PERSONAL hybrid search requires migration 0009. Hosted PERSONAL embedding and
+generation each require a current audited approval for that purpose. Absent or
+unqualified semantic models preserve authorized FTS. PERSONAL-only model
+operations retain the actual registered library app for billing, regardless of
+UI context.
 
 The HTTP adapter receives a fixed system instruction, model, purpose, bounded
 JSON input and pinned limits. It returns bounded `text`, `vector`,
@@ -103,8 +348,8 @@ URL fetching or streaming are exposed.
 ## Global registry compatibility
 
 The [R1 registry contract](../../reference/rag/api.md#global-model-registry-foundation-r1)
-defines a separate `RAG_GLOBAL_MODEL_REGISTRY_ENABLED=false` default. This is a
-implemented opt-in loader; the OFF path uses the legacy profile references
+defines a separate `RAG_GLOBAL_MODEL_REGISTRY_ENABLED=false` default. This is an
+opt-in loader; the OFF path uses the legacy profile references
 described above. Turning it ON requires the additive registry migrations; the
 flag does not qualify a provider or bypass existing enablement gates.
 
@@ -117,6 +362,10 @@ generation with evidence returns 503 `MODEL_UNAVAILABLE`. VLM is reserved and
 unbound, and RERANKING remains disabled. Follow the canonical contract for
 provisioning identities, future Platform Admin lifecycle, and consumer impacts.
 
+For new chat, `AGENT` source selection is server-side across all current DB role
+memberships and owner-only PERSONAL sources. The turn accepts only a question. Role claims, client lists and LLM app suggestions confer no authority.
+Existing Hasura/capability APP routes keep ADR 0007's selected-role behavior.
+
 ## Budgets and uncertain charges
 
 Provision exactly one active INSTALLATION account (`installation`), APP account
@@ -126,6 +375,19 @@ or missing periods deny reservation. Accounts lock in UUID order in one
 transaction; reservation, allocations and RESERVE events commit together.
 Operation keys bind actor, profile, source/policy fingerprint and payload hash.
 Concurrent/replayed call intent cannot send the same operation twice.
+
+For cross-app AGENT model operations, configure `AI_AGENT_BILLING_APP_ID` to a
+genuine registered app currently `Ready` and provision its APP budget through
+admin operations. The model call charges that APP account, the requesting
+actor's USER account and INSTALLATION account once. Missing/invalid config,
+missing budget or pricing mismatch denies the model call. This pragmatic MVP
+attribution reuses the APP ledger; a dedicated platform billing scope is
+deferred. The billing consumer requires the independent PERSONAL query review
+described above. Every actual source app and PERSONAL source must pass its own
+READ and processing checks. See
+[canonical billing attribution](../../reference/rag/authorization.md#model-operation-billing-attribution).
+The RAG overlay supplies the configured billing consumer to cap-ai. The public
+APISIX route preserves selected-role behavior for existing knowledge APIs.
 
 Reserve the bounded worst-case input/output price before persisting intent.
 Recheck authority after budget waits and after intent, immediately before send.
@@ -160,7 +422,11 @@ Policy/quota/outage returns scoped search-only unless `require_generation=true`,
 which returns 403 POLICY_BLOCKED, 429 QUOTA_EXCEEDED or 503 MODEL_UNAVAILABLE.
 No evidence makes no generation call. The app UI shows a grounded answer with
 protected citations, explicit abstention or search-only, and cancels old context
-on app/role change. Personal search has no hosted fallback.
+on app/role change. Missing PERSONAL approval never triggers hosted fallback.
+New chat history is owner-only: old snapshots remain readable after ordinary
+source revoke, while linked originals/citations require current source READ.
+Reauthorize source-derived history, including summaries, before new generation;
+readable history alone is not reusable evidence.
 
 ## Qualification
 
@@ -174,8 +440,13 @@ expose its controls publicly. The runner provisions reviewed fixture policy only
 for its new test app and `rag-test-fake`, never a real processor.
 
 R11/R12/R17/R18/R19/R20 cover scoped vectors, fresh final authority, independent
-readiness, personal zero egress, conservative accounting and answers. Earlier
-R01–R16 source/package gates remain prerequisites. A deterministic fake gold case
+readiness, the current personal zero-egress restriction, conservative accounting
+and answers. Those existing cases do not prove the amended approval policy.
+The Go integration suite separately exercises approved PERSONAL EMBED/GENERATE, denied unapproved
+source/query egress, disabled/mismatched approval and retention/training-use
+review, per-source multi-role authority, retained owner-only snapshots without
+revoked-context reuse, and exact AGENT INSTALLATION/APP/USER charge attribution.
+Earlier R01–R16 source/package gates remain prerequisites. A deterministic fake gold case
 measures transport, citation/provenance plumbing and latency; it does not qualify
 real language-model groundedness, injection robustness, tokenizer limits or
 invoice reconciliation. Missing real-provider/classification approval leaves

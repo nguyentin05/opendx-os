@@ -6,6 +6,10 @@ if [ "${RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED:-false}" = true ] && [ "${RAG_M
  echo "registry schema requires RAG_MODELS_SCHEMA_ENABLED=true" >&2
  exit 2
 fi
+if [ "${RAG_AGENT_MODELS_SCHEMA_ENABLED:-false}" = true ] && { [ "${RAG_MODELS_SCHEMA_ENABLED:-false}" != true ] || [ "${RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED:-false}" != true ]; }; then
+ echo "agent model schema requires model and registry schema flags" >&2
+ exit 2
+fi
 migration_dir="$(dirname "$0")/../migrations"
 if [ -d /docker-entrypoint-initdb.d/migrations ]; then migration_dir=/docker-entrypoint-initdb.d/migrations; fi
 umask 077
@@ -27,7 +31,9 @@ for phase in check apply; do
    filename=$(basename "$file");
    if [ "$folder" = cap_ai ] && [ "$filename" = 0004_models_vectors.sql ] && [ "${RAG_MODELS_SCHEMA_ENABLED:-false}" != true ]; then continue; fi
    if [ "$folder" = cap_ai ] && [ "$filename" = 0005_model_registry.sql ] && [ "${RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED:-false}" != true ]; then continue; fi
+   # Audited approvals, PERSONAL hybrid, and AGENT model authority share this opt-in.
    version=$(printf '%s' "$filename" | cut -c1-4)
+   if [ "$folder" = cap_ai ] && [ "$version" -ge 8 ] && [ "${RAG_AGENT_MODELS_SCHEMA_ENABLED:-false}" != true ]; then continue; fi
    checksum=$(sha256sum "$file" | cut -d ' ' -f1)
    if [ "$phase" = check ]; then
     cat >> "$migration_script" <<SQL

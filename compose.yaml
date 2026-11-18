@@ -22,7 +22,7 @@ name: opendx-os
 
 services:
   postgres:
-    image: postgres:17-alpine
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-dxos_admin}

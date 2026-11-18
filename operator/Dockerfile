@@ -18,11 +18,12 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -o /out/dxos-operator ./cmd/dxos-operator
+RUN CGO_ENABLED=0 go build -trimpath -o /out/dxos-operator ./cmd/dxos-operator \
+ && CGO_ENABLED=0 go build -trimpath -o /out/dxos-knowledge-dispatcher ./cmd/dxos-knowledge-dispatcher
 
 FROM alpine:3.23
-RUN adduser -D -u 10001 dxos
-COPY --from=builder /out/dxos-operator /usr/local/bin/dxos-operator
+RUN adduser -D -u 10001 dxos && install -d -m 0700 -o dxos -g dxos /var/lib/dxos/package-artifacts
+COPY --from=builder /out/ /usr/local/bin/
 # Numeric user so Kubernetes can verify runAsNonRoot.
 USER 10001:10001
 ENTRYPOINT ["/usr/local/bin/dxos-operator"]

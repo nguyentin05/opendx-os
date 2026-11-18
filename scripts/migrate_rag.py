@@ -28,9 +28,23 @@ versions = [f.name[:4] for f in files]
 if len(set(versions)) != len(versions) or a.through not in versions:
     sys.exit('unknown or duplicate migration version')
 selected = [f for f in files if f.name[:4] <= a.through]
-# Registry opt-in is explicit via --through 0005; always retain its predecessor.
-if a.scope == 'cap-ai' and a.through >= '0005' and '0004' not in versions:
-    sys.exit('model registry requires migration 0004')
+if a.scope == 'cap-ai':
+    # Exact legacy endpoints retain their explicit opt-in. Later base migrations
+    # upgrade FTS-only installations without accidentally installing pgvector.
+    models = a.through in ('0004', '0005') or os.environ.get('RAG_MODELS_SCHEMA_ENABLED') == 'true'
+    registry = a.through == '0005' or os.environ.get('RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED') == 'true'
+    agent = os.environ.get('RAG_AGENT_MODELS_SCHEMA_ENABLED') == 'true'
+    if registry and not models:
+        sys.exit('model registry requires RAG_MODELS_SCHEMA_ENABLED=true')
+    if agent and not (models and registry):
+        sys.exit('agent model schema requires model and registry schema flags')
+    if a.through >= '0008' and not agent:
+        sys.exit('agent model migrations require RAG_AGENT_MODELS_SCHEMA_ENABLED=true')
+    if (models and '0004' not in versions) or (registry and '0005' not in versions):
+        sys.exit('model prerequisites missing')
+    selected = [f for f in selected if (f.name[:4] != '0004' or models)
+                and (f.name[:4] != '0005' or registry)
+                and (f.name[:4] < '0008' or agent)]
 sql = ["BEGIN; SELECT pg_advisory_xact_lock(782634901);", (root / "platform/postgres/migrations/ledger.sql").read_text()]
 # Check every checksum before executing any domain mutation.
 for f in selected:

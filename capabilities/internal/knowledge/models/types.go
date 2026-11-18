@@ -45,11 +45,28 @@ type LeaseRef struct {
 	JobID, WorkerID, RunID string
 	Fence                  int64
 }
+
+// AgentSourceProof records one source under the actual role selected by the server.
+type AgentSourceProof struct {
+	ScopeKind  string              `json:"scope_kind"`
+	AppID      string              `json:"app_id"`
+	ActingRole string              `json:"acting_role"`
+	ReadScope  contracts.ReadScope `json:"read_scope"`
+}
+
 type Operation struct {
 	Key, AppID, ScopeKind, QueryClassification, Purpose, ProfileID string
 	ProfileRevision                                                int64
 	Sources                                                        []contracts.ReadScope
 	Lease                                                          *LeaseRef
+	// LLMSlotRevision pins the server-resolved active LLM binding for AGENT.
+	LLMSlotRevision int64 `json:"llm_slot_revision,omitempty"`
+	// EmbeddingSlotRevision pins the active binding for a global query.
+	EmbeddingSlotRevision int64 `json:"embedding_slot_revision,omitempty"`
+	// AgentSources apply only to AGENT generation. AppID is its configured billing consumer.
+	AgentSources []AgentSourceProof `json:"agent_sources,omitempty"`
+	// RequirePersonalQueryApproval narrows query-only global EMBED processing.
+	RequirePersonalQueryApproval bool `json:"require_personal_query_approval,omitempty"`
 }
 type Approval struct {
 	Profile        Profile
@@ -57,11 +74,14 @@ type Approval struct {
 	Fingerprint    string
 }
 type Decision struct {
-	Profile             Profile `json:"profile"`
-	PolicyRevision      int64   `json:"policy_revision"`
-	Allowed             bool    `json:"allowed"`
-	Personal            bool    `json:"personal"`
-	QueryClassification string  `json:"query_classification"`
+	// PersonalApproved is produced only by current database processing authority.
+	PersonalApproved     bool    `json:"personal_approved"`
+	Profile              Profile `json:"profile"`
+	PolicyRevision       int64   `json:"policy_revision"`
+	Allowed              bool    `json:"allowed"`
+	Personal             bool    `json:"personal"`
+	QueryClassification  string  `json:"query_classification"`
+	AuthorityFingerprint string  `json:"authority_fingerprint,omitempty"`
 }
 type CurrentAuthority interface {
 	Current(context.Context, *auth.Identity, Operation) (Decision, error)
