@@ -83,7 +83,11 @@ func (o *Orchestrator) Reply(ctx context.Context, actor Actor, req TurnRequest) 
 	}
 	if !user.Created {
 		if user.Completion != nil && user.Completion.Response != nil {
-			return *user.Completion.Response, nil
+			result := *user.Completion.Response
+			if result.MessageSeq == 0 {
+				result.MessageSeq = user.Completion.Seq
+			}
+			return result, nil
 		}
 		return emptyTurn("SEARCH_ONLY", turnPending, RetrievalResult{}), nil
 	}
@@ -92,6 +96,7 @@ func (o *Orchestrator) Reply(ctx context.Context, actor Actor, req TurnRequest) 
 	if ctx.Err() != nil && result.Reason != models.ErrUncertain.Error() {
 		result = emptyTurn("SEARCH_ONLY", turnInterrupted, RetrievalResult{SearchStatus: result.SearchStatus, Warnings: result.Warnings})
 	}
+	result.MessageSeq = user.Seq + 1
 	// Persist the safe completion even if the requester disconnected. Losing a
 	// claim or a completion write must never authorize a second remote attempt.
 	finish, cancel := context.WithTimeout(context.WithoutCancel(ctx), turnCleanupTimeout)

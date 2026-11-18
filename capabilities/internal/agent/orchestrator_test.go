@@ -157,7 +157,7 @@ func TestOrchestratorFollowUpGrounding(t *testing.T) {
 		return gateway.Call(ctx, actor, op, payload)
 	})
 	got, err := o.Reply(t.Context(), retrievalActor, TurnRequest{turnConversation, "follow-up", "What about new hires?"})
-	if err != nil || got.Status != "ANSWERED" || got.Answer == nil || *got.Answer != "Use the standard laptop request." ||
+	if err != nil || got.MessageSeq != 32 || store.finished.MessageSeq != 32 || got.Status != "ANSWERED" || got.Answer == nil || *got.Answer != "Use the standard laptop request." ||
 		got.Usage == nil || got.Usage.Units != 4 || got.SearchStatus != "HYBRID" ||
 		!reflect.DeepEqual(got.Warnings, []string{"SEMANTIC_UNAVAILABLE"}) || len(got.Citations) != 1 {
 		t.Fatalf("grounded result: %+v, err=%v", got, err)

@@ -6,6 +6,7 @@ export type Result = {
   answer: string | null;
   citations: Citation[];
   reason?: string;
+  message_seq?: number;
 };
 export type Message = {
   id: string;
@@ -88,7 +89,9 @@ export class AgentClient {
       !/^\d+$/.test(params.get("message_seq") ?? "")
     )
       throw new AgentError(404);
-    return this.request<Citation>(parsed.pathname + parsed.search, signal);
+    return this.request<Citation>(parsed.pathname + parsed.search, signal, {
+      redirect: "error",
+    });
   }
 }
 export function errorMessage(error: unknown) {

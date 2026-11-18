@@ -26,6 +26,7 @@ export function AgentChat({
   const [question, setQuestion] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
   const [loading, setLoading] = useState(false);
+  const [transcriptReady, setTranscriptReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<Citation | null>(null);
@@ -66,6 +67,7 @@ export function AgentChat({
     scope.current = controller;
     setSelected(id);
     setMessages([]);
+    setTranscriptReady(false);
     setAfter(null);
     setPending(pendingByConversation.current[id] ?? null);
     setQuestion(pendingByConversation.current[id]?.query ?? "");
@@ -81,6 +83,7 @@ export function AgentChat({
         if (!controller.signal.aborted) {
           setMessages(r.messages);
           setAfter(r.next_after_seq);
+          setTranscriptReady(true);
         }
       })
       .catch((e) => {
@@ -104,7 +107,13 @@ export function AgentChat({
   };
   const send = () => {
     const query = question.trim();
-    if (!query || !selected || busy || (pending && pending.query !== query))
+    if (
+      !query ||
+      !selected ||
+      busy ||
+      !transcriptReady ||
+      (pending && pending.query !== query)
+    )
       return;
     const turn =
       pending?.query === query ? pending : { query, key: crypto.randomUUID() };
@@ -119,12 +128,6 @@ export function AgentChat({
           signal,
         );
         if (signal.aborted) return;
-        if (result.reason === "MODEL_CHARGE_UNCERTAIN") {
-          setError(
-            "UNCERTAIN: The model charge could not be confirmed. Do not resend automatically.",
-          );
-          return;
-        }
         if (result.reason === "TURN_PENDING") {
           setError(
             "This turn is pending. Retry the same question to check its result.",
@@ -135,14 +138,14 @@ export function AgentChat({
           ...m,
           {
             id: turn.key + "u",
-            seq: 0,
+            seq: result.message_seq ? result.message_seq - 1 : 0,
             role: "USER",
             content: turn.query,
             status: "COMPLETE",
           },
           {
             id: turn.key + "a",
-            seq: 0,
+            seq: result.message_seq ?? 0,
             role: "ASSISTANT",
             content: result.answer ?? "",
             status: "COMPLETE",
@@ -295,33 +298,20 @@ export function AgentChat({
                   const r = await client.transcript(selected, signal, after);
                   if (!signal.aborted) {
                     setMessages((v) => {
-                      const canonical = [
-                        ...v.filter((m) => m.seq !== 0),
-                        ...r.messages,
-                      ];
-                      const matched = v.filter((m) => {
-                        if (!m.id.endsWith("a") || m.seq !== 0) return false;
-                        const question = v.find(
-                          (item) => item.id === m.id.slice(0, -1) + "u",
-                        );
-                        return canonical.some(
-                          (item, index) =>
-                            item.role === "ASSISTANT" &&
-                            canonical[index - 1]?.role === "USER" &&
-                            canonical[index - 1]?.content ===
-                              question?.content &&
-                            JSON.stringify(item.response) ===
-                              JSON.stringify(m.response),
-                        );
-                      });
-                      const removed = new Set(
-                        matched.flatMap((m) => [m.id, m.id.slice(0, -1) + "u"]),
+                      const canonicalSeqs = new Set(
+                        r.messages.map((m) => m.seq),
                       );
-                      return [
-                        ...v.filter((m) => m.seq !== 0),
+                      const merged = [
+                        ...v.filter(
+                          (m) => m.seq === 0 || !canonicalSeqs.has(m.seq),
+                        ),
                         ...r.messages,
-                        ...v.filter((m) => m.seq === 0 && !removed.has(m.id)),
                       ];
+                      return merged.sort(
+                        (a, b) =>
+                          (a.seq || Number.MAX_SAFE_INTEGER) -
+                          (b.seq || Number.MAX_SAFE_INTEGER),
+                      );
                     });
                     setAfter(r.next_after_seq);
                   }
@@ -358,6 +348,7 @@ export function AgentChat({
           <button
             disabled={
               busy ||
+              !transcriptReady ||
               !question.trim() ||
               Boolean(pending && pending.query !== question.trim())
             }

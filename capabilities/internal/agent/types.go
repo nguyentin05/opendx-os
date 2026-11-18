@@ -43,6 +43,7 @@ type Message struct {
 	Created bool `json:"-"`
 }
 type TurnResult struct {
+	MessageSeq   int64                `json:"message_seq,omitempty"`
 	SearchStatus string               `json:"search_status,omitempty"`
 	Warnings     []string             `json:"warnings,omitempty"`
 	Status       string               `json:"status"`

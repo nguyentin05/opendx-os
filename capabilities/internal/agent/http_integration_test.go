@@ -159,7 +159,7 @@ func TestChatHTTPIdempotentPost(t *testing.T) {
 	pending := chatRequest(h, "POST", path+"/messages", alice, key, body)
 	requireChatStatus(t, pending, http.StatusOK)
 	result := chatJSON[TurnResult](t, pending.Body.String())
-	if result.Status != "SEARCH_ONLY" || result.Reason != "TURN_PENDING" || result.Answer != nil || result.Citations == nil || len(result.Citations) != 0 {
+	if result.MessageSeq != 0 || result.Status != "SEARCH_ONLY" || result.Reason != "TURN_PENDING" || result.Answer != nil || result.Citations == nil || len(result.Citations) != 0 {
 		t.Fatalf("unexpected pending response: %s", pending.Body.String())
 	}
 	requireChatStatus(t, chatRequest(h, "POST", path+"/messages", alice, "other-key", body), http.StatusConflict)
@@ -172,7 +172,7 @@ func TestChatHTTPIdempotentPost(t *testing.T) {
 	}
 	replay := chatRequest(h, "POST", path+"/messages", alice, key, body)
 	requireChatStatus(t, replay, http.StatusOK)
-	if first != replay.Body.String() || calls.Load() != 1 || chatJSON[TurnResult](t, first).Status != "NO_EVIDENCE" {
+	if first != replay.Body.String() || calls.Load() != 1 || (chatJSON[TurnResult](t, first).Status != "NO_EVIDENCE" || chatJSON[TurnResult](t, first).MessageSeq != 2) {
 		t.Fatalf("replay changed first result or reran work: %q -> %q (%d calls)", first, replay.Body.String(), calls.Load())
 	}
 	requireChatStatus(t, chatRequest(h, "POST", path+"/messages", alice, key, `{"query":"changed"}`), http.StatusConflict)

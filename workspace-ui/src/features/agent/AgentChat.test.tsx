@@ -249,6 +249,7 @@ it("merges a sent turn with its canonical transcript when paging", async () => {
           status: "ANSWERED",
           answer: "New answer",
           citations: [],
+          message_seq: 4,
         });
       if (url.includes("after_seq="))
         return Response.json({
@@ -306,4 +307,161 @@ it("merges a sent turn with its canonical transcript when paging", async () => {
     expect(screen.getAllByText("New answer")).toHaveLength(1),
   );
   expect(screen.getAllByText("New question")).toHaveLength(1);
+});
+it("waits for the initial transcript before allowing a send", async () => {
+  let resolve!: (r: Response) => void;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) =>
+      String(input).endsWith("/c1")
+        ? new Promise<Response>((r) => {
+            resolve = r;
+          })
+        : Response.json({
+            conversations: [{ id: "c1", title: "Existing" }],
+            next_cursor: null,
+          }),
+    ),
+  );
+  render(<AgentChat token="token" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
+  fireEvent.change(screen.getByLabelText("Question"), {
+    target: { value: "Question" },
+  });
+  expect(
+    (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  resolve(Response.json({ messages: [], next_after_seq: null }));
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
+});
+it("rejects redirects on the actual protected preview request", async () => {
+  let redirect: RequestRedirect | undefined;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/citations/")) {
+        redirect = init?.redirect;
+        return new Response(null, {
+          status: 302,
+          headers: { Location: "/elsewhere" },
+        });
+      }
+      if (url.endsWith("/c1"))
+        return Response.json({
+          messages: [
+            {
+              id: "a",
+              seq: 2,
+              role: "ASSISTANT",
+              status: "COMPLETE",
+              content: "",
+              response: {
+                status: "ANSWERED",
+                answer: "Answer",
+                citations: [
+                  {
+                    title: "Source",
+                    url: "/api/cap/ai/conversations/c1/citations/k?document_id=d&version_id=v&message_seq=2",
+                  },
+                ],
+              },
+            },
+          ],
+          next_after_seq: null,
+        });
+      return Response.json({
+        conversations: [{ id: "c1", title: "Existing" }],
+        next_cursor: null,
+      });
+    }),
+  );
+  render(<AgentChat token="token" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Source" }));
+  await screen.findByText(/citation is unavailable/i);
+  expect(redirect).toBe("error");
+});
+it("preserves two identical sent turns while canonical pages arrive separately", async () => {
+  let sends = 0;
+  let pages = 0;
+  const result = (seq: number) => ({
+    status: "ANSWERED",
+    answer: "Same answer",
+    citations: [],
+    message_seq: seq,
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "POST")
+        return Response.json(result(++sends * 2 + 2));
+      if (url.includes("after_seq=")) {
+        pages++;
+        let seq = pages === 1 ? 3 : 5;
+        return Response.json({
+          messages: [
+            {
+              id: "u" + seq,
+              seq,
+              role: "USER",
+              content: "Same question",
+              status: "COMPLETE",
+            },
+            {
+              id: "a" + seq,
+              seq: seq + 1,
+              role: "ASSISTANT",
+              content: "Same answer",
+              status: "COMPLETE",
+              response: result(seq + 1),
+            },
+          ],
+          next_after_seq: pages === 1 ? 4 : null,
+        });
+      }
+      if (url.endsWith("/c1"))
+        return Response.json({
+          messages: [
+            {
+              id: "old",
+              seq: 1,
+              role: "USER",
+              content: "Old",
+              status: "COMPLETE",
+            },
+          ],
+          next_after_seq: 1,
+        });
+      return Response.json({
+        conversations: [{ id: "c1", title: "Existing" }],
+        next_cursor: null,
+      });
+    }),
+  );
+  render(<AgentChat token="token" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
+  await screen.findByText("Old");
+  for (let i = 0; i < 2; i++) {
+    fireEvent.change(screen.getByLabelText("Question"), {
+      target: { value: "Same question" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() =>
+      expect(screen.getAllByText("Same answer")).toHaveLength(i + 1),
+    );
+  }
+  fireEvent.click(screen.getByRole("button", { name: "More messages" }));
+  await waitFor(() => expect(pages).toBe(1));
+  expect(screen.getAllByText("Same answer")).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "More messages" }));
+  await waitFor(() => expect(pages).toBe(2));
+  expect(screen.getAllByText("Same answer")).toHaveLength(2);
 });
