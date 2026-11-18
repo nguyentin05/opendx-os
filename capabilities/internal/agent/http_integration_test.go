@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
 )
 
 type chatSubjectVerifier struct{}
@@ -256,4 +258,109 @@ func TestChatHTTPProtectedCrossAppCitation(t *testing.T) {
 			'{knowledge,sources,0,access,allowedRoles}', '["role_procurement_alt"]')
 		WHERE app_id='procurement'`)
 	requireChatStatus(t, chatRequest(h, "GET", revoked.URL, alice, "", ""), http.StatusOK)
+}
+
+func (f agentTurnFixture) addPersonal(t *testing.T, text string) {
+	t.Helper()
+	const fileID = "33333333-3333-4333-8333-333333333333"
+	turnSQL(t, f.db, `INSERT INTO core.apps(app_id,display_name,version,status,spec)
+		VALUES('library','Library','1','Ready',
+			'{"knowledge":{"version":1,"personalLibrary":{"enabled":true,"allowedRoles":["role_library"]}}}');
+		INSERT INTO core.roles(name,app_id) VALUES('role_library','library');
+		INSERT INTO core.app_capabilities(app_id,cap_id) VALUES('library','cap-ai');`)
+	turnSQL(t, f.db, `INSERT INTO core.user_roles(user_id,role_name) VALUES($1,'role_library')`, f.actor.UserID)
+	turnSQL(t, f.db, `INSERT INTO core.files
+		(id,app_id,bucket,object_key,file_name,scan_status,sha256_hash,uploaded_by,mime_type,size_bytes,read_policy)
+		VALUES($1,'library','test','notes','journal.pdf','CLEAN',repeat('a',64),$2,'application/pdf',4,'OWNER_ONLY')`, fileID, f.actor.UserID)
+	identity := &auth.Identity{UserID: f.actor.UserID, Role: "role_library"}
+	sourceStore := f.retrieval.Search.(*knowledge.Store)
+	reg, err := sourceStore.Register(t.Context(), identity, "personal", knowledge.RegisterRequest{
+		FileID: fileID, ParserProfile: "standard-text-v1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var run string
+	if err := f.db.QueryRow(`INSERT INTO cap_ai.processing_runs(version_id,ingestion_job_id,fencing_token,attempt_no,state)
+		SELECT version_id,id,1,1,'COMPLETE' FROM cap_ai.ingestion_jobs WHERE version_id=$1 RETURNING id`, reg.VersionID).Scan(&run); err != nil {
+		t.Fatal(err)
+	}
+	turnSQL(t, f.db, "UPDATE cap_ai.document_versions SET state='READY',active_run_id=$1 WHERE id=$2", run, reg.VersionID)
+	turnSQL(t, f.db, "UPDATE cap_ai.knowledge_documents SET active_version_id=$1 WHERE id=$2", reg.VersionID, reg.DocumentID)
+	f.addChunk(t, run, text)
+}
+
+func TestChatHTTPDisabledPersonalHistoryStaysOutOfGeneration(t *testing.T) {
+	const privateAnswer = "Personal journal answer"
+	var sends atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sends.Add(1)
+		var req struct{ Input models.Payload }
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("invalid provider request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		answer := privateAnswer
+		if req.Input.Query == "laptop" {
+			if strings.Contains(strings.Join(req.Input.Texts, " "), privateAnswer) {
+				t.Errorf("disabled PERSONAL assistant content reached generation: %v", req.Input.Texts)
+			}
+			answer = "Laptop purchase policy"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(models.Result{Text: answer, CitationIDs: []string{"E1"},
+			Usage: models.Usage{InputTokens: 3, OutputTokens: 2}})
+	}))
+	defer server.Close()
+	provider, err := models.NewHTTPProvider(server.URL, "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newAgentTurnFixture(t, provider)
+	f.addPackage(t, "procurement", "role_procurement", "Laptop purchase requires approval.")
+	f.addPersonal(t, "Journal notes from my private collection.")
+	f.approveGeneration(t, "library", "approved private source")
+	f.approveGeneration(t, "agent_billing", "approved billing app query")
+	build := func(personal bool) http.Handler {
+		scopes := SourceKindGate{ScopeResolver: f.retrieval.Scopes, AppEnabled: true, PersonalEnabled: personal}
+		retrieval := *f.retrieval
+		retrieval.Scopes = scopes
+		checker := NewSourcePolicyChecker(f.reader, f.resolver, f.gateway.Policy, "agent_billing")
+		memory := NewWorkingMemory(scopes.FilterHistory(checker), 0)
+		reply := NewOrchestrator(f.store, memory, &retrieval, f.reader, f.resolver, f.gateway, "agent_billing")
+		return NewHandler(ChatAuthenticator{Verifier: chatSubjectVerifier{}, DB: f.store.DB},
+			f.store, reply, scopes, f.retrieval.Search.(*knowledge.Store))
+	}
+	withPersonal := build(true)
+	conv := createChatConversation(t, withPersonal, "Scoped model history")
+	path := testChatPath + "/" + conv.ID
+	first := chatRequest(withPersonal, "POST", path+"/messages", alice, "personal", `{"query":"journal"}`)
+	requireChatStatus(t, first, http.StatusOK)
+	prior := chatJSON[TurnResult](t, first.Body.String())
+	if prior.Status != "ANSWERED" || prior.Answer == nil || *prior.Answer != privateAnswer || len(prior.Citations) != 1 {
+		t.Fatalf("PERSONAL fixture is not generation-eligible: %s", first.Body.String())
+	}
+
+	appOnly := build(false)
+	next := chatRequest(appOnly, "POST", path+"/messages", alice, "app", `{"query":"laptop"}`)
+	requireChatStatus(t, next, http.StatusOK)
+	if result := chatJSON[TurnResult](t, next.Body.String()); result.Status != "ANSWERED" {
+		t.Fatalf("enabled APP did not generate: %s", next.Body.String())
+	}
+	rows, err := f.store.Messages(t.Context(), f.actor, conv.ID, 2, 2)
+	if err != nil || len(rows) != 2 || len(rows[1].Sources) != 1 || rows[1].Sources[0].ScopeKind != "APP" {
+		t.Errorf("new turn retained disabled source proofs: %+v, err=%v", rows, err)
+	}
+	requireChatStatus(t, chatRequest(appOnly, "GET", prior.Citations[0].URL, alice, "", ""), http.StatusNotFound)
+	history := chatRequest(appOnly, "GET", path, alice, "", "")
+	requireChatStatus(t, history, http.StatusOK)
+	if !strings.Contains(history.Body.String(), privateAnswer) {
+		t.Fatal("owned history lost its earlier PERSONAL answer")
+	}
+	replay := chatRequest(appOnly, "POST", path+"/messages", alice, "personal", `{"query":"journal"}`)
+	requireChatStatus(t, replay, http.StatusOK)
+	if replay.Body.String() != first.Body.String() || sends.Load() != 2 {
+		t.Fatal("completed replay changed the stored answer or contacted the model")
+	}
 }

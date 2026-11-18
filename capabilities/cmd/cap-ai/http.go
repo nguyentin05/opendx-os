@@ -6,6 +6,8 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"path"
+	"strings"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/agent"
 	"github.com/opendx-os/opendx-os/capabilities/internal/ai/access"
@@ -33,8 +35,8 @@ func newHandlerWithKnowledge(a access.Authenticator, store *knowledge.Store, ena
 	if chat == nil {
 		chat = agent.NewHandler(nil, nil, nil, nil, nil)
 	}
-	mux.Handle("/api/cap/ai/conversations", chat)
-	mux.Handle("/api/cap/ai/conversations/", chat)
+	mux.Handle(agent.ConversationsPath, chat)
+	mux.Handle(agent.ConversationsPath+"/", chat)
 	for _, path := range []string{"/api/cap/ai/app-knowledge", "/api/cap/ai/documents", "/api/cap/ai/documents/", "/api/cap/ai/collections", "/api/cap/ai/ingestions/", "/api/cap/ai/search", "/api/cap/ai/answers"} {
 		if enabled && store != nil {
 			mux.Handle(path, a.Middleware(store.Handler()))
@@ -43,5 +45,14 @@ func newHandlerWithKnowledge(a access.Authenticator, store *knowledge.Store, ena
 		}
 	}
 
-	return mux
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isChatPath(r.URL.Path) || isChatPath(path.Clean(r.URL.Path)) {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		mux.ServeHTTP(w, r)
+	})
+}
+
+func isChatPath(path string) bool {
+	return path == agent.ConversationsPath || strings.HasPrefix(path, agent.ConversationsPath+"/")
 }

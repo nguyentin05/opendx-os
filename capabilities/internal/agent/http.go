@@ -21,11 +21,13 @@ import (
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 )
 
+// ConversationsPath is the cap-ai mount for all chat routes.
+const ConversationsPath = "/api/cap/ai/conversations"
+
 const (
-	conversationsPath = "/api/cap/ai/conversations"
-	maxChatBody       = 64 << 10
-	maxChatQuery      = 1024
-	citationTimeout   = 5 * time.Second
+	maxChatBody     = 64 << 10
+	maxChatQuery    = 1024
+	citationTimeout = 5 * time.Second
 )
 
 type RequestAuthenticator interface {
@@ -57,12 +59,12 @@ func NewHandler(authenticator RequestAuthenticator, store ConversationStore, rep
 		return h
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST "+conversationsPath, h.authorized(h.create))
-	mux.HandleFunc("GET "+conversationsPath, h.authorized(h.list))
-	mux.HandleFunc("GET "+conversationsPath+"/{id}", h.authorized(h.transcript))
-	mux.HandleFunc("DELETE "+conversationsPath+"/{id}", h.authorized(h.delete))
-	mux.HandleFunc("POST "+conversationsPath+"/{id}/messages", h.authorized(h.reply))
-	mux.HandleFunc("GET "+conversationsPath+"/{id}/citations/{chunk}", h.authorized(h.citation))
+	mux.HandleFunc("POST "+ConversationsPath, h.authorized(h.create))
+	mux.HandleFunc("GET "+ConversationsPath, h.authorized(h.list))
+	mux.HandleFunc("GET "+ConversationsPath+"/{id}", h.authorized(h.transcript))
+	mux.HandleFunc("DELETE "+ConversationsPath+"/{id}", h.authorized(h.delete))
+	mux.HandleFunc("POST "+ConversationsPath+"/{id}/messages", h.authorized(h.reply))
+	mux.HandleFunc("GET "+ConversationsPath+"/{id}/citations/{chunk}", h.authorized(h.citation))
 	h.mux = mux
 	return h
 }
@@ -251,7 +253,7 @@ func (h *Handler) citation(w http.ResponseWriter, r *http.Request, actor Actor) 
 			params.Set("document_id", document)
 			params.Set("version_id", version)
 			params.Set("message_seq", strconv.FormatInt(seq, 10))
-			current.URL = conversationsPath + "/" + id + "/citations/" + chunk + "?" + params.Encode()
+			current.URL = ConversationsPath + "/" + id + "/citations/" + chunk + "?" + params.Encode()
 			chatJSONResponse(w, http.StatusOK, current)
 			return nil
 		}

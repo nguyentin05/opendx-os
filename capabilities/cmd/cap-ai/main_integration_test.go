@@ -71,8 +71,11 @@ func TestChatHTTPRuntimeWithReadyBillingAppAndNoModels(t *testing.T) {
 		t.Fatal(err)
 	}
 	sourceStore := knowledge.NewStore(api)
+	if err := sourceStore.ConfigurePackages(true, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
 	chat := newRuntimeChatHandler(agent.ChatAuthenticator{Verifier: verifierStub{}, DB: api}, sourceStore,
-		nil, nil, "ready_app", false, false)
+		nil, nil, "ready_app", true, false)
 	h := newHandlerWithKnowledge(testAuth(), sourceStore, true, chat)
 	const path = "/api/cap/ai/conversations"
 	r := httptest.NewRequest("POST", path, strings.NewReader(`{"title":"Private chat"}`))

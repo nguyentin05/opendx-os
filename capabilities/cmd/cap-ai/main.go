@@ -11,7 +11,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -44,8 +43,14 @@ func loadConfig(getenv func(string) string) (config, error) {
 }
 
 func chatEnabled(getenv func(string) string) bool {
-	return getenv("RAG_AGENT_ENABLED") == "true" && getenv("RAG_METADATA_ENABLED") == "true" &&
-		getenv("RAG_SOURCE_QUALIFIED") == "true" && getenv("RAG_METADATA_QUALIFIED") == "true"
+	packages, personal := effectiveSourceKinds(getenv)
+	return getenv("RAG_AGENT_ENABLED") == "true" && getenv("RAG_METADATA_ENABLED") == "true" && (packages || personal)
+}
+
+func effectiveSourceKinds(getenv func(string) string) (packages, personal bool) {
+	qualified := getenv("RAG_SOURCE_QUALIFIED") == "true" && getenv("RAG_METADATA_QUALIFIED") == "true" &&
+		getenv("RAG_PARSER_QUALIFIED") == "true"
+	return qualified && getenv("RAG_PACKAGE_ENABLED") == "true", qualified && getenv("RAG_PERSONAL_ENABLED") == "true"
 }
 
 func validateChatBillingApp(ctx context.Context, db *sql.DB, appID string) error {
@@ -57,27 +62,14 @@ func validateChatBillingApp(ctx context.Context, db *sql.DB, appID string) error
 	return nil
 }
 
-type chatScopes struct {
-	agent.ScopeResolver
-	packages, personal bool
-}
-
-func (s chatScopes) List(ctx context.Context, actor agent.Actor) ([]agent.SourceScope, error) {
-	scopes, err := s.ScopeResolver.List(ctx, actor)
-	if err != nil {
-		return nil, err
-	}
-	return slices.DeleteFunc(scopes, func(scope agent.SourceScope) bool {
-		return !(s.packages && scope.Kind == "APP" || s.personal && scope.Kind == "PERSONAL")
-	}), nil
-}
-
 func newRuntimeChatHandler(authenticator agent.ChatAuthenticator, sources *knowledge.Store, modelsGateway *models.Gateway,
 	runtimeResolver *models.RuntimeResolver, billingAppID string, packages, personal bool,
 ) *agent.Handler {
 	db := authenticator.DB
 	store := &agent.PostgresConversationStore{DB: db}
-	scopes := chatScopes{ScopeResolver: &agent.PostgresScopeResolver{DB: db}, packages: packages, personal: personal}
+	scopes := agent.SourceKindGate{
+		ScopeResolver: &agent.PostgresScopeResolver{DB: db}, AppEnabled: packages, PersonalEnabled: personal,
+	}
 	reader := knowledge.NewPolicy(db)
 	var resolver knowledge.ModelResolver
 	var policy knowledge.ModelPolicy
@@ -94,7 +86,7 @@ func newRuntimeChatHandler(authenticator agent.ChatAuthenticator, sources *knowl
 	search.ConfigureModelResolver(resolver)
 	retrieval := &agent.RetrievalCoordinator{Scopes: scopes, Search: &search, Reader: reader}
 	checker := agent.NewSourcePolicyChecker(reader, resolver, policy, billingAppID)
-	memory := agent.NewWorkingMemory(checker, 0)
+	memory := agent.NewWorkingMemory(scopes.FilterHistory(checker), 0)
 	reply := agent.NewOrchestrator(store, memory, retrieval, reader, resolver, modelsGateway, billingAppID)
 	return agent.NewHandler(authenticator, store, reply, scopes, sources)
 }
@@ -120,8 +112,8 @@ func main() {
 	if err != nil {
 		log.Fatal("identity verification unavailable or invalid configuration")
 	}
-	packageEnabled := os.Getenv("RAG_PACKAGE_ENABLED") == "true"
-	if packageEnabled && (os.Getenv("RAG_SOURCE_QUALIFIED") != "true" || os.Getenv("RAG_METADATA_QUALIFIED") != "true" || os.Getenv("RAG_PARSER_QUALIFIED") != "true") {
+	packageEnabled, personal := effectiveSourceKinds(os.Getenv)
+	if os.Getenv("RAG_PACKAGE_ENABLED") == "true" && !packageEnabled {
 		log.Fatal("package processing requires qualified predecessors")
 	}
 	var chatVerifier auth.SubjectVerifier
@@ -192,7 +184,6 @@ func main() {
 	if resolver != nil {
 		store.ConfigureModelResolver(resolver)
 	}
-	personal := os.Getenv("RAG_PERSONAL_ENABLED") == "true" && os.Getenv("RAG_SOURCE_QUALIFIED") == "true" && os.Getenv("RAG_METADATA_QUALIFIED") == "true" && os.Getenv("RAG_PARSER_QUALIFIED") == "true"
 	if err = store.ConfigurePersonal(personal, os.Getenv("RAG_FILE_API_URL"), os.Getenv("KNOWLEDGE_ARTIFACT_ROOT")); err != nil {
 		log.Fatal("invalid personal-source configuration")
 	}
