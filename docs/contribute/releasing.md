@@ -46,6 +46,13 @@ tag is the `vX.Y.Z` to use in the next step. The autolabeler reads the
 repository labels `feature`, `fix`, `docs`, `maintenance`, `breaking`, and
 `security`; create them first in a fork that does not have them.
 
+Keep `CHANGELOG.md` aligned with the draft before creating the tag: move the
+entries under `[Unreleased]` into a new `## [X.Y.Z] - YYYY-MM-DD` section, group
+them under the Keep a Changelog headings (Added, Changed, Deprecated, Removed,
+Fixed, Security), and update the compare links at the bottom of the file. The
+GitHub release notes may carry more detail; the changelog is the
+repository-level summary.
+
 ## 3. Tag and run the release workflow
 
 Create an annotated tag on the verified `main` commit and push it:
@@ -141,6 +148,7 @@ explicitly; a list of expected files is not proof of compliance.
 ## 6. Publish
 
 Review the draft, its notes, assets, checksums, and attestations, then publish it
-in the GitHub UI or with `gh release edit vX.Y.Z --draft=false`. Publishing is a
+in the GitHub UI or with `gh release edit vX.Y.Z --draft=false`. Confirm
+`CHANGELOG.md` already has the matching version section. Publishing is a
 separate action within the assigned scope, on the exact verified revision. Hand
 off the artifact, checksum, provenance, and evidence with the release.
