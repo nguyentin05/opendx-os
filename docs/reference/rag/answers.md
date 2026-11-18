@@ -10,11 +10,12 @@ last_reviewed: 2026-11-18
 
 # Optional model Gateway and answers
 
-This page specifies the existing APP/PERSONAL response shape and the amended
-RAG-first target policy. AGENT, approved hosted PERSONAL and persisted chat
-history require the implementation/migrations listed in
-[ADR 0009](../../adr/0009-native-rag-identity-and-source-boundaries.md#contract-amendment-and-implementation-delta-2026-11-18);
-the current runtime does not yet implement these extensions.
+The selected-scope answers API and optional cross-app agent share the model
+Gateway. Migrations 0006–0007 enable owner conversations and DB-resolved
+scopes. Migrations 0008–0010 enable reviewed hosted PERSONAL processing,
+PERSONAL hybrid retrieval and AGENT model authority when configured. See
+[owner conversation routes](../api/capability-routes.md#owner-conversations)
+and [installation prerequisites](../../guides/knowledge/models.md#compose-installation).
 
 `POST /api/cap/ai/answers` accepts
 `{scope,query,max_citations?,require_generation?}` and returns
@@ -34,8 +35,7 @@ permits PERSONAL EMBED/GENERATE only through audited Platform Admin approval
 binding purpose, provider/profile revision, enabled state, source/query
 classification and retention/training-use review. No active slot, budget or
 per-user opt-in supplies that approval. Unapproved PERSONAL source/query egress
-denies; no fallback may route it to another provider. Current Go/SQL still reject
-hosted PERSONAL outright until the contract migration is implemented.
+denies; no fallback may route it to another provider. Deployments without a current matching review retain authorized lexical search.
 
 For the new `AGENT` chat path, source selection uses all current DB-authoritative
 memberships server-side and includes only the caller's PRIVATE personal sources.

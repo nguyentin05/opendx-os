@@ -47,7 +47,7 @@ Run `cap-ai-worker` with its dedicated `AI_WORKER_DATABASE_URL`,
 `PARSER_SOCKET` and `PARSER_SERVICE_TOKEN` (see its startup validation). It
 also requires the three source/metadata/parser qualification flags. Give its
 OIDC service subject exactly the deployment-configured worker identity. It has
-two concurrent leases, 15-second heartbeats, bounded retries and no model client.
+two concurrent leases, 15-second heartbeats, bounded retries and an optional, separately qualified embedding Gateway.
 The narrow worker database role cannot read Core or write arbitrary cap_ai rows.
 
 Build the parser separately:

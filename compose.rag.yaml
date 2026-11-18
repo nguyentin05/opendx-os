@@ -1,0 +1,146 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Use with compose.yaml on a qualified installation. See docs/guides/knowledge/models.md.
+x-qualified: &qualified
+  RAG_SOURCE_QUALIFIED: ${RAG_SOURCE_QUALIFIED:-false}
+  RAG_METADATA_QUALIFIED: ${RAG_METADATA_QUALIFIED:-false}
+  RAG_PARSER_QUALIFIED: ${RAG_PARSER_QUALIFIED:-false}
+
+x-subjects: &subjects
+  RAG_WORKER_SERVICE_SUBJECT: ${RAG_WORKER_SERVICE_SUBJECT:?set the worker OIDC subject}
+  RAG_FILE_SERVICE_SUBJECT: ${RAG_FILE_SERVICE_SUBJECT:?set the File Service OIDC subject}
+
+services:
+  postgres:
+    environment:
+      ENABLED_CAPABILITIES: ${ENABLED_CAPABILITIES:-cap-process,cap-hr,cap-work,cap-data,cap-ai}
+      AI_DATABASE_PASSWORD: ${AI_DATABASE_PASSWORD:?set the API database password}
+      AI_WORKER_DATABASE_PASSWORD: ${AI_WORKER_DATABASE_PASSWORD:?set the worker database password}
+      AI_DISPATCHER_DATABASE_PASSWORD: ${AI_DISPATCHER_DATABASE_PASSWORD:?set the dispatcher database password}
+
+  operator:
+    environment:
+      RAG_PACKAGE_ARTIFACT_ROOT: /var/lib/dxos/package-artifacts
+      CLAMAV_ADDRESS: ${CLAMAV_ADDRESS:-clamav:3310}
+    volumes:
+      - package-artifacts:/var/lib/dxos/package-artifacts
+
+  cap-process:
+    environment:
+      <<: *subjects
+      RAG_PRIVATE_UPLOAD_ENABLED: ${RAG_PRIVATE_UPLOAD_ENABLED:-false}
+      RAG_SOURCE_QUALIFIED: ${RAG_SOURCE_QUALIFIED:-false}
+      RAG_INTERNAL_LISTEN: ":8181"
+      RAG_INTERNAL_AI_URL: http://cap-ai:8184
+      RAG_INTERNAL_BEARER_TOKEN: ${RAG_FILE_BEARER_TOKEN:?set the File Service delegation token}
+
+  cap-ai:
+    build:
+      context: ./capabilities
+      args:
+        SERVICE: cap-ai
+    restart: unless-stopped
+    environment:
+      <<: [*qualified, *subjects]
+      PORT: "8084"
+      DATABASE_URL: postgres://dxos_ai_api:${AI_DATABASE_PASSWORD}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
+      AI_WORKER_DATABASE_URL: &worker-db postgres://dxos_ai_worker:${AI_WORKER_DATABASE_PASSWORD}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
+      AI_DISPATCHER_DATABASE_URL: &dispatcher-db postgres://dxos_ai_dispatcher:${AI_DISPATCHER_DATABASE_PASSWORD}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-http://localhost:8085/realms/dxos}
+      OIDC_JWKS_URL: ${OIDC_JWKS_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/certs}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-dxos-runtime}
+      RAG_INTERNAL_LISTEN: ":8184"
+      RAG_DISPATCHER_SERVICE_SUBJECT: ${RAG_DISPATCHER_SERVICE_SUBJECT:?set the dispatcher OIDC subject}
+      RAG_FILE_API_URL: http://cap-process:8081
+      RAG_PACKAGE_ARTIFACT_ROOT: /var/lib/dxos/package-artifacts
+      RAG_METADATA_ENABLED: ${RAG_METADATA_ENABLED:-false}
+      RAG_PACKAGE_ENABLED: ${RAG_PACKAGE_ENABLED:-false}
+      RAG_PERSONAL_ENABLED: ${RAG_PERSONAL_ENABLED:-false}
+      RAG_AGENT_ENABLED: ${RAG_AGENT_ENABLED:-false}
+      AI_AGENT_BILLING_APP_ID: ${AI_AGENT_BILLING_APP_ID:-}
+    volumes:
+      - type: volume
+        source: package-artifacts
+        target: /var/lib/dxos/package-artifacts
+        read_only: true
+        volume:
+          nocopy: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+
+  cap-ai-parser:
+    build:
+      context: ./capabilities
+      dockerfile: Dockerfile.parser
+    restart: unless-stopped
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 64
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=220m
+    environment:
+      PARSER_SOCKET: &socket /run/dxos-parser/parser.sock
+      PARSER_SERVICE_TOKEN: &parser-token ${PARSER_SERVICE_TOKEN:?set a private parser token of at least 32 characters}
+    # This single parser owns the private socket, including stale entries after a crash.
+    entrypoint: ["/bin/sh", "-ec", 'if [ -S "$$PARSER_SOCKET" ]; then rm "$$PARSER_SOCKET"; fi; exec /usr/local/bin/parser']
+    volumes:
+      - parser-socket:/run/dxos-parser
+    healthcheck:
+      test: ["CMD-SHELL", 'test -S "$$PARSER_SOCKET"']
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  cap-ai-worker:
+    build:
+      context: ./capabilities
+      args:
+        SERVICE: cap-ai-worker
+    restart: unless-stopped
+    environment:
+      <<: *qualified
+      AI_WORKER_DATABASE_URL: *worker-db
+      RAG_WORKER_SERVICE_SUBJECT: ${RAG_WORKER_SERVICE_SUBJECT}
+      RAG_WORKER_BEARER_TOKEN: ${RAG_WORKER_BEARER_TOKEN:?set the worker delegation token}
+      RAG_INTERNAL_FILE_URL: http://cap-process:8181
+      RAG_INTERNAL_AI_URL: http://cap-ai:8184
+      PARSER_SOCKET: *socket
+      PARSER_SERVICE_TOKEN: *parser-token
+    volumes:
+      - type: volume
+        source: parser-socket
+        target: /run/dxos-parser
+        read_only: true
+        volume:
+          nocopy: true
+    depends_on:
+      cap-ai-parser:
+        condition: service_healthy
+      cap-ai:
+        condition: service_started
+      cap-process:
+        condition: service_started
+
+  knowledge-dispatcher:
+    build:
+      context: ./operator
+    entrypoint: ["/usr/local/bin/dxos-knowledge-dispatcher"]
+    restart: unless-stopped
+    environment:
+      <<: *qualified
+      DATABASE_URL: *dispatcher-db
+      RAG_INTERNAL_AI_URL: http://cap-ai:8184
+      RAG_DISPATCHER_BEARER_TOKEN: ${RAG_DISPATCHER_BEARER_TOKEN:?set the dispatcher delegation token}
+    depends_on:
+      - cap-ai
+
+volumes:
+  package-artifacts:
+  parser-socket:

@@ -81,7 +81,7 @@ Search hit/citation fields: document_id, version_id, chunk_id, page (nullable fo
 
 The [answer contract](answers.md) owns answer serialization and abstention outcomes; never imply generation occurred for search-only results. Existing APP/PERSONAL endpoints retain their selected-role/owner boundaries. The new chat path adds `AGENT` multi-source retrieval: the server resolves all current DB memberships and owner-only PERSONAL sources, while request filters only narrow the set. Neither clients nor models can supply role authority or choose a model/provider/profile. APP and PERSONAL support bounded FTS + Embedding fusion when authorized and qualified; otherwise preserve authorized FTS. Hosted PERSONAL source/query processing requires the independent audited approval in [authorization](authorization.md#model-processing-policy), not merely an active slot.
 
-Chat persistence stores owner-only historical message snapshots with source provenance. Ordinary source revocation leaves those snapshots readable only by their conversation owner; current original/citation routes still enforce source READ, and every new generation context reauthorizes source-derived history. See [historical transcript policy](authorization.md#agent-source-selection-and-historical-transcripts). This is target chat behavior, not an assertion that current answer endpoints persist conversations.
+Chat persistence stores owner-only historical message snapshots with source provenance. Ordinary source revocation leaves those snapshots readable only by their conversation owner; current original/citation routes still enforce source READ, and every new generation context reauthorizes source-derived history. See [historical transcript policy](authorization.md#agent-source-selection-and-historical-transcripts). The [owner conversation API](../api/capability-routes.md#owner-conversations) persists turns. Selected-scope answers remain stateless.
 
 ## App publication and indexing
 
@@ -143,8 +143,7 @@ unavailable generation returns 503 `MODEL_UNAVAILABLE`. No evidence remains
 NO_EVIDENCE without a model call. Policy denial remains distinct from model
 unavailability. Slot activation never approves PERSONAL egress: source and query
 processing independently require the [model-processing policy](authorization.md#model-processing-policy).
-The existing R1 Go/SQL still impose a blanket PERSONAL hosted denial; the approved
-target requires the additive changes listed in ADR 0009 before enablement.
+Optional migrations 0008–0010 implement audited PERSONAL and per-source AGENT processing. Enable them through the [deployment guide](../../guides/knowledge/models.md).
 
 Startup configuration may declare candidates and adapter/secret references only;
 it cannot override an `ACTIVE` database pointer or auto-promote candidates. Raw

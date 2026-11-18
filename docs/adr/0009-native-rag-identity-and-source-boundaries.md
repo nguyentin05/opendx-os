@@ -47,9 +47,9 @@ Nested `access` keeps the security declaration together and removes ambiguity be
 
 D07 explicitly replaces D06 and the previous blanket hosted-PERSONAL clauses in the RAG authorization/API/answer contracts and model setup guide. It does not supersede any accepted ADR. In particular, ADR 0007 retains Keycloak authentication, DB-granted business roles and selected-role authorization for existing Hasura/capability APIs, including its documented cache/subscription behavior. The new AGENT path resolves and freshly checks its complete DB membership set separately; it must not silently widen those existing APIs.
 
-[Authorization](../reference/rag/authorization.md) owns the detailed source, processing, transcript and billing predicates. Existing implementation conflicts and required producers/consumers are explicit:
+[Authorization](../reference/rag/authorization.md) owns the detailed source, processing, transcript and billing predicates. The amendment recorded the following gaps in the pre-harness implementation.
 
-| Current producer/consumer | Observed implementation and required change |
+| Producer/consumer at amendment time | Observed implementation and required change |
 | --- | --- |
 | `capabilities/internal/knowledge/models/policy.go` and `models/authority.go` | Accept only APP/PERSONAL and reject hosted PERSONAL outright; add AGENT authority and explicit approved PERSONAL decisions from DB, without trusting request classifications |
 | `capabilities/internal/knowledge/embedding.go` | `semanticCandidates` only accepts APP; add owner-only PERSONAL and per-source AGENT hybrid retrieval, independent source policy checks, pinned revision/dimension and authorized FTS fallback |
@@ -62,7 +62,7 @@ D07 explicitly replaces D06 and the previous blanket hosted-PERSONAL clauses in 
 
 Required migrations are additive, versioned **after 0005**, under `cap_ai`; never rewrite applied 0001/0004/0005 checksums. A base chat migration must support the FTS-only deployment without assuming optional model tables exist. It must add conversation/message ownership, immutable historical snapshots and source provenance plus narrowly granted multi-role retrieval/read helpers. A separate model-dependent migration must explicitly require 0004/0005 and replace conflicting guards/functions, add reviewed approval metadata/constraints and narrow grants for PERSONAL/AGENT operations. Existing local-only policy rows remain local-only: do not silently reclassify them, auto-approve providers or seed enabled approvals. Apply migrations through the existing checksummed runner with explicit optional prerequisites. The API/worker/Gateway/UI and migration/runtime-role tests must converge on these contracts in later implementation work.
 
-The harness uses in-process cap-ai modules, no separate agent service, MCP, tool execution, autonomous actions, streaming or per-app backend. Default Compose/APISIX do not currently wire cap-ai; deployment/gateway integration remains required work. This documentation amendment supplies no runtime migration or deployment evidence.
+The harness uses in-process cap-ai modules, no separate agent service, MCP, tool execution, autonomous actions, streaming or per-app backend. The table above records the implementation delta at amendment time. Migrations 0006–0010 and the [optional Compose deployment](../guides/knowledge/models.md#compose-installation) now implement the harness. Installation qualification remains a separate operational gate.
 
 ## Consequences and canonical sources
 

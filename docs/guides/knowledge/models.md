@@ -27,6 +27,66 @@ retrieval and the mixed-source AGENT model boundary. Follow the
 before enabling the new behavior; provisioning an active slot alone cannot
 implement or authorize it.
 
+## Compose installation
+
+The base `compose.yaml` runs the regular stack. Add `compose.rag.yaml` for the
+knowledge API, private File Service delegation, package dispatcher, parser and
+worker. Add `compose.models.yaml` only for model schema/runtime support. Use
+the same file order and project name throughout an installation.
+
+1. On a fresh deployment, include `cap-ai` alongside the existing
+   `ENABLED_CAPABILITIES`. The RAG overlay supplies that list by default when
+   the variable is absent. If using `.env.example`, edit its explicit list.
+   Provide separate URL-safe secrets in `AI_DATABASE_PASSWORD`,
+   `AI_WORKER_DATABASE_PASSWORD` and `AI_DISPATCHER_DATABASE_PASSWORD`.
+   The models overlay also requires `AI_GATEWAY_DATABASE_PASSWORD` and selects
+   PostgreSQL 17 with pgvector. Both PG17 images use the same data directory.
+   To upgrade retained data, use the checksummed migration procedure below,
+   provision the missing restricted role passwords through deployment admin
+   operations, and back up the volume before changing its image. Init scripts
+   run only on an empty volume.
+2. Supply distinct OIDC UUIDs and renewable audience-matched access tokens
+   for the worker, File Service and dispatcher in the variables in
+   `.env.example`. Register the worker subject as an ACTIVE Core identity.
+   Configure the same issuer, JWKS and audience on the services. Use a separate
+   random `PARSER_SERVICE_TOKEN` of at least 32 characters. Renew tokens and
+   recreate their consumers before expiry. API, worker and dispatcher each
+   connect under the corresponding restricted DB login. Inside cap-ai the
+   private delegation/reconcile handlers use the worker and dispatcher
+   connections. The model Gateway has a separate restricted login.
+3. Set `RAG_SOURCE_QUALIFIED`, `RAG_METADATA_QUALIFIED` and
+   `RAG_PARSER_QUALIFIED` only after verifying the source and parser
+   prerequisites in the deployment. Set `RAG_METADATA_ENABLED=true` and
+   enable `RAG_PACKAGE_ENABLED`, `RAG_PERSONAL_ENABLED`, or both.
+   Enable `RAG_PRIVATE_UPLOAD_ENABLED` for private uploads. The Operator scans
+   declared package sources and writes approved bytes into a private named
+   volume. cap-ai reads those bytes. The parser and worker share a separate
+   private socket volume and UID 10001. File Service and cap-ai delegation
+   listeners have no published host ports or gateway routes.
+4. With the agent off, bootstrap the stack and reconcile the intended app packages.
+   Use `docker compose -f compose.yaml -f compose.rag.yaml up -d --build` for
+   FTS-only mode. For model storage, also pass `-f compose.models.yaml` before
+   `up`, supply the schema flags below and configure `RAG_MODEL_CATALOG_FILE`
+   and `RAG_MODEL_CREDENTIAL_ENV_FILE`. The latter is a private env file
+   containing only credentials named by the catalog, readable by API and
+   worker. An empty file suffices when the catalog references no secrets.
+   Keep vendor credentials in the approved adapter deployment.
+5. Select an actual registered `Ready` app for `AI_AGENT_BILLING_APP_ID`.
+   Confirm its state through the application registry before enabling chat.
+   Set `RAG_AGENT_ENABLED=true` and rerun the same Compose command. cap-ai
+   validates the configured billing app at startup. With models off, chat
+   returns owner-scoped lexical evidence. The Assistant uses the UI origin,
+   which proxies protected requests through APISIX.
+6. Before enabling model calls, qualify the bounded adapter, import disabled
+   candidates, complete Platform Admin review and activate the exact EMBEDDING
+   and/or LLM revisions through the deployment's audited slot procedure.
+   Provision the processing reviews and budget accounts below. Then enable
+   `RAG_MODELS_QUALIFIED`, `RAG_MODELS_ENABLED` and
+   `RAG_GLOBAL_MODEL_REGISTRY_ENABLED` for the API and worker and recreate
+   them. The agent only resolves global slots. Missing review, binding, budget
+   or adapter keeps the affected operation unavailable. The optional overlays
+   provide no active slot, budget, account identity or provider approval.
+
 ## Storage and activation
 
 Apply `cap-ai/0004_models_vectors.sql` explicitly with `scripts/migrate-rag.sh`
@@ -57,8 +117,15 @@ candidate subset is HOSTED EMBED/GENERATE; it stores only adapter keys and
 credential environment-variable references, with no endpoint or credential value.
 The caller-supplied declaration digest is metadata; full normalized declarations
 are also compared, so equal digests never authorize conflicting definitions.
-Only future Platform Admin operations may qualify or activate bindings; this
-foundation provides no production mutation route.
+Activation requires an independently reviewed Platform Admin deployment operation.
+R1 supplies candidate import and runtime slot resolution. The deployment must
+provide its audited promotion/rollback procedure before enabling hosted models.
+Authenticate the Platform Admin, verify the candidate digest, purpose, limits,
+pricing and adapter, and record the review. The administration transaction
+enables the reviewed profile, advances the expected slot revision to bind that
+exact profile ID and revision, and records the actor and action in
+`cap_ai.model_slot_events`. Concurrent revisions require a fresh review of
+the current slot. API, worker, catalog and Gateway logins cannot do this.
 
 The nine model tables hold immutable profile/policy revisions, policy allowlists,
 independent embedding generations and accounting. Policy/profile revisions may
@@ -242,8 +309,8 @@ URL fetching or streaming are exposed.
 ## Global registry compatibility
 
 The [R1 registry contract](../../reference/rag/api.md#global-model-registry-foundation-r1)
-defines a separate `RAG_GLOBAL_MODEL_REGISTRY_ENABLED=false` default. This is a
-implemented opt-in loader; the OFF path uses the legacy profile references
+defines a separate `RAG_GLOBAL_MODEL_REGISTRY_ENABLED=false` default. This is an
+opt-in loader; the OFF path uses the legacy profile references
 described above. Turning it ON requires the additive registry migrations; the
 flag does not qualify a provider or bypass existing enablement gates.
 
@@ -257,8 +324,7 @@ unbound, and RERANKING remains disabled. Follow the canonical contract for
 provisioning identities, future Platform Admin lifecycle, and consumer impacts.
 
 For new chat, `AGENT` source selection is server-side across all current DB role
-memberships and owner-only PERSONAL sources. Request filters only narrow this
-set; role claims, client lists and LLM app suggestions confer no authority.
+memberships and owner-only PERSONAL sources. The turn accepts only a question. Role claims, client lists and LLM app suggestions confer no authority.
 Existing Hasura/capability APP routes keep ADR 0007's selected-role behavior.
 
 ## Budgets and uncertain charges
@@ -281,9 +347,8 @@ deferred. The billing consumer requires the independent PERSONAL query review
 described above. Every actual source app and PERSONAL source must pass its own
 READ and processing checks. See
 [canonical billing attribution](../../reference/rag/authorization.md#model-operation-billing-attribution).
-Deployment integration must supply this new configuration; it is not currently
-consumed by the existing runtime. cap-ai is also absent from default Compose
-and APISIX wiring, which remains separate implementation work.
+The RAG overlay supplies the configured billing consumer to cap-ai. The public
+APISIX route preserves selected-role behavior for existing knowledge APIs.
 
 Reserve the bounded worst-case input/output price before persisting intent.
 Recheck authority after budget waits and after intent, immediately before send.
@@ -338,7 +403,7 @@ for its new test app and `rag-test-fake`, never a real processor.
 R11/R12/R17/R18/R19/R20 cover scoped vectors, fresh final authority, independent
 readiness, the current personal zero-egress restriction, conservative accounting
 and answers. Those existing cases do not prove the amended approval policy.
-New behavior tests must cover approved PERSONAL EMBED/GENERATE, denied unapproved
+The Go integration suite separately exercises approved PERSONAL EMBED/GENERATE, denied unapproved
 source/query egress, disabled/mismatched approval and retention/training-use
 review, per-source multi-role authority, retained owner-only snapshots without
 revoked-context reuse, and exact AGENT INSTALLATION/APP/USER charge attribution.
