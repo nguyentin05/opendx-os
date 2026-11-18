@@ -11,11 +11,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
+	"github.com/opendx-os/opendx-os/capabilities/internal/agent"
 	"github.com/opendx-os/opendx-os/capabilities/internal/ai/access"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
@@ -40,6 +42,63 @@ func loadConfig(getenv func(string) string) (config, error) {
 	}
 	return c, nil
 }
+
+func chatEnabled(getenv func(string) string) bool {
+	return getenv("RAG_AGENT_ENABLED") == "true" && getenv("RAG_METADATA_ENABLED") == "true" &&
+		getenv("RAG_SOURCE_QUALIFIED") == "true" && getenv("RAG_METADATA_QUALIFIED") == "true"
+}
+
+func validateChatBillingApp(ctx context.Context, db *sql.DB, appID string) error {
+	var ready bool
+	if strings.TrimSpace(appID) == "" || db == nil ||
+		db.QueryRowContext(ctx, `SELECT EXISTS (SELECT FROM core.apps WHERE app_id = $1 AND status = 'Ready')`, appID).Scan(&ready) != nil || !ready {
+		return errors.New("chat requires a Ready AI_AGENT_BILLING_APP_ID")
+	}
+	return nil
+}
+
+type chatScopes struct {
+	agent.ScopeResolver
+	packages, personal bool
+}
+
+func (s chatScopes) List(ctx context.Context, actor agent.Actor) ([]agent.SourceScope, error) {
+	scopes, err := s.ScopeResolver.List(ctx, actor)
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(scopes, func(scope agent.SourceScope) bool {
+		return !(s.packages && scope.Kind == "APP" || s.personal && scope.Kind == "PERSONAL")
+	}), nil
+}
+
+func newRuntimeChatHandler(authenticator agent.ChatAuthenticator, sources *knowledge.Store, modelsGateway *models.Gateway,
+	runtimeResolver *models.RuntimeResolver, billingAppID string, packages, personal bool,
+) *agent.Handler {
+	db := authenticator.DB
+	store := &agent.PostgresConversationStore{DB: db}
+	scopes := chatScopes{ScopeResolver: &agent.PostgresScopeResolver{DB: db}, packages: packages, personal: personal}
+	reader := knowledge.NewPolicy(db)
+	var resolver knowledge.ModelResolver
+	var policy knowledge.ModelPolicy
+	if runtimeResolver != nil {
+		resolver = runtimeResolver
+	}
+	if modelsGateway != nil && modelsGateway.Policy != nil {
+		policy = modelsGateway.Policy
+	}
+	// The chat path selects models only from installation slots. The native
+	// routes may still use their configured legacy profiles.
+	search := *sources
+	search.ConfigureModels(modelsGateway, models.Profile{}, models.Profile{})
+	search.ConfigureModelResolver(resolver)
+	retrieval := &agent.RetrievalCoordinator{Scopes: scopes, Search: &search, Reader: reader}
+	checker := agent.NewSourcePolicyChecker(reader, resolver, policy, billingAppID)
+	memory := agent.NewWorkingMemory(checker, 0)
+	reply := agent.NewOrchestrator(store, memory, retrieval, reader, resolver, modelsGateway, billingAppID)
+	return agent.NewHandler(authenticator, store, reply, scopes, sources)
+}
+
 func main() {
 	c, err := loadConfig(os.Getenv)
 	if err != nil {
@@ -56,13 +115,29 @@ func main() {
 	if err != nil {
 		log.Fatal("database unavailable")
 	}
-	verifier, err := auth.NewStrictAuthenticator(context.Background(), auth.VerifierConfig{IssuerURL: c.IssuerURL, JWKSURL: c.JWKSURL, Audience: c.Audience})
+	identityConfig := auth.VerifierConfig{IssuerURL: c.IssuerURL, JWKSURL: c.JWKSURL, Audience: c.Audience}
+	verifier, err := auth.NewStrictAuthenticator(context.Background(), identityConfig)
 	if err != nil {
 		log.Fatal("identity verification unavailable or invalid configuration")
 	}
 	packageEnabled := os.Getenv("RAG_PACKAGE_ENABLED") == "true"
 	if packageEnabled && (os.Getenv("RAG_SOURCE_QUALIFIED") != "true" || os.Getenv("RAG_METADATA_QUALIFIED") != "true" || os.Getenv("RAG_PARSER_QUALIFIED") != "true") {
 		log.Fatal("package processing requires qualified predecessors")
+	}
+	var chatVerifier auth.SubjectVerifier
+	var billingAppID string
+	if chatEnabled(os.Getenv) {
+		billingAppID = os.Getenv("AI_AGENT_BILLING_APP_ID")
+		billingCtx, billingCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		billingErr := validateChatBillingApp(billingCtx, db, billingAppID)
+		billingCancel()
+		if billingErr != nil {
+			log.Fatal(billingErr)
+		}
+		chatVerifier, err = auth.NewSubjectVerifier(context.Background(), identityConfig)
+		if err != nil {
+			log.Fatal("chat identity verification unavailable or invalid configuration")
+		}
 	}
 	if address := os.Getenv("RAG_INTERNAL_LISTEN"); address != "" {
 		if os.Getenv("RAG_SOURCE_QUALIFIED") != "true" || os.Getenv("AI_WORKER_DATABASE_URL") == "" {
@@ -121,7 +196,16 @@ func main() {
 	if err = store.ConfigurePersonal(personal, os.Getenv("RAG_FILE_API_URL"), os.Getenv("KNOWLEDGE_ARTIFACT_ROOT")); err != nil {
 		log.Fatal("invalid personal-source configuration")
 	}
-	server := &http.Server{Addr: ":" + c.Port, Handler: newHandlerWithKnowledge(access.Authenticator{Authority: knowledge.NewAuthority(verifier, db)}, store, os.Getenv("RAG_METADATA_ENABLED") == "true" && os.Getenv("RAG_SOURCE_QUALIFIED") == "true"), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
+	var chat http.Handler
+	if chatVerifier != nil {
+		chat = newRuntimeChatHandler(agent.ChatAuthenticator{Verifier: chatVerifier, DB: db}, store, gateway, resolver, billingAppID, packageEnabled, personal)
+	}
+	nativeAuthority := access.Authenticator{Authority: knowledge.NewAuthority(verifier, db)}
+	nativeEnabled := os.Getenv("RAG_METADATA_ENABLED") == "true" && os.Getenv("RAG_SOURCE_QUALIFIED") == "true"
+	server := &http.Server{
+		Addr: ":" + c.Port, Handler: newHandlerWithKnowledge(nativeAuthority, store, nativeEnabled, chat),
+		ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second,
+	}
 	log.Printf("cap-ai listening on port %s", c.Port)
 	if err = server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal("cap-ai listener failed")

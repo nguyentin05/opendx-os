@@ -7,14 +7,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/opendx-os/opendx-os/capabilities/internal/ai/access"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/ai/access"
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
 type verifierStub struct{}
@@ -154,5 +155,49 @@ func TestAppKnowledgeFrontDoorIsAuthenticatedAndDefaultClosed(t *testing.T) {
 		if response.Code != test.want {
 			t.Fatalf("app knowledge front door: got %d want %d", response.Code, test.want)
 		}
+	}
+}
+
+func TestChatHTTPDefaultClosedIndependentlyOfNativeKnowledge(t *testing.T) {
+	h := newHandler(testAuth())
+	for _, path := range []string{"/api/cap/ai/conversations", "/api/cap/ai/conversations/22222222-2222-4222-8222-222222222222"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		if w.Code != 503 || w.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("disabled chat route %s: got %d %s", path, w.Code, w.Body.String())
+		}
+	}
+	for _, endpoint := range []struct{ method, path string }{
+		{"POST", "/api/cap/ai/search"},
+		{"POST", "/api/cap/ai/answers"},
+		{"GET", "/api/cap/ai/documents/22222222-2222-4222-8222-222222222222/citations/22222222-2222-4222-8222-222222222222"},
+	} {
+		r := httptest.NewRequest(endpoint.method, endpoint.path, nil)
+		r.Header.Set("Authorization", "Bearer token")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != 403 {
+			t.Fatalf("native route accepted absent selected role: %s, got %d", endpoint.path, w.Code)
+		}
+	}
+}
+
+func TestChatHTTPRequiresFeatureAndQualifiedMetadata(t *testing.T) {
+	flags := map[string]string{
+		"RAG_AGENT_ENABLED":      "true",
+		"RAG_METADATA_ENABLED":   "true",
+		"RAG_SOURCE_QUALIFIED":   "true",
+		"RAG_METADATA_QUALIFIED": "true",
+	}
+	getenv := func(name string) string { return flags[name] }
+	if !chatEnabled(getenv) {
+		t.Fatal("qualified chat remains unavailable")
+	}
+	for flag := range flags {
+		flags[flag] = ""
+		if chatEnabled(getenv) {
+			t.Errorf("chat opens without %s", flag)
+		}
+		flags[flag] = "true"
 	}
 }

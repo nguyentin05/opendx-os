@@ -49,8 +49,8 @@ type TurnResult struct {
 	Answer       *string              `json:"answer"`
 	Citations    []knowledge.Citation `json:"citations"`
 	Sources      []SourceRef          `json:"-"`
-	Reason       string               `json:"reason"`
-	Usage        *models.Usage        `json:"usage"`
+	Reason       string               `json:"reason,omitempty"`
+	Usage        *models.Usage        `json:"usage,omitempty"`
 }
 type ConversationStore interface {
 	Create(context.Context, Actor, string) (Conversation, error)
