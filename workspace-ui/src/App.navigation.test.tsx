@@ -35,3 +35,9 @@ it('opens shared sources and manager controls in an app that also owns the perso
  fireEvent.click(screen.getByRole('button',{name:'Personal library'}));expect(screen.getByLabelText('Upload document')).toBeTruthy();expect(screen.queryByRole('heading',{name:'App knowledge'})).toBeNull();
  fireEvent.click(screen.getByRole('button',{name:'Combined app'}));await screen.findByRole('heading',{name:'App knowledge'});expect(screen.queryByLabelText('Upload document')).toBeNull();
 });
+
+it('opens the global assistant independently and keeps applications usable when it is unavailable',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>String(input).startsWith('/api/cap/ai/conversations')?new Response('',{status:503}):Response.json({data:{domain_records:[{title:'Available record'}]}})));
+ const session:Session={token:'token',user:{id:'A',email:'a@test.invalid',display_name:'Alice',roles:[]},apps:[{app_id:'sample',display_name:'Sample app',version:'1',capabilities:[],roles:[{name:'role_sample'}],tables:[{name:'domain.records',access:{select:[{role:'role_sample',columns:['title']}]},ui:{listColumns:['title']}}]}]};
+ render(<App initialSession={session}/>);fireEvent.click(screen.getByRole('button',{name:'Sample app'}));await screen.findByText('Available record');fireEvent.click(screen.getByRole('button',{name:'Assistant'}));await screen.findByText('Assistant is temporarily unavailable.');expect(screen.queryByLabelText('Acting role')).toBeNull();fireEvent.click(screen.getByRole('button',{name:'Sample app'}));await screen.findByText('Available record');
+});
