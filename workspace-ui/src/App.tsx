@@ -10,6 +10,7 @@ import { resolveAppRole, useSessionContext } from './core/session-context';
 import { AgentChat } from './features/agent/AgentChat';
 import type { Pending } from './features/agent/AgentChat';
 import { allowedFields, topLevelTables } from './features/dynamic-ui/registry';
+import { RecordDetail } from './features/dynamic-ui/RecordDetail';
 import { TableList } from './features/dynamic-ui/TableList';
 import { AppKnowledge } from './features/knowledge/AppKnowledge';
 import { PersonalLibrary } from './features/knowledge/PersonalLibrary';
@@ -160,6 +161,25 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
     }
 
     const create = route.mode === 'new';
+    if (table && route.recordID !== undefined && route.mode !== 'edit') {
+      const recordID = route.recordID;
+      const listURL = toTableURL(context.app.app_id, table.name, undefined, context.role);
+      const recordPath = toTableURL(context.app.app_id, table.name, recordID);
+      return (
+        <>
+          <h1>{context.app.display_name}</h1>
+          <RecordDetail
+            table={table}
+            app={context.app}
+            context={context}
+            recordID={recordID}
+            onEdit={() => go(recordPath + '/edit?' + new URLSearchParams({ role: context.role }))}
+            onBack={() => go(listURL)}
+          />
+        </>
+      );
+    }
+
     const open = route.recordID !== undefined;
     if (table && (create || open)) {
       const allowed = create
