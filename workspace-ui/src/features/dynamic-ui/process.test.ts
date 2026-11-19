@@ -6,9 +6,9 @@ import { executeCommand } from './process';
 
 const context = { token: 'token', role: 'reviewer' };
 const entity = 'aa95c645-d797-44e2-85fe-49976b17b89d';
-const key = 'a61a026f-8c39-4516-8d6a-a62129d62135';
+const idempotencyKey = crypto.randomUUID();
 const signal = new AbortController().signal;
-const reject = () => executeCommand(context, 'sample', 'reject', entity, 3, { rejection_reason: 'Incorrect total' }, key, signal);
+const reject = () => executeCommand(context, 'sample', 'reject', entity, 3, { rejection_reason: 'Incorrect total' }, idempotencyKey, signal);
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -25,7 +25,7 @@ it('sends the viewed version and payload to the role-scoped process route', asyn
   expect(init.signal).toBe(signal);
   expect(headers.get('Authorization')).toBe('Bearer token');
   expect(headers.get('X-Hasura-Role')).toBe('reviewer');
-  expect(headers.get('Idempotency-Key')).toBe(key);
+  expect(headers.get('Idempotency-Key')).toBe(idempotencyKey);
   expect(JSON.parse(String(init.body))).toEqual({
     entity_id: entity, expected_version: 3, payload: { rejection_reason: 'Incorrect total' },
   });
