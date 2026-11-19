@@ -45,7 +45,7 @@ function wasVisible(ctx: ScopedRequestContext, table: InstalledTable, record: Re
 type GraphQLErrorKind = 'unauthenticated' | 'forbidden' | 'unavailable';
 
 export class GraphQLRequestError extends Error {
-  constructor(readonly kind: GraphQLErrorKind, readonly missingFieldPath?: string) {
+  constructor(readonly kind: GraphQLErrorKind, readonly missingFieldPaths: string[] = []) {
     super('GraphQL request failed.');
     this.name = 'GraphQLRequestError';
   }
@@ -62,9 +62,7 @@ function graphQLErrorKind(errors: unknown[]): GraphQLErrorKind {
   return 'unavailable';
 }
 
-function missingFieldPath(errors: unknown[]): string | undefined {
-  if (errors.length !== 1) return;
-  const [error] = errors;
+function missingFieldPath(error: unknown): string | undefined {
   if (isRecord(error) && typeof error.message === 'string' && error.message.startsWith("field '")
     && isRecord(error.extensions) && error.extensions.code === 'validation-failed'
     && typeof error.extensions.path === 'string') {
@@ -104,7 +102,9 @@ export async function executeGraphQL<T>(
     if ('errors' in body) {
       if (!Array.isArray(body.errors)) throw new GraphQLRequestError('unavailable');
       if (body.errors.length) {
-        throw new GraphQLRequestError(graphQLErrorKind(body.errors), missingFieldPath(body.errors));
+        const paths = body.errors.map(missingFieldPath);
+        const missingFields = paths.every((path): path is string => path !== undefined) ? paths : [];
+        throw new GraphQLRequestError(graphQLErrorKind(body.errors), missingFields);
       }
     }
     if (!isRecord(body.data)) throw new GraphQLRequestError('unavailable');

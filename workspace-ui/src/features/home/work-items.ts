@@ -2,9 +2,10 @@
 // Copyright 2026 DX-OS Open-Core Contributors
 
 import type { Session } from '../../auth';
-import { resolveAppRole } from '../../core/session-context';
+import { holdsAppGrant } from '../../core/session-context';
 import type { AppRoleContext } from '../../core/session-context';
 import { executeGraphQL, GraphQLRequestError, isRecord } from '../dynamic-ui/graphql';
+import { targetURL, workTarget } from './recent';
 
 export interface WorkItem {
   id: string;
@@ -21,12 +22,8 @@ export interface WorkItem {
 const concurrency = 4;
 const maxPageSize = 50;
 const grantDeadlineMs = 10_000;
-const boardPath = '$.selectionSet.cap_work_work_items.selectionSet.board_column';
-
-export function holdsAppGrant(session: Session, appID: string, role: string): boolean {
-  return (session.user.roles ?? []).some(grant => grant.name === role && grant.app_id === appID
-    && grant.cap_id === undefined) && Boolean(resolveAppRole(session, appID, role));
-}
+const workFieldPath = '$.selectionSet.cap_work_work_items.selectionSet.';
+const optionalWorkFields = ['priority', 'board_column', 'source_type', 'source_id'] as const;
 
 export function workGrants(session: Session): AppRoleContext[] {
   const grants: AppRoleContext[] = [];
@@ -51,11 +48,13 @@ export function workItemKey(item: WorkItem): string {
   return item.appID + ':' + item.id;
 }
 
-export function mergeWorkItems(items: WorkItem[]): WorkItem[] {
+export function mergeWorkItems(session: Session, items: WorkItem[]): WorkItem[] {
+  const sourceURL = (item: WorkItem) => targetURL(session, workTarget(item), true);
   const unique = new Map<string, WorkItem>();
   for (const item of items) {
     const key = workItemKey(item);
-    if (!unique.has(key)) unique.set(key, item);
+    const previous = unique.get(key);
+    if (!previous || (!sourceURL(previous) && sourceURL(item))) unique.set(key, item);
   }
   return [...unique.values()].sort((a, b) =>
     Date.parse(b.createdAt) - Date.parse(a.createdAt)
@@ -70,36 +69,48 @@ function subMilliseconds(timestamp: string): number {
   return remainder ? Number('0.' + remainder) : 0;
 }
 
-function workQuery(includeBoard: boolean): string {
+function workQuery(fields: readonly string[]): string {
   return `query WorkspaceWork($limit: Int!, $offset: Int!) {
     cap_work_work_items(limit: $limit, offset: $offset, order_by: [{created_at: desc}, {id: desc}]) {
-      id title priority ${includeBoard ? 'board_column' : ''} source_type source_id created_at
+      id title created_at ${fields.join(' ')}
     }
   }`;
 }
 
 async function loadGrant(grant: AppRoleContext, limit: number, offset: number, signal: AbortSignal) {
-  const variables = { limit, offset };
-  const request = (includeBoard: boolean) =>
-    executeGraphQL<{ cap_work_work_items: unknown }>(grant, workQuery(includeBoard), variables, signal);
-  const data = await request(true).catch(error => {
-    if (!(error instanceof GraphQLRequestError) || error.missingFieldPath !== boardPath) throw error;
-    return request(false);
-  });
+  let fields = [...optionalWorkFields];
+  let data: { cap_work_work_items: unknown };
+  for (;;) {
+    try {
+      data = await executeGraphQL(grant, workQuery(fields), { limit, offset }, signal);
+      break;
+    } catch (error) {
+      if (!(error instanceof GraphQLRequestError) || !error.missingFieldPaths.length) throw error;
+      const denied = error.missingFieldPaths.map(path => fields.find(field => workFieldPath + field === path));
+      if (denied.some(field => field === undefined)) throw error;
+      fields = fields.filter(field => !denied.includes(field));
+    }
+  }
 
   if (!Array.isArray(data.cap_work_work_items) || data.cap_work_work_items.length > limit) {
     throw new GraphQLRequestError('unavailable');
   }
   return data.cap_work_work_items.map((row): WorkItem => {
     if (!isRecord(row) || typeof row.id !== 'string' || !row.id || typeof row.title !== 'string'
-      || typeof row.priority !== 'string' || typeof row.created_at !== 'string'
+      || typeof row.created_at !== 'string'
       || !Number.isFinite(Date.parse(row.created_at))) throw new GraphQLRequestError('unavailable');
 
+    function optionalField(field: typeof optionalWorkFields[number]): string | undefined {
+      const value = row[field];
+      return fields.includes(field) && typeof value === 'string' ? value : undefined;
+    }
+
     return {
-      id: row.id, appID: grant.app.app_id, role: grant.role, title: row.title, priority: row.priority,
-      boardColumn: typeof row.board_column === 'string' ? row.board_column : undefined,
-      sourceType: typeof row.source_type === 'string' ? row.source_type : '',
-      sourceID: typeof row.source_id === 'string' ? row.source_id : '',
+      id: row.id, appID: grant.app.app_id, role: grant.role, title: row.title,
+      priority: optionalField('priority') ?? '',
+      boardColumn: optionalField('board_column'),
+      sourceType: optionalField('source_type') ?? '',
+      sourceID: optionalField('source_id') ?? '',
       createdAt: row.created_at,
     };
   });
@@ -158,7 +169,7 @@ async function loadAcrossGrants(
   signal.throwIfAborted();
 
   return {
-    items: mergeWorkItems(pages.flatMap(page => page.items)),
+    items: mergeWorkItems(session, pages.flatMap(page => page.items)),
     next: Object.fromEntries(pages.flatMap(({ key, next }) => next === undefined ? [] : [[key, next]])),
     partial: pages.some(page => page.failed),
   };

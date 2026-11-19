@@ -196,3 +196,42 @@ it('keeps a record outside its role scope out of recent navigation', async () =>
 
   expect(within(screen.getByRole('region', { name: 'Recently viewed' })).queryByRole('link')).toBeNull();
 });
+
+it('shows readable work with unavailable priority, state and source link', async () => {
+  vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+    const { query } = JSON.parse(String(init.body));
+    const denied = ['priority', 'board_column', 'source_type'].find(field => query.includes(field));
+    if (denied) {
+      return Response.json({ errors: [{
+        message: `field '${denied}' not found in type: 'cap_work_work_items'`,
+        extensions: { code: 'validation-failed', path: '$.selectionSet.cap_work_work_items.selectionSet.' + denied },
+      }] });
+    }
+    return Response.json({ data: { cap_work_work_items: [{
+      id: 'work-id', title: 'Limited work details', source_id: sourceID, created_at: '2026-11-19T00:01:00+00:00',
+    }] } });
+  });
+  render(<App initialSession={session} />);
+
+  await screen.findByText('Limited work details');
+  expect(screen.getByText('Priority unavailable')).toBeTruthy();
+  expect(screen.getByText('State unavailable')).toBeTruthy();
+  expect(screen.getByText('Source unavailable')).toBeTruthy();
+  expect(screen.queryByRole('link', { name: 'Limited work details' })).toBeNull();
+  expect(screen.queryByText(/work items are temporarily unavailable/i)).toBeNull();
+});
+
+it('uses the duplicate row from a grant that can open its source', async () => {
+  vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+    const actingRole = new Headers(init.headers).get('X-Hasura-Role');
+    return actingRole === role.name ? workResponse('Review under reviewer') : workResponse('Review under reader');
+  });
+  render(<App initialSession={{
+    ...session, apps: [{ ...session.apps[0], work_item_roles: [defaultRole.name, role.name] }],
+  }} />);
+
+  const item = await screen.findByRole('link', { name: 'Review under reviewer' });
+
+  expect(item.getAttribute('href')).toBe('/apps/records/tables/domain.records/' + sourceID + '?role=' + role.name);
+  expect(screen.queryByText('Review under reader')).toBeNull();
+});

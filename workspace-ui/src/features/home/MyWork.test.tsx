@@ -87,3 +87,39 @@ it('reports partial coverage during a failed grant and recovers it on retry', as
   expect(screen.getByText('Available work')).toBeTruthy();
   expect(screen.queryByText(/Some work items are unavailable/)).toBeNull();
 });
+
+it('replaces an unlinkable duplicate when a later page provides a readable originating role', async () => {
+  window.history.replaceState(null, '', '/my-work');
+  const sourceID = 'b21e978e-4a77-4d62-85bb-72270ddfbf79';
+  const viewerRole = { name: 'role_viewer', app_id: 'alpha' };
+  const alpha = {
+    ...apps[0], roles: [...apps[0].roles, viewerRole], work_item_roles: ['role_alpha', viewerRole.name],
+    tables: [{
+      name: 'domain.records', columns: [],
+      access: { select: [{ role: viewerRole.name, columns: ['id'] }], insert: [] },
+      ui: { listColumns: [], formFields: [] },
+    }],
+  };
+  vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+    const byViewer = new Headers(init.headers).get('X-Hasura-Role') === viewerRole.name;
+    const { variables: { limit, offset } } = JSON.parse(String(init.body));
+    const duplicate = {
+      ...row(byViewer ? 'Shared work with source access' : 'Shared work without source access', 'HIGH'),
+      id: 'shared-work', source_type: 'domain.records', source_id: sourceID,
+    };
+    const items = byViewer
+      ? [...Array.from({ length: limit - 1 }, (_, index) => row('Earlier work ' + index, 'LOW')), duplicate].slice(offset, offset + limit)
+      : [duplicate];
+    return Response.json({ data: { cap_work_work_items: items } });
+  });
+  render(<App initialSession={{
+    ...session, apps: [alpha], user: { ...session.user, roles: alpha.roles },
+  }} />);
+  await screen.findByText('Shared work without source access');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+
+  const item = await screen.findByRole('link', { name: 'Shared work with source access' });
+  expect(item.getAttribute('href')).toBe('/apps/alpha/tables/domain.records/' + sourceID + '?role=' + viewerRole.name);
+  expect(screen.queryByText('Shared work without source access')).toBeNull();
+});

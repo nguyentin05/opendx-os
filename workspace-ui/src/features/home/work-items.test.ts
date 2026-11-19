@@ -208,3 +208,58 @@ it('marks stalled grants partial and schedules later grants even when the transp
     vi.useRealTimers();
   }
 });
+
+it('drops only unavailable optional fields until work remains readable under the same role and offset', async () => {
+  const { loadWorkPage } = await import('./work-items');
+  const selected: string[][] = [];
+  const optional = ['priority', 'board_column', 'source_type', 'source_id'];
+  const fieldsMissing = (fields: string[]) => Response.json({
+    errors: fields.map(field => ({
+      message: `field '${field}' not found in type: 'cap_work_work_items'`,
+      extensions: { code: 'validation-failed', path: '$.selectionSet.cap_work_work_items.selectionSet.' + field },
+    })),
+  });
+  vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+    const { role, query, variables } = request(init);
+    expect(role).toBe('role_a');
+    expect(variables).toEqual({ limit: 3, offset: 4 });
+    const fields = optional.filter(field => query.includes(field));
+    selected.push(fields);
+    if (fields.includes('priority')) return fieldsMissing(['priority']);
+    if (fields.includes('board_column')) return fieldsMissing(['board_column', 'source_id']);
+    return Response.json({ data: { cap_work_work_items: [{
+      id: 'visible', title: 'Visible work', source_type: 'domain.records', created_at: '2026-11-19T00:01:00+00:00',
+    }] } });
+  });
+
+  const result = await loadWorkPage(
+    session([app('records', ['role_a'])]), { 'records:role_a': 4 }, 2, new AbortController().signal,
+  );
+
+  expect(result.partial).toBe(false);
+  expect(result.items).toEqual([expect.objectContaining({
+    id: 'visible', title: 'Visible work', role: 'role_a', priority: '', boardColumn: undefined,
+    sourceType: 'domain.records', sourceID: '',
+  })]);
+  expect(selected).toEqual([
+    ['priority', 'board_column', 'source_type', 'source_id'],
+    ['board_column', 'source_type', 'source_id'],
+    ['source_type'],
+  ]);
+});
+
+it('reports partial coverage when Hasura denies a required work field', async () => {
+  const { loadWorkPreview } = await import('./work-items');
+  const fetch = vi.fn(async () => Response.json({
+    errors: ['title', 'board_column'].map(field => ({
+      message: `field '${field}' not found in type: 'cap_work_work_items'`,
+      extensions: { code: 'validation-failed', path: '$.selectionSet.cap_work_work_items.selectionSet.' + field },
+    })),
+  }));
+  vi.stubGlobal('fetch', fetch);
+
+  const result = await loadWorkPreview(session([app('records', ['role_a'])]), 5, new AbortController().signal);
+
+  expect(result).toEqual({ items: [], partial: true });
+  expect(fetch).toHaveBeenCalledTimes(1);
+});

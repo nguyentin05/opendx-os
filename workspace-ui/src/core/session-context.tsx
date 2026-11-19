@@ -27,6 +27,11 @@ export function resolveAppRole(session: Session, appID: string, requestedRole?: 
   return grant ? { token: session.token, userID: session.user.id, app, role: grant.name } : null;
 }
 
+export function holdsAppGrant(session: Session, appID: string, role: string): boolean {
+  return (session.user.roles ?? []).some(grant => grant.name === role && grant.app_id === appID
+    && grant.cap_id === undefined) && Boolean(resolveAppRole(session, appID, role));
+}
+
 interface Scope {
   appID: string | undefined;
   requestedRole: string | undefined;

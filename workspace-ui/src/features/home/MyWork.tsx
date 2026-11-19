@@ -35,9 +35,9 @@ export function WorkItemList({ session, onOpenWorkItem, items }: MyWorkProps & {
               : <span>{item.title}</span>}
             <span>{' · ' + app?.display_name + ' · '}</span>
             <span>{item.role}</span>
-            <span>{' · ' + label(priorities, item.priority)}</span>
-            {item.boardColumn && <span> · <span>{label(boardColumns, item.boardColumn)}</span></span>}
-            {!href && <span> · Source unavailable</span>}
+            <span> · <span>{item.priority ? label(priorities, item.priority) : 'Priority unavailable'}</span></span>
+            <span> · <span>{item.boardColumn ? label(boardColumns, item.boardColumn) : 'State unavailable'}</span></span>
+            {!href && <span> · <span>Source unavailable</span></span>}
           </li>
         );
       })}
@@ -76,7 +76,7 @@ export function MyWork({ session, onOpenWorkItem }: MyWorkProps) {
       setLoaded(previous => ({
         session, cursors, data: {
           ...data,
-          items: mergeWorkItems([...(previous?.session === session ? previous.data.items : []), ...data.items]),
+          items: mergeWorkItems(session, [...(previous?.session === session ? previous.data.items : []), ...data.items]),
         },
       }));
     }).catch(() => {

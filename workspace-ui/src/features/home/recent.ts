@@ -3,9 +3,9 @@
 
 import type { Session } from '../../auth';
 import { toTableURL } from '../../core/routes';
+import { holdsAppGrant } from '../../core/session-context';
 import { isRecordID } from '../dynamic-ui/graphql';
 import { allowedFields, topLevelTables } from '../dynamic-ui/registry';
-import { holdsAppGrant } from './work-items';
 import type { WorkItem } from './work-items';
 
 export interface RecentTarget {
