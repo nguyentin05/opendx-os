@@ -6,6 +6,7 @@ import type { AppRoleContext } from '../../core/session-context';
 import type { InstalledTable } from '../../types/registry';
 import { childPageSize, deleteChildRecord, GraphQLRequestError, isRecordID, loadChildPage } from './graphql';
 import { RecordForm } from './RecordForm';
+import type { RecordWriteGuard } from './RecordForm';
 import { allowedFields, canEditRecord, writableFormFields } from './registry';
 
 export interface ChildGridProps {
@@ -14,6 +15,7 @@ export interface ChildGridProps {
   child: InstalledTable;
   context: AppRoleContext;
   onParentChanged: () => void;
+  writeGuard?: RecordWriteGuard;
 }
 
 type ChildPage = Awaited<ReturnType<typeof loadChildPage>>;
@@ -36,7 +38,7 @@ export function ChildGrid(props: ChildGridProps) {
   return <ChildGridContents key={scope} {...props} />;
 }
 
-function ChildGridContents({ parent, parentRecord, child, context, onParentChanged }: ChildGridProps) {
+function ChildGridContents({ parent, parentRecord, child, context, onParentChanged, writeGuard }: ChildGridProps) {
   const [scope] = useState(() => ({ parent, parentRecord }));
   const { role } = context;
   const [projection] = useState(() => {
@@ -79,26 +81,30 @@ function ChildGridContents({ parent, parentRecord, child, context, onParentChang
 
   async function remove(row: Row) {
     if (!canRemove || !isRecordID(row.id) || removalRequest.current) return;
+    const finishWrite = writeGuard?.begin();
+    if (writeGuard && !finishWrite) return;
     const controller = new AbortController();
     removalRequest.current = controller;
     setRemoving(true);
     setRemoveError('');
     const failure = 'This child record could not be removed.';
+    let removed;
     try {
-      const removed = await deleteChildRecord(context, child, { ...scope, childRecord: row }, row.id, controller.signal);
+      removed = await deleteChildRecord(context, child, { ...scope, childRecord: row }, row.id, controller.signal);
       if (controller.signal.aborted) return;
-      if (removed) onParentChanged();
-      else setRemoveError(failure);
+      if (!removed) setRemoveError(failure);
     } catch (error) {
       if (controller.signal.aborted) return;
       const expired = error instanceof GraphQLRequestError && error.kind === 'unauthenticated';
       setRemoveError(expired ? 'Sign in again to remove this child record.' : failure);
     } finally {
+      finishWrite?.();
       if (!controller.signal.aborted) {
         removalRequest.current = null;
         setRemoving(false);
       }
     }
+    if (removed && !controller.signal.aborted) onParentChanged();
   }
 
   function cancelAction() {
@@ -115,7 +121,8 @@ function ChildGridContents({ parent, parentRecord, child, context, onParentChang
       <h3>{child.name}</h3>
       {!current && <p role="status">Loading child records…</p>}
       {current && 'error' in current && <p role="alert">{current.error}</p>}
-      {canAdd && !action && <button type="button" onClick={() => setAction({ mode: 'insert' })}>Add child record</button>}
+      {canAdd && !action && <button type="button" disabled={writeGuard?.pending}
+        onClick={() => setAction({ mode: 'insert' })}>Add child record</button>}
       {page && rows.length === 0 && <p role="status">No child records found.</p>}
       {rows.length > 0 && (columns.length > 0 || showRowActions) && (
         <table>
@@ -127,9 +134,9 @@ function ChildGridContents({ parent, parentRecord, child, context, onParentChang
             <tr key={isRecordID(row.id) ? row.id : index}>
               {columns.map(name => <td key={name}>{row[name] === null ? '—' : String(row[name])}</td>)}
               {showRowActions && <td>
-                {canUpdate && <button type="button" disabled={Boolean(action)}
+                {canUpdate && <button type="button" disabled={Boolean(action || writeGuard?.pending)}
                   onClick={() => setAction({ mode: 'update', row })}>Edit child record</button>}
-                {canRemove && <button type="button" disabled={Boolean(action)}
+                {canRemove && <button type="button" disabled={Boolean(action || writeGuard?.pending)}
                   onClick={() => setAction({ mode: 'delete', row })}>Remove child record</button>}
               </td>}
             </tr>
@@ -150,12 +157,12 @@ function ChildGridContents({ parent, parentRecord, child, context, onParentChang
         <RecordForm table={child} app={context.app} context={context} mode={action.mode}
           record={action.mode === 'update' ? action.row : undefined}
           childScope={{ ...scope, childRecord: action.mode === 'update' ? action.row : undefined }}
-          onSaved={onParentChanged} onCancel={cancelAction} />
+          writeGuard={writeGuard} onSaved={onParentChanged} onCancel={cancelAction} />
       )}
       {action?.mode === 'delete' && canRemove && (
         <>
           <p>Remove this child record?</p>
-          <button type="button" disabled={removing} onClick={() => void remove(action.row)}>Confirm removal</button>
+          <button type="button" disabled={removing || writeGuard?.pending} onClick={() => void remove(action.row)}>Confirm removal</button>
           <button type="button" disabled={removing} onClick={cancelAction}>Cancel</button>
           {removeError && <p role="alert">{removeError}</p>}
         </>

@@ -217,6 +217,7 @@ it.each([false, true])('refreshes the parent only when child deletion succeeds (
     await within(grid).findByRole('alert');
     expect(within(grid).getByText('Initial item')).toBeTruthy();
     expect(screen.getByText('1')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Refresh record' }) as HTMLButtonElement).disabled).toBe(false);
   } else {
     await screen.findByText('2');
     expect(screen.queryByText('Initial item')).toBeNull();
@@ -347,4 +348,72 @@ it('discards a pending child write result after switching to a different acting 
   expect(readerRequests).toHaveLength(2);
   expect(screen.queryByText('Pending old-role edit')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Edit child record' })).toBeNull();
+});
+
+function deferNextResponse(fetch: ReturnType<typeof setup>) {
+  const respond = fetch.getMockImplementation();
+  if (!respond) throw new Error('Expected a fetch handler');
+  let complete = () => {};
+  const pending = new Promise<void>(resolve => { complete = resolve; });
+  fetch.mockImplementationOnce(async (endpoint, init) => {
+    await pending;
+    return respond(endpoint, init);
+  });
+  return complete;
+}
+
+it('keeps a pending child write mounted when a manual parent refresh is attempted', async () => {
+  open(parent.name, id);
+  const fetch = setup();
+  render(<App initialSession={session} />);
+
+  const grid = await screen.findByRole('region', { name: child.name });
+  fireEvent.click(await within(grid).findByRole('button', { name: 'Edit child record' }));
+  fireEvent.change(within(grid).getByLabelText('Item'), { target: { value: 'Committed item' } });
+  const complete = deferNextResponse(fetch);
+  fireEvent.click(within(grid).getByRole('button', { name: 'Save record' }));
+  const update = fetch.mock.lastCall?.[1];
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh record' }));
+
+  expect(update?.signal?.aborted).toBe(false);
+  await act(async () => complete());
+  await screen.findByText('Committed item');
+  expect(screen.getByText('2')).toBeTruthy();
+});
+
+it('serializes writes on two child grids that share the same parent version', async () => {
+  open(parent.name, id);
+  const sibling = { ...child, name: 'domain.other_items' };
+  const fetch = setup();
+  const respondToRecord = fetch.getMockImplementation();
+  fetch.mockImplementation((endpoint, init) => {
+    const { query } = JSON.parse(String(init.body));
+    if (query.includes('other_items_by_request_id')) {
+      return respond({ domain_requests_by_pk: {
+        id, other_items_by_request_id: [{ id: otherID, request_id: id, item: 'Other item', notes: null }],
+      } });
+    }
+    if (respondToRecord) return respondToRecord(endpoint, init);
+    throw new Error('Unexpected request');
+  });
+  render(<App initialSession={{
+    ...session, apps: [{ ...session.apps[0], tables: [parent, child, sibling] }],
+  }} />);
+
+  const grid = await screen.findByRole('region', { name: child.name });
+  const otherGrid = screen.getByRole('region', { name: sibling.name });
+  fireEvent.click(await within(grid).findByRole('button', { name: 'Edit child record' }));
+  fireEvent.click(await within(otherGrid).findByRole('button', { name: 'Edit child record' }));
+  fireEvent.change(within(grid).getByLabelText('Item'), { target: { value: 'First change' } });
+  fireEvent.change(within(otherGrid).getByLabelText('Item'), { target: { value: 'Second change' } });
+
+  const complete = deferNextResponse(fetch);
+  fireEvent.click(within(grid).getByRole('button', { name: 'Save record' }));
+  fireEvent.submit(within(otherGrid).getByLabelText('Item').closest('form')!);
+
+  const writes = fetch.mock.calls.filter(([, init]) => JSON.parse(String(init.body)).query.startsWith('mutation'));
+  expect(writes).toHaveLength(1);
+  await act(async () => complete());
+  await screen.findByText('First change');
+  expect(screen.getByText('2')).toBeTruthy();
 });

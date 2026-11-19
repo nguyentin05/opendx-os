@@ -9,6 +9,11 @@ import { GraphQLRequestError, isRecordID, loadRecord, loadReferencePage, referen
 import type { ChildRecordScope } from './graphql';
 import { allowedFields, canEditRecord, isFileFormField, writableFormFields } from './registry';
 
+export interface RecordWriteGuard {
+  pending: boolean;
+  begin: () => (() => void) | undefined;
+}
+
 export interface RecordFormProps {
   table: InstalledTable;
   app: InstalledApp;
@@ -16,11 +21,12 @@ export interface RecordFormProps {
   mode: 'insert' | 'update';
   record?: Record<string, unknown>;
   childScope?: ChildRecordScope;
+  writeGuard?: RecordWriteGuard;
   onSaved: () => void;
   onCancel: () => void;
 }
 
-type EditRecordProps = Omit<RecordFormProps, 'mode' | 'record' | 'childScope'> & { recordID: string };
+type EditRecordProps = Omit<RecordFormProps, 'mode' | 'record' | 'childScope' | 'writeGuard'> & { recordID: string };
 type Field = FormField & {
   column: InstalledTable['columns'][number];
   target?: InstalledTable;
@@ -147,7 +153,7 @@ function fieldValue(field: Field, draft: string): string | number | null {
   return draft;
 }
 
-function FormFields({ table, context, mode, record, childScope, onSaved, onCancel, fields }: RecordFormProps & { fields: Field[] }) {
+function FormFields({ table, context, mode, record, childScope, writeGuard, onSaved, onCancel, fields }: RecordFormProps & { fields: Field[] }) {
   const [initial] = useState(() => {
     const readable = allowedFields(table, context.role, 'select');
     return Object.fromEntries(fields.filter(field => readable.includes(field.name) && record
@@ -195,30 +201,34 @@ function FormFields({ table, context, mode, record, childScope, onSaved, onCance
       return;
     }
 
+    const finishWrite = writeGuard?.begin();
+    if (writeGuard && !finishWrite) return;
     const controller = new AbortController();
     saveRequest.current = controller;
     setPending(true);
+    let saved;
     try {
       const id = isRecordID(record?.id) ? record.id : undefined;
-      const saved = await saveRecord(context, table, mode, submitted, id, controller.signal, childScope);
+      saved = await saveRecord(context, table, mode, submitted, id, controller.signal, childScope);
       if (controller.signal.aborted) return;
-      if (saved) onSaved();
-      else setMessage('This record could not be saved.');
+      if (!saved) setMessage('This record could not be saved.');
     } catch (error) {
       if (controller.signal.aborted) return;
       const expired = error instanceof GraphQLRequestError && error.kind === 'unauthenticated';
       setMessage(expired ? 'Sign in again to save this record.' : 'This record could not be saved.');
     } finally {
+      finishWrite?.();
       if (!controller.signal.aborted) {
         saveRequest.current = null;
         setPending(false);
       }
     }
+    if (saved && !controller.signal.aborted) onSaved();
   }
 
   return (
     <form noValidate onSubmit={event => void submit(event)}>
-      <fieldset disabled={pending}>
+      <fieldset disabled={pending || writeGuard?.pending}>
         {fields.map(field => {
           const { name, label, type, required, column, target, description, unavailable } = field;
           const id = formID + '-' + name;
@@ -255,7 +265,7 @@ function FormFields({ table, context, mode, record, childScope, onSaved, onCance
         })}
         <button type="submit">{pending ? 'Saving…' : 'Save record'}</button>
       </fieldset>
-      <button type="button" onClick={onCancel}>Cancel</button>
+      <button type="button" disabled={Boolean(writeGuard && pending)} onClick={onCancel}>Cancel</button>
       {message && <p role={message === 'No changes to save.' ? 'status' : 'alert'}>{message}</p>}
     </form>
   );

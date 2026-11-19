@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 DX-OS Open-Core Contributors
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toTableURL, useWorkspaceRoute } from '../../core/routes';
 import type { AppRoleContext } from '../../core/session-context';
 import { WorkspaceLink } from '../../shell/AppShell';
@@ -76,7 +76,20 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
   }));
   const [revision, setRevision] = useState(0);
   const [result, setResult] = useState<{ revision: number; value: RecordResult }>();
-  const refresh = useCallback(() => setRevision(current => current + 1), []);
+  const [writePending, setWritePending] = useState(false);
+  const writing = useRef(false);
+  const beginRecordWrite = useCallback(() => {
+    if (writing.current) return;
+    writing.current = true;
+    setWritePending(true);
+    return () => {
+      writing.current = false;
+      setWritePending(false);
+    };
+  }, []);
+  const refresh = useCallback(() => {
+    if (!writing.current) setRevision(current => current + 1);
+  }, []);
   const { role } = context;
 
   useEffect(() => {
@@ -97,13 +110,13 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
 
   return (
     <>
-      <button type="button" onClick={refresh} disabled={!current}>Refresh record</button>
+      <button type="button" onClick={refresh} disabled={!current || writePending}>Refresh record</button>
       {!current && <p role="status">Loading record…</p>}
       {current && 'error' in current && <p role="alert">{current.error}</p>}
       {record === null && <p role="status">Record not found.</p>}
       {record && (
         <>
-          {canEditRecord(table, role, record) && <button type="button" onClick={onEdit}>Edit record</button>}
+          {canEditRecord(table, role, record) && <button type="button" onClick={onEdit} disabled={writePending}>Edit record</button>}
           {fields.length ? (
             <dl>
               {fields.map(({ name, label, target }) => {
@@ -125,7 +138,7 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
           ) : <p>No detail fields are available to this role.</p>}
           {app.tables.filter(child => child.belongsTo?.table === table.name).map(child => (
             <ChildGrid key={child.name} parent={table} parentRecord={record} child={child}
-              context={context} onParentChanged={refresh} />
+              context={context} onParentChanged={refresh} writeGuard={{ pending: writePending, begin: beginRecordWrite }} />
           ))}
         </>
       )}
