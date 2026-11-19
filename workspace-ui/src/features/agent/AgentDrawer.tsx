@@ -11,6 +11,7 @@ export interface AgentDrawerProps {
   token: string;
   userID: string;
   open: boolean;
+  suspended?: boolean;
   onClose: () => void;
   pendingTurns: Record<string, Pending>;
 }
@@ -19,18 +20,21 @@ export function AgentDrawer(props: AgentDrawerProps) {
   return <AgentDrawerContents key={JSON.stringify([props.token, props.userID])} {...props} />;
 }
 
-function AgentDrawerContents({ token, open, onClose, pendingTurns }: AgentDrawerProps) {
-  const [opened, setOpened] = useState(open);
+function AgentDrawerContents({ token, open, suspended, onClose, pendingTurns }: AgentDrawerProps) {
+  const visible = open && !suspended;
+  const [opened, setOpened] = useState(visible);
+  const wasOpen = useRef(false);
   const closeButton = useRef<HTMLButtonElement>(null);
 
-  if (open && !opened) setOpened(true);
+  if (visible && !opened) setOpened(true);
 
   useEffect(() => {
-    if (open) closeButton.current?.focus();
-  }, [open]);
+    if (visible && !wasOpen.current) closeButton.current?.focus();
+    wasOpen.current = open;
+  }, [open, visible]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!visible) return;
     function handleEscape(event: KeyboardEvent) {
       if (event.key === 'Escape' && !event.defaultPrevented) {
         event.preventDefault();
@@ -39,7 +43,7 @@ function AgentDrawerContents({ token, open, onClose, pendingTurns }: AgentDrawer
     }
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, [open, onClose]);
+  }, [visible, onClose]);
 
   return (
     <aside
@@ -47,10 +51,10 @@ function AgentDrawerContents({ token, open, onClose, pendingTurns }: AgentDrawer
       className="workspace-agent-drawer"
       role="dialog"
       aria-label="Assistant"
-      hidden={!open}
+      hidden={!visible}
     >
       <button type="button" ref={closeButton} onClick={onClose}>Close assistant</button>
-      {opened && <AgentChat token={token} pendingTurns={pendingTurns} visible={open} />}
+      {opened && <AgentChat token={token} pendingTurns={pendingTurns} visible={visible} />}
     </aside>
   );
 }

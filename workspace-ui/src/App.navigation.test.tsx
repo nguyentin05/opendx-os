@@ -99,7 +99,7 @@ it('keeps the open record and acting role usable while the drawer reports an AI 
  expect(drawer.getByText('Assistant is temporarily unavailable.')).toBeTruthy();
 });
 
-it('withholds an open drawer during verification and retains its retry key for the same verified user', async () => {
+it('withholds an open drawer during verification and restores its retry without moving focus from Refresh permissions', async () => {
  const keys: string[] = [];
  const user = {id: 'A', email: 'a@test.invalid', display_name: 'Alice', roles: []};
  const session: Session = {token: 'token', user, apps: []};
@@ -123,10 +123,14 @@ it('withholds an open drawer during verification and retains its retry key for t
  fireEvent.change(await screen.findByLabelText('Question'), {target: {value: 'Question'}});
  fireEvent.click(screen.getByRole('button', {name: 'Send'}));
  await screen.findByText(/UNCERTAIN/);
- fireEvent.click(screen.getByRole('button', {name: 'Refresh permissions'}));
+ const refresh = screen.getByRole('button', {name: 'Refresh permissions'});
+ refresh.focus();
+ fireEvent.click(refresh);
  expect(screen.queryByRole('dialog', {name: 'Assistant'})).toBeNull();
  expect(screen.queryByRole('button', {name: 'Assistant'})).toBeNull();
  await act(async () => completeVerification(Response.json(user)));
+ expect(screen.getByRole('dialog', {name: 'Assistant'})).toBeTruthy();
+ expect(document.activeElement).toBe(refresh);
  fireEvent.click(await screen.findByRole('button', {name: 'Retry'}));
  await waitFor(() => expect(keys).toHaveLength(2));
  expect(keys[1]).toBe(keys[0]);
@@ -279,10 +283,14 @@ it('opens a knowledge-only app with its verified acting role and records its app
 it('honors a personal-library app URL only for its permitted acting role', async () => {
  const role = 'role_library_user';
  const session: Session = {
-  token: 'token', user: {id: 'A', email: 'a@test.invalid', display_name: 'Alice', roles: []},
+  token: 'token',
+  user: {
+   id: 'A', email: 'a@test.invalid', display_name: 'Alice',
+   roles: [{name: 'role_observer', app_id: 'library'}, {name: role, app_id: 'library'}],
+  },
   apps: [{
    app_id: 'library', display_name: 'Library app', version: '1', capabilities: ['cap-ai'],
-   roles: [{name: role}, {name: 'role_observer'}], tables: [],
+   roles: [{name: 'role_observer'}, {name: role}], tables: [],
    knowledge: {version: 1, personalLibrary: {enabled: true, allowedRoles: [role]}},
   }],
  };
@@ -295,6 +303,7 @@ it('honors a personal-library app URL only for its permitted acting role', async
 
  openApplication('Library app');
  expect(screen.getByLabelText('Upload document')).toBeTruthy();
+ expect(screen.getByRole('button', {name: 'Acting role'}).textContent).toContain(role);
  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
  expect(new Headers(fetcher.mock.calls[0][1]?.headers).get('X-Hasura-Role')).toBe(role);
 });

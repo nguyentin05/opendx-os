@@ -123,7 +123,6 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
   }
   if (assistant !== assistantSession) setAssistantSession(assistant);
 
-  const assistantOpen = Boolean(session && assistant?.open);
   function closeAssistant() {
     if (assistant) setAssistantSession({ ...assistant, open: false });
     assistantTrigger.current?.focus();
@@ -321,9 +320,9 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
         <button
           type="button"
           ref={assistantTrigger}
-          aria-expanded={assistantOpen}
+          aria-expanded={assistant.open}
           aria-controls={agentDrawerID}
-          onClick={() => assistantOpen ? closeAssistant() : setAssistantSession({ ...assistant, open: true })}
+          onClick={() => assistant.open ? closeAssistant() : setAssistantSession({ ...assistant, open: true })}
         >
           <span aria-hidden="true">✦</span> Assistant
         </button>
@@ -332,7 +331,8 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
         <AgentDrawer
           token={assistant.token}
           userID={assistant.userID}
-          open={assistantOpen}
+          open={assistant.open}
+          suspended={!session}
           onClose={closeAssistant}
           pendingTurns={assistant.turns}
         />
