@@ -86,10 +86,14 @@ describe('registry selectors', () => {
     ]);
   });
 
-  it('returns no writable form fields for absent rules or a null form list', () => {
-    expect(allowedFields({ ...table, access: { select: [], insert: null } }, role, 'insert')).toEqual([]);
-    expect(allowedFields({ ...table, access: { select: [] } }, role, 'update')).toEqual([]);
-    expect(writableFormFields({ ...table, ui: { listColumns: [], formFields: null } }, role, 'insert')).toEqual([]);
+  it('returns no writable form fields when the operation has no rule for the role', () => {
+    const insertOnlyTable: InstalledTable = {
+      ...table,
+      access: { select: table.access.select, insert: [{ role, columns: ['title'] }] },
+    };
+
+    expect(writableFormFields(insertOnlyTable, 'role_manager', 'insert')).toEqual([]);
+    expect(writableFormFields(insertOnlyTable, role, 'update')).toEqual([]);
   });
 });
 

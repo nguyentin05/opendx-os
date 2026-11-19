@@ -107,17 +107,17 @@ interface TableCommand {
 
 export interface InstalledTable {
   name: string;
-  columns?: Array<{ name: string; type: string; nullable: boolean; check?: string }> | null;
+  columns: Array<{ name: string; type: string; nullable: boolean; check?: string }>;
   foreignKeys?: Array<{ column: string; references: string }>;
   access: {
     select: TableAccessRule[];
-    insert?: TableAccessRule[] | null;
+    insert: TableAccessRule[];
     update?: TableAccessRule[];
     delete?: Array<{ role: string }>;
   };
   ui: {
     listColumns: string[];
-    formFields?: FormField[] | null;
+    formFields: FormField[];
     actions?: string[];
   };
   stateMachine?: {
@@ -137,6 +137,6 @@ export interface InstalledApp {
   capabilities: string[] | null;
   roles: RoleGrant[];
   tables: InstalledTable[];
-  knowledge?: KnowledgeSpec | null;
+  knowledge: KnowledgeSpec | null;
   work_item_roles?: string[];
 }
