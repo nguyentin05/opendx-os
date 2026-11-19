@@ -323,7 +323,7 @@ export function AgentChat({
             Delete conversation
           </button>
           <h2>Transcript</h2>
-          {!loading && !messages.length && <p>No messages yet.</p>}
+          {transcriptReady && !messages.length && <p>No messages yet.</p>}
           <ol>
             {messages.map((m) => (
               <li key={m.id}>

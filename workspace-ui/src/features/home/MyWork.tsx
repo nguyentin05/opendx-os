@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Session } from '../../auth';
 import { WorkspaceLink } from '../../shell/AppShell';
 import { targetURL, workTarget } from './recent';
-import { loadWorkPage, mergeWorkItems, workGrants, workItemKey } from './work-items';
+import { loadWorkPage, mergeWorkItems, retainAuthorizedWork, workGrants, workItemKey } from './work-items';
 import type { WorkItem } from './work-items';
 
 export interface MyWorkProps {
@@ -24,7 +24,7 @@ function label(labels: Record<string, string>, key: string) {
 
 export function WorkItemList({ session, onOpenWorkItem, items }: MyWorkProps & { items: WorkItem[] }) {
   return (
-    <ul className="workspace-work-list">
+    <ul className="workspace-work-list" role="list">
       {items.map(item => {
         const app = session.apps.find(app => app.app_id === item.appID);
         const href = targetURL(session, workTarget(item), true);
@@ -56,7 +56,7 @@ export function WorkAvailability({ partial, itemCount }: { partial: boolean; ite
 
 type WorkPage = Awaited<ReturnType<typeof loadWorkPage>>;
 type PageRequest = { session: Session; cursors: WorkPage['next'] };
-type LoadedWork = { session: Session; cursors: WorkPage['next']; data: WorkPage };
+type LoadedWork = { session: Session; cursors: WorkPage['next']; data: Omit<WorkPage, 'grantItems'> };
 
 export function MyWork({ session, onOpenWorkItem }: MyWorkProps) {
   const apps = useMemo(() => [...new Set(workGrants(session).map(grant => grant.app))], [session]);
@@ -72,12 +72,24 @@ export function MyWork({ session, onOpenWorkItem }: MyWorkProps) {
   useEffect(() => {
     if (!apps.length) return;
     const controller = new AbortController();
-    void loadWorkPage(session, cursors, pageSize, controller.signal).then(data => {
+    void loadWorkPage(session, cursors, pageSize, controller.signal, change => {
+      if (controller.signal.aborted) return;
+      setLoaded(previous => previous?.session === session ? {
+        ...previous,
+        data: {
+          ...previous.data,
+          items: retainAuthorizedWork(previous.data.items, change),
+          partial: previous.data.partial || change.kind !== 'narrowed',
+        },
+      } : previous);
+    }).then(data => {
       if (controller.signal.aborted) return;
       setLoaded(previous => ({
         session, cursors, data: {
-          ...data,
-          items: mergeWorkItems(session, [...(previous?.session === session ? previous.data.items : []), ...data.items]),
+          next: data.next,
+          partial: data.partial,
+          // Keep alternate authorizing grants until display deduplication.
+          items: [...(previous?.session === session ? previous.data.items : []), ...data.grantItems],
         },
       }));
     }).catch(() => {
@@ -94,8 +106,9 @@ export function MyWork({ session, onOpenWorkItem }: MyWorkProps) {
   }, [session, cursors, apps]);
 
   const selectedApp = apps.some(app => app.app_id === appFilter) ? appFilter : '';
-  const items = (result?.items ?? []).filter(item =>
-    (!selectedApp || item.appID === selectedApp) && (!priorityFilter || item.priority === priorityFilter));
+  const work = mergeWorkItems(session, result?.items ?? []);
+  const items = work.filter(item => (!selectedApp || item.appID === selectedApp)
+    && (!priorityFilter || item.priority === priorityFilter));
   const hasMore = result && Object.keys(result.next).length > 0;
 
   return (
@@ -120,7 +133,7 @@ export function MyWork({ session, onOpenWorkItem }: MyWorkProps) {
         </div>
       )}
       {loading && <p role="status">Loading work items…</p>}
-      <WorkAvailability partial={Boolean(result?.partial)} itemCount={result?.items.length ?? 0} />
+      <WorkAvailability partial={Boolean(result?.partial)} itemCount={work.length} />
       {items.length > 0 && <WorkItemList session={session} onOpenWorkItem={onOpenWorkItem} items={items} />}
       {!loading && !items.length && (
         selectedApp || priorityFilter

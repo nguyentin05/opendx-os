@@ -440,3 +440,21 @@ it('omits a crafted work item UUID from the record mutation', async () => {
 
   expect(requests[0].variables).toEqual({ object: { title: 'Allowed' } });
 });
+
+it('keeps cancel disabled on a regular form while a save is pending', async () => {
+  let finishSave: (result: Response) => void = () => {};
+  serve(({ query }) => {
+    if (query.startsWith('mutation')) return new Promise<Response>(resolve => { finishSave = resolve; });
+    return dataResponse('domain_vendors', []);
+  });
+  showForm();
+  fill('Title', 'Attempted save');
+  fill('Amount', '2');
+  save();
+
+  const cancel = screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement;
+  expect(cancel.disabled).toBe(true);
+  finishSave(dataResponse('insert_domain_requests_one', null));
+  await screen.findByRole('alert');
+  expect(cancel.disabled).toBe(false);
+});

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 DX-OS Open-Core Contributors
 import { useEffect, useState } from 'react';
-import { AnswerResponse, AppSource, KnowledgeClient, SearchHit } from './client';
+import { AnswerResponse, AppSource, KnowledgeClient, KnowledgeRequestError, SearchHit } from './client';
 import { GrantManagement } from './GrantManagement';
 
 interface Props {
@@ -17,6 +17,18 @@ export function AppKnowledge(props: Props) {
  return <ScopedAppKnowledge key={key} token={props.token} appID={props.appID} role={props.role} />;
 }
 
+function sourceAuthorityChanged(previous: AppSource[], next: AppSource[]): boolean {
+ const sources = new Map(next.map(source => [source.source_id, source]));
+ return previous.some(before => {
+  const after = sources.get(before.source_id);
+  return (before.readable || before.manageable) && (
+   !after || after.document_id !== before.document_id
+   || (before.readable && !after.readable) || (before.manageable && !after.manageable)
+   || (before.active_version_available && !after.active_version_available)
+  );
+ });
+}
+
 function ScopedAppKnowledge({token, appID, role}: Pick<Props, 'token' | 'appID' | 'role'>) {
  const [client, setClient] = useState<KnowledgeClient>();
  const [answer, setAnswer] = useState<AnswerResponse | null>(null);
@@ -26,32 +38,68 @@ function ScopedAppKnowledge({token, appID, role}: Pick<Props, 'token' | 'appID' 
  const [citation, setCitation] = useState<SearchHit | null>(null);
  const [manage, setManage] = useState<AppSource | null>(null);
  const [message, setMessage] = useState('');
+ const [pollMessage, setPollMessage] = useState('');
  const [busy, setBusy] = useState(false);
 
  useEffect(() => {
   const controller = new AbortController();
-  const client = new KnowledgeClient({ token, appID, role, signal: controller.signal });
-  setClient(client);
+  const context = { token, appID, role };
+  const pollClient = new KnowledgeClient({ ...context, signal: controller.signal });
+  let interactions: AbortController | undefined;
+  let verifiedSources: AppSource[] = [];
+  let timer: ReturnType<typeof setTimeout>;
+
+  function clearInteractions() {
+   interactions?.abort();
+   interactions = undefined;
+   setClient(undefined);
+   setAnswer(null);
+   setHits([]);
+   setCitation(null);
+   setManage(null);
+   setBusy(false);
+   setMessage('');
+  }
 
   async function load() {
    try {
-    const page = await client.appSources();
-    if (!controller.signal.aborted) setSources(page.sources);
-   } catch {
-    if (!controller.signal.aborted) setMessage('App knowledge is unavailable.');
+    const page = await pollClient.appSources();
+    if (controller.signal.aborted) return;
+    // An answer can combine several sources. Discard the old app interaction
+    // when any source loses authority and use a fresh client for new requests.
+    if (sourceAuthorityChanged(verifiedSources, page.sources)) clearInteractions();
+    verifiedSources = page.sources;
+    setSources(verifiedSources);
+    setPollMessage('');
+    if (!interactions) {
+     interactions = new AbortController();
+     setClient(new KnowledgeClient({ ...context, signal: interactions.signal }));
+    }
+   } catch (error) {
+    if (controller.signal.aborted) return;
+    if (error instanceof KnowledgeRequestError && [401, 403, 404, 409].includes(error.status)) {
+     clearInteractions();
+     verifiedSources = [];
+     setSources([]);
+     setPollMessage('App knowledge access could not be verified.');
+    } else {
+     setPollMessage('App knowledge is temporarily unavailable.');
+    }
+   } finally {
+    if (!controller.signal.aborted) timer = setTimeout(() => void load(), 2000);
    }
   }
 
   void load();
-  const timer = setInterval(() => void load(), 2000);
   return () => {
    controller.abort();
-   clearInterval(timer);
+   interactions?.abort();
+   clearTimeout(timer);
   };
  }, [token, appID, role]);
 
  async function search() {
-  if (!client) return;
+  if (!client || client.context.signal.aborted) return;
   const { signal } = client.context;
   setAnswer(null);
   setBusy(true);
@@ -72,7 +120,7 @@ function ScopedAppKnowledge({token, appID, role}: Pick<Props, 'token' | 'appID' 
  }
 
  async function ask() {
-  if (!client) return;
+  if (!client || client.context.signal.aborted) return;
   const { signal } = client.context;
   setBusy(true);
   setAnswer(null);
@@ -93,7 +141,7 @@ function ScopedAppKnowledge({token, appID, role}: Pick<Props, 'token' | 'appID' 
  }
 
  async function showCitation(hit: SearchHit) {
-  if (!client) return;
+  if (!client || client.context.signal.aborted) return;
   const { signal } = client.context;
   setCitation(null);
   try {
@@ -106,6 +154,7 @@ function ScopedAppKnowledge({token, appID, role}: Pick<Props, 'token' | 'appID' 
 
  return <section aria-label="App knowledge">
   <h2>App knowledge</h2>
+  {pollMessage&&<p role="status">{pollMessage}</p>}
   {message&&<p role="status">{message}</p>}
   <ul>{sources.map(source=><li key={source.source_id}>
    <strong>{source.source_id}</strong>: <span>{source.status==='READY'?'Ready':source.status==='FAILED'?'Indexing failed':'Indexing'}</span>

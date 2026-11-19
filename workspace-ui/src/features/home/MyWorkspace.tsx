@@ -64,7 +64,7 @@ export function MyWorkspace({ session, onOpenApp, onOpenWorkItem, recent = [], o
       <section className="workspace-panel" aria-labelledby="workspace-apps-heading">
         <h2 id="workspace-apps-heading">Your apps</h2>
         {apps.length > 0 ? (
-          <ul className="workspace-app-shortcuts">
+          <ul className="workspace-app-shortcuts" role="list">
             {apps.map(app => (
               <li key={app.app_id}>
                 <WorkspaceLink href={'/apps/' + encodeURIComponent(app.app_id)} onNavigate={() => onOpenApp(app.app_id)}>
@@ -79,7 +79,7 @@ export function MyWorkspace({ session, onOpenApp, onOpenWorkItem, recent = [], o
       <section className="workspace-panel" aria-labelledby="workspace-recent-heading">
         <h2 id="workspace-recent-heading">Recently viewed</h2>
         {entries.length > 0 && onOpenRecent ? (
-          <ul className="workspace-recent">
+          <ul className="workspace-recent" role="list">
             {entries.map(({ target, href, app }) => (
               <li key={href}>
                 <WorkspaceLink href={href} onNavigate={() => onOpenRecent(target)}>

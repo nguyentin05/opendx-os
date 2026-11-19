@@ -6,11 +6,37 @@ export interface DocumentPage {documents:DocumentSummary[];next_cursor?:string}
 export interface SearchHit {document_id:string;version_id:string;chunk_id:string;title:string;snippet:string;section_path:string[];element_ids:string[];positions:Array<{page_no?:number;provenance:string}>;warnings:string[];url:string}
 export interface SearchResult {status:string;results:SearchHit[];warnings:string[]}
 export interface ClientContext {token:string;role:string;appID:string;signal:AbortSignal}
+export class KnowledgeRequestError extends Error {
+ constructor(readonly status: number, message: string) {
+  super(message);
+  this.name = 'KnowledgeRequestError';
+ }
+}
+
 export class KnowledgeClient {
  private keys=new Map<string,string>();
  constructor(readonly context:ClientContext){}
  private key(action:string){let key=this.keys.get(action);if(!key){key=crypto.randomUUID();this.keys.set(action,key)}return key}
- private async request<T>(path:string,init:RequestInit={}):Promise<T>{const response=await fetch(path,{...init,signal:this.context.signal,headers:{Authorization:`Bearer ${this.context.token}`,'X-Hasura-Role':this.context.role,...init.headers}});if(this.context.signal.aborted)throw new DOMException('Context changed','AbortError');if(!response.ok){const messages:Record<number,string>={401:'Please sign in again.',403:'Your library role is unavailable.',404:'Document access changed or is unavailable.',409:'Document changed. Refresh before trying again.',415:'This document format or recipe is not supported.',422:'Document is not clean or cannot be processed.',503:'Personal library is unavailable.'};throw new Error(messages[response.status]??'Document request failed.')};if(response.status===204)return undefined as T;return await response.json() as T}
+ private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const { signal, token, role } = this.context;
+  signal.throwIfAborted();
+  const response = await fetch(path, {
+   ...init, signal, headers: { Authorization: `Bearer ${token}`, 'X-Hasura-Role': role, ...init.headers },
+  });
+  signal.throwIfAborted();
+  if (!response.ok) {
+   const messages: Record<number, string> = {
+    401: 'Please sign in again.', 403: 'Your library role is unavailable.',
+    404: 'Document access changed or is unavailable.', 409: 'Document changed. Refresh before trying again.',
+    415: 'This document format or recipe is not supported.', 422: 'Document is not clean or cannot be processed.',
+    503: 'Personal library is unavailable.',
+   };
+   throw new KnowledgeRequestError(response.status, messages[response.status] ?? 'Document request failed.');
+  }
+  const data = response.status === 204 ? undefined : await response.json();
+  signal.throwIfAborted();
+  return data as T;
+ }
  async uploadPrivate(file:File):Promise<{file_id:string}>{if(!/\.(md|pdf)$/i.test(file.name)||file.size>20*1024*1024)throw new Error('Choose a text PDF or Markdown file up to 20 MiB.');const form=new FormData();form.append('app_id',this.context.appID);form.append('file',file);return this.request('/api/cap/process/files/private/upload',{method:'POST',body:form})}
  async waitClean(fileID:string):Promise<void>{const deadline=Date.now()+60000;while(Date.now()<deadline){const reply=await this.request<{data?:{core_files_by_pk?:{scan_status:string}|null};errors?:unknown[]}>('/v1/graphql',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:'query PrivateScan($id:uuid!){core_files_by_pk(id:$id){scan_status}}',variables:{id:fileID}})});if(reply.errors?.length||!reply.data?.core_files_by_pk)throw new Error('Document scan status is unavailable.');const status=reply.data.core_files_by_pk.scan_status;if(status==='CLEAN')return;if(status!=='QUARANTINED')throw new Error('Document failed the security scan.');await new Promise<void>((resolve,reject)=>{const abort=()=>{clearTimeout(timer);reject(new DOMException('Context changed','AbortError'))};const timer=setTimeout(()=>{this.context.signal.removeEventListener('abort',abort);resolve()},500);this.context.signal.addEventListener('abort',abort,{once:true});if(this.context.signal.aborted)abort()})};throw new Error('Scanning is still in progress. Try uploading again later.')}
  register(fileID:string):Promise<Registration>{return this.request('/api/cap/ai/documents',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':this.key('register:'+fileID)},body:JSON.stringify({file_id:fileID,parser_profile:'standard-text-v1'})})}

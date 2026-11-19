@@ -296,7 +296,7 @@ function FormFields({ table, context, mode, record, childScope, writeGuard, onSa
         })}
         <button type="submit" disabled={uploading || blockedAttachment}>{pending ? 'Saving…' : 'Save record'}</button>
       </fieldset>
-      <button type="button" disabled={Boolean(writeGuard && pending)} onClick={onCancel}>Cancel</button>
+      <button type="button" disabled={pending} onClick={onCancel}>Cancel</button>
       {message && <p role={message === 'No changes to save.' ? 'status' : 'alert'}>{message}</p>}
     </form>
   );

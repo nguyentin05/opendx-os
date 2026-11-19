@@ -178,7 +178,7 @@ it('caps an oversized page and does not revisit grants already exhausted', async
   const page = await loadWorkPage(grants, { 'first:role_a': 50 }, 2000, new AbortController().signal);
 
   expect(seen).toEqual(['role_a']);
-  expect(page).toEqual({ items: [], next: {}, partial: false });
+  expect(page).toEqual({ items: [], grantItems: [], next: {}, partial: false });
 });
 
 it('marks stalled grants partial and schedules later grants even when the transport ignores abort', async () => {

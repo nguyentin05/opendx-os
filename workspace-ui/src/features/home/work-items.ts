@@ -22,8 +22,10 @@ export interface WorkItem {
 const concurrency = 4;
 const maxPageSize = 50;
 const grantDeadlineMs = 10_000;
-const workFieldPath = '$.selectionSet.cap_work_work_items.selectionSet.';
+const workRootPath = '$.selectionSet.cap_work_work_items';
+const workFieldPath = workRootPath + '.selectionSet.';
 const optionalWorkFields = ['priority', 'board_column', 'source_type', 'source_id'] as const;
+type OptionalWorkField = typeof optionalWorkFields[number];
 
 export function workGrants(session: Session): AppRoleContext[] {
   const grants: AppRoleContext[] = [];
@@ -38,7 +40,33 @@ export function workGrants(session: Session): AppRoleContext[] {
 }
 
 type Cursors = Record<string, number>;
-type WorkPage = { items: WorkItem[]; next: Cursors; partial: boolean };
+type GrantPage = { key: string; items: WorkItem[]; next?: number; failure?: GraphQLRequestError['kind'] };
+type WorkPage = { items: WorkItem[]; grantItems: WorkItem[]; next: Cursors; partial: boolean };
+
+type WorkAuthorityChange =
+  | { kind: 'unauthenticated' }
+  | { kind: 'forbidden'; key: string }
+  | { kind: 'narrowed'; key: string; missingFields: ReadonlySet<OptionalWorkField> };
+
+function grantKey(appID: string, role: string): string {
+  return appID + ':' + role;
+}
+
+export function retainAuthorizedWork(items: WorkItem[], change: WorkAuthorityChange): WorkItem[] {
+  if (change.kind === 'unauthenticated') return [];
+  return items.flatMap(item => {
+    if (change.key !== grantKey(item.appID, item.role)) return [item];
+    if (change.kind === 'forbidden') return [];
+    const { missingFields } = change;
+    return [{
+      ...item,
+      priority: missingFields.has('priority') ? '' : item.priority,
+      boardColumn: missingFields.has('board_column') ? undefined : item.boardColumn,
+      sourceType: missingFields.has('source_type') ? '' : item.sourceType,
+      sourceID: missingFields.has('source_id') ? '' : item.sourceID,
+    }];
+  });
+}
 
 function boundedSize(size: number): number {
   return Number.isFinite(size) ? Math.max(1, Math.min(maxPageSize, Math.floor(size))) : maxPageSize;
@@ -77,7 +105,9 @@ function workQuery(fields: readonly string[]): string {
   }`;
 }
 
-async function loadGrant(grant: AppRoleContext, limit: number, offset: number, signal: AbortSignal) {
+async function loadGrant(
+  grant: AppRoleContext, limit: number, offset: number, signal: AbortSignal, onNarrowed: (fields: ReadonlySet<OptionalWorkField>) => void,
+) {
   let fields = [...optionalWorkFields];
   let data: { cap_work_work_items: unknown };
   for (;;) {
@@ -86,9 +116,15 @@ async function loadGrant(grant: AppRoleContext, limit: number, offset: number, s
       break;
     } catch (error) {
       if (!(error instanceof GraphQLRequestError) || !error.missingFieldPaths.length) throw error;
-      const denied = error.missingFieldPaths.map(path => fields.find(field => workFieldPath + field === path));
-      if (denied.some(field => field === undefined)) throw error;
-      fields = fields.filter(field => !denied.includes(field));
+      const paths = new Set(error.missingFieldPaths);
+      if ([...paths].some(path => path === workRootPath || path.startsWith(workRootPath + '.args.order_by')
+        || ['id', 'title', 'created_at'].some(field => workFieldPath + field === path))) {
+        throw new GraphQLRequestError('forbidden');
+      }
+      const missingFields = new Set(fields.filter(field => paths.has(workFieldPath + field)));
+      if (missingFields.size) onNarrowed(missingFields);
+      if (missingFields.size !== paths.size) throw error;
+      fields = fields.filter(field => !missingFields.has(field));
     }
   }
 
@@ -100,7 +136,7 @@ async function loadGrant(grant: AppRoleContext, limit: number, offset: number, s
       || typeof row.created_at !== 'string'
       || !Number.isFinite(Date.parse(row.created_at))) throw new GraphQLRequestError('unavailable');
 
-    function optionalField(field: typeof optionalWorkFields[number]): string | undefined {
+    function optionalField(field: OptionalWorkField): string | undefined {
       const value = row[field];
       return fields.includes(field) && typeof value === 'string' ? value : undefined;
     }
@@ -116,7 +152,9 @@ async function loadGrant(grant: AppRoleContext, limit: number, offset: number, s
   });
 }
 
-async function loadGrantBeforeDeadline(grant: AppRoleContext, limit: number, offset: number, signal: AbortSignal) {
+async function loadGrantBeforeDeadline(
+  grant: AppRoleContext, limit: number, offset: number, signal: AbortSignal, onNarrowed: (fields: ReadonlySet<OptionalWorkField>) => void,
+) {
   signal.throwIfAborted();
   const transport = new AbortController();
   const cancel = () => transport.abort(signal.reason);
@@ -130,7 +168,7 @@ async function loadGrantBeforeDeadline(grant: AppRoleContext, limit: number, off
   });
   try {
     // Bound how long a worker waits even if the transport ignores cancellation.
-    return await Promise.race([loadGrant(grant, limit, offset, transport.signal), cancelled]);
+    return await Promise.race([loadGrant(grant, limit, offset, transport.signal, onNarrowed), cancelled]);
   } finally {
     clearTimeout(timer);
     signal.removeEventListener('abort', cancel);
@@ -140,15 +178,17 @@ async function loadGrantBeforeDeadline(grant: AppRoleContext, limit: number, off
 
 async function loadAcrossGrants(
   session: Session, cursors: Cursors, size: number, preview: boolean, signal: AbortSignal,
+  onAuthorityChange?: (change: WorkAuthorityChange) => void,
 ): Promise<WorkPage> {
   signal.throwIfAborted();
   const firstPage = Object.keys(cursors).length === 0;
-  const jobs = workGrants(session).flatMap(grant => {
-    const key = grant.app.app_id + ':' + grant.role;
+  const grants = workGrants(session);
+  const jobs = grants.flatMap(grant => {
+    const key = grantKey(grant.app.app_id, grant.role);
     if (!firstPage && !Object.prototype.hasOwnProperty.call(cursors, key)) return [];
     return [{ grant, key, offset: firstPage ? 0 : cursors[key] }];
   });
-  const pages: Array<{ key: string; items: WorkItem[]; next?: number; failed?: true }> = [];
+  const pages: GrantPage[] = [];
   let index = 0;
 
   async function worker() {
@@ -156,11 +196,16 @@ async function loadAcrossGrants(
       const pageIndex = index++;
       const { grant, key, offset } = jobs[pageIndex];
       try {
-        const items = await loadGrantBeforeDeadline(grant, size + (preview ? 0 : 1), offset, signal);
+        const items = await loadGrantBeforeDeadline(grant, size + (preview ? 0 : 1), offset, signal, missingFields => {
+          onAuthorityChange?.({ kind: 'narrowed', key, missingFields });
+        });
         pages[pageIndex] = { key, items: items.slice(0, size), next: items.length > size ? offset + size : undefined };
-      } catch {
+      } catch (error) {
         signal.throwIfAborted();
-        pages[pageIndex] = { key, items: [], next: offset, failed: true };
+        const failure = error instanceof GraphQLRequestError ? error.kind : 'unavailable';
+        if (failure === 'unauthenticated') onAuthorityChange?.({ kind: 'unauthenticated' });
+        if (failure === 'forbidden') onAuthorityChange?.({ kind: 'forbidden', key });
+        pages[pageIndex] = { key, items: [], next: failure === 'unavailable' ? offset : 0, failure };
       }
     }
   }
@@ -168,10 +213,20 @@ async function loadAcrossGrants(
   await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, worker));
   signal.throwIfAborted();
 
+  if (pages.some(page => page.failure === 'unauthenticated')) {
+    // The shared token is no longer verified, including for grants not on this page.
+    return {
+      items: [], grantItems: [], partial: true,
+      next: Object.fromEntries(grants.map(grant => [grantKey(grant.app.app_id, grant.role), 0])),
+    };
+  }
+
+  const grantItems = pages.flatMap(page => page.items);
   return {
-    items: mergeWorkItems(session, pages.flatMap(page => page.items)),
+    grantItems,
+    items: mergeWorkItems(session, grantItems),
     next: Object.fromEntries(pages.flatMap(({ key, next }) => next === undefined ? [] : [[key, next]])),
-    partial: pages.some(page => page.failed),
+    partial: pages.some(page => page.failure),
   };
 }
 
@@ -183,6 +238,9 @@ export async function loadWorkPreview(
   return { items: items.slice(0, size), partial };
 }
 
-export function loadWorkPage(session: Session, cursors: Cursors, pageSize: number, signal: AbortSignal): Promise<WorkPage> {
-  return loadAcrossGrants(session, cursors, boundedSize(pageSize), false, signal);
+export function loadWorkPage(
+  session: Session, cursors: Cursors, pageSize: number, signal: AbortSignal,
+  onAuthorityChange?: (change: WorkAuthorityChange) => void,
+): Promise<WorkPage> {
+  return loadAcrossGrants(session, cursors, boundedSize(pageSize), false, signal, onAuthorityChange);
 }
