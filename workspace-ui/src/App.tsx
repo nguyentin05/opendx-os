@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 DX-OS Open-Core Contributors
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { finishSignIn, signIn } from './auth';
 import type { Session } from './auth';
 import { toTableURL, useWorkspaceRoute } from './core/routes';
@@ -14,6 +14,11 @@ import { topLevelTables } from './features/dynamic-ui/registry';
 import { RecordDetail } from './features/dynamic-ui/RecordDetail';
 import { EditRecord, RecordForm } from './features/dynamic-ui/RecordForm';
 import { TableList } from './features/dynamic-ui/TableList';
+import { MyWork } from './features/home/MyWork';
+import { MyWorkspace } from './features/home/MyWorkspace';
+import { targetURL, updateRecentTargets, workTarget } from './features/home/recent';
+import type { RecentTarget } from './features/home/recent';
+import type { WorkItem } from './features/home/work-items';
 import { AppKnowledge } from './features/knowledge/AppKnowledge';
 import { PersonalLibrary } from './features/knowledge/PersonalLibrary';
 import { AppShell, WorkspaceLink } from './shell/AppShell';
@@ -92,6 +97,8 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
 }) {
   const { route, navigate } = useWorkspaceRoute();
   const { session, context, refresh, pending, error } = useSessionContext(token, route, initialSession);
+  const [recent, setRecent] = useState<{ userID: string; entries: RecentTarget[] }>();
+  const [destination, setDestination] = useState<{ target: RecentTarget; work: boolean; href: string }>();
   const [surface, setSurface] = useState<{ route: WorkspaceRoute; kind: 'assistant' | 'library' } | null>(null);
   const agentPending = useRef<{ userID: string; turns: Record<string, Pending> }>({ userID: '', turns: {} });
   const commandAttempts = useRef<{ userID: string; attempts: CommandAttempts }>({ userID: '', attempts: new Map() });
@@ -116,9 +123,52 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
   ));
   const scope = JSON.stringify([session?.user.id, token, app?.app_id, context?.role, table?.name]);
 
-  function go(href: string) {
+  const guardedDestination = destination?.href === window.location.pathname + window.location.search ? destination : undefined;
+  const targetDenied = Boolean(session && guardedDestination
+    && !targetURL(session, guardedDestination.target, guardedDestination.work));
+
+  const updateRecent = useCallback((target: RecentTarget, visible: boolean) => {
+    if (!session || !targetURL(session, target)) return;
+    setRecent(previous => {
+      const entries = previous?.userID === session.user.id ? previous.entries : [];
+      const updated = updateRecentTargets(entries, target, visible);
+      return updated === entries ? previous : { userID: session.user.id, entries: updated };
+    });
+  }, [session]);
+
+  useEffect(() => {
+    if (route.kind !== 'app' || route.mode || route.recordID !== undefined || !table
+      || !context || activeSurface || targetDenied) return;
+    updateRecent({ appID: route.appID, role: context.role, tableName: table.name }, true);
+  }, [route, table, context, activeSurface, targetDenied, updateRecent]);
+
+  const onRecordAccess = useCallback((visible: boolean) => {
+    if (route.kind !== 'app' || !table || !route.recordID || !context || targetDenied) return;
+    updateRecent({ appID: route.appID, role: context.role, tableName: table.name, recordID: route.recordID }, visible);
+  }, [route, table, context, targetDenied, updateRecent]);
+
+  function go(href: string, target?: { target: RecentTarget; work: boolean }) {
+    setDestination(target ? { ...target, href } : undefined);
     setSurface(null);
     navigate(href);
+  }
+
+  function openTarget(target: RecentTarget, work: boolean) {
+    if (!session) return;
+    const href = targetURL(session, target, work);
+    if (!href) return;
+    refresh();
+    go(href, { target, work });
+  }
+
+  function openWorkItem(item: WorkItem) {
+    openTarget(workTarget(item), true);
+  }
+
+  function openApp(appID: string) {
+    if (!session || !resolveAppRole(session, appID)) return;
+    refresh();
+    go('/apps/' + encodeURIComponent(appID));
   }
 
   function changeRole(role: string) {
@@ -148,16 +198,19 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
         />
       );
     }
-    if (route.kind === 'work') {
-      return (
-        <>
-          <h1>My Work</h1>
-          <p>Work items are unavailable in this workspace view.</p>
-        </>
-      );
+    if (route.kind === 'home') {
+      return <MyWorkspace
+        session={session}
+        recent={recent?.userID === session.user.id ? recent.entries : []}
+        onOpenApp={openApp}
+        onOpenWorkItem={openWorkItem}
+        onOpenRecent={target => openTarget(target, false)}
+      />;
     }
-    if (route.kind !== 'app') return null;
-    if (!context || (requestedTable && !table)) {
+    if (route.kind === 'work') {
+      return <MyWork session={session} onOpenWorkItem={openWorkItem} />;
+    }
+    if (targetDenied || !context || (requestedTable && !table)) {
       return (
         <>
           <h1>Access unavailable</h1>
@@ -185,6 +238,7 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
                 recordID={recordID}
                 onEdit={() => go(toTableURL(app.app_id, table.name, recordID) + '/edit?' + new URLSearchParams({ role }))}
                 onBack={back}
+                onAccessResult={onRecordAccess}
                 commandAttempts={commandAttempts.current.attempts}
               />}
         </>

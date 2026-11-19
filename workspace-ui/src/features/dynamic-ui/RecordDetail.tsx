@@ -20,6 +20,7 @@ export interface RecordDetailProps {
   recordID: string;
   onEdit: () => void;
   onBack: () => void;
+  onAccessResult?: (visible: boolean) => void;
   commandAttempts?: CommandAttempts;
 }
 
@@ -72,10 +73,10 @@ function describeFields(table: InstalledTable, app: InstalledApp, readable: Set<
   });
 }
 
-type RecordResult = { record: Record<string, unknown> | null } | { error: string };
+type RecordResult = { record: Record<string, unknown> | null } | { error: keyof typeof failureMessages };
 
 function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof describeFields> }) {
-  const { app, context, recordID, onEdit } = props;
+  const { app, context, recordID, onEdit, onAccessResult } = props;
   const { navigate } = useWorkspaceRoute();
   // The parent changes the key whenever the app, table, role, or projection changes.
   const [{ table, fields, selection }] = useState(() => ({
@@ -114,7 +115,7 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
     }).catch(error => {
       if (!controller.signal.aborted) {
         const kind = error instanceof GraphQLRequestError ? error.kind : 'unavailable';
-        setResult({ revision, value: { error: failureMessages[kind] } });
+        setResult({ revision, value: { error: kind } });
       }
     });
     return () => controller.abort();
@@ -122,13 +123,18 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
 
   const current = result?.revision === revision ? result.value : undefined;
   const record = current && 'record' in current ? current.record : undefined;
+  const denied = current && 'error' in current
+    && (current.error === 'forbidden' || current.error === 'unauthenticated');
+  useEffect(() => {
+    if (denied || record !== undefined) onAccessResult?.(Boolean(record));
+  }, [denied, record, onAccessResult]);
 
   return (
     <>
       <button type="button" onClick={() => refresh()} disabled={!current || writePending}>Refresh record</button>
       {feedback && <p ref={feedbackRef} tabIndex={-1} role={feedback.error ? 'alert' : 'status'}>{feedback.message}</p>}
       {!current && <p role="status">Loading record…</p>}
-      {current && 'error' in current && <p role="alert">{current.error}</p>}
+      {current && 'error' in current && <p role="alert">{failureMessages[current.error]}</p>}
       {record === null && <p role="status">Record not found.</p>}
       {record && (
         <>

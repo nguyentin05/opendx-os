@@ -45,7 +45,7 @@ function wasVisible(ctx: ScopedRequestContext, table: InstalledTable, record: Re
 type GraphQLErrorKind = 'unauthenticated' | 'forbidden' | 'unavailable';
 
 export class GraphQLRequestError extends Error {
-  constructor(readonly kind: GraphQLErrorKind) {
+  constructor(readonly kind: GraphQLErrorKind, readonly missingFieldPath?: string) {
     super('GraphQL request failed.');
     this.name = 'GraphQLRequestError';
   }
@@ -60,6 +60,16 @@ function graphQLErrorKind(errors: unknown[]): GraphQLErrorKind {
   if (codes.includes('invalid-jwt') || codes.includes('jwt-expired')) return 'unauthenticated';
   if (codes.includes('access-denied') || codes.includes('permission-error')) return 'forbidden';
   return 'unavailable';
+}
+
+function missingFieldPath(errors: unknown[]): string | undefined {
+  if (errors.length !== 1) return;
+  const [error] = errors;
+  if (isRecord(error) && typeof error.message === 'string' && error.message.startsWith("field '")
+    && isRecord(error.extensions) && error.extensions.code === 'validation-failed'
+    && typeof error.extensions.path === 'string') {
+    return error.extensions.path;
+  }
 }
 
 export async function executeGraphQL<T>(
@@ -93,7 +103,9 @@ export async function executeGraphQL<T>(
     if (!isRecord(body)) throw new GraphQLRequestError('unavailable');
     if ('errors' in body) {
       if (!Array.isArray(body.errors)) throw new GraphQLRequestError('unavailable');
-      if (body.errors.length) throw new GraphQLRequestError(graphQLErrorKind(body.errors));
+      if (body.errors.length) {
+        throw new GraphQLRequestError(graphQLErrorKind(body.errors), missingFieldPath(body.errors));
+      }
     }
     if (!isRecord(body.data)) throw new GraphQLRequestError('unavailable');
     return body.data as T;

@@ -160,38 +160,7 @@ export function AppShell({
         )}
         {pending && <p role="status">Checking current permissions…</p>}
         {error && <p role="alert">{error}</p>}
-        {session && (!auxiliaryViewActive && route.kind === 'home' ? (
-          <>
-            <h1>My Workspace</h1>
-            <p>Welcome, {session.user.display_name}.</p>
-
-            <section className="workspace-panel">
-              <h2>Needs your attention</h2>
-              <p>Work items are unavailable in this workspace view.</p>
-              <WorkspaceLink href="/my-work" onNavigate={go}>See all in My Work</WorkspaceLink>
-            </section>
-
-            <section className="workspace-panel">
-              <h2>Your apps</h2>
-              {apps.length > 0 ? (
-                <ul className="workspace-app-shortcuts">
-                  {apps.map(app => (
-                    <li key={app.app_id}>
-                      <WorkspaceLink href={'/apps/' + encodeURIComponent(app.app_id)} onNavigate={go}>
-                        {app.display_name}
-                      </WorkspaceLink>
-                    </li>
-                  ))}
-                </ul>
-              ) : <p>No applications are available to your account.</p>}
-            </section>
-
-            <section className="workspace-panel">
-              <h2>Recently viewed</h2>
-              <p>Recent navigation is unavailable in this workspace view.</p>
-            </section>
-          </>
-        ) : children)}
+        {session && children}
       </main>
     </div>
   );
