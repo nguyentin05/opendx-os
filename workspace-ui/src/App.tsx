@@ -1,17 +1,272 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 DX-OS Open-Core Contributors
-import React,{useEffect,useRef,useState} from 'react';
-import { Session,finishSignIn,loadSession,signIn } from './auth';
-import { InstalledApp,InstalledTable } from './types/registry';
+
+import { useEffect, useRef, useState } from 'react';
+import { finishSignIn, signIn } from './auth';
+import type { Session } from './auth';
+import { toTableURL, useWorkspaceRoute } from './core/routes';
+import type { WorkspaceRoute } from './core/routes';
+import { resolveAppRole, useSessionContext } from './core/session-context';
+import { AgentChat } from './features/agent/AgentChat';
+import type { Pending } from './features/agent/AgentChat';
+import { allowedFields, tableGraphQLName, topLevelTables } from './features/dynamic-ui/registry';
+import { AppKnowledge } from './features/knowledge/AppKnowledge';
 import { PersonalLibrary } from './features/knowledge/PersonalLibrary';
-import {AgentChat,Pending} from './features/agent/AgentChat';
-import {AppKnowledge} from './features/knowledge/AppKnowledge';
-export function libraryFor(session:Session){const matches=session.apps.filter(app=>app.knowledge?.version===1&&app.knowledge.personalLibrary?.enabled);if(matches.length!==1)return null;const app=matches[0];const role=app.roles.find(r=>app.knowledge!.personalLibrary!.allowedRoles.includes(r.name));return role?{app,role:role.name}:null}
-export const App:React.FC<{initialSession?:Session}>=({initialSession})=>{const [credential,setCredential]=useState<{token:string;expires:number}|null>(initialSession?{token:initialSession.token,expires:Infinity}:null);const [loaded,setLoaded]=useState<Session|null>(initialSession??null);const [revision,setRevision]=useState(0);const [selected,setSelected]=useState('');const [role,setRole]=useState('');const [showLibrary,setShowLibrary]=useState(false);const [showAssistant,setShowAssistant]=useState(false);const [message,setMessage]=useState('');const callback=useRef(false);const agentPending=useRef<{token:string;userID:string;turns:Record<string,Pending>}>({token:'',userID:'',turns:{}});
- useEffect(()=>{if(initialSession||callback.current)return;callback.current=true;void finishSignIn().then(value=>{if(value)setCredential(value)}).catch(()=>setMessage('Sign-in failed. Please try again.'))},[initialSession]);
- useEffect(()=>{if(!credential)return;const abort=new AbortController();if(!initialSession||revision>0)void loadSession(credential.token,abort.signal).then(s=>{if(!abort.signal.aborted)setLoaded(s)}).catch(()=>{if(!abort.signal.aborted){setLoaded(null);setMessage('Current permissions are unavailable.')}});const timer=Number.isFinite(credential.expires)?setTimeout(()=>{setCredential(null);setLoaded(null);setSelected('');setRole('');setShowLibrary(false)},Math.max(0,credential.expires-Date.now())):undefined;return()=>{abort.abort();if(timer)clearTimeout(timer)}},[credential,revision,initialSession]);
- const session=credential&&loaded?.token===credential.token?loaded:null;if(agentPending.current.token!==(credential?.token??'')||(session&&agentPending.current.userID&&agentPending.current.userID!==session.user.id))agentPending.current={token:credential?.token??'',userID:session?.user.id??'',turns:{}};if(session)agentPending.current.userID=session.user.id;const library=session?libraryFor(session):null;const app=session?.apps.find(a=>a.app_id===selected);const currentRole=app?.roles.some(r=>r.name===role)?role:app?.roles[0]?.name??'';
- return <div style={{display:'flex',minHeight:'100vh',fontFamily:'system-ui',background:'#f5f7fa',color:'#182534'}}><aside style={{width:250,padding:24,background:'#172d3c',color:'white'}}><h2>OpenDX-OS</h2>{session?<><p>{session.user.display_name}</p><button onClick={()=>{setLoaded(null);setRevision(v=>v+1)}}>Refresh permissions</button><button onClick={()=>{setCredential(null);setLoaded(null);setSelected('');setRole('');setShowLibrary(false)}}>Sign out</button><p><button onClick={()=>setShowAssistant(true)}>Assistant</button></p>{library&&<p><button onClick={()=>{setShowAssistant(false);setShowLibrary(true)}}>Personal library</button></p>}<nav>{session.apps.map(a=><p key={a.app_id}><button onClick={()=>{setShowAssistant(false);setSelected(a.app_id);setRole(a.roles[0]?.name??'');setShowLibrary(Boolean(a.knowledge?.personalLibrary?.enabled&&!a.knowledge?.sources?.length&&!a.tables.length))}}>{a.display_name}</button></p>)}</nav></>:<button onClick={()=>void signIn().catch(()=>setMessage('Sign-in is unavailable.'))}>Sign in</button>}</aside><main style={{padding:32,flex:1}}>{message&&<p role="status">{message}</p>}{!session?<><h1>Welcome to OpenDX-OS</h1><p>Sign in to open your applications.</p></>:<>{!showAssistant&&app&&<><h1>{app.display_name}</h1><label htmlFor="acting-role">Acting role</label><select id="acting-role" value={currentRole} onChange={e=>setRole(e.target.value)}>{app.roles.map(r=><option key={r.name}>{r.name}</option>)}</select></>}{showAssistant?<AgentChat key={session.user.id+session.token} token={session.token} pendingTurns={agentPending.current.turns}/>:library&&showLibrary?<PersonalLibrary key={session.user.id+library.role+selected+currentRole} userID={session.user.id} token={session.token} appID={library.app.app_id} role={library.role} contextKey={selected+':'+currentRole}/>:app?<><TableScreens key={'tables:'+session.user.id+app.app_id+currentRole} app={app} token={session.token} role={currentRole}/>{Boolean(app.knowledge?.sources?.length)&&<AppKnowledge key={'knowledge:'+session.user.id+app.app_id+currentRole} userID={session.user.id} token={session.token} appID={app.app_id} role={currentRole} contextKey={selected+currentRole}/>}</>:<p>Select an application.</p>}</>}</main></div>
-};
-function TableScreens({app,token,role}:{app:InstalledApp;token:string;role:string}){const tables=app.tables.filter(t=>!t.belongsTo&&t.access.select.some(s=>s.role===role));return <>{tables.map(t=><TableView key={t.name} table={t} token={token} role={role}/>)}</>}
-function TableView({table,token,role}:{table:InstalledTable;token:string;role:string}){const [rows,setRows]=useState<Record<string,unknown>[]>([]);const [error,setError]=useState('');const allowed=table.access.select.filter(s=>s.role===role).flatMap(s=>s.columns);const columns=table.ui.listColumns.filter(c=>allowed.includes(c)&&/^[a-z][a-z0-9_]*$/.test(c));useEffect(()=>{const abort=new AbortController();setRows([]);if(!/^domain\.[a-z][a-z0-9_]*$/.test(table.name)||columns.length===0)return;const query='{'+table.name.replace('.','_')+'(limit:50){'+columns.join(' ')+'}}';void fetch('/v1/graphql',{method:'POST',signal:abort.signal,headers:{Authorization:'Bearer '+token,'X-Hasura-Role':role,'Content-Type':'application/json'},body:JSON.stringify({query})}).then(async response=>{const result=await response.json();if(!response.ok||result.errors)throw new Error('Records unavailable');if(!abort.signal.aborted)setRows(result.data[table.name.replace('.','_')]??[])}).catch(()=>{if(!abort.signal.aborted)setError('Records are unavailable.')});return()=>abort.abort()},[table,token,role,columns.join(',')]);return <section><h2>{table.name}</h2>{error&&<p>{error}</p>}<table><thead><tr>{columns.map(c=><th key={c}>{c}</th>)}</tr></thead><tbody>{rows.map((row,i)=><tr key={i}>{columns.map(c=><td key={c}>{String(row[c]??'')}</td>)}</tr>)}</tbody></table></section>}
+import { AppShell, WorkspaceLink } from './shell/AppShell';
+import type { InstalledTable } from './types/registry';
+
+export function libraryFor(session: Session) {
+  const matches = session.apps.filter(app =>
+    app.knowledge?.version === 1 && app.knowledge.personalLibrary?.enabled,
+  );
+  if (matches.length !== 1) return null;
+
+  const [app] = matches;
+  const allowedRoles = app.knowledge?.personalLibrary?.allowedRoles ?? [];
+  const role = app.roles.find(grant =>
+    allowedRoles.includes(grant.name) && resolveAppRole(session, app.app_id, grant.name),
+  );
+  return role ? { app, role: role.name } : null;
+}
+
+export function App({ initialSession }: { initialSession?: Session }) {
+  const accountKey = initialSession ? JSON.stringify([initialSession.user.id, initialSession.token]) : undefined;
+  return <WorkspaceRoot key={accountKey} initialSession={initialSession} />;
+}
+
+function WorkspaceRoot({ initialSession }: { initialSession?: Session }) {
+  const [credential, setCredential] = useState<{ token: string; expires: number } | null>(
+    initialSession ? { token: initialSession.token, expires: Infinity } : null,
+  );
+  const [message, setMessage] = useState('');
+  const callbackStarted = useRef(false);
+
+  useEffect(() => {
+    if (initialSession || callbackStarted.current) return;
+    callbackStarted.current = true;
+
+    void finishSignIn().then(value => {
+      if (value) setCredential(value);
+    }).catch(() => setMessage('Sign-in failed. Please try again.'));
+  }, [initialSession]);
+
+  useEffect(() => {
+    if (!credential || !Number.isFinite(credential.expires)) return;
+    const timer = setTimeout(() => setCredential(null), Math.max(0, credential.expires - Date.now()));
+    return () => clearTimeout(timer);
+  }, [credential]);
+
+  if (credential) {
+    return (
+      <SignedInWorkspace
+        key={credential.token}
+        token={credential.token}
+        initialSession={initialSession}
+        onSignOut={() => {
+          setCredential(null);
+          setMessage('');
+        }}
+      />
+    );
+  }
+
+  return (
+    <main className="workspace-sign-in">
+      <h1>Welcome to OpenDX-OS</h1>
+      <p>Sign in to open your applications.</p>
+      {message && <p role="status">{message}</p>}
+      <button onClick={() => void signIn().catch(() => setMessage('Sign-in is unavailable.'))}>
+        Sign in
+      </button>
+    </main>
+  );
+}
+
+function SignedInWorkspace({ token, initialSession, onSignOut }: {
+  token: string;
+  initialSession?: Session;
+  onSignOut: () => void;
+}) {
+  const { route, navigate } = useWorkspaceRoute();
+  const { session, context, refresh, pending, error } = useSessionContext(token, route, initialSession);
+  const [surface, setSurface] = useState<{ route: WorkspaceRoute; kind: 'assistant' | 'library' } | null>(null);
+  const agentPending = useRef<{ userID: string; turns: Record<string, Pending> }>({ userID: '', turns: {} });
+  if (session && agentPending.current.userID !== session.user.id) {
+    agentPending.current = { userID: session.user.id, turns: {} };
+  }
+
+  const activeSurface = surface?.route === route ? surface.kind : undefined;
+  const showAssistant = activeSurface === 'assistant';
+  const library = session && libraryFor(session);
+  const app = context?.app;
+  const hasAppKnowledge = Boolean(app?.knowledge?.sources?.length);
+  const tables = context ? topLevelTables(context.app, context.role) : [];
+  const requestedTable = route.kind === 'app' ? route.tableName : undefined;
+  const table = requestedTable === undefined ? tables[0] : tables.find(entry => entry.name === requestedTable);
+  const showLibrary = Boolean(library && (
+    activeSurface === 'library' ||
+    (app?.app_id === library.app.app_id && !hasAppKnowledge && !app.tables.length && requestedTable === undefined)
+  ));
+  const scope = JSON.stringify([session?.user.id, token, app?.app_id, context?.role, table?.name]);
+
+  function go(href: string) {
+    setSurface(null);
+    navigate(href);
+  }
+
+  function changeRole(role: string) {
+    if (!session || route.kind !== 'app') return;
+    const next = resolveAppRole(session, route.appID, role);
+    if (!next) return;
+
+    const canKeepTable = !requestedTable || topLevelTables(next.app, role).some(entry => entry.name === requestedTable);
+    const path = canKeepTable ? window.location.pathname : '/apps/' + encodeURIComponent(route.appID);
+    go(path + '?' + new URLSearchParams({ role }));
+  }
+
+  function renderView() {
+    if (!session) return null;
+    if (showAssistant) {
+      return <AgentChat key={session.user.id} token={token} pendingTurns={agentPending.current.turns} />;
+    }
+    if (library && showLibrary) {
+      return (
+        <PersonalLibrary
+          key={JSON.stringify([scope, library.app.app_id, library.role])}
+          userID={session.user.id}
+          token={token}
+          appID={library.app.app_id}
+          role={library.role}
+          contextKey={scope}
+        />
+      );
+    }
+    if (route.kind === 'work') {
+      return (
+        <>
+          <h1>My Work</h1>
+          <p>Work items are unavailable in this workspace view.</p>
+        </>
+      );
+    }
+    if (route.kind !== 'app') return null;
+    if (!context || (requestedTable && !table)) {
+      return (
+        <>
+          <h1>Access unavailable</h1>
+          <p>This application, role or view is unavailable to your account.</p>
+        </>
+      );
+    }
+
+    return (
+      <>
+        <h1>{context.app.display_name}</h1>
+        {tables.length > 0 && (
+          <nav className="workspace-table-nav" aria-label="Application views">
+            {tables.map(entry => (
+              <WorkspaceLink
+                key={entry.name}
+                current={entry.name === table?.name}
+                href={toTableURL(context.app.app_id, entry.name, undefined, context.role)}
+                onNavigate={go}
+              >
+                {entry.name}
+              </WorkspaceLink>
+            ))}
+          </nav>
+        )}
+        {table && <TableView key={'table:' + scope} table={table} token={token} role={context.role} />}
+        {hasAppKnowledge && (
+          <AppKnowledge
+            key={'knowledge:' + scope}
+            userID={session.user.id}
+            token={token}
+            appID={context.app.app_id}
+            role={context.role}
+            contextKey={scope}
+          />
+        )}
+        {!table && !hasAppKnowledge && <p>No views are available for this role.</p>}
+      </>
+    );
+  }
+
+  return (
+    <AppShell
+      session={session}
+      route={route}
+      context={context}
+      onNavigate={go}
+      onChangeRole={changeRole}
+      onRefresh={refresh}
+      onSignOut={onSignOut}
+      auxiliaryViewActive={showAssistant || (activeSurface === 'library' && showLibrary)}
+      pending={pending}
+      error={error}
+      assistant={session && (
+        <button aria-pressed={showAssistant} onClick={() => setSurface(showAssistant ? null : { route, kind: 'assistant' })}>
+          Assistant
+        </button>
+      )}
+      library={library ? {
+        active: showLibrary && !showAssistant,
+        open: () => setSurface({ route, kind: 'library' }),
+      } : undefined}
+    >
+      {renderView()}
+    </AppShell>
+  );
+}
+
+function TableView({ table, token, role }: { table: InstalledTable; token: string; role: string }) {
+  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [error, setError] = useState('');
+  const allowed = allowedFields(table, role, 'select');
+  const columns = table.ui.listColumns.filter(column => allowed.includes(column));
+  const fields = columns.join(' ');
+
+  useEffect(() => {
+    if (!fields) return;
+    let name: string;
+    try {
+      name = tableGraphQLName(table.name);
+    } catch {
+      setError('Records are unavailable.');
+      return;
+    }
+
+    const abort = new AbortController();
+    setRows([]);
+    setError('');
+    const query = '{' + name + '(limit:50){' + fields + '}}';
+    void fetch('/v1/graphql', {
+      method: 'POST',
+      signal: abort.signal,
+      headers: { Authorization: 'Bearer ' + token, 'X-Hasura-Role': role, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    }).then(async response => {
+      const result = await response.json();
+      if (!response.ok || result.errors) throw new Error('Records unavailable');
+      if (!abort.signal.aborted) setRows(result.data[name] ?? []);
+    }).catch(() => {
+      if (!abort.signal.aborted) setError('Records are unavailable.');
+    });
+    return () => abort.abort();
+  }, [table.name, token, role, fields]);
+
+  return (
+    <section className="workspace-table">
+      <h2>{table.name}</h2>
+      {error && <p role="alert">{error}</p>}
+      <table>
+        <thead><tr>{columns.map(column => <th key={column} scope="col">{column}</th>)}</tr></thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={index}>{columns.map(column => <td key={column}>{String(row[column] ?? '')}</td>)}</tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
