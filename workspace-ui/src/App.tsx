@@ -9,8 +9,9 @@ import type { WorkspaceRoute } from './core/routes';
 import { resolveAppRole, useSessionContext } from './core/session-context';
 import { AgentChat } from './features/agent/AgentChat';
 import type { Pending } from './features/agent/AgentChat';
-import { allowedFields, topLevelTables } from './features/dynamic-ui/registry';
+import { topLevelTables } from './features/dynamic-ui/registry';
 import { RecordDetail } from './features/dynamic-ui/RecordDetail';
+import { EditRecord, RecordForm } from './features/dynamic-ui/RecordForm';
 import { TableList } from './features/dynamic-ui/TableList';
 import { AppKnowledge } from './features/knowledge/AppKnowledge';
 import { PersonalLibrary } from './features/knowledge/PersonalLibrary';
@@ -160,41 +161,26 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
       );
     }
 
-    const create = route.mode === 'new';
-    if (table && route.recordID !== undefined && route.mode !== 'edit') {
+    if (table && (route.recordID !== undefined || route.mode === 'new')) {
+      const { app, role } = context;
+      const listURL = toTableURL(app.app_id, table.name, undefined, role);
       const recordID = route.recordID;
-      const listURL = toTableURL(context.app.app_id, table.name, undefined, context.role);
-      const recordPath = toTableURL(context.app.app_id, table.name, recordID);
+      const back = () => go(listURL);
+      const detail = () => go(toTableURL(app.app_id, table.name, recordID, role));
+      const props = { table, app, context };
       return (
         <>
-          <h1>{context.app.display_name}</h1>
-          <RecordDetail
-            table={table}
-            app={context.app}
-            context={context}
-            recordID={recordID}
-            onEdit={() => go(recordPath + '/edit?' + new URLSearchParams({ role: context.role }))}
-            onBack={() => go(listURL)}
-          />
-        </>
-      );
-    }
-
-    const open = route.recordID !== undefined;
-    if (table && (create || open)) {
-      const allowed = create
-        ? table.access.insert?.some(rule => rule.role === context.role)
-        : allowedFields(table, context.role, 'select').includes('id');
-      return (
-        <>
-          <h1>{context.app.display_name}</h1>
-          <p role="status">{allowed ? 'This record view is currently unavailable.' : 'Access unavailable'}</p>
-          <WorkspaceLink
-            href={toTableURL(context.app.app_id, table.name, undefined, context.role)}
-            onNavigate={go}
-          >
-            Back to records
-          </WorkspaceLink>
+          <h1>{app.display_name}</h1>
+          {recordID === undefined
+            ? <RecordForm {...props} mode="insert" onSaved={back} onCancel={back} />
+            : route.mode === 'edit'
+              ? <EditRecord {...props} recordID={recordID} onSaved={detail} onCancel={detail} />
+              : <RecordDetail
+                {...props}
+                recordID={recordID}
+                onEdit={() => go(toTableURL(app.app_id, table.name, recordID) + '/edit?' + new URLSearchParams({ role }))}
+                onBack={back}
+              />}
         </>
       );
     }

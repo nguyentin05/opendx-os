@@ -7,7 +7,7 @@ import type { AppRoleContext } from '../../core/session-context';
 import { WorkspaceLink } from '../../shell/AppShell';
 import type { InstalledApp, InstalledTable } from '../../types/registry';
 import { GraphQLRequestError, isRecordID, loadRecord } from './graphql';
-import { allowedFields } from './registry';
+import { allowedFields, canEditRecord } from './registry';
 
 export interface RecordDetailProps {
   table: InstalledTable;
@@ -93,8 +93,6 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
 
   const current = result?.revision === revision ? result.value : undefined;
   const record = current && 'record' in current ? current.record : undefined;
-  const canEdit = table.access.update?.some(rule => rule.role === role) && (!table.stateMachine
-    || (typeof record?.status === 'string' && table.stateMachine.editableStates.includes(record.status)));
 
   return (
     <>
@@ -104,7 +102,7 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
       {record === null && <p role="status">Record not found.</p>}
       {record && (
         <>
-          {canEdit && <button type="button" onClick={onEdit}>Edit record</button>}
+          {canEditRecord(table, role, record) && <button type="button" onClick={onEdit}>Edit record</button>}
           {fields.length ? (
             <dl>
               {fields.map(({ name, label, target }) => {

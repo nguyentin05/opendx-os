@@ -39,6 +39,12 @@ export function writableFormFields(
   );
 }
 
+export function canEditRecord(table: InstalledTable, role: string, record: Record<string, unknown>): boolean {
+  return Boolean(table.access.update?.some(rule => rule.role === role)
+    && (!table.stateMachine ||
+      (typeof record.status === 'string' && table.stateMachine.editableStates.includes(record.status))));
+}
+
 export function tableGraphQLName(name: string): string {
   if (!domainTableIdentifier.test(name)) {
     throw new Error('Invalid domain table identifier.');
