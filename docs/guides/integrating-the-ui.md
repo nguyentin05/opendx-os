@@ -44,6 +44,7 @@ Each entry of `apps`:
 | `app_id`, `display_name`, `version` | Identity of the application |
 | `capabilities` | The capabilities it uses |
 | `roles` | The roles the user holds in this application (`name`, `description`) |
+| `work_item_roles` | Names of the user's roles in this app that its stored `sharedAccess` lists for `cap_work.work_items`. An empty array means no eligible role. Treat an omitted field from an older server as an empty array |
 | `tables` | The application's tables exactly as its manifest declares them: `name`, `columns`, `foreignKeys`, `access`, `ui`, and when present `stateMachine`, `attachments` and `belongsTo` ([manifest contract](../reference/manifest/schema.md)) |
 
 Call `/api/auth/me` first after sign-in: it also registers a new user in the
@@ -159,8 +160,10 @@ the path. The response carries the record's new `status` and `version`.
 ## 7. Work items
 
 When an application's workflow opens a work item (procurement opens "Review
-procurement request" when a request is submitted), roles the manifest lists
-under `sharedAccess` for `cap_work.work_items` read it through GraphQL:
+procurement request" when a request is submitted), use `work_item_roles` from
+`GET /api/auth/apps` to discover eligible roles for the inbox. Send an eligible
+role as `X-Hasura-Role` on the GraphQL request. Hasura enforces access to work
+items.
 
 ```graphql
 query { cap_work_work_items(order_by: {created_at: desc}) {

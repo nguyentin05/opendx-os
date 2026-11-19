@@ -39,9 +39,9 @@ import (
 //	                  The installed applications the caller holds a role in,
 //	                  each with the roles they hold there and its tables as
 //	                  declared in the manifest (columns, access rules, state
-//	                  machine, ui), so the UI can build its navigation, lists
-//	                  and forms. It grants nothing: Hasura and cap-process
-//	                  enforce access on every request.
+//	                  machine, ui), plus held roles eligible for work-item
+//	                  discovery. Hasura and cap-process enforce access on
+//	                  every request.
 //	GET /healthz
 func Handler(r *Resolver) http.Handler {
 	mux := http.NewServeMux()
@@ -112,6 +112,10 @@ func Handler(r *Resolver) http.Handler {
 				Capabilities []string               `json:"capabilities"`
 				Knowledge    *registry.KnowledgeDef `json:"knowledge,omitempty"`
 				Tables       json.RawMessage        `json:"tables"`
+				SharedAccess []struct {
+					Table string   `json:"table"`
+					Roles []string `json:"roles"`
+				} `json:"sharedAccess"`
 			}
 			// A definition stored before spec.tables has nothing the UI can show.
 			if json.Unmarshal(a.Spec, &spec) != nil || len(spec.Tables) == 0 {
@@ -126,14 +130,31 @@ func Handler(r *Resolver) http.Handler {
 					continue
 				}
 			}
+			eligible := map[string]bool{}
+			for _, access := range spec.SharedAccess {
+				if access.Table != "cap_work.work_items" {
+					continue
+				}
+				for _, role := range access.Roles {
+					eligible[role] = true
+				}
+			}
+			appRoles := held[a.AppID]
+			workItemRoles := []string{}
+			for _, grant := range appRoles {
+				if eligible[grant.Role] {
+					workItemRoles = append(workItemRoles, grant.Role)
+				}
+			}
 			out = append(out, map[string]any{
-				"app_id":       a.AppID,
-				"display_name": a.DisplayName,
-				"version":      a.Version,
-				"capabilities": spec.Capabilities,
-				"roles":        held[a.AppID],
-				"tables":       spec.Tables,
-				"knowledge":    spec.Knowledge,
+				"app_id":          a.AppID,
+				"display_name":    a.DisplayName,
+				"version":         a.Version,
+				"capabilities":    spec.Capabilities,
+				"roles":           appRoles,
+				"tables":          spec.Tables,
+				"knowledge":       spec.Knowledge,
+				"work_item_roles": workItemRoles,
 			})
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"apps": out})

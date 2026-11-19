@@ -196,7 +196,16 @@ func TestAppsListsApplicationsOfHeldRoles(t *testing.T) {
 		},
 		apps: []App{
 			{AppID: "process_fixture", DisplayName: "Review", Version: "0.2.0",
-				Spec: json.RawMessage(`{"capabilities":["cap-process"],"tables":[{"name":"domain.review_requests","ui":{"listColumns":["note"]}}],"workflows":[]}`)},
+				Spec: json.RawMessage(`{
+					"capabilities":["cap-process","cap-work"],
+					"tables":[{"name":"domain.review_requests","ui":{"listColumns":["note"]}}],
+					"sharedAccess":[
+						{"table":"cap_work.work_items","roles":["role_review_lead","role_unheld"],"columns":["id","title"]},
+						{"table":"core.users","roles":["role_review"],"columns":["id"]}
+					],
+					"workflows":[{"name":"private_workflow"}],
+					"privateMetadata":{"value":"internal"}
+				}`)},
 			{AppID: "other_app", DisplayName: "Other", Version: "1", Spec: json.RawMessage(`{"tables":[{"name":"domain.other"}]}`)},
 			// Stored before spec.tables: nothing to show until it is reinstalled.
 			{AppID: "old_app", DisplayName: "Old", Version: "1", Spec: json.RawMessage(`{"domainTable":{"name":"domain.old"}}`)},
@@ -220,8 +229,14 @@ func TestAppsListsApplicationsOfHeldRoles(t *testing.T) {
 		tables[0].(map[string]any)["name"] != "domain.review_requests" {
 		t.Fatalf("app = %v", app)
 	}
-	if _, leaked := app["workflows"]; leaked {
-		t.Fatal("only what the UI renders is returned")
+	workItemRoles, _ := app["work_item_roles"].([]any)
+	if len(workItemRoles) != 1 || workItemRoles[0] != "role_review_lead" {
+		t.Errorf("work_item_roles = %v, want [role_review_lead]", app["work_item_roles"])
+	}
+	for _, field := range []string{"sharedAccess", "columns", "workflows", "privateMetadata"} {
+		if _, leaked := app[field]; leaked {
+			t.Errorf("apps response exposed %s", field)
+		}
 	}
 
 	if code, _ := call(t, h, "/api/auth/apps", "", ""); code != http.StatusUnauthorized {
@@ -241,8 +256,12 @@ func TestAppsIncludesCapabilityOnlyKnowledge(t *testing.T) {
 	if code != 200 || len(apps) != 1 {
 		t.Fatal("capability-only library not discoverable", code, body)
 	}
-	if apps[0].(map[string]any)["knowledge"] == nil {
+	app := apps[0].(map[string]any)
+	if app["knowledge"] == nil {
 		t.Fatal("knowledge metadata lost")
+	}
+	if roles, ok := app["work_item_roles"].([]any); !ok || len(roles) != 0 {
+		t.Errorf("work_item_roles = %v, want an empty JSON array", app["work_item_roles"])
 	}
 }
 
