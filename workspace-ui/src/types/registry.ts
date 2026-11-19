@@ -81,11 +81,62 @@ export interface UserContext {
 // retained for compatibility; live callers use these ADR0007/0008 shapes.
 export interface RoleGrant { name: string; app_id?: string; cap_id?: string; description?: string }
 export interface CurrentUser { id: string; email: string; display_name: string; roles: RoleGrant[] }
+export interface FormField {
+  name: string;
+  label: string;
+  type: string;
+  required: boolean;
+}
+
+interface TableAccessRule {
+  role: string;
+  columns: string[];
+  scope?: 'own' | 'department' | 'organization';
+  recordFilter?: Record<string, unknown>;
+  presets?: Record<string, string>;
+}
+
+interface TableCommand {
+  name: string;
+  from: string[];
+  to: string;
+  allowedRoles: string[];
+  recordFilter?: Record<string, unknown>;
+  payload?: Array<{ column: string; required: boolean }>;
+}
+
 export interface InstalledTable {
   name: string;
-  access: { select: Array<{ role: string; columns: string[] }> };
-  ui: { listColumns: string[]; formFields?: Array<{name: string; label: string; type: string}> };
-  stateMachine?: { commands: Array<{ name: string; from: string[]; to: string; allowedRoles: string[] }> };
+  columns?: Array<{ name: string; type: string; nullable: boolean; check?: string }> | null;
+  foreignKeys?: Array<{ column: string; references: string }>;
+  access: {
+    select: TableAccessRule[];
+    insert?: TableAccessRule[] | null;
+    update?: TableAccessRule[];
+    delete?: Array<{ role: string }>;
+  };
+  ui: {
+    listColumns: string[];
+    formFields?: FormField[] | null;
+    actions?: string[];
+  };
+  stateMachine?: {
+    initial: string;
+    editableStates: string[];
+    terminalStates: string[];
+    commands: TableCommand[];
+  };
+  attachments?: Array<{ column: string; requireCleanOnCommands: string[] }>;
   belongsTo?: { table: string; column: string };
 }
-export interface InstalledApp { app_id: string; display_name: string; version: string; capabilities: string[]; roles: RoleGrant[]; tables: InstalledTable[]; knowledge?: KnowledgeSpec }
+
+export interface InstalledApp {
+  app_id: string;
+  display_name: string;
+  version: string;
+  capabilities: string[] | null;
+  roles: RoleGrant[];
+  tables: InstalledTable[];
+  knowledge?: KnowledgeSpec | null;
+  work_item_roles?: string[];
+}
