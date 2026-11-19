@@ -115,3 +115,26 @@ it('keeps the requested role for retry after a failed token exchange', async () 
   await expect(finishSignIn()).rejects.toThrow('Sign-in failed.');
   expect(window.location.search).toBe('?role=role_unheld');
 });
+
+it.each([
+  ['matching state and redirect', 'valid-state', '/apps/registry', '?role=role_reader', /^Sign-in failed\.$/],
+  ['wrong state', 'other-state', '/apps/registry', '', /^Sign-in state expired\.$/],
+  ['wrong redirect', 'valid-state', '/apps/other', '', /^Sign-in state expired\.$/],
+])('handles an OAuth error with %s', async (_case, state, pathname, expectedSearch, error) => {
+  history.replaceState(null, '', pathname + '?error=access_denied&error_description=hidden&state=' + state);
+  sessionStorage.setItem('dxos.pkce', JSON.stringify({
+    verifier: 'verifier',
+    state: 'valid-state',
+    created: Date.now(),
+    redirectURI: window.location.origin + '/apps/registry',
+    requestedRole: 'role_reader',
+  }));
+  const fetch = vi.fn();
+  vi.stubGlobal('fetch', fetch);
+
+  await expect(finishSignIn()).rejects.toThrow(error);
+  expect(window.location.pathname).toBe(pathname);
+  expect(window.location.search).toBe(expectedSearch);
+  expect(sessionStorage.getItem('dxos.pkce')).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+});

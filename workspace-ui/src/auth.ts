@@ -50,7 +50,8 @@ export async function signIn() {
 export async function finishSignIn(): Promise<{ token: string; expires: number } | null> {
   const params = new URLSearchParams(window.location.search);
   const code = params.get('code');
-  if (!code) return null;
+  const providerError = params.has('error');
+  if (!code && !providerError) return null;
 
   const redirect = redirectURI();
   const raw = sessionStorage.getItem('dxos.pkce');
@@ -65,13 +66,15 @@ export async function finishSignIn(): Promise<{ token: string; expires: number }
         (saved.redirectURI !== undefined && saved.redirectURI !== redirect)) {
       throw new Error('Sign-in state expired.');
     }
-    if (typeof saved.requestedRole === 'string') {
+    if (saved.redirectURI === redirect && typeof saved.requestedRole === 'string') {
       returnURL += '?' + new URLSearchParams({ role: saved.requestedRole });
     }
   } finally {
     window.history.replaceState(null, '', returnURL);
     window.dispatchEvent(new PopStateEvent('popstate'));
   }
+
+  if (providerError || !code) throw new Error('Sign-in failed.');
 
   const { config, token_endpoint } = await discovery();
   const response = await fetch(token_endpoint, {
