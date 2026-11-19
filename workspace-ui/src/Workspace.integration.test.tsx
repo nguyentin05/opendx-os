@@ -191,6 +191,7 @@ it('treats an HTTP 200 GraphQL permission error as a denied record and suppresse
 
 it('returns from a narrow Assistant outage by keyboard and leaves a conflicted workflow decision unexecuted', async () => {
   const role = 'role_procurement_manager';
+  const secondRecord = { id: 'acd6b9b6-6e99-4bb1-8b53-696cc4f28d12', title: 'Replacement filters' };
   const processApp = {
     ...procurement,
     capabilities: ['cap-process'],
@@ -218,10 +219,18 @@ it('returns from a narrow Assistant outage by keyboard and leaves a conflicted w
     }
     expect(url).toBe('/v1/graphql');
     if (body.query?.includes('domain_procurement_requests_by_pk')) {
+      if (body.variables?.id === secondRecord.id) {
+        return Response.json({ data: { domain_procurement_requests_by_pk: {
+          ...secondRecord, status: 'submitted', version: 1,
+        } } });
+      }
+      expect(body.variables?.id).toBe(recordID);
       const title = version === 3 ? 'Office supplies' : 'Office supplies (revised)';
       return Response.json({ data: { domain_procurement_requests_by_pk: { id: recordID, title, status: 'submitted', version } } });
     }
-    return Response.json({ data: { domain_procurement_requests: [{ id: recordID, title: 'Office supplies' }] } });
+    return Response.json({ data: { domain_procurement_requests: [
+      { id: recordID, title: 'Office supplies' }, secondRecord,
+    ] } });
   });
   try {
     render(<App initialSession={session([processApp])} />);
@@ -239,7 +248,8 @@ it('returns from a narrow Assistant outage by keyboard and leaves a conflicted w
     fireEvent.click(app, { detail: 0 });
     expect(document.activeElement).toBe(menu);
     expect(menu.getAttribute('aria-expanded')).toBe('false');
-    fireEvent.click(await screen.findByRole('button', { name: 'Open' }));
+    const firstRow = await screen.findByRole('row', { name: 'Office supplies Open' });
+    fireEvent.click(within(firstRow).getByRole('button', { name: 'Open' }));
 
     const trigger = screen.getByRole('button', { name: 'Assistant' });
     trigger.focus();
@@ -265,6 +275,16 @@ it('returns from a narrow Assistant outage by keyboard and leaves a conflicted w
     expect(record.getByText('submitted')).toBeTruthy();
     expect(record.getByRole('button', { name: 'Approve' })).toBeTruthy();
     expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(record.getByRole('button', { name: 'Back to records' }));
+    const secondRow = await screen.findByRole('row', { name: 'Replacement filters Open' });
+    fireEvent.click(within(secondRow).getByRole('button', { name: 'Open' }));
+    const nextRecord = within(screen.getByRole('region', { name: 'Record details' }));
+    await nextRecord.findByText('Replacement filters');
+    expect(nextRecord.queryByText('Office supplies (revised)')).toBeNull();
+    expect(requests[requests.length - 1]).toMatchObject({
+      url: '/v1/graphql', role, body: { variables: { id: secondRecord.id } },
+    });
+
     const posts = requests.filter(request => request.url.includes('/commands/'));
     expect(posts).toHaveLength(1);
     expect(posts[0].body).toEqual({ entity_id: recordID, expected_version: 3, payload: {} });
