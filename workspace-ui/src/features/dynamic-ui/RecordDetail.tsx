@@ -6,6 +6,7 @@ import { toTableURL, useWorkspaceRoute } from '../../core/routes';
 import type { AppRoleContext } from '../../core/session-context';
 import { WorkspaceLink } from '../../shell/AppShell';
 import type { InstalledApp, InstalledTable } from '../../types/registry';
+import { ChildGrid } from './ChildGrid';
 import { GraphQLRequestError, isRecordID, loadRecord } from './graphql';
 import { allowedFields, canEditRecord } from './registry';
 
@@ -76,11 +77,11 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
   const [revision, setRevision] = useState(0);
   const [result, setResult] = useState<{ revision: number; value: RecordResult }>();
   const refresh = useCallback(() => setRevision(current => current + 1), []);
-  const { token, role } = context;
+  const { role } = context;
 
   useEffect(() => {
     const controller = new AbortController();
-    void loadRecord({ token, role }, table, recordID, selection, controller.signal).then(record => {
+    void loadRecord(context, table, recordID, selection, controller.signal).then(record => {
       if (!controller.signal.aborted) setResult({ revision, value: { record } });
     }).catch(error => {
       if (!controller.signal.aborted) {
@@ -89,7 +90,7 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
       }
     });
     return () => controller.abort();
-  }, [token, role, table, recordID, selection, revision]);
+  }, [context, table, recordID, selection, revision]);
 
   const current = result?.revision === revision ? result.value : undefined;
   const record = current && 'record' in current ? current.record : undefined;
@@ -122,7 +123,10 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
               })}
             </dl>
           ) : <p>No detail fields are available to this role.</p>}
-          {/* Child grids and record actions attach here and can request a fresh read through refresh. */}
+          {app.tables.filter(child => child.belongsTo?.table === table.name).map(child => (
+            <ChildGrid key={child.name} parent={table} parentRecord={record} child={child}
+              context={context} onParentChanged={refresh} />
+          ))}
         </>
       )}
     </>

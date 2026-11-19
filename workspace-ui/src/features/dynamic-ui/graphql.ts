@@ -1,12 +1,45 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 DX-OS Open-Core Contributors
 
+import type { AppRoleContext } from '../../core/session-context';
 import type { InstalledTable } from '../../types/registry';
-import { allowedFields, isFileFormField, tableGraphQLName, writableFormFields } from './registry';
+import { allowedFields, canEditRecord, isFileFormField, isParentColumn, tableGraphQLName, writableFormFields } from './registry';
 
 export interface RequestContext {
   token: string;
   role: string;
+}
+
+type ScopedRequestContext = RequestContext & Partial<Pick<AppRoleContext, 'userID' | 'app'>>;
+type RecordValues = Record<string, unknown>;
+
+export interface ChildRecordScope {
+  parent: InstalledTable;
+  parentRecord: RecordValues;
+  childRecord?: RecordValues;
+}
+
+// Only snapshots obtained through validated reads can supply record and parent IDs for child mutations.
+const visibleRecords = new WeakMap<RecordValues, {
+  token: string;
+  role: string;
+  userID: string;
+  appID: string;
+  table: string;
+  parentRecord?: RecordValues;
+}>();
+
+function markVisibleRecord(ctx: ScopedRequestContext, table: InstalledTable, record: RecordValues, parentRecord?: RecordValues) {
+  if (!ctx.app?.tables.some(candidate => candidate.name === table.name) || !ctx.userID) return;
+  visibleRecords.set(Object.freeze(record), {
+    token: ctx.token, role: ctx.role, userID: ctx.userID, appID: ctx.app.app_id, table: table.name, parentRecord,
+  });
+}
+
+function wasVisible(ctx: ScopedRequestContext, table: InstalledTable, record: RecordValues, parentRecord?: RecordValues) {
+  const view = visibleRecords.get(record);
+  return view && view.token === ctx.token && view.role === ctx.role && view.userID === ctx.userID
+    && view.appID === ctx.app?.app_id && view.table === table.name && view.parentRecord === parentRecord;
 }
 
 type GraphQLErrorKind = 'unauthenticated' | 'forbidden' | 'unavailable';
@@ -118,7 +151,7 @@ function projectRecord(
 }
 
 export async function loadRecord(
-  ctx: RequestContext,
+  ctx: ScopedRequestContext,
   table: InstalledTable,
   id: string,
   fields: string[],
@@ -137,26 +170,127 @@ export async function loadRecord(
     }
   }`;
   const data = await executeGraphQL<Record<string, unknown>>(ctx, query, { id }, signal);
-  return projectRecord(data[root], selected, id);
+  const record = projectRecord(data[root], selected, id);
+  if (record && !table.belongsTo) markVisibleRecord(ctx, table, record);
+  return record;
+}
+
+function childParent(ctx: ScopedRequestContext, table: InstalledTable, scope: ChildRecordScope) {
+  const { parent, parentRecord } = scope;
+  const relation = table.belongsTo;
+  if (!relation || parent.belongsTo || relation.table !== parent.name || table.name === parent.name
+    || !isParentColumn(relation.column) || !isRecordID(parentRecord.id)
+    || !wasVisible(ctx, parent, parentRecord)
+    || !ctx.app?.tables.some(candidate => candidate.name === table.name && candidate.belongsTo?.table === parent.name
+      && candidate.belongsTo.column === relation.column)) {
+    throw new GraphQLRequestError('forbidden');
+  }
+  return { column: relation.column, id: parentRecord.id };
+}
+
+function projectChildRecord(
+  value: unknown, selected: string[], parent: { column: string; id: string }, id?: string,
+) {
+  const row = projectRecord(value, selected, id);
+  if (row && selected.includes(parent.column)) {
+    const parentID = row[parent.column];
+    if (!isRecordID(parentID) || parentID.toLowerCase() !== parent.id.toLowerCase()) {
+      throw new GraphQLRequestError('unavailable');
+    }
+  }
+  return row;
+}
+
+export const childPageSize = 25;
+
+export async function loadChildPage(
+  ctx: AppRoleContext, table: InstalledTable, scope: ChildRecordScope, fields: string[], offset: number, signal: AbortSignal,
+) {
+  const parent = childParent(ctx, table, scope);
+  const readable = readableRecordFields(table, ctx.role);
+  const selected = [...new Set(['id', ...fields, parent.column])].filter(field => readable.includes(field));
+  if (!selected.length) throw new GraphQLRequestError('forbidden');
+
+  // The array relationship scopes the query even when the role cannot read the foreign key.
+  const root = recordRoot(scope.parent) + '_by_pk';
+  const relation = recordRoot(table).slice('domain_'.length) + '_by_' + parent.column;
+  const query = `query ChildRecords($id: uuid!, $limit: Int!, $offset: Int!) {
+    ${root}(id: $id) {
+      id
+      ${relation}(limit: $limit, offset: $offset, order_by: {${selected[0]}: asc}) {
+        ${selected.join(' ')}
+      }
+    }
+  }`;
+  const limit = childPageSize + 1;
+  const data = await executeGraphQL<RecordValues>(ctx, query, { id: parent.id, limit, offset }, signal);
+  const result = data[root];
+  if (result === null) throw new GraphQLRequestError('forbidden');
+  if (!isRecord(result)) throw new GraphQLRequestError('unavailable');
+  projectRecord(result, ['id'], parent.id);
+  const rows = result[relation];
+  if (!Array.isArray(rows) || rows.length > limit) throw new GraphQLRequestError('unavailable');
+  return {
+    rows: rows.slice(0, childPageSize).map(value => {
+      const row = projectChildRecord(value, selected, parent);
+      if (!row) throw new GraphQLRequestError('unavailable');
+      markVisibleRecord(ctx, table, row, scope.parentRecord);
+      return row;
+    }),
+    hasNext: rows.length > childPageSize,
+  };
+}
+
+function writableChildParent(
+  ctx: ScopedRequestContext, table: InstalledTable, scope: ChildRecordScope | undefined,
+  mode: 'insert' | 'update' | 'delete', id?: string,
+) {
+  if (!scope || !canEditRecord(scope.parent, ctx.role, scope.parentRecord)
+    || (mode !== 'insert' && (!scope.childRecord || !isRecordID(id) || scope.childRecord.id !== id
+      || !wasVisible(ctx, table, scope.childRecord, scope.parentRecord)))) {
+    throw new GraphQLRequestError('forbidden');
+  }
+  return childParent(ctx, table, scope);
+}
+
+export async function deleteChildRecord(
+  ctx: AppRoleContext, table: InstalledTable, scope: ChildRecordScope, id: string, signal: AbortSignal,
+) {
+  if (!table.access.delete?.some(rule => rule.role === ctx.role)) throw new GraphQLRequestError('forbidden');
+  const parent = writableChildParent(ctx, table, scope, 'delete', id);
+  const selected = ['id'];
+  if (readableRecordFields(table, ctx.role).includes(parent.column)) selected.push(parent.column);
+  const root = 'delete_' + recordRoot(table) + '_by_pk';
+  const query = `mutation DeleteChildRecord($id: uuid!) {
+    ${root}(id: $id) { ${selected.join(' ')} }
+  }`;
+  const data = await executeGraphQL<RecordValues>(ctx, query, { id }, signal);
+  return projectChildRecord(data[root], selected, parent, id);
 }
 
 export async function saveRecord(
-  ctx: RequestContext,
+  ctx: ScopedRequestContext,
   table: InstalledTable,
   mode: 'insert' | 'update',
-  values: Record<string, unknown>,
+  values: RecordValues,
   recordID: string | undefined,
   signal: AbortSignal,
-): Promise<Record<string, unknown> | null> {
+  childScope?: ChildRecordScope,
+): Promise<RecordValues | null> {
   if (!table.access[mode]?.some(rule => rule.role === ctx.role)) {
     throw new GraphQLRequestError('forbidden');
   }
+  const parent = table.belongsTo || childScope
+    ? writableChildParent(ctx, table, childScope, mode, recordID)
+    : undefined;
 
   // Select only a readable acknowledgement. A role need not be able to read
   // the columns it writes, and a by-PK mutation can return null on denial.
   const readable = readableRecordFields(table, ctx.role);
-  const selected = readable.includes('id') ? 'id' : readable[0];
-  if (!selected) throw new GraphQLRequestError('forbidden');
+  const acknowledgement = readable.includes('id') ? 'id' : readable[0];
+  if (!acknowledgement) throw new GraphQLRequestError('forbidden');
+  const selected = [acknowledgement];
+  if (parent && parent.column !== acknowledgement && readable.includes(parent.column)) selected.push(parent.column);
 
   const declared = new Set(table.columns.map(column => column.name));
   const object = Object.fromEntries(writableFormFields(table, ctx.role, mode).flatMap(field => {
@@ -178,20 +312,23 @@ export async function saveRecord(
   let query: string;
   let variables: Record<string, unknown>;
   if (mode === 'insert') {
+    // The planner grants this generated column independently of the manifest's insert fields.
+    if (parent) object[parent.column] = parent.id;
     query = `mutation InsertRecord($object: ${name}_insert_input!) {
-      ${root}(object: $object) { ${selected} }
+      ${root}(object: $object) { ${selected.join(' ')} }
     }`;
     variables = { object };
   } else {
     if (!isRecordID(recordID) || !Object.keys(object).length) throw new GraphQLRequestError('unavailable');
     query = `mutation UpdateRecord($id: uuid!, $changes: ${name}_set_input!) {
-      ${root}(pk_columns: {id: $id}, _set: $changes) { ${selected} }
+      ${root}(pk_columns: {id: $id}, _set: $changes) { ${selected.join(' ')} }
     }`;
     variables = { id: recordID, changes: object };
   }
 
   const data = await executeGraphQL<Record<string, unknown>>(ctx, query, variables, signal);
-  return projectRecord(data[root], [selected], mode === 'update' ? recordID : undefined);
+  const id = mode === 'update' ? recordID : undefined;
+  return parent ? projectChildRecord(data[root], selected, parent, id) : projectRecord(data[root], selected, id);
 }
 
 export const referencePageSize = 25;

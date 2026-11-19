@@ -6,6 +6,7 @@ import type { FormEvent } from 'react';
 import type { AppRoleContext } from '../../core/session-context';
 import type { FormField, InstalledApp, InstalledTable } from '../../types/registry';
 import { GraphQLRequestError, isRecordID, loadRecord, loadReferencePage, referencePageSize, saveRecord } from './graphql';
+import type { ChildRecordScope } from './graphql';
 import { allowedFields, canEditRecord, isFileFormField, writableFormFields } from './registry';
 
 export interface RecordFormProps {
@@ -14,11 +15,12 @@ export interface RecordFormProps {
   context: AppRoleContext;
   mode: 'insert' | 'update';
   record?: Record<string, unknown>;
+  childScope?: ChildRecordScope;
   onSaved: () => void;
   onCancel: () => void;
 }
 
-type EditRecordProps = Omit<RecordFormProps, 'mode' | 'record'> & { recordID: string };
+type EditRecordProps = Omit<RecordFormProps, 'mode' | 'record' | 'childScope'> & { recordID: string };
 type Field = FormField & {
   column: InstalledTable['columns'][number];
   target?: InstalledTable;
@@ -145,7 +147,7 @@ function fieldValue(field: Field, draft: string): string | number | null {
   return draft;
 }
 
-function FormFields({ table, context, mode, record, onSaved, onCancel, fields }: RecordFormProps & { fields: Field[] }) {
+function FormFields({ table, context, mode, record, childScope, onSaved, onCancel, fields }: RecordFormProps & { fields: Field[] }) {
   const [initial] = useState(() => {
     const readable = allowedFields(table, context.role, 'select');
     return Object.fromEntries(fields.filter(field => readable.includes(field.name) && record
@@ -198,7 +200,7 @@ function FormFields({ table, context, mode, record, onSaved, onCancel, fields }:
     setPending(true);
     try {
       const id = isRecordID(record?.id) ? record.id : undefined;
-      const saved = await saveRecord(context, table, mode, submitted, id, controller.signal);
+      const saved = await saveRecord(context, table, mode, submitted, id, controller.signal, childScope);
       if (controller.signal.aborted) return;
       if (saved) onSaved();
       else setMessage('This record could not be saved.');

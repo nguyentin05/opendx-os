@@ -17,6 +17,10 @@ export function topLevelTables(app: InstalledApp, role: string): InstalledTable[
   );
 }
 
+export function isParentColumn(name: string): boolean {
+  return fieldIdentifier.test(name) && !serverManagedFields.has(name);
+}
+
 export function allowedFields(
   table: InstalledTable,
   role: string,
