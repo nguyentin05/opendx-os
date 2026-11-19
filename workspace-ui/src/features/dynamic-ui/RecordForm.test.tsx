@@ -358,7 +358,7 @@ it('aborts a pending vendor lookup on navigation', async () => {
   expect(screen.queryByText('Previous supplier')).toBeNull();
 });
 
-it.each(['core.users', 'cap_hr.org_units', 'cap_data.devices', 'cap_work.work_items'])(
+it.each(['core.users', 'cap_hr.org_units', 'cap_data.devices'])(
   'accepts a validated UUID for a required shared reference to %s without querying that table',
   async references => {
     const [app] = session.apps;
@@ -399,3 +399,44 @@ it.each(['core.users', 'cap_hr.org_units', 'cap_data.devices', 'cap_work.work_it
     expect(requests[0].variables).toEqual({ object: { title: 'New shared request', amount: 10, reference_id: otherID } });
   },
 );
+
+it('does not accept a raw UUID for an app-scoped work item reference', async () => {
+  const [app] = session.apps;
+  const requestTable = {
+    ...table,
+    foreignKeys: [{ column: 'reference_id', references: 'cap_work.work_items' }],
+    ui: {
+      listColumns: ['title'],
+      formFields: [
+        { name: 'title', label: 'Title', type: 'text', required: true },
+        { name: 'amount', label: 'Amount', type: 'number', required: true },
+        { name: 'reference_id', label: 'Work item', type: 'uuid', required: true },
+      ],
+    },
+  };
+  const requests = serve(() => dataResponse('insert_domain_requests_one', { id }));
+  showForm('/new', role, { ...session, apps: [{ ...app, tables: [requestTable] }] });
+
+  expect(screen.queryByRole('textbox', { name: 'Work item' })).toBeNull();
+  expect(screen.getByText(/work item.*unavailable/i)).toBeTruthy();
+  fill('Title', 'Request with an app-scoped reference');
+  fill('Amount', '10');
+  save();
+  await screen.findByText('Work item is required.');
+  expect(requests).toHaveLength(0);
+});
+
+it('omits a crafted work item UUID from the record mutation', async () => {
+  const workItemReference = {
+    ...table,
+    foreignKeys: [{ column: 'reference_id', references: 'cap_work.work_items' }],
+  };
+  const requests = serve(() => dataResponse('insert_domain_requests_one', { id }));
+
+  await saveRecord(
+    { token: session.token, role }, workItemReference, 'insert',
+    { title: 'Allowed', reference_id: otherID }, undefined, new AbortController().signal,
+  );
+
+  expect(requests[0].variables).toEqual({ object: { title: 'Allowed' } });
+});

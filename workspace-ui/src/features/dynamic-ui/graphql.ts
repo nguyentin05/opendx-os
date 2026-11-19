@@ -165,6 +165,8 @@ export async function saveRecord(
     const value = values[name];
     // File writes require the upload flow. This form has no attachment value yet.
     if (isFileFormField(table, field) || !['text', 'number', 'date', 'uuid'].includes(type)) return [];
+    // The form has no way to verify that a work item belongs to this application.
+    if (table.foreignKeys?.some(key => key.column === name && key.references === 'cap_work.work_items')) return [];
     if (value === null || (type === 'number' ? typeof value === 'number' && Number.isFinite(value) : typeof value === 'string')) {
       return [[name, value]];
     }

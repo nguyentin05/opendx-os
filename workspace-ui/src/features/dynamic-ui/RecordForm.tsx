@@ -29,8 +29,8 @@ type Values = Record<string, string>;
 
 const cannotEdit = 'This record cannot be edited.';
 const inputTypes = { text: 'text', number: 'number', date: 'date', uuid: 'text' } as const;
-// The operator's referenceable shared catalog, with files handled by attachments.
-const sharedUUIDTargets = new Set(['core.users', 'cap_hr.org_units', 'cap_data.devices', 'cap_work.work_items']);
+// Only organization-scoped shared targets can use raw UUID entry.
+const sharedUUIDTargets = new Set(['core.users', 'cap_hr.org_units', 'cap_data.devices']);
 
 export function EditRecord(props: EditRecordProps) {
   const { table, app, context, recordID, onCancel } = props;
