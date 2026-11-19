@@ -98,3 +98,29 @@ it('returns to Home when a permission refresh revokes the open personal library'
  await screen.findByRole('heading', { name: 'My Workspace' });
  expect(screen.queryByRole('button', { name: 'Personal library' })).toBeNull();
 });
+
+it('opens the canonical detail and creation routes from the generic table outlet', async () => {
+ const role = 'role_sample';
+ const id = '3451ed47-6023-416a-afad-883b14403613';
+ const table = recordsTable(role);
+ table.access.select[0].columns.push('id');
+ const session: Session = {
+  token: 'test-token',
+  user: {id: 'A', email: 'a@example.invalid', display_name: 'Alice', roles: []},
+  apps: [{
+   app_id: 'sample', display_name: 'Sample app', version: '1', capabilities: [],
+   roles: [{name: role}], tables: [table], knowledge: null,
+  }],
+ };
+ vi.stubGlobal('fetch', async () => Response.json({data: {domain_records: [{id, title: 'Sample record'}]}}));
+ render(<App initialSession={session} />);
+ openApplication('Sample app');
+
+ fireEvent.click(await screen.findByRole('button', {name: 'Open'}));
+ expect(window.location.pathname).toBe('/apps/sample/tables/domain.records/' + id);
+ expect(window.location.search).toBe('?role=role_sample');
+ openApplication('Sample app');
+ fireEvent.click(await screen.findByRole('button', {name: 'New record'}));
+ expect(window.location.pathname).toBe('/apps/sample/tables/domain.records/new');
+ expect(window.location.search).toBe('?role=role_sample');
+});

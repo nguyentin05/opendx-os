@@ -9,11 +9,11 @@ import type { WorkspaceRoute } from './core/routes';
 import { resolveAppRole, useSessionContext } from './core/session-context';
 import { AgentChat } from './features/agent/AgentChat';
 import type { Pending } from './features/agent/AgentChat';
-import { allowedFields, tableGraphQLName, topLevelTables } from './features/dynamic-ui/registry';
+import { allowedFields, topLevelTables } from './features/dynamic-ui/registry';
+import { TableList } from './features/dynamic-ui/TableList';
 import { AppKnowledge } from './features/knowledge/AppKnowledge';
 import { PersonalLibrary } from './features/knowledge/PersonalLibrary';
 import { AppShell, WorkspaceLink } from './shell/AppShell';
-import type { InstalledTable } from './types/registry';
 
 export function libraryFor(session: Session) {
   const matches = session.apps.filter(app =>
@@ -159,6 +159,26 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
       );
     }
 
+    const create = route.mode === 'new';
+    const open = route.recordID !== undefined;
+    if (table && (create || open)) {
+      const allowed = create
+        ? table.access.insert?.some(rule => rule.role === context.role)
+        : allowedFields(table, context.role, 'select').includes('id');
+      return (
+        <>
+          <h1>{context.app.display_name}</h1>
+          <p role="status">{allowed ? 'This record view is currently unavailable.' : 'Access unavailable'}</p>
+          <WorkspaceLink
+            href={toTableURL(context.app.app_id, table.name, undefined, context.role)}
+            onNavigate={go}
+          >
+            Back to records
+          </WorkspaceLink>
+        </>
+      );
+    }
+
     return (
       <>
         <h1>{context.app.display_name}</h1>
@@ -176,7 +196,17 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
             ))}
           </nav>
         )}
-        {table && <TableView key={'table:' + scope} table={table} token={token} role={context.role} />}
+        {table && (
+          <TableList
+            table={table}
+            context={context}
+            onOpen={id => go(toTableURL(context.app.app_id, table.name, id, context.role))}
+            onCreate={() => {
+              const path = toTableURL(context.app.app_id, table.name);
+              go(path + '/new?' + new URLSearchParams({ role: context.role }));
+            }}
+          />
+        )}
         {hasAppKnowledge && (
           <AppKnowledge
             key={'knowledge:' + scope}
@@ -216,57 +246,5 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
     >
       {renderView()}
     </AppShell>
-  );
-}
-
-function TableView({ table, token, role }: { table: InstalledTable; token: string; role: string }) {
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [error, setError] = useState('');
-  const allowed = allowedFields(table, role, 'select');
-  const columns = table.ui.listColumns.filter(column => allowed.includes(column));
-  const fields = columns.join(' ');
-
-  useEffect(() => {
-    if (!fields) return;
-    let name: string;
-    try {
-      name = tableGraphQLName(table.name);
-    } catch {
-      setError('Records are unavailable.');
-      return;
-    }
-
-    const abort = new AbortController();
-    setRows([]);
-    setError('');
-    const query = '{' + name + '(limit:50){' + fields + '}}';
-    void fetch('/v1/graphql', {
-      method: 'POST',
-      signal: abort.signal,
-      headers: { Authorization: 'Bearer ' + token, 'X-Hasura-Role': role, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query }),
-    }).then(async response => {
-      const result = await response.json();
-      if (!response.ok || result.errors) throw new Error('Records unavailable');
-      if (!abort.signal.aborted) setRows(result.data[name] ?? []);
-    }).catch(() => {
-      if (!abort.signal.aborted) setError('Records are unavailable.');
-    });
-    return () => abort.abort();
-  }, [table.name, token, role, fields]);
-
-  return (
-    <section className="workspace-table">
-      <h2>{table.name}</h2>
-      {error && <p role="alert">{error}</p>}
-      <table>
-        <thead><tr>{columns.map(column => <th key={column} scope="col">{column}</th>)}</tr></thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={index}>{columns.map(column => <td key={column}>{String(row[column] ?? '')}</td>)}</tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
   );
 }
