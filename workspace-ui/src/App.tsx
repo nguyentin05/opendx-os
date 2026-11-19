@@ -231,7 +231,7 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
       return (
         <>
           <h1>Access unavailable</h1>
-          <p>This application, role or view is unavailable to your account.</p>
+          <p role="alert">This application, role or view is unavailable to your account.</p>
         </>
       );
     }
@@ -322,6 +322,7 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
           ref={assistantTrigger}
           aria-expanded={assistant.open}
           aria-controls={agentDrawerID}
+          aria-haspopup="dialog"
           onClick={() => assistant.open ? closeAssistant() : setAssistantSession({ ...assistant, open: true })}
         >
           <span aria-hidden="true">✦</span> Assistant

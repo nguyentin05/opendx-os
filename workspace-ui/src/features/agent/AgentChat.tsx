@@ -57,6 +57,7 @@ export function AgentChat({
   const [question, setQuestion] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
   const [loading, setLoading] = useState(false);
+  const [listReady, setListReady] = useState(false);
   const [transcriptReady, setTranscriptReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -79,6 +80,7 @@ export function AgentChat({
     const controller = new AbortController();
     scope.current = controller;
     setConversations([]);
+    setListReady(false);
     setSelected("");
     setLoading(true);
     void client
@@ -86,6 +88,7 @@ export function AgentChat({
       .then((r) => {
         if (!controller.signal.aborted) {
           setConversations(r.conversations);
+          setListReady(true);
           setCursor(r.next_cursor);
         }
       })
@@ -259,7 +262,7 @@ export function AgentChat({
       </button>
       <h2>Conversations</h2>
       {loading && <p role="status">Loading…</p>}
-      {!loading && !conversations.length && <p>No conversations yet.</p>}
+      {!loading && listReady && !conversations.length && <p>No conversations yet.</p>}
       <ul>
         {conversations.map((c) => (
           <li key={c.id}>

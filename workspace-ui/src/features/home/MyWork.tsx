@@ -24,7 +24,7 @@ function label(labels: Record<string, string>, key: string) {
 
 export function WorkItemList({ session, onOpenWorkItem, items }: MyWorkProps & { items: WorkItem[] }) {
   return (
-    <ul>
+    <ul className="workspace-work-list">
       {items.map(item => {
         const app = session.apps.find(app => app.app_id === item.appID);
         const href = targetURL(session, workTarget(item), true);
@@ -33,11 +33,12 @@ export function WorkItemList({ session, onOpenWorkItem, items }: MyWorkProps & {
             {href
               ? <WorkspaceLink href={href} onNavigate={() => onOpenWorkItem(item)}>{item.title}</WorkspaceLink>
               : <span>{item.title}</span>}
-            <span>{' · ' + app?.display_name + ' · '}</span>
-            <span>{item.role}</span>
-            <span> · <span>{item.priority ? label(priorities, item.priority) : 'Priority unavailable'}</span></span>
-            <span> · <span>{item.boardColumn ? label(boardColumns, item.boardColumn) : 'State unavailable'}</span></span>
-            {!href && <span> · <span>Source unavailable</span></span>}
+            <div className="workspace-work-meta">
+              <span>{app?.display_name} · <span>{item.role}</span></span>
+              <span className="workspace-work-status">{item.priority ? label(priorities, item.priority) : 'Priority unavailable'}</span>
+              <span className="workspace-work-status">{item.boardColumn ? label(boardColumns, item.boardColumn) : 'State unavailable'}</span>
+              {!href && <span>Source unavailable</span>}
+            </div>
           </li>
         );
       })}
@@ -101,7 +102,7 @@ export function MyWork({ session, onOpenWorkItem }: MyWorkProps) {
     <>
       <h1>My Work</h1>
       {apps.length > 0 && (
-        <div className="workspace-table-nav">
+        <div className="workspace-table-controls">
           <label>
             Application{' '}
             <select value={selectedApp} onChange={event => setAppFilter(event.target.value)}>

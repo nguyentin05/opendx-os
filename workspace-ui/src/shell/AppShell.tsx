@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 DX-OS Open-Core Contributors
 
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { MouseEvent, ReactNode } from 'react';
 import type { Session } from '../auth';
 import type { WorkspaceRoute } from '../core/routes';
@@ -53,6 +53,10 @@ export function AppShell({
   library, auxiliaryViewActive, pending, error, children, assistantDrawer,
 }: ShellProps) {
   const [navOpen, setNavOpen] = useState(false);
+  const navigationTrigger = useRef<HTMLButtonElement>(null);
+  const navigation = useRef<HTMLElement>(null);
+  const roleTrigger = useRef<HTMLButtonElement>(null);
+  const main = useRef<HTMLElement>(null);
   const [roleMenuRoute, setRoleMenuRoute] = useState<WorkspaceRoute | null>(null);
   const roleMenuOpen = roleMenuRoute === route;
   const apps = session?.apps.filter(app => resolveAppRole(session, app.app_id)) ?? [];
@@ -62,8 +66,23 @@ export function AppShell({
     : [];
   const showRoles = !auxiliaryViewActive && (roles.length > 1 || roleMenuOpen);
 
-  function go(href: string) {
+  useLayoutEffect(() => {
+    if (navOpen) navigation.current?.querySelector('a')?.focus();
+  }, [navOpen]);
+
+  function closeNavigation() {
+    if (navOpen && navigation.current?.contains(document.activeElement)) navigationTrigger.current?.focus();
     setNavOpen(false);
+  }
+
+  function closeRoles() {
+    setRoleMenuRoute(null);
+    if (roles.length > 1) roleTrigger.current?.focus();
+    else main.current?.focus();
+  }
+
+  function go(href: string) {
+    closeNavigation();
     setRoleMenuRoute(null);
     onNavigate(href);
   }
@@ -72,10 +91,12 @@ export function AppShell({
     <div className="workspace-shell">
       <header className="workspace-topbar">
         <button
+          type="button"
+          ref={navigationTrigger}
           className="workspace-nav-toggle"
           aria-controls="workspace-sidebar"
           aria-expanded={navOpen}
-          onClick={() => setNavOpen(!navOpen)}
+          onClick={() => navOpen ? closeNavigation() : setNavOpen(true)}
         >
           Menu
         </button>
@@ -89,10 +110,17 @@ export function AppShell({
       </header>
 
       <nav
+        ref={navigation}
         id="workspace-sidebar"
         className="workspace-sidebar"
         data-open={navOpen}
         aria-label="Workspace"
+        onKeyDown={event => {
+          if (navOpen && event.key === 'Escape') {
+            event.preventDefault();
+            closeNavigation();
+          }
+        }}
       >
         <WorkspaceLink href="/" onNavigate={go} current={!auxiliaryViewActive && route.kind === 'home'}>
           My Workspace
@@ -119,7 +147,7 @@ export function AppShell({
           <button
             aria-current={library.active ? 'page' : undefined}
             onClick={() => {
-              setNavOpen(false);
+              closeNavigation();
               setRoleMenuRoute(null);
               library.open();
             }}
@@ -129,16 +157,25 @@ export function AppShell({
         )}
       </nav>
 
-      <main className="workspace-main">
+      <main className="workspace-main" ref={main} tabIndex={-1}>
         {showRoles && (
-          <div className="workspace-role">
+          <div className="workspace-role" onKeyDown={event => {
+            if (roleMenuOpen && event.key === 'Escape') {
+              event.preventDefault();
+              closeRoles();
+            }
+          }}>
             <button
+              type="button"
+              ref={roleTrigger}
               aria-expanded={roleMenuOpen}
               aria-controls="workspace-role-options"
-              aria-label="Acting role"
               onClick={() => {
-                setRoleMenuRoute(roleMenuOpen ? null : route);
-                if (!roleMenuOpen && !pending) onRefresh?.();
+                if (roleMenuOpen) closeRoles();
+                else {
+                  setRoleMenuRoute(route);
+                  if (!pending) onRefresh?.();
+                }
               }}
             >
               Acting role{context && ' · ' + context.role}
@@ -147,9 +184,10 @@ export function AppShell({
               {roleMenuOpen && roles.map(grant => (
                 <button
                   key={grant.name}
+                  type="button"
                   aria-current={grant.name === context?.role ? 'true' : undefined}
                   onClick={() => {
-                    setRoleMenuRoute(null);
+                    closeRoles();
                     onChangeRole(grant.name);
                   }}
                 >

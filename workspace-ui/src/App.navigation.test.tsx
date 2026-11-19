@@ -86,7 +86,7 @@ it('keeps the open record and acting role usable while the drawer reports an AI 
  const drawer = within(screen.getByRole('dialog', {name: 'Assistant'}));
  await drawer.findByText('Assistant is temporarily unavailable.');
  expect(record.getByText('Available record')).toBeTruthy();
- expect(screen.getByRole('button', {name: 'Acting role'})).toBeTruthy();
+ expect(screen.getByRole('button', {name: /Acting role.*role_sample/})).toBeTruthy();
  expect(window.location.pathname).toBe('/apps/sample/tables/domain.records/' + id);
  fireEvent.keyDown(drawer.getByRole('button', {name: 'Close assistant'}), {key: 'Escape'});
  expect(screen.queryByRole('dialog', {name: 'Assistant'})).toBeNull();
@@ -303,7 +303,7 @@ it('honors a personal-library app URL only for its permitted acting role', async
 
  openApplication('Library app');
  expect(screen.getByLabelText('Upload document')).toBeTruthy();
- expect(screen.getByRole('button', {name: 'Acting role'}).textContent).toContain(role);
+ expect(screen.getByRole('button', {name: /Acting role.*role_library_user/})).toBeTruthy();
  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
  expect(new Headers(fetcher.mock.calls[0][1]?.headers).get('X-Hasura-Role')).toBe(role);
 });

@@ -171,28 +171,30 @@ function PaginatedTable({ context, onOpen, description }: Pick<TableListProps, '
 
   return (
     <>
-      {filterColumn && (
-        <form onSubmit={event => {
-          event.preventDefault();
-          if (filterDraft !== options.filter) setOptions({ ...options, offset: 0, filter: filterDraft });
+      <div className="workspace-table-controls">
+        {filterColumn && (
+          <form className="workspace-table-controls" onSubmit={event => {
+            event.preventDefault();
+            if (filterDraft !== options.filter) setOptions({ ...options, offset: 0, filter: filterDraft });
+          }}>
+            <label>Filter by {filterColumn} <input value={filterDraft} onChange={event => setFilterDraft(event.target.value)} /></label>
+            <button type="submit">Apply filter</button>
+          </form>
+        )}
+        <label>Sort by <select value={options.sort} onChange={event => {
+          const sort = event.target.value;
+          if (columns.some(column => column.name === sort)) setOptions({ ...options, offset: 0, sort });
         }}>
-          <label>Filter by {filterColumn} <input value={filterDraft} onChange={event => setFilterDraft(event.target.value)} /></label>
-          <button type="submit">Apply filter</button>
-        </form>
-      )}
-      <label>Sort by <select value={options.sort} onChange={event => {
-        const sort = event.target.value;
-        if (columns.some(column => column.name === sort)) setOptions({ ...options, offset: 0, sort });
-      }}>
-        {columns.map(column => <option key={column.name}>{column.name}</option>)}
-      </select></label>
-      <label>Sort direction <select value={options.direction} onChange={event => {
-        const direction = event.target.value;
-        if (direction === 'asc' || direction === 'desc') setOptions({ ...options, offset: 0, direction });
-      }}>
-        <option value="asc">Ascending</option>
-        <option value="desc">Descending</option>
-      </select></label>
+          {columns.map(column => <option key={column.name}>{column.name}</option>)}
+        </select></label>
+        <label>Sort direction <select value={options.direction} onChange={event => {
+          const direction = event.target.value;
+          if (direction === 'asc' || direction === 'desc') setOptions({ ...options, offset: 0, direction });
+        }}>
+          <option value="asc">Ascending</option>
+          <option value="desc">Descending</option>
+        </select></label>
+      </div>
       {!page && <p role="status">Loading records…</p>}
       {page && 'message' in page && <p role="alert">{page.message}</p>}
       {page && 'rows' in page && rows.length === 0 && <p role="status">No records found.</p>}
@@ -216,7 +218,7 @@ function PaginatedTable({ context, onOpen, description }: Pick<TableListProps, '
         </table>
       )}
       {(options.offset > 0 || hasNext) && (
-        <nav aria-label="Record pages">
+        <nav className="workspace-table-controls" aria-label="Record pages">
           <button type="button" disabled={options.offset === 0} onClick={() => setOptions({
             ...options, offset: Math.max(0, options.offset - pageSize),
           })}>Previous page</button>

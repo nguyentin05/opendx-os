@@ -79,7 +79,7 @@ export function MyWorkspace({ session, onOpenApp, onOpenWorkItem, recent = [], o
       <section className="workspace-panel" aria-labelledby="workspace-recent-heading">
         <h2 id="workspace-recent-heading">Recently viewed</h2>
         {entries.length > 0 && onOpenRecent ? (
-          <ul>
+          <ul className="workspace-recent">
             {entries.map(({ target, href, app }) => (
               <li key={href}>
                 <WorkspaceLink href={href} onNavigate={() => onOpenRecent(target)}>

@@ -114,7 +114,7 @@ it('keeps the role switcher open during permission refresh and offers only fresh
   render(<App initialSession={alice} />);
   await screen.findByText('Private dispatch');
 
-  const switcher = screen.getByRole('button', { name: 'Acting role' });
+  const switcher = screen.getByRole('button', { name: /Acting role.*role_dispatcher/ });
   fireEvent.click(switcher);
   expect(switcher.getAttribute('aria-expanded')).toBe('true');
   expect(screen.queryByText('Private dispatch')).toBeNull();
@@ -125,12 +125,40 @@ it('keeps the role switcher open during permission refresh and offers only fresh
   })));
 
   expect(requests.slice(1, 3)).toEqual(['/api/auth/me', '/api/auth/apps']);
-  expect(screen.getByRole('button', { name: 'Acting role' })).toBe(switcher);
+  expect(screen.getByRole('button', { name: /Acting role.*role_supervisor/ })).toBe(switcher);
   expect(switcher.getAttribute('aria-expanded')).toBe('true');
   expect(screen.queryByRole('button', { name: 'role_dispatcher' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'role_supervisor' }));
   expect(window.location.search).toBe('?role=role_supervisor');
   await screen.findByText('Review record');
+});
+
+it('announces the current role and returns focus after keyboard dismissal or selection', async () => {
+  window.history.replaceState(null, '', '/apps/dispatch');
+  vi.stubGlobal('fetch', async (path: string, init: RequestInit) => {
+    if (path === '/api/auth/me') return Response.json(alice.user);
+    if (path === '/api/auth/apps') return Response.json({ apps: alice.apps });
+    return new Headers(init.headers).get('X-Hasura-Role') === 'role_supervisor'
+      ? recordResponse('Review record', 'domain_review') : recordResponse('Private dispatch');
+  });
+  render(<App initialSession={alice} />);
+  await screen.findByText('Private dispatch');
+
+  const switcher = screen.getByRole('button', { name: /Acting role.*role_dispatcher/ });
+  fireEvent.click(switcher);
+  const supervisor = await screen.findByRole('button', { name: 'role_supervisor' });
+  supervisor.focus();
+  fireEvent.keyDown(supervisor, { key: 'Escape' });
+  expect(switcher.getAttribute('aria-expanded')).toBe('false');
+  expect(document.activeElement).toBe(switcher);
+
+  fireEvent.click(switcher);
+  const currentSupervisor = await screen.findByRole('button', { name: 'role_supervisor' });
+  currentSupervisor.focus();
+  fireEvent.click(currentSupervisor, { detail: 0 });
+  await screen.findByText('Review record');
+  expect(screen.getByRole('button', { name: /Acting role.*role_supervisor/ })).toBe(switcher);
+  expect(document.activeElement).toBe(switcher);
 });
 
 it('clears private data at sign-out and stays signed out when the same account is passed again', async () => {
