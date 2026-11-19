@@ -5,14 +5,14 @@ import { useId, useLayoutEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { AppRoleContext } from '../../core/session-context';
 import type { InstalledTable } from '../../types/registry';
-import { GraphQLRequestError, isRecordID, loadRecord } from './graphql';
+import { GraphQLRequestError, isRecord, isRecordID, loadRecord } from './graphql';
 import { executeCommand, ProcessCommandError } from './process';
 import { allowedFields, isParentColumn } from './registry';
 
 type Command = NonNullable<InstalledTable['stateMachine']>['commands'][number];
 
 interface CommandField {
-  column: string;
+  column: InstalledTable['columns'][number];
   label: string;
   type: 'text' | 'date' | 'uuid' | 'number';
   required: boolean;
@@ -20,6 +20,7 @@ interface CommandField {
 
 interface CommandAttempt {
   command: string;
+  definition: string;
   entityID: string;
   status: string;
   version: number;
@@ -45,9 +46,13 @@ export interface CommandPanelProps {
   writeGuard?: { pending: boolean; begin: () => (() => void) | undefined };
 }
 
-interface Decision {
+interface Action {
   command: Command;
   fields: CommandField[];
+  definition: string;
+}
+
+interface Decision extends Action {
   status: string;
   version: number;
   retry?: CommandAttempt;
@@ -80,15 +85,38 @@ function commandFields(table: InstalledTable, command: Command): CommandField[] 
     else return;
 
     const label = table.ui.formFields.find(field => field.name === column)?.label ?? actionLabel(column);
-    fields.push({ column, label, type, required });
+    fields.push({ column: declared, label, type, required });
   }
   return fields;
+}
+
+// A receipt can replay after the record changes, so the definition covers
+// the reviewed command and role rules independently of the record snapshot.
+function actionDefinition(table: InstalledTable, role: string, command: Command, fields: CommandField[]) {
+  const select = table.access.select.find(rule => rule.role === role);
+  return JSON.stringify({
+    command: command.name,
+    from: [...command.from].sort(),
+    to: command.to,
+    role,
+    recordFilter: command.recordFilter ?? {},
+    selectScope: select?.scope,
+    selectFilter: select?.recordFilter ?? {},
+    payload: fields.map(({ column: { name, type, nullable, check }, required }) => (
+      { name, type, nullable, check, required }
+    )).sort((a, b) => a.name.localeCompare(b.name)),
+    cleanAttachments: (table.attachments ?? [])
+      .filter(attachment => attachment.requireCleanOnCommands.includes(command.name))
+      .map(attachment => attachment.column).sort(),
+  }, (_key, value: unknown) => isRecord(value)
+    ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
+    : value);
 }
 
 function readPayload(fields: CommandField[], data: FormData) {
   const entries: Array<[string, string | number]> = [];
   for (const field of fields) {
-    const value = String(data.get(field.column) ?? '');
+    const value = String(data.get(field.column.name) ?? '');
     if (!value.trim()) {
       if (field.required) throw new Error(field.label + ' is required.');
       continue;
@@ -99,7 +127,7 @@ function readPayload(fields: CommandField[], data: FormData) {
       if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(value.trim()) || !Number.isFinite(number)) {
         throw new Error(field.label + ' must be a number.');
       }
-      entries.push([field.column, number]);
+      entries.push([field.column.name, number]);
     } else {
       if (field.type === 'uuid' && !isRecordID(value)) throw new Error(field.label + ' must be a valid UUID.');
       if (field.type === 'date' && (!/^\d{4}-\d{2}-\d{2}$/.test(value)
@@ -109,7 +137,7 @@ function readPayload(fields: CommandField[], data: FormData) {
       if (field.type === 'text' && new TextEncoder().encode(value).length > 10000) {
         throw new Error(field.label + ' is too long.');
       }
-      entries.push([field.column, value]);
+      entries.push([field.column.name, value]);
     }
   }
   return Object.fromEntries(entries);
@@ -132,7 +160,7 @@ function RecordActions({
 }: CommandPanelProps & { scope: string; id: string; status: string; version: number }) {
   const localAttempts = useRef<CommandAttempts>(new Map());
   const store = attempts ?? localAttempts.current;
-  const [decision, setDecision] = useState<Decision>();
+  const [openedDecision, setDecision] = useState<Decision>();
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const request = useRef<AbortController>();
@@ -145,6 +173,19 @@ function RecordActions({
   useLayoutEffect(() => { if (message) errorMessage.current?.focus(); }, [message]);
 
   useLayoutEffect(() => () => request.current?.abort(), []);
+
+  const attempt = store.get(scope);
+  const declared = (table.stateMachine?.commands ?? []).flatMap(command => {
+    if (!table.ui.actions?.includes(command.name) || !command.allowedRoles.includes(context.role)) return [];
+    const fields = commandFields(table, command);
+    return fields ? [{ command, fields, definition: actionDefinition(table, context.role, command, fields) }] : [];
+  });
+  const reviewed = attempt ?? openedDecision;
+  const configurationChanged = reviewed && !declared.some(action => action.definition === reviewed.definition);
+  const decision = configurationChanged ? undefined : openedDecision;
+  const actions = declared.filter(action =>
+    attempt ? action.definition === attempt.definition : action.command.from.includes(status),
+  );
 
   const open = Boolean(decision);
   useLayoutEffect(() => {
@@ -160,14 +201,6 @@ function RecordActions({
       if (button?.isConnected) button.focus();
     };
   }, [open]);
-
-  const attempt = store.get(scope);
-  const actions = (table.stateMachine?.commands ?? []).flatMap(command => {
-    if (!table.ui.actions?.includes(command.name) || !command.allowedRoles.includes(context.role)
-      || (attempt ? attempt.command !== command.name : !command.from.includes(status))) return [];
-    const fields = commandFields(table, command);
-    return fields ? [{ command, fields }] : [];
-  });
 
   function close() {
     if (request.current) return;
@@ -213,6 +246,7 @@ function RecordActions({
       signal.throwIfAborted();
       sent = retry ?? {
         command: command.name,
+        definition: decision.definition,
         entityID: id,
         status: decision.status,
         version: decision.version,
@@ -264,15 +298,29 @@ function RecordActions({
     }
   }
 
+  if (configurationChanged) {
+    return (
+      <section aria-label="Record actions">
+        <p role="alert">The action configuration changed. Reload the record before deciding again.</p>
+        <button type="button" disabled={busy || writeGuard?.pending} onClick={() => {
+          if (request.current) return;
+          store.delete(scope);
+          close();
+          onChanged();
+        }}>Reload record to review actions</button>
+      </section>
+    );
+  }
+
   if (!actions.length && !decision) return null;
   const description = decision?.retry ?? decision;
   return (
     <section aria-label="Record actions">
-      {actions.map(({ command, fields }) => (
+      {actions.map(({ command, fields, definition }) => (
         <button key={command.name} type="button" disabled={busy || writeGuard?.pending} onClick={event => {
           setMessage('');
           trigger.current = event.currentTarget;
-          setDecision({ command, fields, status, version, retry: attempt });
+          setDecision({ command, fields, definition, status, version, retry: attempt });
         }}>
           {attempt ? 'Retry ' + actionLabel(command.name).toLowerCase() : actionLabel(command.name)}
         </button>
@@ -300,13 +348,13 @@ function RecordActions({
           <form noValidate onSubmit={confirm}>
             <fieldset disabled={busy || writeGuard?.pending}>
               {decision.fields.map(field => (
-                <label key={field.column + (decision.retry ? '-retry' : '')}>
+                <label key={field.column.name + (decision.retry ? '-retry' : '')}>
                   {field.label}{field.required ? ' (required)' : ''}
-                  <input name={field.column} required={field.required}
+                  <input name={field.column.name} required={field.required}
                     type={field.type === 'date' ? 'date' : 'text'}
                     inputMode={field.type === 'number' ? 'decimal' : undefined}
                     readOnly={Boolean(decision.retry)}
-                    value={decision.retry ? String(decision.retry.payload[field.column] ?? '') : undefined} />
+                    value={decision.retry ? String(decision.retry.payload[field.column.name] ?? '') : undefined} />
                 </label>
               ))}
               <div>

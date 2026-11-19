@@ -59,11 +59,12 @@ function open(recordID = id, actingRole = role) {
 type Post = { body: string; key: string | null };
 function serve(post: (request: Post) => Response | Promise<Response> = () => Response.json({ status: 'rejected', version: 4 })) {
   let record = viewed;
+  let publishedTable = table;
   let reads = 0;
   const posts: Post[] = [];
   vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
     if (url === '/api/auth/me') return Response.json(session.user);
-    if (url === '/api/auth/apps') return Response.json({ apps: session.apps });
+    if (url === '/api/auth/apps') return Response.json({ apps: [{ ...app, tables: [publishedTable] }] });
     if (url === '/v1/graphql') {
       reads++;
       const { variables } = JSON.parse(String(init.body));
@@ -74,7 +75,12 @@ function serve(post: (request: Post) => Response | Promise<Response> = () => Res
     posts.push(request);
     return post(request);
   }));
-  return { posts, reads: () => reads, update: (next: typeof viewed) => { record = next; } };
+  return {
+    posts,
+    reads: () => reads,
+    update: (next: typeof viewed) => { record = next; },
+    publish: (next: InstalledTable) => { publishedTable = next; },
+  };
 }
 
 function button(name: string) {
@@ -247,8 +253,58 @@ it('keeps an uncertain request through record and permission refreshes within th
   fireEvent.click(button('Refresh record'));
   await screen.findByRole('button', { name: 'Retry reject' });
 
+  server.publish({ ...table, ui: { ...table.ui, formFields: [
+    { name: 'rejection_reason', label: 'Reason for rejection', type: 'text', required: true },
+  ] } });
   fireEvent.click(button('Refresh permissions'));
   await screen.findByRole('button', { name: 'Retry reject' });
+  expect(server.posts).toHaveLength(1);
+});
+
+type Command = NonNullable<InstalledTable['stateMachine']>['commands'][number];
+
+function publishReject(replace: (command: Command) => Command[]) {
+  const stateMachine = table.stateMachine!;
+  return {
+    ...table,
+    stateMachine: {
+      ...stateMachine,
+      commands: stateMachine.commands.flatMap(command => command.name === 'reject' ? replace(command) : [command]),
+    },
+  };
+}
+
+it.each([
+  ['destination', publishReject(command => [{ ...command, to: 'approved' }])],
+  ['source states', publishReject(command => [{ ...command, from: ['review', 'rejected'] }])],
+  ['payload requirements', publishReject(command => [{ ...command, payload: [{ column: 'rejection_reason', required: false }] }])],
+  ['payload column constraints', { ...table, columns: table.columns.map(column =>
+    column.name === 'rejection_reason' ? { ...column, check: 'length(trim(rejection_reason)) > 0' } : column) }],
+  ['record eligibility', publishReject(command => [{ ...command, recordFilter: { created_by: { _eq: 'X-Hasura-User-Id' } } }])],
+  ['removed declaration', publishReject(() => [])],
+  ['removed UI action', { ...table, ui: { ...table.ui, actions: ['assess'] } }],
+  ['lost role eligibility', publishReject(command => [{ ...command, allowedRoles: ['owner'] }])],
+] satisfies [string, InstalledTable][])('requires review when the unresolved command’s %s changes', async (_scenario, published) => {
+  open();
+  const server = serve(() => new Response(null, { status: 503 }));
+  render(<App initialSession={session} />);
+  await openReject('Incorrect total');
+  fireEvent.click(button('Confirm reject'));
+  await screen.findByRole('alert');
+  fireEvent.click(button('Cancel'));
+
+  server.publish(published);
+  fireEvent.click(button('Refresh permissions'));
+  expect((await screen.findByRole('alert')).textContent).toMatch(/action configuration changed/i);
+  expect(screen.queryByRole('button', { name: 'Retry reject' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Assess' })).toBeNull();
+  expect(screen.queryByText('Incorrect total')).toBeNull();
+
+  const readsBeforeReview = server.reads();
+  fireEvent.click(button('Reload record to review actions'));
+  await screen.findByRole('button', { name: 'Assess' });
+  expect(screen.queryByRole('button', { name: 'Retry reject' })).toBeNull();
+  expect(server.reads()).toBe(readsBeforeReview + 1);
   expect(server.posts).toHaveLength(1);
 });
 
