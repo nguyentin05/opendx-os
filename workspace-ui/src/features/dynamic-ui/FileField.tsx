@@ -4,7 +4,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { ChangeEvent, ComponentProps } from 'react';
 import type { AppRoleContext } from '../../core/session-context';
-import { executeGraphQL, isRecord, isRecordID } from './graphql';
+import { executeGraphQL, GraphQLRequestError, isRecord, isRecordID } from './graphql';
 
 interface FileFieldProps {
   appID: string;
@@ -24,12 +24,14 @@ const maxBytes = 20 * 1024 * 1024;
 const scanQuery = `query AttachmentScan($id: uuid!) {
   core_files(where: {id: {_eq: $id}}) { scan_status }
 }`;
+const unavailableMessage = 'File scan status is unavailable.';
 const scanMessages = {
   loading: 'Checking scan status…',
   QUARANTINED: 'QUARANTINED — Scan pending.',
   CLEAN: 'CLEAN — Scan passed.',
   INFECTED: 'INFECTED — This file is blocked.',
-  unavailable: 'File scan status is unavailable.',
+  unavailable: unavailableMessage,
+  retryable: unavailableMessage,
 } as const;
 type ScanStatus = keyof typeof scanMessages;
 
@@ -119,6 +121,7 @@ function ScannedAttachment({ fileID, context, label, onInfected }: {
   onInfected?: (fileID: string) => void;
 }) {
   const [status, setStatus] = useState<ScanStatus>('loading');
+  const [attempt, setAttempt] = useState(0);
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState(false);
   const downloadRequest = useRef<AbortController | null>(null);
@@ -149,8 +152,10 @@ function ScannedAttachment({ fileID, context, label, onInfected }: {
         } else {
           setStatus('unavailable');
         }
-      } catch {
-        if (!signal.aborted) setStatus('unavailable');
+      } catch (error) {
+        if (signal.aborted) return;
+        const retryable = error instanceof GraphQLRequestError && error.kind === 'unavailable';
+        setStatus(retryable ? 'retryable' : 'unavailable');
       }
     }
 
@@ -160,7 +165,7 @@ function ScannedAttachment({ fileID, context, label, onInfected }: {
       clearTimeout(timer);
       downloadRequest.current?.abort();
     };
-  }, [fileID, token, role]);
+  }, [fileID, token, role, attempt]);
 
   async function download() {
     if (status !== 'CLEAN' || downloadRequest.current) return;
@@ -198,6 +203,12 @@ function ScannedAttachment({ fileID, context, label, onInfected }: {
   return (
     <>
       <p role="status">{scanMessages[status]}</p>
+      {status === 'retryable' && (
+        <button type="button" onClick={() => {
+          setStatus('loading');
+          setAttempt(previous => previous + 1);
+        }}>Recheck scan status</button>
+      )}
       <button type="button" aria-label={label ? 'Download ' + label : undefined}
         disabled={status !== 'CLEAN' || downloading} onClick={() => void download()}>
         {downloading ? 'Downloading…' : 'Download file'}

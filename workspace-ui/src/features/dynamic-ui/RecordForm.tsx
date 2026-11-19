@@ -145,6 +145,10 @@ function fieldValue(field: Field, draft: string): string | number | null {
     return null;
   }
 
+  if (field.attachment || field.type === 'uuid') {
+    if (!isRecordID(draft)) throw new Error(field.label + ' must be a valid UUID.');
+    return draft;
+  }
   if (field.type === 'number') {
     const number = Number(draft);
     if (!Number.isFinite(number)) throw new Error(field.label + ' must be a number.');
@@ -152,9 +156,6 @@ function fieldValue(field: Field, draft: string): string | number | null {
       throw new Error(field.label + ' must be a whole number.');
     }
     return number;
-  }
-  if ((field.type === 'uuid' || field.attachment) && !isRecordID(draft)) {
-    throw new Error(field.label + ' must be a valid UUID.');
   }
   return draft;
 }

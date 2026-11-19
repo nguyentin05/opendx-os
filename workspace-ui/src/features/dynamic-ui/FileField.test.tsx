@@ -35,8 +35,8 @@ const context: AppRoleContext = {
 };
 const noop = () => undefined;
 
-function form(current = context, value?: string) {
-  return <RecordForm context={current} app={current.app} table={table}
+function form(current = context, value?: string, formTable = table) {
+  return <RecordForm context={current} app={current.app} table={formTable}
     mode={value ? 'update' : 'insert'} record={value ? { id, quote_file_id: value } : undefined}
     onSaved={noop} onCancel={noop} />;
 }
@@ -169,14 +169,18 @@ it('downloads a scanned attachment for the read-only role through the protected 
   await waitFor(() => expect(revoke).toHaveBeenCalledWith('blob:attachment'), { timeout: 2000 });
 });
 
-it('leaves an attachment unavailable when Hasura omits the status or reports errors', async () => {
+it.each([
+  ['omits the row', () => graphql('core_files', [])],
+  ['denies access', () => Response.json({ data: { core_files: [{ scan_status: 'CLEAN' }] },
+    errors: [{ message: 'denied', extensions: { code: 'permission-error' } }] })],
+])('keeps download disabled when Hasura %s', async (_reason, scanResponse) => {
   const fetch = serve((_path, init) => String(init.body).includes('core_files')
-    ? Response.json({ data: { core_files: [{ scan_status: 'CLEAN' }] }, errors: [{ message: 'denied' }] })
-    : graphql('domain_requests_by_pk', { id, quote_file_id: fileID }));
+    ? scanResponse() : graphql('domain_requests_by_pk', { id, quote_file_id: fileID }));
   render(detail({ ...context, role: reader }));
   await screen.findByText(/scan status is unavailable/i);
   expect((screen.getByRole('button', { name: /download/i }) as HTMLButtonElement).disabled).toBe(true);
   expect(fetch.mock.calls.some(([path]) => path === downloadRoute)).toBe(false);
+  expect(screen.queryByRole('button', { name: /recheck scan status/i })).toBeNull();
 });
 
 it('polls a quarantined file until it becomes clean', async () => {
@@ -256,4 +260,40 @@ it('keeps a replacement error visible if the canceled upload later reports a fai
   await screen.findByText(/\bCLEAN\b/);
   fireEvent.click(screen.getByRole('button', { name: 'Save record' }));
   await screen.findByText('No changes to save.');
+});
+
+it('allows a scan recheck after a quarantined file temporarily becomes unavailable', async () => {
+  let polls = 0;
+  serve((_path, init) => {
+    if (!String(init.body).includes('core_files')) return graphql('domain_requests_by_pk', { id, quote_file_id: fileID });
+    if (polls++ === 0) return scanned('QUARANTINED');
+    if (polls === 2) return new Response(null, { status: 503 });
+    return scanned('CLEAN');
+  });
+  render(detail({ ...context, role: reader }));
+  await screen.findByText(/QUARANTINED/);
+  await screen.findByText(/scan status is unavailable/i, {}, { timeout: 2500 });
+  const download = screen.getByRole('button', { name: /download/i }) as HTMLButtonElement;
+  expect(download.disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: /recheck scan status/i }));
+  await screen.findByText(/\bCLEAN\b/);
+  expect(download.disabled).toBe(false);
+});
+
+it('saves a declared attachment UUID when its form field is annotated as a number', async () => {
+  const numericForm = { ...table, ui: {
+    ...table.ui,
+    formFields: table.ui.formFields.map(field => ({ ...field, type: 'number' })),
+  } };
+  const fetch = serve((path, init) => {
+    if (path === uploadRoute) return uploaded();
+    return String(init.body).includes('mutation') ? graphql('insert_domain_requests_one', { id }) : scanned('QUARANTINED');
+  });
+  render(form(context, undefined, numericForm));
+  choose();
+  await screen.findByText(/QUARANTINED/);
+  fireEvent.click(screen.getByRole('button', { name: 'Save record' }));
+  const mutation = fetch.mock.calls.find(([, init]) => String(init.body).includes('mutation'));
+  expect(mutation).toBeDefined();
+  expect(JSON.parse(String(mutation?.[1].body)).variables).toEqual({ object: { quote_file_id: fileID } });
 });
