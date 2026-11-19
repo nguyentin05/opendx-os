@@ -7,6 +7,8 @@ import type { AppRoleContext } from '../../core/session-context';
 import { WorkspaceLink } from '../../shell/AppShell';
 import type { InstalledApp, InstalledTable } from '../../types/registry';
 import { ChildGrid } from './ChildGrid';
+import { CommandPanel } from './CommandPanel';
+import type { CommandAttempts, CommandFeedback } from './CommandPanel';
 import { FileField } from './FileField';
 import { GraphQLRequestError, isRecordID, loadRecord } from './graphql';
 import { allowedFields, canEditRecord, isAttachmentColumn } from './registry';
@@ -18,6 +20,7 @@ export interface RecordDetailProps {
   recordID: string;
   onEdit: () => void;
   onBack: () => void;
+  commandAttempts?: CommandAttempts;
 }
 
 const failureMessages = {
@@ -83,6 +86,10 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
   const [revision, setRevision] = useState(0);
   const [result, setResult] = useState<{ revision: number; value: RecordResult }>();
   const [writePending, setWritePending] = useState(false);
+  const [localAttempts] = useState<CommandAttempts>(() => new Map());
+  const [feedback, setFeedback] = useState<CommandFeedback>();
+  const feedbackRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => { if (feedback) feedbackRef.current?.focus(); }, [feedback, revision]);
   const writing = useRef(false);
   const beginRecordWrite = useCallback(() => {
     if (writing.current) return;
@@ -93,8 +100,10 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
       setWritePending(false);
     };
   }, []);
-  const refresh = useCallback(() => {
-    if (!writing.current) setRevision(current => current + 1);
+  const refresh = useCallback((message?: CommandFeedback) => {
+    if (writing.current) return;
+    setFeedback(message);
+    setRevision(current => current + 1);
   }, []);
   const { role } = context;
 
@@ -116,7 +125,8 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
 
   return (
     <>
-      <button type="button" onClick={refresh} disabled={!current || writePending}>Refresh record</button>
+      <button type="button" onClick={() => refresh()} disabled={!current || writePending}>Refresh record</button>
+      {feedback && <p ref={feedbackRef} tabIndex={-1} role={feedback.error ? 'alert' : 'status'}>{feedback.message}</p>}
       {!current && <p role="status">Loading record…</p>}
       {current && 'error' in current && <p role="alert">{current.error}</p>}
       {record === null && <p role="status">Record not found.</p>}
@@ -144,6 +154,10 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
               })}
             </dl>
           ) : <p>No detail fields are available to this role.</p>}
+          <CommandPanel table={table} appID={app.app_id} context={context} record={record}
+            attempts={props.commandAttempts ?? localAttempts}
+            writeGuard={{ pending: writePending, begin: beginRecordWrite }}
+            onChanged={refresh} />
           {app.tables.filter(child => child.belongsTo?.table === table.name).map(child => (
             <ChildGrid key={child.name} parent={table} parentRecord={record} child={child}
               context={context} onParentChanged={refresh} writeGuard={{ pending: writePending, begin: beginRecordWrite }} />

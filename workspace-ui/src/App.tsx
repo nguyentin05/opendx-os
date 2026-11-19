@@ -9,6 +9,7 @@ import type { WorkspaceRoute } from './core/routes';
 import { resolveAppRole, useSessionContext } from './core/session-context';
 import { AgentChat } from './features/agent/AgentChat';
 import type { Pending } from './features/agent/AgentChat';
+import type { CommandAttempts } from './features/dynamic-ui/CommandPanel';
 import { topLevelTables } from './features/dynamic-ui/registry';
 import { RecordDetail } from './features/dynamic-ui/RecordDetail';
 import { EditRecord, RecordForm } from './features/dynamic-ui/RecordForm';
@@ -93,6 +94,10 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
   const { session, context, refresh, pending, error } = useSessionContext(token, route, initialSession);
   const [surface, setSurface] = useState<{ route: WorkspaceRoute; kind: 'assistant' | 'library' } | null>(null);
   const agentPending = useRef<{ userID: string; turns: Record<string, Pending> }>({ userID: '', turns: {} });
+  const commandAttempts = useRef<{ userID: string; attempts: CommandAttempts }>({ userID: '', attempts: new Map() });
+  if (session && commandAttempts.current.userID !== session.user.id) {
+    commandAttempts.current = { userID: session.user.id, attempts: new Map() };
+  }
   if (session && agentPending.current.userID !== session.user.id) {
     agentPending.current = { userID: session.user.id, turns: {} };
   }
@@ -180,6 +185,7 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
                 recordID={recordID}
                 onEdit={() => go(toTableURL(app.app_id, table.name, recordID) + '/edit?' + new URLSearchParams({ role }))}
                 onBack={back}
+                commandAttempts={commandAttempts.current.attempts}
               />}
         </>
       );
