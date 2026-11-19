@@ -181,18 +181,28 @@ it('shows required and UUID validation before sending a mutation', async () => {
   expect(requests.some(request => request.query.startsWith('mutation'))).toBe(false);
 });
 
-it('projects crafted input at the mutation boundary and returns only the selected readable result', async () => {
-  const requests = serve(() => dataResponse('insert_domain_requests_one', { id, secret: 'Protected output' }));
-  const input = {
-    title: 'Allowed', locked: 'Forbidden', secret: 'Undeclared in form', quote_file_id: vendorID,
-    id: otherID, version: 99, status: 'COMPLETE', created_by: otherID, org_unit_id: otherID,
-    created_at: '2026-01-01', updated_at: '2026-01-01',
-  };
-  await expect(saveRecord(
-    { token: session.token, role }, table, 'insert', input, undefined, new AbortController().signal,
-  )).resolves.toEqual({ id });
-  expect(requests[0].variables).toEqual({ object: { title: 'Allowed' } });
-});
+it.each(['file', 'uuid'])(
+  'projects crafted input including a core.files reference with a %s form type',
+  async type => {
+    const requests = serve(() => dataResponse('insert_domain_requests_one', { id, secret: 'Protected output' }));
+    const withAttachment = {
+      ...table,
+      ui: {
+        ...table.ui,
+        formFields: table.ui.formFields.map(field => field.name === 'quote_file_id' ? { ...field, type } : field),
+      },
+    };
+    const input = {
+      title: 'Allowed', locked: 'Forbidden', secret: 'Undeclared in form', quote_file_id: vendorID,
+      id: otherID, version: 99, status: 'COMPLETE', created_by: otherID, org_unit_id: otherID,
+      created_at: '2026-01-01', updated_at: '2026-01-01',
+    };
+    await expect(saveRecord(
+      { token: session.token, role }, withAttachment, 'insert', input, undefined, new AbortController().signal,
+    )).resolves.toEqual({ id });
+    expect(requests[0].variables).toEqual({ object: { title: 'Allowed' } });
+  },
+);
 
 it('loads the edit route by ID and sends only changed values including a cleared nullable field', async () => {
   let saved = false;
@@ -347,3 +357,45 @@ it('aborts a pending vendor lookup on navigation', async () => {
   expect(requests[0].signal?.aborted).toBe(true);
   expect(screen.queryByText('Previous supplier')).toBeNull();
 });
+
+it.each(['core.users', 'cap_hr.org_units', 'cap_data.devices', 'cap_work.work_items'])(
+  'accepts a validated UUID for a required shared reference to %s without querying that table',
+  async references => {
+    const [app] = session.apps;
+    const sharedReference: InstalledTable = {
+      ...table,
+      foreignKeys: [{ column: 'reference_id', references }],
+      ui: {
+        listColumns: ['title'],
+        formFields: [
+          { name: 'title', label: 'Title', type: 'text', required: true },
+          { name: 'amount', label: 'Amount', type: 'number', required: true },
+          { name: 'reference_id', label: 'Assigned record', type: 'uuid', required: true },
+        ],
+      },
+    };
+    const requests = serve(({ query }) => query.startsWith('mutation')
+      ? dataResponse('insert_domain_requests_one', { id })
+      : dataResponse('domain_requests', [{ id, title: 'New shared request' }]));
+    showForm('/new', role, { ...session, apps: [{ ...app, tables: [sharedReference] }] });
+
+    const input = screen.getByRole('textbox', { name: 'Assigned record' });
+    const descriptionID = input.getAttribute('aria-describedby');
+    expect(descriptionID && document.getElementById(descriptionID)?.textContent).toMatch(/UUID/);
+    fill('Title', 'New shared request');
+    fill('Amount', '10');
+    save();
+    await screen.findByText('Assigned record is required.');
+    fill('Assigned record', 'unknown');
+    save();
+    await screen.findByText('Assigned record must be a valid UUID.');
+    expect(requests).toHaveLength(0);
+
+    fill('Assigned record', otherID);
+    save();
+
+    await screen.findByText('New shared request');
+    expect(requests[0].query).toMatch(/insert_domain_requests_one\(object: \$object\)/);
+    expect(requests[0].variables).toEqual({ object: { title: 'New shared request', amount: 10, reference_id: otherID } });
+  },
+);

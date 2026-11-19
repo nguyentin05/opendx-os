@@ -6,7 +6,7 @@ import type { FormEvent } from 'react';
 import type { AppRoleContext } from '../../core/session-context';
 import type { FormField, InstalledApp, InstalledTable } from '../../types/registry';
 import { GraphQLRequestError, isRecordID, loadRecord, loadReferencePage, referencePageSize, saveRecord } from './graphql';
-import { allowedFields, canEditRecord, writableFormFields } from './registry';
+import { allowedFields, canEditRecord, isFileFormField, writableFormFields } from './registry';
 
 export interface RecordFormProps {
   table: InstalledTable;
@@ -22,12 +22,15 @@ type EditRecordProps = Omit<RecordFormProps, 'mode' | 'record'> & { recordID: st
 type Field = FormField & {
   column: InstalledTable['columns'][number];
   target?: InstalledTable;
+  description?: string;
   unavailable?: string;
 };
 type Values = Record<string, string>;
 
 const cannotEdit = 'This record cannot be edited.';
 const inputTypes = { text: 'text', number: 'number', date: 'date', uuid: 'text' } as const;
+// The operator's referenceable shared catalog, with files handled by attachments.
+const sharedUUIDTargets = new Set(['core.users', 'cap_hr.org_units', 'cap_data.devices', 'cap_work.work_items']);
 
 export function EditRecord(props: EditRecordProps) {
   const { table, app, context, recordID, onCancel } = props;
@@ -56,7 +59,7 @@ function EditRecordLoader(props: EditRecordProps) {
   const [fields] = useState(() => {
     const readable = new Set(allowedFields(table, role, 'select'));
     const selection = writableFormFields(table, role, 'update').filter(field =>
-      field.type !== 'file' && readable.has(field.name) && table.columns.some(column => column.name === field.name),
+      !isFileFormField(table, field) && readable.has(field.name) && table.columns.some(column => column.name === field.name),
     ).map(field => field.name);
     if (table.stateMachine) selection.push('status');
     return selection;
@@ -92,12 +95,15 @@ export function RecordForm(props: RecordFormProps) {
   const fields = writableFormFields(table, role, mode).flatMap((field): Field[] => {
     const column = table.columns.find(candidate => candidate.name === field.name);
     if (!column) return [];
-    if (field.type === 'file') return [{ ...field, column, unavailable: 'File upload is unavailable.' }];
+    if (isFileFormField(table, field)) return [{ ...field, column, unavailable: 'File upload is unavailable.' }];
     if (!Object.prototype.hasOwnProperty.call(inputTypes, field.type)) {
       return [{ ...field, column, unavailable: 'This input is unavailable.' }];
     }
     const reference = table.foreignKeys?.find(key => key.column === field.name);
     if (reference) {
+      if (field.type === 'uuid' && column.type === 'uuid' && sharedUUIDTargets.has(reference.references)) {
+        return [{ ...field, column, description: 'Enter the record UUID.' }];
+      }
       const target = app.tables.find(candidate => candidate.name === reference.references
         && allowedFields(candidate, role, 'select').includes('id'));
       return target ? [{ ...field, column, target }] : [{ ...field, column, unavailable: 'Reference selection is unavailable.' }];
@@ -212,14 +218,18 @@ function FormFields({ table, context, mode, record, onSaved, onCancel, fields }:
     <form noValidate onSubmit={event => void submit(event)}>
       <fieldset disabled={pending}>
         {fields.map(field => {
-          const { name, label, type, required, column, target, unavailable } = field;
+          const { name, label, type, required, column, target, description, unavailable } = field;
           const id = formID + '-' + name;
+          const describedBy = [
+            description && id + '-description',
+            errors[name] && id + '-error',
+          ].filter(Boolean).join(' ');
           const input = {
             id,
             value: values[name],
             required: required || !column.nullable,
             'aria-invalid': Boolean(errors[name]),
-            'aria-describedby': errors[name] ? id + '-error' : undefined,
+            'aria-describedby': describedBy || undefined,
           };
           function change(value: string) {
             setValues(previous => ({ ...previous, [name]: value }));
@@ -236,6 +246,7 @@ function FormFields({ table, context, mode, record, onSaved, onCancel, fields }:
                       onChange={event => change(event.target.value)} />}
                 </>
               )}
+              {description && <p id={id + '-description'}>{description}</p>}
               {errors[name] && <p role="alert" id={id + '-error'}>{errors[name]}</p>}
             </div>
           );

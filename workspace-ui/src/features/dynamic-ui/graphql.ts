@@ -2,7 +2,7 @@
 // Copyright 2026 DX-OS Open-Core Contributors
 
 import type { InstalledTable } from '../../types/registry';
-import { allowedFields, tableGraphQLName, writableFormFields } from './registry';
+import { allowedFields, isFileFormField, tableGraphQLName, writableFormFields } from './registry';
 
 export interface RequestContext {
   token: string;
@@ -159,11 +159,12 @@ export async function saveRecord(
   if (!selected) throw new GraphQLRequestError('forbidden');
 
   const declared = new Set(table.columns.map(column => column.name));
-  const object = Object.fromEntries(writableFormFields(table, ctx.role, mode).flatMap(({ name, type }) => {
+  const object = Object.fromEntries(writableFormFields(table, ctx.role, mode).flatMap(field => {
+    const { name, type } = field;
     if (!declared.has(name) || !Object.prototype.hasOwnProperty.call(values, name)) return [];
     const value = values[name];
     // File writes require the upload flow. This form has no attachment value yet.
-    if (!['text', 'number', 'date', 'uuid'].includes(type)) return [];
+    if (isFileFormField(table, field) || !['text', 'number', 'date', 'uuid'].includes(type)) return [];
     if (value === null || (type === 'number' ? typeof value === 'number' && Number.isFinite(value) : typeof value === 'string')) {
       return [[name, value]];
     }

@@ -39,6 +39,12 @@ export function writableFormFields(
   );
 }
 
+export function isFileFormField(table: InstalledTable, field: FormField): boolean {
+  return field.type === 'file' || (table.foreignKeys?.some(key =>
+    key.column === field.name && key.references === 'core.files'
+  ) ?? false);
+}
+
 export function canEditRecord(table: InstalledTable, role: string, record: Record<string, unknown>): boolean {
   return Boolean(table.access.update?.some(rule => rule.role === role)
     && (!table.stateMachine ||
