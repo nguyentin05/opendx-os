@@ -3,6 +3,7 @@
 // @vitest-environment jsdom
 import {afterEach,expect,it,vi} from 'vitest';
 import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {StrictMode} from 'react';
 import {AppKnowledge} from './AppKnowledge';
 const props={userID:'An',token:'token-an',appID:'hr',role:'role_hr',contextKey:'hr'};
 const json=(value:unknown)=>new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
@@ -32,4 +33,20 @@ it('shows a grounded answer and protected citations, then clears it on role chan
 it('explains search-only answers without inventing generated text',async()=>{
  vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>String(input).endsWith('/answers')?json({status:'SEARCH_ONLY',answer:null,reason:'POLICY_BLOCKED',results:[],citations:[]}):json({sources:[]})));
  render(<AppKnowledge {...props}/>);fireEvent.change(screen.getByLabelText('Search app documents'),{target:{value:'Who approves?'}});fireEvent.click(screen.getByRole('button',{name:'Ask app'}));await screen.findByText(/Search only.*generation is unavailable/i);
+});
+
+it('loads sources and permits searching after Strict Mode replays effect setup', async () => {
+ vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (init?.signal?.aborted) throw new DOMException('Context changed', 'AbortError');
+  if (String(input).endsWith('/search')) {
+   return json({status: 'LEXICAL', results: [], warnings: []});
+  }
+  return json({sources: [{source_id: 'policy', status: 'READY', readable: true,
+   manageable: false, active_version_available: true}]});
+ }));
+ render(<StrictMode><AppKnowledge {...props} /></StrictMode>);
+ await screen.findByText('policy');
+ fireEvent.change(screen.getByLabelText('Search app documents'), {target: {value: 'holiday'}});
+ fireEvent.click(screen.getByRole('button', {name: 'Search app'}));
+ await screen.findByText('No accessible evidence found.');
 });

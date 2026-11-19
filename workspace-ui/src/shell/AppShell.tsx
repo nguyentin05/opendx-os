@@ -15,6 +15,7 @@ export interface ShellProps {
   onNavigate: (url: string) => void;
   onChangeRole: (role: string) => void;
   assistant: ReactNode;
+  assistantDrawer?: ReactNode;
   onRefresh?: () => void;
   onSignOut?: () => void;
   library?: { active: boolean; open: () => void };
@@ -49,7 +50,7 @@ export function WorkspaceLink({
 
 export function AppShell({
   session, route, context, onNavigate, onChangeRole, assistant, onRefresh, onSignOut,
-  library, auxiliaryViewActive, pending, error, children,
+  library, auxiliaryViewActive, pending, error, children, assistantDrawer,
 }: ShellProps) {
   const [navOpen, setNavOpen] = useState(false);
   const [roleMenuRoute, setRoleMenuRoute] = useState<WorkspaceRoute | null>(null);
@@ -162,6 +163,7 @@ export function AppShell({
         {error && <p role="alert">{error}</p>}
         {session && children}
       </main>
+      {assistantDrawer}
     </div>
   );
 }

@@ -6,12 +6,13 @@ import { toTableURL } from '../../core/routes';
 import { holdsAppGrant } from '../../core/session-context';
 import { isRecordID } from '../dynamic-ui/graphql';
 import { allowedFields, topLevelTables } from '../dynamic-ui/registry';
+import { knowledgeOnlyView } from '../knowledge/routes';
 import type { WorkItem } from './work-items';
 
 export interface RecentTarget {
   appID: string;
   role: string;
-  tableName: string;
+  tableName?: string;
   recordID?: string;
 }
 
@@ -20,6 +21,11 @@ export function targetURL(session: Session, target: RecentTarget, requireWorkGra
   const app = session.apps.find(app => app.app_id === appID);
   if (!app || !holdsAppGrant(session, appID, role)
     || (requireWorkGrant && !app.work_item_roles?.includes(role))) return;
+
+  if (tableName === undefined) {
+    if (requireWorkGrant || recordID !== undefined || !knowledgeOnlyView(app, role)) return;
+    return '/apps/' + encodeURIComponent(appID) + '?' + new URLSearchParams({ role });
+  }
 
   const table = topLevelTables(app, role).find(table => table.name === tableName);
   if (!table || (recordID !== undefined && (!isRecordID(recordID)

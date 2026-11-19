@@ -7,7 +7,7 @@ import type { Session } from './auth';
 import { toTableURL, useWorkspaceRoute } from './core/routes';
 import type { WorkspaceRoute } from './core/routes';
 import { resolveAppRole, useSessionContext } from './core/session-context';
-import { AgentChat } from './features/agent/AgentChat';
+import { AgentDrawer, agentDrawerID } from './features/agent/AgentDrawer';
 import type { Pending } from './features/agent/AgentChat';
 import type { CommandAttempts } from './features/dynamic-ui/CommandPanel';
 import { topLevelTables } from './features/dynamic-ui/registry';
@@ -21,6 +21,7 @@ import type { RecentTarget } from './features/home/recent';
 import type { WorkItem } from './features/home/work-items';
 import { AppKnowledge } from './features/knowledge/AppKnowledge';
 import { PersonalLibrary } from './features/knowledge/PersonalLibrary';
+import { allowsPersonalLibrary, hasAppKnowledge, knowledgeOnlyView } from './features/knowledge/routes';
 import { AppShell, WorkspaceLink } from './shell/AppShell';
 
 export function libraryFor(session: Session) {
@@ -30,9 +31,8 @@ export function libraryFor(session: Session) {
   if (matches.length !== 1) return null;
 
   const [app] = matches;
-  const allowedRoles = app.knowledge?.personalLibrary?.allowedRoles ?? [];
   const role = app.roles.find(grant =>
-    allowedRoles.includes(grant.name) && resolveAppRole(session, app.app_id, grant.name),
+    allowsPersonalLibrary(app, grant.name) && resolveAppRole(session, app.app_id, grant.name),
   );
   return role ? { app, role: role.name } : null;
 }
@@ -90,6 +90,13 @@ function WorkspaceRoot({ initialSession }: { initialSession?: Session }) {
   );
 }
 
+interface AssistantSession {
+  token: string;
+  userID: string;
+  open: boolean;
+  turns: Record<string, Pending>;
+}
+
 function SignedInWorkspace({ token, initialSession, onSignOut }: {
   token: string;
   initialSession?: Session;
@@ -99,33 +106,47 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
   const { session, context, refresh, pending, error } = useSessionContext(token, route, initialSession);
   const [recent, setRecent] = useState<{ userID: string; entries: RecentTarget[] }>();
   const [destination, setDestination] = useState<{ target: RecentTarget; work: boolean; href: string }>();
-  const [surface, setSurface] = useState<{ route: WorkspaceRoute; kind: 'assistant' | 'library' } | null>(null);
-  const agentPending = useRef<{ userID: string; turns: Record<string, Pending> }>({ userID: '', turns: {} });
+  const [libraryRoute, setLibraryRoute] = useState<WorkspaceRoute | null>(null);
+  const [assistantSession, setAssistantSession] = useState<AssistantSession>();
+  const assistantTrigger = useRef<HTMLButtonElement>(null);
   const commandAttempts = useRef<{ userID: string; attempts: CommandAttempts }>({ userID: '', attempts: new Map() });
   if (session && commandAttempts.current.userID !== session.user.id) {
     commandAttempts.current = { userID: session.user.id, attempts: new Map() };
   }
-  if (session && agentPending.current.userID !== session.user.id) {
-    agentPending.current = { userID: session.user.id, turns: {} };
+  // Verification temporarily withholds the drawer. Keep its state only while
+  // waiting for the same credential to be verified again.
+  let assistant = assistantSession;
+  if (session && (assistant?.userID !== session.user.id || assistant.token !== session.token)) {
+    assistant = { token: session.token, userID: session.user.id, open: false, turns: {} };
+  } else if (!session && !pending) {
+    assistant = undefined;
+  }
+  if (assistant !== assistantSession) setAssistantSession(assistant);
+
+  const assistantOpen = Boolean(session && assistant?.open);
+  function closeAssistant() {
+    if (assistant) setAssistantSession({ ...assistant, open: false });
+    assistantTrigger.current?.focus();
   }
 
-  const activeSurface = surface?.route === route ? surface.kind : undefined;
-  const showAssistant = activeSurface === 'assistant';
+  const librarySelected = libraryRoute === route;
   const library = session && libraryFor(session);
   const app = context?.app;
-  const hasAppKnowledge = Boolean(app?.knowledge?.sources?.length);
+  const showAppKnowledge = Boolean(app && hasAppKnowledge(app));
   const tables = context ? topLevelTables(context.app, context.role) : [];
   const requestedTable = route.kind === 'app' ? route.tableName : undefined;
   const table = requestedTable === undefined ? tables[0] : tables.find(entry => entry.name === requestedTable);
-  const showLibrary = Boolean(library && (
-    activeSurface === 'library' ||
-    (app?.app_id === library.app.app_id && !hasAppKnowledge && !app.tables.length && requestedTable === undefined)
-  ));
   const scope = JSON.stringify([session?.user.id, token, app?.app_id, context?.role, table?.name]);
 
   const guardedDestination = destination?.href === window.location.pathname + window.location.search ? destination : undefined;
   const targetDenied = Boolean(session && guardedDestination
     && !targetURL(session, guardedDestination.target, guardedDestination.work));
+
+  const knowledgeView = context && requestedTable === undefined && !targetDenied
+    ? knowledgeOnlyView(context.app, context.role) : undefined;
+  const standaloneLibrary = librarySelected && library;
+  const routeLibrary = knowledgeView === 'library' ? context : null;
+  const libraryView = standaloneLibrary || routeLibrary;
 
   const updateRecent = useCallback((target: RecentTarget, visible: boolean) => {
     if (!session || !targetURL(session, target)) return;
@@ -137,10 +158,10 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
   }, [session]);
 
   useEffect(() => {
-    if (route.kind !== 'app' || route.mode || route.recordID !== undefined || !table
-      || !context || activeSurface || targetDenied) return;
-    updateRecent({ appID: route.appID, role: context.role, tableName: table.name }, true);
-  }, [route, table, context, activeSurface, targetDenied, updateRecent]);
+    if (route.kind !== 'app' || route.mode || route.recordID !== undefined
+      || !context || standaloneLibrary || targetDenied || (!table && !knowledgeView)) return;
+    updateRecent({ appID: route.appID, role: context.role, tableName: table?.name }, true);
+  }, [route, table, context, standaloneLibrary, targetDenied, knowledgeView, updateRecent]);
 
   const onRecordAccess = useCallback((visible: boolean) => {
     if (route.kind !== 'app' || !table || !route.recordID || !context || targetDenied) return;
@@ -149,7 +170,7 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
 
   function go(href: string, target?: { target: RecentTarget; work: boolean }) {
     setDestination(target ? { ...target, href } : undefined);
-    setSurface(null);
+    setLibraryRoute(null);
     navigate(href);
   }
 
@@ -183,17 +204,14 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
 
   function renderView() {
     if (!session) return null;
-    if (showAssistant) {
-      return <AgentChat key={session.user.id} token={token} pendingTurns={agentPending.current.turns} />;
-    }
-    if (library && showLibrary) {
+    if (libraryView) {
       return (
         <PersonalLibrary
-          key={JSON.stringify([scope, library.app.app_id, library.role])}
+          key={JSON.stringify([scope, libraryView.app.app_id, libraryView.role])}
           userID={session.user.id}
           token={token}
-          appID={library.app.app_id}
-          role={library.role}
+          appID={libraryView.app.app_id}
+          role={libraryView.role}
           contextKey={scope}
         />
       );
@@ -273,9 +291,8 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
             }}
           />
         )}
-        {hasAppKnowledge && (
+        {showAppKnowledge && (
           <AppKnowledge
-            key={'knowledge:' + scope}
             userID={session.user.id}
             token={token}
             appID={context.app.app_id}
@@ -283,7 +300,7 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
             contextKey={scope}
           />
         )}
-        {!table && !hasAppKnowledge && <p>No views are available for this role.</p>}
+        {!table && !showAppKnowledge && <p>No views are available for this role.</p>}
       </>
     );
   }
@@ -297,17 +314,33 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
       onChangeRole={changeRole}
       onRefresh={refresh}
       onSignOut={onSignOut}
-      auxiliaryViewActive={showAssistant || (activeSurface === 'library' && showLibrary)}
+      auxiliaryViewActive={Boolean(standaloneLibrary)}
       pending={pending}
       error={error}
-      assistant={session && (
-        <button aria-pressed={showAssistant} onClick={() => setSurface(showAssistant ? null : { route, kind: 'assistant' })}>
-          Assistant
+      assistant={session && assistant && (
+        <button
+          type="button"
+          ref={assistantTrigger}
+          aria-expanded={assistantOpen}
+          aria-controls={agentDrawerID}
+          onClick={() => assistantOpen ? closeAssistant() : setAssistantSession({ ...assistant, open: true })}
+        >
+          <span aria-hidden="true">✦</span> Assistant
         </button>
       )}
+      assistantDrawer={assistant && (
+        <AgentDrawer
+          token={assistant.token}
+          userID={assistant.userID}
+          open={assistantOpen}
+          onClose={closeAssistant}
+          pendingTurns={assistant.turns}
+        />
+      )}
       library={library ? {
-        active: showLibrary && !showAssistant,
-        open: () => setSurface({ route, kind: 'library' }),
+        active: Boolean(standaloneLibrary || (routeLibrary?.app.app_id === library.app.app_id
+          && routeLibrary.role === library.role)),
+        open: () => setLibraryRoute(route),
       } : undefined}
     >
       {renderView()}

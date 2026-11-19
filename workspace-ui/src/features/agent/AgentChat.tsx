@@ -42,9 +42,11 @@ function emptyResultMessage(result: Result, incomplete: boolean) {
 export function AgentChat({
   token,
   pendingTurns,
+  visible = true,
 }: {
   token: string;
   pendingTurns?: Record<string, Pending>;
+  visible?: boolean;
 }) {
   const client = useMemo(() => new AgentClient(token), [token]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -65,6 +67,14 @@ export function AgentChat({
     pendingTurns ?? {},
   );
   const previewRequest = useRef(0);
+  useEffect(() => {
+    if (visible) return;
+    // Reopening a protected preview requires a fresh authorization check.
+    previewRequest.current++;
+    setPreview(null);
+    setPreviewError("");
+  }, [visible]);
+
   useEffect(() => {
     const controller = new AbortController();
     scope.current = controller;

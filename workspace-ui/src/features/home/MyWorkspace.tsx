@@ -84,7 +84,7 @@ export function MyWorkspace({ session, onOpenApp, onOpenWorkItem, recent = [], o
               <li key={href}>
                 <WorkspaceLink href={href} onNavigate={() => onOpenRecent(target)}>
                   {app.display_name}
-                  {' · ' + target.tableName}
+                  {target.tableName && ' · ' + target.tableName}
                   {target.recordID && ' · Record ' + target.recordID.slice(-8)}
                 </WorkspaceLink>
               </li>
