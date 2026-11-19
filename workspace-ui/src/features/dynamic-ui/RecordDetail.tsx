@@ -7,8 +7,9 @@ import type { AppRoleContext } from '../../core/session-context';
 import { WorkspaceLink } from '../../shell/AppShell';
 import type { InstalledApp, InstalledTable } from '../../types/registry';
 import { ChildGrid } from './ChildGrid';
+import { FileField } from './FileField';
 import { GraphQLRequestError, isRecordID, loadRecord } from './graphql';
-import { allowedFields, canEditRecord } from './registry';
+import { allowedFields, canEditRecord, isAttachmentColumn } from './registry';
 
 export interface RecordDetailProps {
   table: InstalledTable;
@@ -59,7 +60,12 @@ function describeFields(table: InstalledTable, app: InstalledApp, readable: Set<
   return Array.from(names).filter(name => readable.has(name)).map(name => {
     const target = app.tables.find(candidate => !candidate.belongsTo
       && candidate.name === references.get(name) && allowedFields(candidate, role, 'select').includes('id'));
-    return { name, label: labels.get(name) ?? name.replace(/_/g, ' '), target: target?.name };
+    return {
+      name,
+      label: labels.get(name) ?? name.replace(/_/g, ' '),
+      target: target?.name,
+      attachment: isAttachmentColumn(table, name),
+    };
   });
 }
 
@@ -119,17 +125,19 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
           {canEditRecord(table, role, record) && <button type="button" onClick={onEdit} disabled={writePending}>Edit record</button>}
           {fields.length ? (
             <dl>
-              {fields.map(({ name, label, target }) => {
+              {fields.map(({ name, label, target, attachment }) => {
                 const value = record[name];
                 return (
                   <div key={name}>
                     <dt>{label}</dt>
                     <dd>
-                      {target && isRecordID(value)
-                        ? <WorkspaceLink href={toTableURL(app.app_id, target, value, role)} onNavigate={navigate}>
-                          {value}
-                        </WorkspaceLink>
-                        : value === null ? '—' : String(value)}
+                      {attachment && isRecordID(value)
+                        ? <FileField appID={app.app_id} context={context} value={value} label={label} />
+                        : target && isRecordID(value)
+                          ? <WorkspaceLink href={toTableURL(app.app_id, target, value, role)} onNavigate={navigate}>
+                            {value}
+                          </WorkspaceLink>
+                          : value === null ? '—' : String(value)}
                     </dd>
                   </div>
                 );

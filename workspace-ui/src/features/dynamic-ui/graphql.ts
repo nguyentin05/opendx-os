@@ -3,7 +3,7 @@
 
 import type { AppRoleContext } from '../../core/session-context';
 import type { InstalledTable } from '../../types/registry';
-import { allowedFields, canEditRecord, isFileFormField, isParentColumn, tableGraphQLName, writableFormFields } from './registry';
+import { allowedFields, canEditRecord, isAttachmentColumn, isFileFormField, isParentColumn, tableGraphQLName, writableFormFields } from './registry';
 
 export interface RequestContext {
   token: string;
@@ -297,10 +297,14 @@ export async function saveRecord(
     const { name, type } = field;
     if (!declared.has(name) || !Object.prototype.hasOwnProperty.call(values, name)) return [];
     const value = values[name];
-    // File writes require the upload flow. This form has no attachment value yet.
-    if (isFileFormField(table, field) || !['text', 'number', 'date', 'uuid'].includes(type)) return [];
     // The form has no way to verify that a work item belongs to this application.
     if (table.foreignKeys?.some(key => key.column === name && key.references === 'cap_work.work_items')) return [];
+    if (isFileFormField(table, field)) {
+      if (!isAttachmentColumn(table, name)) return [];
+      if (!isRecordID(value)) throw new GraphQLRequestError('unavailable');
+      return [[name, value]];
+    }
+    if (!['text', 'number', 'date', 'uuid'].includes(type)) return [];
     if (value === null || (type === 'number' ? typeof value === 'number' && Number.isFinite(value) : typeof value === 'string')) {
       return [[name, value]];
     }

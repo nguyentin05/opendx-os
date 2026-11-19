@@ -1,0 +1,259 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 DX-OS Open-Core Contributors
+// @vitest-environment jsdom
+
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
+import type { AppRoleContext } from '../../core/session-context';
+import type { InstalledTable } from '../../types/registry';
+import { RecordDetail } from './RecordDetail';
+import { RecordForm } from './RecordForm';
+
+const id = '3451ed47-6023-416a-afad-883b14403613';
+const fileID = 'acd6b9b6-6e99-4bb1-8b53-696cc4f28d12';
+const replacementID = 'f870fe3c-d2b7-497e-ad6f-cce6f44cadf2';
+const uploadRoute = '/api/cap/process/files/upload';
+const downloadRoute = '/api/cap/process/files/' + fileID;
+const editor = 'role_editor';
+const reader = 'role_reader';
+const table: InstalledTable = {
+  name: 'domain.requests',
+  columns: [{ name: 'quote_file_id', type: 'uuid', nullable: true }],
+  foreignKeys: [{ column: 'quote_file_id', references: 'core.files' }],
+  attachments: [{ column: 'quote_file_id', requireCleanOnCommands: [] }],
+  access: {
+    select: [{ role: editor, columns: ['id', 'quote_file_id'] }, { role: reader, columns: ['id', 'quote_file_id'] }],
+    insert: [{ role: editor, columns: ['quote_file_id'] }],
+    update: [{ role: editor, columns: ['quote_file_id'] }],
+  },
+  ui: { listColumns: [], formFields: [{ name: 'quote_file_id', label: 'Quote', type: 'file', required: false }] },
+};
+const context: AppRoleContext = {
+  token: 'signed-session', userID: 'test-user', role: editor,
+  app: { app_id: 'sample', display_name: 'Sample', version: '1', capabilities: ['cap-process'],
+    roles: [{ name: editor }, { name: reader }], tables: [table], knowledge: null },
+};
+const noop = () => undefined;
+
+function form(current = context, value?: string) {
+  return <RecordForm context={current} app={current.app} table={table}
+    mode={value ? 'update' : 'insert'} record={value ? { id, quote_file_id: value } : undefined}
+    onSaved={noop} onCancel={noop} />;
+}
+
+function detail(current = context) {
+  return <RecordDetail context={current} app={current.app} table={table} recordID={id} onEdit={noop} onBack={noop} />;
+}
+
+function serve(handler: (path: string, init: RequestInit) => Response | Promise<Response>) {
+  const fetch = vi.fn(handler);
+  vi.stubGlobal('fetch', fetch);
+  return fetch;
+}
+
+function graphql(field: string, value: unknown) {
+  return Response.json({ data: { [field]: value } });
+}
+
+function scanned(status: string) {
+  return graphql('core_files', [{ scan_status: status }]);
+}
+
+function uploaded(value = fileID) {
+  return Response.json({ file_id: value, scan_status: 'QUARANTINED' });
+}
+
+function choose(file = new File(['%PDF-'], 'quote.pdf', { type: 'application/pdf' })) {
+  fireEvent.change(screen.getByLabelText('Quote'), { target: { files: [file] } });
+  return file;
+}
+
+function deferred() {
+  let finish!: (response: Response) => void;
+  const result = new Promise<Response>(resolve => { finish = resolve; });
+  return { result, finish };
+}
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+it('posts multipart, blocks form submission during upload, and saves just the quarantined file ID', async () => {
+  const upload = deferred();
+  const fetch = serve((path, init) => {
+    if (path === uploadRoute) return upload.result;
+    const { query } = JSON.parse(String(init.body));
+    return query.startsWith('mutation') ? graphql('insert_domain_requests_one', { id }) : scanned('QUARANTINED');
+  });
+  render(form());
+  const file = choose();
+  const [path, request] = fetch.mock.calls[0];
+  expect(path).toBe(uploadRoute);
+  expect(request.method).toBe('POST');
+  const headers = new Headers(request.headers);
+  expect(headers.get('Authorization')).toBe('Bearer signed-session');
+  expect(headers.get('X-Hasura-Role')).toBe(editor);
+  expect(headers.has('Content-Type')).toBe(false);
+  expect(Array.from((request.body as FormData).entries())).toEqual([['app_id', 'sample'], ['file', file]]);
+
+  const save = screen.getByRole('button', { name: 'Save record' }) as HTMLButtonElement;
+  expect(save.disabled).toBe(true);
+  fireEvent.submit(save.form!);
+  expect(fetch).toHaveBeenCalledTimes(1);
+
+  await act(async () => upload.finish(uploaded()));
+  await screen.findByText(/QUARANTINED/);
+  expect(screen.queryByText(/\bCLEAN\b/)).toBeNull();
+  expect((screen.getByRole('button', { name: /download/i }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(save);
+
+  const graphQL = fetch.mock.calls.filter(([url]) => url === '/v1/graphql');
+  const check = graphQL.find(([, init]) => String(init.body).includes('core_files'))?.[1];
+  expect(new Headers(check?.headers).get('X-Hasura-Role')).toBe(editor);
+  expect(JSON.parse(String(check?.body)).variables).toEqual({ id: fileID });
+  const saveRequest = graphQL.find(([, init]) => String(init.body).includes('insert_domain_requests_one'))?.[1];
+  expect(JSON.parse(String(saveRequest?.body)).variables).toEqual({ object: { quote_file_id: fileID } });
+});
+
+it.each([
+  ['unsupported media', () => new File(['plain'], 'quote.txt', { type: 'text/plain' })],
+  ['oversized media', () => new File([new Uint8Array(20 * 1024 * 1024 + 1)], 'quote.png', { type: 'image/png' })],
+])('rejects %s before upload', async (_label, makeFile) => {
+  const fetch = serve(() => uploaded());
+  render(form());
+  choose(makeFile());
+  await screen.findByRole('alert');
+  expect(fetch).toHaveBeenCalledTimes(0);
+});
+
+it('prevents attaching or downloading a file after an infected scan', async () => {
+  const fetch = serve(path => path === uploadRoute ? uploaded() : scanned('INFECTED'));
+  render(form());
+  choose();
+  await screen.findByText(/INFECTED/);
+  const download = screen.getByRole('button', { name: /download/i }) as HTMLButtonElement;
+  const save = screen.getByRole('button', { name: 'Save record' }) as HTMLButtonElement;
+  expect(download.disabled).toBe(true);
+  expect(save.disabled).toBe(true);
+  fireEvent.submit(save.form!);
+  expect(fetch.mock.calls.some(([path, init]) =>
+    path === downloadRoute || String(init.body).includes('mutation'))).toBe(false);
+});
+
+it('downloads a scanned attachment for the read-only role through the protected file route', async () => {
+  const fetch = serve((path, init) => {
+    if (path === downloadRoute) return new Response('file bytes');
+    return String(init.body).includes('core_files')
+      ? scanned('CLEAN') : graphql('domain_requests_by_pk', { id, quote_file_id: fileID });
+  });
+  const create = vi.fn(() => 'blob:attachment');
+  const revoke = vi.fn();
+  vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: create, revokeObjectURL: revoke }));
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  render(detail({ ...context, role: reader }));
+  await screen.findByText(/\bCLEAN\b/);
+  expect(screen.queryByLabelText('Quote')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Edit record' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /download/i }));
+
+  await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
+  const [path, request] = fetch.mock.calls[fetch.mock.calls.length - 1];
+  expect(path).toBe(downloadRoute);
+  expect(request.method).toBe('GET');
+  const headers = new Headers(request.headers);
+  expect(headers.get('Authorization')).toBe('Bearer signed-session');
+  expect(headers.get('X-Hasura-Role')).toBe(reader);
+  expect(create).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(revoke).toHaveBeenCalledWith('blob:attachment'), { timeout: 2000 });
+});
+
+it('leaves an attachment unavailable when Hasura omits the status or reports errors', async () => {
+  const fetch = serve((_path, init) => String(init.body).includes('core_files')
+    ? Response.json({ data: { core_files: [{ scan_status: 'CLEAN' }] }, errors: [{ message: 'denied' }] })
+    : graphql('domain_requests_by_pk', { id, quote_file_id: fileID }));
+  render(detail({ ...context, role: reader }));
+  await screen.findByText(/scan status is unavailable/i);
+  expect((screen.getByRole('button', { name: /download/i }) as HTMLButtonElement).disabled).toBe(true);
+  expect(fetch.mock.calls.some(([path]) => path === downloadRoute)).toBe(false);
+});
+
+it('polls a quarantined file until it becomes clean', async () => {
+  let polls = 0;
+  serve((_path, init) => {
+    if (String(init.body).includes('core_files')) return scanned(polls++ === 0 ? 'QUARANTINED' : 'CLEAN');
+    return graphql('domain_requests_by_pk', { id, quote_file_id: fileID });
+  });
+  render(detail({ ...context, role: reader }));
+  await screen.findByText(/QUARANTINED/);
+  await screen.findByText(/\bCLEAN\b/, {}, { timeout: 2500 });
+  expect((screen.getByRole('button', { name: /download/i }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it('discards a slower replaced upload and keeps the latest accepted file ID', async () => {
+  const first = deferred();
+  const second = deferred();
+  let uploads = 0;
+  const fetch = serve((path, init) => {
+    if (path === uploadRoute) return (uploads++ ? second : first).result;
+    return String(init.body).includes('mutation') ? graphql('insert_domain_requests_one', { id }) : scanned('QUARANTINED');
+  });
+  render(form());
+  choose();
+  choose(new File(['png'], 'replacement.png', { type: 'image/png' }));
+  expect(fetch.mock.calls[0][1].signal?.aborted).toBe(true);
+  await act(async () => second.finish(uploaded(replacementID)));
+  await screen.findByText(/QUARANTINED/);
+  await act(async () => first.finish(uploaded()));
+  fireEvent.click(screen.getByRole('button', { name: 'Save record' }));
+  const mutation = fetch.mock.calls.find(([, init]) => String(init.body).includes('mutation'));
+  expect(JSON.parse(String(mutation?.[1].body)).variables).toEqual({ object: { quote_file_id: replacementID } });
+});
+
+it('aborts a pending status request on a role change and discards its old clean result', async () => {
+  const oldStatus = deferred();
+  const newStatus = deferred();
+  const fetch = serve((_path, init) => {
+    if (!String(init.body).includes('core_files')) return graphql('domain_requests_by_pk', { id, quote_file_id: fileID });
+    return (new Headers(init.headers).get('X-Hasura-Role') === editor ? oldStatus : newStatus).result;
+  });
+  const { rerender } = render(detail());
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+  rerender(detail({ ...context, role: reader }));
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+  expect(fetch.mock.calls[1][1].signal?.aborted).toBe(true);
+  await act(async () => oldStatus.finish(scanned('CLEAN')));
+  await act(async () => newStatus.finish(scanned('INFECTED')));
+  await screen.findByText(/INFECTED/);
+  expect((screen.getByRole('button', { name: /download/i }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it('accepts a supported extension when the browser does not supply a MIME type', async () => {
+  const fetch = serve(path => path === uploadRoute ? uploaded() : scanned('QUARANTINED'));
+  render(form());
+  const file = choose(new File(['%PDF-'], 'quote.PDF'));
+  await screen.findByText(/QUARANTINED/);
+  expect((fetch.mock.calls[0][1].body as FormData).get('file')).toBe(file);
+});
+
+it('keeps a replacement error visible if the canceled upload later reports a failure', async () => {
+  const first = deferred();
+  let uploads = 0;
+  const fetch = serve(path => {
+    if (path !== uploadRoute) return scanned('CLEAN');
+    return uploads++ ? new Response(null, { status: 503 }) : first.result;
+  });
+  render(form(context, fileID));
+  await screen.findByText(/\bCLEAN\b/);
+  choose();
+  choose(new File(['png'], 'replacement.png', { type: 'image/png' }));
+  await screen.findByRole('alert');
+  await act(async () => first.finish(new Response(null, { status: 400 })));
+
+  expect(fetch.mock.calls.find(([path]) => path === uploadRoute)?.[1].signal?.aborted).toBe(true);
+  expect(screen.getByRole('alert').textContent).toMatch(/upload is unavailable/i);
+  await screen.findByText(/\bCLEAN\b/);
+  fireEvent.click(screen.getByRole('button', { name: 'Save record' }));
+  await screen.findByText('No changes to save.');
+});

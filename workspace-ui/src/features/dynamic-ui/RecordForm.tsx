@@ -5,9 +5,10 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { AppRoleContext } from '../../core/session-context';
 import type { FormField, InstalledApp, InstalledTable } from '../../types/registry';
+import { FileField } from './FileField';
 import { GraphQLRequestError, isRecordID, loadRecord, loadReferencePage, referencePageSize, saveRecord } from './graphql';
 import type { ChildRecordScope } from './graphql';
-import { allowedFields, canEditRecord, isFileFormField, writableFormFields } from './registry';
+import { allowedFields, canEditRecord, isAttachmentColumn, isFileFormField, writableFormFields } from './registry';
 
 export interface RecordWriteGuard {
   pending: boolean;
@@ -30,6 +31,7 @@ type EditRecordProps = Omit<RecordFormProps, 'mode' | 'record' | 'childScope' | 
 type Field = FormField & {
   column: InstalledTable['columns'][number];
   target?: InstalledTable;
+  attachment?: boolean;
   description?: string;
   unavailable?: string;
 };
@@ -67,7 +69,8 @@ function EditRecordLoader(props: EditRecordProps) {
   const [fields] = useState(() => {
     const readable = new Set(allowedFields(table, role, 'select'));
     const selection = writableFormFields(table, role, 'update').filter(field =>
-      !isFileFormField(table, field) && readable.has(field.name) && table.columns.some(column => column.name === field.name),
+      readable.has(field.name) && table.columns.some(column => column.name === field.name)
+      && (!isFileFormField(table, field) || isAttachmentColumn(table, field.name)),
     ).map(field => field.name);
     if (table.stateMachine) selection.push('status');
     return selection;
@@ -103,7 +106,10 @@ export function RecordForm(props: RecordFormProps) {
   const fields = writableFormFields(table, role, mode).flatMap((field): Field[] => {
     const column = table.columns.find(candidate => candidate.name === field.name);
     if (!column) return [];
-    if (isFileFormField(table, field)) return [{ ...field, column, unavailable: 'File upload is unavailable.' }];
+    if (isFileFormField(table, field)) {
+      return isAttachmentColumn(table, field.name) ? [{ ...field, column, attachment: true }]
+        : [{ ...field, column, unavailable: 'File upload is unavailable.' }];
+    }
     if (!Object.prototype.hasOwnProperty.call(inputTypes, field.type)) {
       return [{ ...field, column, unavailable: 'This input is unavailable.' }];
     }
@@ -147,7 +153,7 @@ function fieldValue(field: Field, draft: string): string | number | null {
     }
     return number;
   }
-  if (field.type === 'uuid' && !isRecordID(draft)) {
+  if ((field.type === 'uuid' || field.attachment) && !isRecordID(draft)) {
     throw new Error(field.label + ' must be a valid UUID.');
   }
   return draft;
@@ -166,13 +172,19 @@ function FormFields({ table, context, mode, record, childScope, writeGuard, onSa
   const [message, setMessage] = useState('');
   const [pending, setPending] = useState(false);
   const saveRequest = useRef<AbortController | null>(null);
+  const uploads = useRef(new Set<string>());
+  const [uploading, setUploading] = useState(false);
+  const [infected, setInfected] = useState<Values>({});
+  const blockedAttachment = Object.entries(infected).some(([name, fileID]) =>
+    values[name] === fileID && initial[name] !== fileID,
+  );
   const formID = useId();
 
   useLayoutEffect(() => () => saveRequest.current?.abort(), []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (saveRequest.current) return;
+    if (saveRequest.current || uploads.current.size || blockedAttachment) return;
     setMessage('');
     const submitted: Record<string, unknown> = {};
     const messages: Values = {};
@@ -230,7 +242,7 @@ function FormFields({ table, context, mode, record, childScope, writeGuard, onSa
     <form noValidate onSubmit={event => void submit(event)}>
       <fieldset disabled={pending || writeGuard?.pending}>
         {fields.map(field => {
-          const { name, label, type, required, column, target, description, unavailable } = field;
+          const { name, label, type, required, column, target, attachment, description, unavailable } = field;
           const id = formID + '-' + name;
           const describedBy = [
             description && id + '-description',
@@ -252,7 +264,25 @@ function FormFields({ table, context, mode, record, childScope, writeGuard, onSa
                 <>
                   <label htmlFor={id}>{label}</label>
                   {input.required && <span aria-hidden="true"> *</span>}
-                  {target ? <ReferenceInput {...input} context={context} table={target} label={label} onChange={change} />
+                  {attachment ? <FileField
+                    appID={context.app.app_id}
+                    context={context}
+                    label={label}
+                    value={values[name]}
+                    input={{
+                      id,
+                      'aria-required': input.required,
+                      'aria-invalid': input['aria-invalid'],
+                      'aria-describedby': input['aria-describedby'],
+                    }}
+                    onChange={change}
+                    onUploadPendingChange={active => {
+                      if (active) uploads.current.add(name);
+                      else uploads.current.delete(name);
+                      setUploading(uploads.current.size > 0);
+                    }}
+                    onInfected={fileID => setInfected(previous => ({ ...previous, [name]: fileID }))}
+                  /> : target ? <ReferenceInput {...input} context={context} table={target} label={label} onChange={change} />
                     : <input {...input} type={inputTypes[type as keyof typeof inputTypes]}
                       step={type === 'number' ? (column.type === 'integer' ? 1 : 'any') : undefined}
                       onChange={event => change(event.target.value)} />}
@@ -263,7 +293,7 @@ function FormFields({ table, context, mode, record, childScope, writeGuard, onSa
             </div>
           );
         })}
-        <button type="submit">{pending ? 'Saving…' : 'Save record'}</button>
+        <button type="submit" disabled={uploading || blockedAttachment}>{pending ? 'Saving…' : 'Save record'}</button>
       </fieldset>
       <button type="button" disabled={Boolean(writeGuard && pending)} onClick={onCancel}>Cancel</button>
       {message && <p role={message === 'No changes to save.' ? 'status' : 'alert'}>{message}</p>}

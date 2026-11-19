@@ -43,6 +43,12 @@ export function writableFormFields(
   );
 }
 
+export function isAttachmentColumn(table: InstalledTable, name: string): boolean {
+  return Boolean(table.attachments?.some(attachment => attachment.column === name)
+    && table.columns.some(column => column.name === name && column.type === 'uuid')
+    && table.foreignKeys?.some(key => key.column === name && key.references === 'core.files'));
+}
+
 export function isFileFormField(table: InstalledTable, field: FormField): boolean {
   return field.type === 'file' || (table.foreignKeys?.some(key =>
     key.column === field.name && key.references === 'core.files'
