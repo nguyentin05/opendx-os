@@ -45,6 +45,10 @@ jobs:
             context: operator
             file: operator/Dockerfile
             build-args: ""
+          - image: opendx-dxos-controller
+            context: operator
+            file: operator/Dockerfile.controller
+            build-args: ""
           - image: opendx-dxos-authz
             context: capabilities
             file: capabilities/Dockerfile
