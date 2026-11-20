@@ -198,6 +198,11 @@ jobs:
       - name: Provision cluster roles and platform schemas
         run: scripts/ci/provision-test-db.sh
 
+      - name: SQL contract assertions on a fresh database
+        run: |
+          psql -v ON_ERROR_STOP=1 "${TEST_DATABASE_URL/postgres_test/postgres}" -c "CREATE DATABASE contract_test"
+          TEST_DATABASE_URL="${TEST_DATABASE_URL/postgres_test/contract_test}" scripts/test-platform.sh
+
       - name: Integration tests (first run)
         run: |
           (cd operator && go test -tags=integration -p 1 -count=1 ./...)

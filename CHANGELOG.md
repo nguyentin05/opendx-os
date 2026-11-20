@@ -35,6 +35,16 @@ is published; see [Releasing](docs/contribute/releasing.md).
 - PostgreSQL migration SQL is formatted consistently without changing the
   schema (#100).
 
+### Fixed
+
+- Compose: the default stack enables the `cap-ai` schema, so the sample
+  `personal_library` application installs `Ready` instead of `Failed` (#110).
+  The `cap-ai` service itself still runs from the opt-in overlay.
+- Keycloak access tokens last one hour instead of five minutes, so the
+  Workspace UI no longer signs users out every five minutes (#38).
+- CI runs `scripts/test-platform.sh`, which now also asserts the cap-hr and
+  cap-work SQL contracts, on a fresh database (#15).
+
 ### Security
 
 - `dxos-authz` bootstraps the platform operator only from a token whose
