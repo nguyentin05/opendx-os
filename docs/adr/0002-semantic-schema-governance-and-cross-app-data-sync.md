@@ -5,12 +5,13 @@ diataxis: explanation
 audience: [platform-developer]
 status: active
 owner: platform
-last_reviewed: 2026-11-05
+last_reviewed: 2026-11-20
 ---
 
 # ADR 0002: Core Schema Purity and Semantic Cross-App Data Synchronization
 
-- **Status:** Accepted
+- **Status:** Accepted; not implemented. The manifest has no `semanticType`
+  field yet; see [semantic concepts](../reference/data-contracts/semantic-concepts.md)
 - **Date:** 2026-11-05
 
 > **Partially superseded:** [ADR 0005](0005-department-and-application-data-model.md)

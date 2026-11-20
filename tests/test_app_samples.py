@@ -30,6 +30,13 @@ class AppSamples(unittest.TestCase):
         self.assertIn('trigger.body.event_id', request['body'])
         self.assertIn('DXOS_WORKFLOW_TOKEN', request['headers']['Authorization'])
 
+    def test_manifest_workflow_files_exist(self):
+        for manifest_path in sorted((ROOT / 'apps').glob('*/manifest.yaml')):
+            manifest = yaml.safe_load(manifest_path.read_text())
+            for workflow in manifest['spec'].get('workflows', []):
+                target = manifest_path.parent / workflow['file']
+                self.assertTrue(target.is_file(), f'{manifest_path}: missing {workflow["file"]}')
+
     def test_actor_signed_identity_mapping(self):
         actors = json.loads((ROOT / 'tests/fixtures/actors.json').read_text())
         for actor in actors['actors'].values():

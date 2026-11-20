@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Manifest lifecycle CLI and Compose installer image: only the dxos-operator
+# binary. The Kubernetes DXApplication controller image is Dockerfile.controller.
 FROM golang:1.27.3-alpine AS builder
 WORKDIR /src
 COPY go.mod go.sum ./

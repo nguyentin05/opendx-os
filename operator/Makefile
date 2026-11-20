@@ -81,14 +81,15 @@ test-controller: envtest ## Run reconcile tests (envtest + PostgreSQL); requires
 
 ##@ Build
 
-build: ## Build the dxos-operator binary into bin/.
+build: ## Build the dxos-operator and dxos-controller binaries into bin/.
 	CGO_ENABLED=0 go build -o $(LOCALBIN)/dxos-operator ./cmd/dxos-operator
+	CGO_ENABLED=0 go build -o $(LOCALBIN)/dxos-controller ./cmd/dxos-controller
 
 run: ## Run the controller from the host against the current kubeconfig.
-	go run ./cmd/dxos-operator controller
+	go run ./cmd/dxos-controller
 
-docker-build: ## Build the container image.
-	$(CONTAINER_TOOL) build -t $(IMG) .
+docker-build: ## Build the controller container image (deployed by `deploy`).
+	$(CONTAINER_TOOL) build -f Dockerfile.controller -t $(IMG) .
 
 ##@ Deployment
 

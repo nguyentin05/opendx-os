@@ -3,14 +3,16 @@ title: Native RAG identity and source boundaries
 description: RAG identity, source authorization, and model boundaries.
 diataxis: explanation
 audience: [platform-developer, security-reviewer]
-status: proposed
+status: active
 owner: platform
-last_reviewed: 2026-11-18
+last_reviewed: 2026-11-20
 ---
 
 # ADR 0009: Native RAG identity and source boundaries
 
-- **Status:** Proposed — conversation decisions recorded; RAG decisions recorded; ADR 0005 is accepted locally, while shared-contract/runtime convergence remains partial.
+- **Status:** Accepted; implemented in part. Package and personal knowledge
+  ingestion, scoped retrieval, citations, and owner conversations shipped in
+  #70 (v0.2.0) and #103. The register below lists the gates that remain open.
 - **Date:** 2026-11-13
 - **Decision owner:** repository/product owner; issue owner `nguyentin05` is the proposed responsible owner, pending identity/assignment confirmation.
 

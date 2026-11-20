@@ -3,15 +3,24 @@ title: Kubernetes CRD operator
 description: A cluster-scoped DXApplication definition reconciled by dxos-operator.
 diataxis: explanation
 audience: [platform-developer, operator]
-status: proposed
+status: active
 owner: platform
-last_reviewed: 2026-11-11
+last_reviewed: 2026-11-20
 ---
 
 # ADR 0004: Kubernetes CRD Operator with a Cluster-Scoped Application Definition
 
-- **Status:** Proposed
+- **Status:** Accepted and implemented in v0.2.0; the workspace clauses are
+  superseded by [ADR 0005](0005-department-and-application-data-model.md)
 - **Date:** 2026-11-11
+
+> **Partially superseded:** ADR 0005 removed workspaces, so `spec.workspaces`,
+> per-workspace publication, and `core.app_registry` below are historical. The
+> resource publishes to `core.apps`, and the conditions are `Valid`,
+> `SchemaInSync`, `PermissionsInSync`, `Published`, and `Ready`. Since #106 the
+> controller ships as its own `dxos-controller` binary and image instead of a
+> `dxos-operator` subcommand. The [control plane](../architecture/control-plane.md)
+> describes the current behavior.
 
 ## Context
 

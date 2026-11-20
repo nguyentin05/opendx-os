@@ -203,8 +203,7 @@ extra:
     Workflow deployment and events: Triển khai workflow và sự kiện
     Knowledge contract: Contract tri thức
     Native metadata: Metadata gốc
-    API (proposed): API (đề xuất)
-    Authorization (proposed): Phân quyền (đề xuất)
+    Authorization: Phân quyền
     Architecture: Kiến trúc
     Three tiers: Ba tầng
     Control plane: Control plane
@@ -265,8 +264,8 @@ nav:
           - Knowledge contract: reference/rag/knowledge-contract.md
           - Native metadata: reference/rag/native-metadata.md
           - Model answers: reference/rag/answers.md
-          - API (proposed): reference/rag/api.md
-          - Authorization (proposed): reference/rag/authorization.md
+          - API: reference/rag/api.md
+          - Authorization: reference/rag/authorization.md
       - dxos-operator CLI: reference/cli/dxos-operator.md
   - Architecture:
       - Overview: architecture/index.md

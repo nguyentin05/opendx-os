@@ -1,23 +1,119 @@
 # Changelog
 
-All notable changes to **OpenDX-OS (DX-OS Open-Core)** are documented in this file.
+All notable changes to **OpenDX-OS (DX-OS Open-Core)** are documented in this
+file. Each GitHub release carries the detailed notes; this file is the
+repository-level summary for a release.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Changes under `[Unreleased]` move into a dated version section when the release
+is published; see [Releasing](docs/contribute/releasing.md).
 
 ## [Unreleased]
 
-### Fixed
-- Operator image: built with Go 1.27.3 and runs as numeric UID 10001 so Kubernetes `runAsNonRoot` admits it.
-- Operator: an upgraded manifest no longer publishes `Ready` while the live table differs. Adding a nullable column is converged with `ALTER TABLE`; any other column change is refused before Hasura or the registry is touched, and the deployment attempt records the reason.
-- Operator: reconciling or upgrading an application in one workspace no longer revokes Hasura permissions that another workspace still uses. Global definitions are tracked in the new `core.app_definitions` table (`platform/postgres/init/07_app_definitions.sql`), separately from per-workspace publication in `core.app_registry`.
+### Added
+
+- AI: a global Workspace Assistant in `cap-ai` and the Workspace UI that answers
+  across the application and personal sources the signed-in user can read, with
+  owner-only persistent conversations and protected citations; opt-in Compose
+  overlays and APISIX routes run `cap-ai` (#103).
+- Kubernetes: `DXApplication` gains `spec.interval`, `spec.suspend`, and an
+  on-demand `dxos.io/reconcileAt` annotation; the controller ships as its own
+  `opendx-dxos-controller` image with envtest and kind integration checks (#106).
+- CI: required checks for pull requests, a per-image build matrix that
+  publishes to GHCR on `main` and `v*` tags, a tag-driven release workflow that
+  packages and attests the source archive, and Release Drafter for release
+  notes (#84, #87, #101).
+- Security: Trivy, gitleaks, govulncheck, CodeQL, and grouped Dependabot
+  updates (#87).
+- AI: optional global model registry foundation for knowledge ingestion (#83).
+
+### Changed
+
+- The Kubernetes controller moves from `dxos-operator controller` to a separate
+  `dxos-controller` binary (#106).
+- PostgreSQL migration SQL is formatted consistently without changing the
+  schema (#100).
+
+## [0.2.0] - 2026-11-16
 
 ### Added
-- Operator: cluster-scoped `DXApplication` CRD (`dxos.io/v1alpha1`) with generated schema validation, status subresource and printer columns; `dxos-operator controller` runs a controller-runtime manager (leader election, health probes); `operator/config/` kustomize bases for CRD, RBAC and the manager Deployment; `make -C operator manifests generate test-envtest` ([ADR 0004](docs/adr/0004-kubernetes-crd-operator.md)).
-- Operator: `dxos-operator export-crd [-workspace UUID[,UUID]] <app-dir>` converts an application package into a `DXApplication` resource (workflow definitions inlined, `_` in app IDs mapped to `-` in resource names); `make -C operator samples` regenerates `operator/config/samples/`.
-- Operator: the `DXApplication` controller reconciles resources end to end: validates the spec (`Valid`), plans against all active definitions so other applications keep their grants, converges or refuses schema changes (`SchemaInSync`), applies DDL and Hasura metadata (`PermissionsInSync`), publishes the listed workspaces (`Published`, per-workspace status) and reports `Ready` with `observedGeneration`; a finalizer revokes grants and registry rows on deletion while retaining domain data. `make -C operator test-controller` runs the lifecycle test on envtest plus PostgreSQL.
-- Operator: drift repair. On each requeue an in-sync `DXApplication` compares exported Hasura metadata with the plan (missing or changed permissions, missing relationships or tracked tables, excess permissions) and re-applies only when they differ; unchanged resources cause no metadata writes.
-- Development cluster: `scripts/k8s/dev-cluster.sh up|demo|down` creates a kind cluster with PostgreSQL and Hasura (`platform/k8s/dev/`) and deploys the operator (`operator/config/dev`); `demo` publishes an app as a `DXApplication` and shows drift repair against real Hasura.
-- Architectural rules, data contracts, security acceptance matrix (`S01`–`S08`), and FOSS hygiene rules under `.agents/` and `AGENTS.md`.
-- Three-tier composable architecture specification separating Tier 1 Headless PaaS (`platform/`, `operator/`), Tier 2 H-P-D-I capabilities and dynamic UI shell (`capabilities/`, `workspace-ui/`), and Tier 3 declarative domain packages (`apps/`).
-- Foundational open-source distribution metadata (`LICENSE`, `LICENSES/LICENSE`, `NOTICE`, `COPYRIGHT.txt`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `.editorconfig`, `.gitattributes`, `.gitignore`, and root `Makefile`).
+
+- One organization per installation with application- and department-scoped
+  data, replacing the per-workspace tenant model; `dxos-authz` resolves the
+  acting role from `core.user_roles` on every request, operators grant roles,
+  and `GET /api/auth/apps` serves the App Shell ([ADR 0005](docs/adr/0005-department-and-application-data-model.md),
+  [ADR 0007](docs/adr/0007-keycloak-authenticates-platform-authorizes.md)).
+- Operator: multi-table manifests with process, plain, and child tables;
+  command payloads; role-scoped Hasura row and column permissions; a directory
+  reconcile loop that installs, upgrades, and uninstalls `apps/` packages; and
+  deployment of application workflows to Kestra
+  ([ADR 0006](docs/adr/0006-where-application-business-logic-lives.md), [ADR 0008](docs/adr/0008-an-application-declares-several-tables.md)).
+- Kubernetes: cluster-scoped `DXApplication` CRD (`dxos.io/v1alpha1`), a
+  controller-runtime manager with status conditions, Hasura drift repair, and
+  `scripts/k8s/dev-cluster.sh` for a local kind cluster
+  ([ADR 0004](docs/adr/0004-kubernetes-crd-operator.md)).
+- Capabilities: `cap-hr` departments and staff; `cap-ai` native knowledge
+  ingestion, scoped retrieval, and governed answers with isolated parser and
+  worker processes (#70); `cap-process` on the application-scoped model.
+- Applications: cross-department procurement approval, updated maintenance,
+  timesheet, and personal-library packages, and the demo organization seed.
+- Compose stack that starts PostgreSQL, Hasura, `dxos-authz`, Keycloak, APISIX,
+  SeaweedFS, ClamAV, Kestra, the operator, `cap-process`, `cap-hr`, and the App
+  Shell with one command.
+- Documentation site: MkDocs Material with a Diataxis structure, bilingual
+  pages, Algolia DocSearch, and documentation CI.
+
+### Changed
+
+- Keycloak now only authenticates; authorization lives in the platform.
+- The data model change has no in-place upgrade: start from fresh volumes and
+  reinstall the packages in `apps/`.
+
+### Removed
+
+- The unscoped legacy `/rag` and `/extract` content endpoints.
+
+### Fixed
+
+- The operator no longer reports `Ready` while the live table differs from the
+  manifest; additive nullable columns converge with `ALTER TABLE`, and other
+  column changes are refused before Hasura or the registry is touched.
+- Reconciling an application no longer revokes Hasura permissions that another
+  application still uses; global definitions are tracked in
+  `core.app_definitions`.
+- The operator image builds with Go 1.27.3 and runs as numeric UID 10001 so
+  Kubernetes `runAsNonRoot` admits it.
+
+### Security
+
+- Knowledge uploads keep scanner admission, immutable document versions, and
+  quarantine; personal content does not reach hosted models by default, and
+  model access stays behind policy, budget, and deployment gates.
+
+## [0.1.0] - 2026-11-09
+
+### Added
+
+- Tier 1 core PostgreSQL schemas for workspaces, employees, work items, file
+  objects, audit logs, the application registry, and the capability registry.
+- `dxos-operator` with `validate`, `plan`, `apply`, and `reconcile`; manifest
+  schema validation, DDL generation, Hasura metadata generation, and
+  publication to `core.app_registry`.
+- APISIX routing, Keycloak OIDC with workspace claims, SeaweedFS object
+  storage, and ClamAV scanning.
+- `cap-process` with role-separated state transitions, optimistic locking,
+  idempotent command replay, and the upload quarantine lifecycle.
+- Out-of-tree installer, backup and restore scripts, and the first continuous
+  integration workflow.
+- Architecture rules, data contracts, the S01–S08 security acceptance matrix,
+  and FOSS hygiene rules.
+
+### Security
+
+- Apache-2.0 SPDX headers, LF line endings, tier boundary checks, and file
+  quarantine for non-`CLEAN` uploads.
+
+[Unreleased]: https://github.com/nguyentin05/opendx-os/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/nguyentin05/opendx-os/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/nguyentin05/opendx-os/releases/tag/v0.1.0

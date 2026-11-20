@@ -34,15 +34,15 @@ requirement yet.
 
 ## Local development and checks
 
-Python 3 and PyYAML are needed for repository checks. The Go modules declare
-their toolchain/dependency requirements in [operator/go.mod](operator/go.mod) and
-[capabilities/go.mod](capabilities/go.mod). The UI uses Node/npm and
-[its package manifest](workspace-ui/package.json).
+Python 3 is needed for the repository checks; the Python test suite also needs
+PyYAML. The Go modules declare their toolchain/dependency requirements in
+[operator/go.mod](operator/go.mod) and [capabilities/go.mod](capabilities/go.mod).
+The UI uses Node/npm and [its package manifest](workspace-ui/package.json).
 
 From the repository root:
 
 ```bash
-make check-hygiene
+make check
 python3 -m unittest discover -s tests -v
 ```
 
