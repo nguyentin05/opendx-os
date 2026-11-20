@@ -15,7 +15,7 @@
 
 # Manifest lifecycle CLI and Compose installer image: only the dxos-operator
 # binary. The Kubernetes DXApplication controller image is Dockerfile.controller.
-FROM golang:1.27.3-alpine AS builder
+FROM golang:1.27.4-alpine AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -23,7 +23,7 @@ COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -o /out/dxos-operator ./cmd/dxos-operator \
  && CGO_ENABLED=0 go build -trimpath -o /out/dxos-knowledge-dispatcher ./cmd/dxos-knowledge-dispatcher
 
-FROM alpine:3.23
+FROM alpine:3.24
 RUN adduser -D -u 10001 dxos && install -d -m 0700 -o dxos -g dxos /var/lib/dxos/package-artifacts
 COPY --from=builder /out/ /usr/local/bin/
 # Numeric user so Kubernetes can verify runAsNonRoot.
