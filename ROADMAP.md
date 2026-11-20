@@ -37,7 +37,7 @@ changes are in [CHANGELOG.md](CHANGELOG.md); open work is tracked in
 
 ## Later
 
-- [ ] `cap-data` service in the Compose stack: OT ingestion (`S02`), Parquet export (`S07`), and BI lineage (`S08`). The handlers exist; the service is not deployed.
+- [ ] `cap-data` service in the Compose stack: OT ingestion (`S02`), Parquet export (`S07`), and BI lineage (`S08`). The service is not deployed, and its handlers still write the retired `core` tables (`core.ot_events`, `core.devices`, `core.work_items`, `core.export_batches`, `core.data_lineage`) instead of the `cap_data` schema, so they must be ported first.
 - [ ] `cap-work` service and Kanban board (#27, #44).
 - [ ] Semantic concept ownership from [ADR 0002](docs/adr/0002-semantic-schema-governance-and-cross-app-data-sync.md).
 - [ ] Atomic Hasura metadata apply (#24) and Keycloak account sync (#23).
