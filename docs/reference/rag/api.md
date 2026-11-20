@@ -1,16 +1,16 @@
 ---
-title: Knowledge API (proposed)
-description: Proposed HTTP contract for scoped knowledge ingestion and retrieval.
+title: Knowledge API
+description: HTTP contract for scoped knowledge ingestion and retrieval.
 diataxis: reference
 audience: [app-author, security-reviewer]
-status: proposed
+status: active
 owner: platform
-last_reviewed: 2026-11-18
+last_reviewed: 2026-11-20
 ---
 
-# Native RAG canonical contracts (proposed)
+# Native RAG canonical contracts
 
-**Status:** contract specification, not implemented API/schema. [ADR 0009](../../adr/0009-native-rag-identity-and-source-boundaries.md) records decisions; [authorization](authorization.md) alone defines access predicates. Historical design packages and implementation plans are user-local and do not override this contract. Formal ADR 0005 alignment is required before identity/FK-dependent implementation.
+**Status:** canonical contract for [ADR 0009](../../adr/0009-native-rag-identity-and-source-boundaries.md); [authorization](authorization.md) alone defines access predicates. `cap-ai` serves these routes under `/api/cap/ai`: `GET /collections`, `POST /documents`, `GET /documents/{id}`, `POST /documents/{id}/versions`, `POST /documents/{id}/grants`, `DELETE /documents/{id}/grants/{userId}`, `POST /search`, `POST /answers`, `GET /documents/{id}/citations/{chunkId}`, and `GET /ingestions/{jobId}`. `POST /collections`, `PUT /documents/{id}/policy`, and `GET /admin/model-usage` are not implemented yet. Owner conversations are described in [capability routes](../api/capability-routes.md).
 
 ## Knowledge manifest serialization
 

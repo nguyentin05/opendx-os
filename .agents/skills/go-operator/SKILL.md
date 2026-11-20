@@ -22,6 +22,6 @@ Use the [architecture](../../../docs/architecture/index.md) and
    integration. Record each level using [verification](../../../docs/contribute/verification.md).
 
 Useful cases: procurement CRUD increments version once and invalidates old
-approval; a command does not increment twice; a foreign-workspace FK fails;
+approval; a command does not increment twice; an other-department write is refused;
 reconciling one app preserves another app's valid employee access. These scenarios
 exercise S01/S04 rather than only comparing generated strings.

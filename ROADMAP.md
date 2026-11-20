@@ -1,39 +1,45 @@
 # OpenDX-OS Development Roadmap
 
-This roadmap tracks the phased progression of **OpenDX-OS (DX-OS Open-Core)** from architecture & contract design through full implementation and release verification.
+This roadmap tracks **OpenDX-OS (DX-OS Open-Core)** by release. Each version's
+changes are in [CHANGELOG.md](CHANGELOG.md); open work is tracked in
+[GitHub issues](https://github.com/nguyentin05/opendx-os/issues).
 
 ---
 
-## Phase 1: Architecture & Shared Contracts (Design Phase)
+## v0.1.0: Core platform, operator, and process capability (released 2026-11-09)
 
-- [x] Define 3-Tier Composable Architecture boundaries (`platform/`, `operator/`, `capabilities/`, `workspace-ui/`, `apps/`).
-- [x] Define shared data contracts (`core.*` master tables, isolated `domain.*` tables, composite same-workspace foreign keys, server-side version triggers, and command/audit invariants).
-- [x] Define mandatory security & business acceptance scenarios (`S01`–`S08`).
-- [x] Establish repository FOSS metadata (`LICENSE`, `NOTICE`, `COPYRIGHT.txt`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `CHANGELOG.md`).
-- [ ] Settle full base SQL DDL (`platform/postgres/init/01_core_schema.sql`) and versioned `DXApplication` manifest validator/examples.
+- [x] Three-tier boundaries (`platform/`, `operator/`, `capabilities/`, `workspace-ui/`, `apps/`), data contracts, and the `S01`–`S08` acceptance scenarios.
+- [x] Open-source metadata, SPDX headers, and tier boundary checks.
+- [x] PostgreSQL core schema, Hasura, Keycloak, APISIX, SeaweedFS, and ClamAV.
+- [x] `dxos-operator` with `validate`, `plan`, `apply`, and `reconcile`.
+- [x] `cap-process`: version-guarded commands, idempotency receipts, and the file quarantine lifecycle.
+- [x] Out-of-tree installer, backup and restore scripts, and the first CI workflow.
 
----
+## v0.2.0: Organization model, Kubernetes operator, and knowledge (released 2026-11-16)
 
-## Phase 2: Core Platform, Operator & Process Capability (`v0.1.0`)
+- [x] One organization per installation with application- and department-scoped data ([ADR 0005](docs/adr/0005-department-and-application-data-model.md)).
+- [x] Keycloak authenticates and `dxos-authz` authorizes ([ADR 0007](docs/adr/0007-keycloak-authenticates-platform-authorizes.md)).
+- [x] Multi-table manifests, command payloads, and Kestra workflow deployment ([ADR 0006](docs/adr/0006-where-application-business-logic-lives.md), [ADR 0008](docs/adr/0008-an-application-declares-several-tables.md)).
+- [x] `DXApplication` CRD and controller with Hasura drift repair ([ADR 0004](docs/adr/0004-kubernetes-crd-operator.md)).
+- [x] `cap-hr`, and `cap-ai` native knowledge ingestion with scoped retrieval ([ADR 0009](docs/adr/0009-native-rag-identity-and-source-boundaries.md)).
+- [x] Cross-department procurement app and demo organization seed.
+- [x] Bilingual documentation site.
 
-- [ ] **Tier 1 Infrastructure (`platform/`):** PostgreSQL base schema (`core.*`), Hasura metadata templates, Keycloak realm/OIDC mapping, APISIX gateway routes, and Kestra durable event integration.
-- [ ] **Control Plane (`operator/`):** Go Operator (`dxos-operator`) implementing `plan`, `apply`, and bidirectional `reconcile` for domain DDL, version triggers, and Hasura permissions.
-- [ ] **Process Capability (`capabilities/cap-process`):** Version-guarded state transitions (`submit`, `approve`, `reject`, `cancel`, `close`) with command idempotency receipts and `ClamAV` file quarantine lifecycle (`QUARANTINED -> CLEAN | INFECTED`).
-- [ ] **Verification:** Automated tests for `S01` (Workspace & role isolation), `S03` (Workflow/command idempotency), `S04` (Stale version & concurrency), `S05` (Independent cross-app state), and `S06` (File quarantine).
+## v0.3.0: Workspace UI and delivery pipeline (in progress)
 
----
+- [x] Workspace Assistant across application and personal knowledge (#103).
+- [x] Controller split into the `dxos-controller` binary and image (#106).
+- [x] Required CI checks, security scans, image builds, and an attested release workflow (#84, #87, #101).
+- [ ] Workspace UI MVP: app discovery, schema-driven lists and forms, record actions, attachments, and My Work (#104).
+- [ ] Workspace UI follow-ups: token refresh (#38), audit history (#41), department-scoped work items (#42), Vietnamese copy (#45).
+- [ ] Run `cap-ai` from the default Compose stack without manual token setup.
+- [ ] README quickstart and screenshots (#47), documentation pass (#46), and the PoF checklist (#48).
 
-## Phase 3: Data/BI, AI Capabilities, Dynamic UI Shell & Apps (`v0.2.0`)
+## Later
 
-- [ ] **Data Capability (`capabilities/cap-data`):** Authenticated OT event ingestion (`ot.event.accepted`) with deduplication (`S02`), reconciled Parquet batch export (`S07`), and workspace-scoped DuckDB BI with full source lineage (`S08`).
-- [ ] **AI Capability (`capabilities/cap-ai`):** Schema-driven OCR extraction on `CLEAN` files and scoped RAG policy Q&A with source citations.
-- [ ] **Dynamic App Shell (`workspace-ui/`):** Schema-driven portal rendering H-P-D-I spaces and registered apps from `core.app_registry` and `core.capability_registry`.
-- [ ] **Declarative Domain Apps (`apps/`):** Package `maintenance`, `procurement`, and `timesheet` manifests, workflows, and knowledge documents; verify hot-plugging with a fourth test app.
-
----
-
-## Phase 4: Hardening, GitOps & Release Packaging (`v1.0.0`)
-
-- [ ] **Audit & Checkpoints:** Serialized per-workspace SHA-256 hash-chain verification anchored in OpenBao (`verify-audit`).
-- [ ] **GitOps & Out-of-Tree Installation:** Kubernetes/Argo CD overlays (`gitops/`), `scripts/check_hygiene.py`, `scripts/install.sh`, and `scripts/package_release.sh`.
-- [ ] **Release Gate:** Full `S01`–`S08` passing evidence on the release revision, CycloneDX SBOMs (`sbom/*.cdx.json`), and verified out-of-tree installation from `dxos-open-core-1.0.0.tar.gz`.
+- [ ] `cap-data` service in the Compose stack: OT ingestion (`S02`), Parquet export (`S07`), and BI lineage (`S08`). The handlers exist; the service is not deployed.
+- [ ] `cap-work` service and Kanban board (#27, #44).
+- [ ] Semantic concept ownership from [ADR 0002](docs/adr/0002-semantic-schema-governance-and-cross-app-data-sync.md).
+- [ ] Atomic Hasura metadata apply (#24) and Keycloak account sync (#23).
+- [ ] Argo CD GitOps example (#28).
+- [ ] Audit hash-chain verification anchored outside the database.
