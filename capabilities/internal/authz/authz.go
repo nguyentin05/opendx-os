@@ -164,7 +164,8 @@ func (r *Resolver) Resolve(ctx context.Context, token string) (*Session, error) 
 		return nil, ErrUnauthenticated
 	}
 	// A new installation has no operator: the configured account becomes it.
-	if r.directory != nil && r.bootstrapEmail != "" && strings.EqualFold(p.Email, r.bootstrapEmail) {
+	// An unverified email proves nothing; any user could have typed it.
+	if r.directory != nil && r.bootstrapEmail != "" && p.EmailVerified && strings.EqualFold(p.Email, r.bootstrapEmail) {
 		if made, err := r.directory.BootstrapOperator(ctx, p.Subject); err != nil {
 			return nil, err
 		} else if made {

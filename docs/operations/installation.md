@@ -62,8 +62,12 @@ readiness remain open.
    (`http://localhost:8085/admin`, `KEYCLOAK_ADMIN`/`KEYCLOAK_ADMIN_PASSWORD`). A
    user appears in `core.users` on their first request. Set
    `BOOTSTRAP_OPERATOR_EMAIL` to the email of the account that should administer
-   the installation: its first sign-in makes it the platform operator
-   (`role_operator`), once, while nobody holds that role. Operators then grant
+   the installation, and mark that email verified in Keycloak: its first sign-in
+   makes it the platform operator (`role_operator`), once, while nobody holds
+   that role. Users cannot change their own email or name, and the realm locks
+   an account for a while after five wrong passwords. Keycloak imports
+   `realm-export.json` only into a new `keycloak-data` volume, so an existing
+   installation applies these realm settings in the admin console. Operators then grant
    and revoke roles through `/api/auth/users/{id}/roles/{role}`
    ([integrating the UI](../guides/integrating-the-ui.md#8-administration)),
    and users holding `role_hr_admin` maintain departments and staff through

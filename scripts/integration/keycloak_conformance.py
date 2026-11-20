@@ -91,6 +91,10 @@ def main():
         form=True,
     )["access_token"]
 
+    realm = request(f"/admin/realms/{REALM}", token=admin)
+    check(realm.get("bruteForceProtected") is True, "brute-force protection is off")
+    check("length(" in (realm.get("passwordPolicy") or ""), "the realm has no password length policy")
+
     clients = request(f"/admin/realms/{REALM}/clients?clientId={CLIENT_ID}", token=admin)
     check(len(clients) == 1, f"{CLIENT_ID} client is missing")
     if clients:
@@ -160,6 +164,24 @@ def main():
         audience = claims.get("aud")
         audiences = audience if isinstance(audience, list) else [audience]
         check("dxos-runtime" in audiences, f"token audience is {audience!r}, expected dxos-runtime")
+        check(claims.get("email_verified") is True, "token lacks email_verified: true")
+
+        # dxos-authz trusts the email and name in the token, so a user must not
+        # edit them in the account console.
+        try:
+            request(
+                f"/realms/{REALM}/account/",
+                {"username": USERNAME, "email": "operator@conformance.invalid",
+                 "firstName": "Someone", "lastName": "Else"},
+                token=token,
+            )
+        except urllib.error.HTTPError:
+            pass
+        account = request(f"/admin/realms/{REALM}/users/{user_id}", token=admin)
+        check(
+            account.get("email") == f"{USERNAME}@conformance.invalid" and account.get("firstName") == "Conformance",
+            "a user changed their own email or name in the account console",
+        )
 
         try:
             request(
@@ -190,7 +212,7 @@ def main():
 
     print(
         "[keycloak-conformance] PASS: realm discovery, JWKS, audience mapper, token claims, "
-        "and wrong-password rejection verified."
+        "brute-force and password policy, admin-only profile edits, and wrong-password rejection verified."
     )
     return 0
 

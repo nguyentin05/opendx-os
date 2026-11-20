@@ -195,14 +195,14 @@ func TestAuthenticateReturnsIdentityWithoutRoles(t *testing.T) {
 	}
 	identity := func() map[string]any {
 		return map[string]any{"iss": "https://issuer.test", "aud": []string{"runtime", "account"}, "sub": "22222222-2222-4222-8222-22222222222A",
-			"exp": time.Now().Add(time.Hour).Unix(), "email": "alice@example.test", "name": "Alice Nguyen", "preferred_username": "alice"}
+			"exp": time.Now().Add(time.Hour).Unix(), "email": "alice@example.test", "email_verified": true, "name": "Alice Nguyen", "preferred_username": "alice"}
 	}
 
 	p, e := a.Authenticate(context.Background(), signed(t, k, "one", identity()))
 	if e != nil {
 		t.Fatal(e)
 	}
-	if p.Subject != "22222222-2222-4222-8222-22222222222a" || p.Email != "alice@example.test" || p.Name != "Alice Nguyen" {
+	if p.Subject != "22222222-2222-4222-8222-22222222222a" || p.Email != "alice@example.test" || p.Name != "Alice Nguyen" || !p.EmailVerified {
 		t.Fatalf("principal = %+v", p)
 	}
 

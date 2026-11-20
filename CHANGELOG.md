@@ -35,6 +35,15 @@ is published; see [Releasing](docs/contribute/releasing.md).
 - PostgreSQL migration SQL is formatted consistently without changing the
   schema (#100).
 
+### Security
+
+- `dxos-authz` bootstraps the platform operator only from a token whose
+  `email_verified` claim is true.
+- The Keycloak realm lets only administrators edit a user's email and name,
+  locks an account after repeated wrong passwords, and requires passwords of at
+  least eight characters that differ from the username and email (#113).
+  Existing installations apply these settings in the admin console.
+
 ## [0.2.0] - 2026-11-16
 
 ### Added

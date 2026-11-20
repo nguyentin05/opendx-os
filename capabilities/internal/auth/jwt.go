@@ -284,6 +284,9 @@ type Principal struct {
 	Subject string // Keycloak user ID, the core.users primary key
 	Email   string
 	Name    string
+	// EmailVerified is Keycloak's email_verified claim. Only a verified address
+	// may be trusted to name a person, such as the bootstrap operator.
+	EmailVerified bool
 }
 
 // Authenticator verifies a Keycloak access token and returns its principal.
@@ -303,6 +306,7 @@ func (v *jwtVerifier) authenticateWithMaxAge(ctx context.Context, token string, 
 	var c struct {
 		standardClaims
 		Email    string `json:"email"`
+		Verified bool   `json:"email_verified"`
 		Name     string `json:"name"`
 		Username string `json:"preferred_username"`
 	}
@@ -312,7 +316,7 @@ func (v *jwtVerifier) authenticateWithMaxAge(ctx context.Context, token string, 
 	if e = c.check(v.cfg); e != nil {
 		return nil, e
 	}
-	p := &Principal{Subject: strings.ToLower(c.Sub), Email: strings.TrimSpace(c.Email), Name: strings.TrimSpace(c.Name)}
+	p := &Principal{Subject: strings.ToLower(c.Sub), Email: strings.TrimSpace(c.Email), Name: strings.TrimSpace(c.Name), EmailVerified: c.Verified}
 	if p.Name == "" {
 		p.Name = strings.TrimSpace(c.Username)
 	}
