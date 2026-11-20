@@ -22,7 +22,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -o /out/service ./cmd/${SERVICE}
 
-FROM alpine:3.23
+FROM alpine:3.24
 RUN adduser -D -u 10001 dxos
 USER dxos
 COPY --from=builder /out/service /usr/local/bin/service
