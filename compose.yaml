@@ -28,7 +28,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-dxos_admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dxos_secret}
       POSTGRES_DB: ${POSTGRES_DB:-dxos_db}
-      ENABLED_CAPABILITIES: ${ENABLED_CAPABILITIES:-cap-process,cap-hr,cap-work,cap-data}
+      ENABLED_CAPABILITIES: ${ENABLED_CAPABILITIES:-cap-process,cap-hr,cap-work,cap-data,cap-ai}
       # Login passwords for the runtime roles, applied by 08_runtime_passwords.sh.
       HASURA_DATABASE_PASSWORD: ${HASURA_DATABASE_PASSWORD:-change-me-local-hasura-db}
       PROCESS_DATABASE_PASSWORD: ${PROCESS_DATABASE_PASSWORD:-change-me-local-process-db}

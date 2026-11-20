@@ -48,7 +48,7 @@ readiness remain open.
    scripts/test-compose.sh
    ```
    At first start PostgreSQL loads the capabilities listed in
-   `ENABLED_CAPABILITIES` (default `cap-process,cap-hr,cap-work,cap-data`, which
+   `ENABLED_CAPABILITIES` (default `cap-process,cap-hr,cap-work,cap-data,cap-ai`, which
    the sample apps need), sets the runtime role passwords
    (`HASURA_DATABASE_PASSWORD`, `PROCESS_DATABASE_PASSWORD`) and creates Kestra's
    own `dxos_kestra` database (`KESTRA_DATABASE_PASSWORD`), all in

@@ -30,5 +30,8 @@ psql -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" -f "$ROOT_DIR/platform/postgres/ini
 psql -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" -f "$ROOT_DIR/platform/postgres/init/07_app_definitions.sql"
 psql -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" -f "$ROOT_DIR/platform/postgres/capabilities/cap_process.sql"
 psql -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" -f "$ROOT_DIR/platform/postgres/tests/core_contract.sql"
+psql -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" -f "$ROOT_DIR/platform/postgres/capabilities/cap_hr.sql"
+psql -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" -f "$ROOT_DIR/platform/postgres/capabilities/cap_work.sql"
+psql -v ON_ERROR_STOP=1 "$TEST_DATABASE_URL" -f "$ROOT_DIR/platform/postgres/tests/capabilities_contract.sql"
 
-echo "[test-platform] PASS: core schema and behavioral SQL assertions verified."
+echo "[test-platform] PASS: core, cap-hr and cap-work behavioral SQL assertions verified."
