@@ -54,6 +54,12 @@ def build():
     for moved in ("displayName", "version"):
         del spec["properties"][moved]
         spec["required"].remove(moved)
+    # Controller-scheduling fields: they belong to the resource, not to a
+    # package manifest (see DXApplicationSpec.Interval / DXApplicationSpec.Suspend).
+    for controller_only in ("interval", "suspend"):
+        if controller_only in spec["properties"]:
+            del spec["properties"][controller_only]
+            spec["required"] = [name for name in spec["required"] if name != controller_only]
     workflow = spec["properties"]["workflows"]["items"]
     del workflow["properties"]["definition"]
     workflow["required"] = [name for name in workflow["required"] if name != "definition"] + ["file"]

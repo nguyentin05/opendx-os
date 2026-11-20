@@ -42,7 +42,7 @@
       }
     },
     "spec": {
-      "description": "DXApplicationSpec mirrors the DXApplication manifest contract\n(docs/reference/manifest/schema.md). JSON field names are identical to the\nmanifest so that both forms convert losslessly.",
+      "description": "DXApplicationSpec mirrors the DXApplication manifest contract\n(docs/reference/manifest/schema.md). JSON field names are identical to the\nmanifest so that both forms convert losslessly.\n\nInterval and Suspend are controller-scheduling fields outside that contract:\nthey are never serialized into a manifest and always stay zero-valued when a\nresource converts back from a package.",
       "properties": {
         "capabilities": {
           "description": "Capabilities lists the Tier 2 capabilities the application depends on.\ncap-process is required.",

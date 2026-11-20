@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package manager starts the controller-runtime manager for the dxos-operator
-// `controller` command.
+// Package manager starts the controller-runtime manager for the dxos-controller
+// binary, the Kubernetes DXApplication operator.
 package manager
 
 import (
@@ -48,12 +48,14 @@ import (
 // Environment: DATABASE_URL (required, operator-privileged DSN), HASURA_URL and
 // HASURA_ADMIN_SECRET (optional; without them only DDL and registry are managed).
 func Run(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("controller", flag.ContinueOnError)
+	fs := flag.NewFlagSet("dxos-controller", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	metricsAddr := fs.String("metrics-bind-address", "0", "Metrics endpoint address, or 0 to disable.")
 	probeAddr := fs.String("health-probe-bind-address", ":8081", "Health probe endpoint address.")
 	leaderElect := fs.Bool("leader-elect", false, "Enable leader election so only one manager reconciles.")
-	requeue := fs.Duration("requeue-interval", 5*time.Minute, "Drift-repair period for Ready resources.")
+	requeue := fs.Duration("requeue-interval", 5*time.Minute, "Drift-repair period for Ready resources without spec.interval.")
+	reconcileTimeout := fs.Duration("reconciliation-timeout", 10*time.Minute, "Maximum duration of one reconciliation of a resource, or 0 to disable.")
+	concurrency := fs.Int("concurrency", 1, "Maximum number of concurrent reconciles; applies serialize on a database lock.")
 	zapOpts := zap.Options{Development: false}
 	zapOpts.BindFlags(fs)
 	if err := fs.Parse(args); err != nil {
@@ -64,7 +66,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		_, _ = fmt.Fprintln(stderr, "controller requires DATABASE_URL")
+		_, _ = fmt.Fprintln(stderr, "dxos-controller requires DATABASE_URL")
 		return 1
 	}
 	db, err := sql.Open("postgres", dsn)
@@ -114,10 +116,13 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if err := (&controller.DXApplicationReconciler{
-		Client:          mgr.GetClient(),
-		Scheme:          mgr.GetScheme(),
-		Applier:         applier,
-		RequeueInterval: *requeue,
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		Applier:          applier,
+		RequeueInterval:  *requeue,
+		ReconcileTimeout: *reconcileTimeout,
+		Concurrency:      *concurrency,
+		EventRecorder:    mgr.GetEventRecorder("dxos-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "failed to create controller", "controller", "dxapplication")
 		return 1
@@ -131,7 +136,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	_, _ = fmt.Fprintln(stdout, "dxos-operator controller starting")
+	_, _ = fmt.Fprintln(stdout, "dxos-controller starting")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "manager exited")
 		return 1

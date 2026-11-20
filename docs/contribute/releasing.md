@@ -112,6 +112,7 @@ image when `main` or a `v*` tag is pushed:
 | Image | Build context | Dockerfile | Build argument |
 | --- | --- | --- | --- |
 | `opendx-operator` | `operator` | `operator/Dockerfile` | |
+| `opendx-dxos-controller` | `operator` | `operator/Dockerfile.controller` | |
 | `opendx-dxos-authz` | `capabilities` | `capabilities/Dockerfile` | `SERVICE=dxos-authz` |
 | `opendx-cap-process` | `capabilities` | `capabilities/Dockerfile` | `SERVICE=cap-process` |
 | `opendx-cap-hr` | `capabilities` | `capabilities/Dockerfile` | `SERVICE=cap-hr` |

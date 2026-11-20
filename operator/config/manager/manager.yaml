@@ -55,9 +55,8 @@ spec:
       - name: manager
         image: controller:latest
         command:
-        - /usr/local/bin/dxos-operator
+        - /usr/local/bin/dxos-controller
         args:
-        - controller
         - --leader-elect
         - --health-probe-bind-address=:8081
         envFrom:
