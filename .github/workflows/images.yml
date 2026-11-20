@@ -84,7 +84,7 @@ jobs:
             file: workspace-ui/Dockerfile
             build-args: ""
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -131,7 +131,7 @@ jobs:
 
       - name: Attest image provenance
         if: github.event_name != 'pull_request'
-        uses: actions/attest-build-provenance@v4.2.2
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/nguyentin05/${{ matrix.image }}
           subject-digest: ${{ steps.build.outputs.digest }}
