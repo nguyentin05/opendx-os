@@ -10,10 +10,10 @@ Use the [architecture](../../../docs/architecture/index.md),
 [security criteria](../../../docs/reference/security/index.md).
 
 1. Trace published registry data and authenticated context into navigation,
-   tables, forms, and commands. Identify placeholder data before wiring APIs.
+   tables, forms, and commands.
 2. Keep app selection distinct from role selection. Offer authenticated grants;
    a role demo uses an appropriate account or permission-grant flow.
-3. On app/role/workspace changes, cancel or discard old requests and refresh the
+3. On app or role changes, cancel or discard old requests and refresh the
    cache/context. Render only permitted fields, relationships, and actions.
 4. Show unavailable dependent features with a reason while leaving independent
    features usable; cover both disabled and temporarily unavailable services.

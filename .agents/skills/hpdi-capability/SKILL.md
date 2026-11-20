@@ -1,6 +1,6 @@
 ---
 name: hpdi-capability
-description: Use when designing, implementing, or reviewing H-P-D-I capabilities in capabilities/, including commands/files, OT/export/BI, and OCR/RAG.
+description: Use when designing, implementing, or reviewing H-P-D-I capabilities in capabilities/, including commands/files, OT/export/BI, and knowledge/RAG.
 ---
 
 # Shared capabilities

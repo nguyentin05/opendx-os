@@ -14,7 +14,7 @@ Use the [architecture](../../../docs/architecture/index.md) and
    revoked resources and the managed scope in the plan.
 3. Generate constraints and permissions from the complete
    [write matrix](../../../docs/reference/data-contracts/writes-and-versions.md),
-   including composite FKs, initial state, version trigger, relationships, and
+   including foreign keys, initial state, version trigger, relationships, and
    each mutation path.
 4. Reconcile against the active manifest set. Test shared-resource grants across
    multiple apps and partial update failures before registry publication.
@@ -22,6 +22,6 @@ Use the [architecture](../../../docs/architecture/index.md) and
    integration. Record each level using [verification](../../../docs/contribute/verification.md).
 
 Useful cases: procurement CRUD increments version once and invalidates old
-approval; a command does not increment twice; a foreign-workspace FK fails;
-reconciling one app preserves another app's valid employee access. These scenarios
+approval; a command does not increment twice; an other-department write is refused;
+reconciling one app preserves another app's shared-table access. These scenarios
 exercise S01/S04 rather than only comparing generated strings.
