@@ -42,9 +42,11 @@ function emptyResultMessage(result: Result, incomplete: boolean) {
 export function AgentChat({
   token,
   pendingTurns,
+  visible = true,
 }: {
   token: string;
   pendingTurns?: Record<string, Pending>;
+  visible?: boolean;
 }) {
   const client = useMemo(() => new AgentClient(token), [token]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -55,6 +57,7 @@ export function AgentChat({
   const [question, setQuestion] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
   const [loading, setLoading] = useState(false);
+  const [listReady, setListReady] = useState(false);
   const [transcriptReady, setTranscriptReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -66,9 +69,18 @@ export function AgentChat({
   );
   const previewRequest = useRef(0);
   useEffect(() => {
+    if (visible) return;
+    // Reopening a protected preview requires a fresh authorization check.
+    previewRequest.current++;
+    setPreview(null);
+    setPreviewError("");
+  }, [visible]);
+
+  useEffect(() => {
     const controller = new AbortController();
     scope.current = controller;
     setConversations([]);
+    setListReady(false);
     setSelected("");
     setLoading(true);
     void client
@@ -76,6 +88,7 @@ export function AgentChat({
       .then((r) => {
         if (!controller.signal.aborted) {
           setConversations(r.conversations);
+          setListReady(true);
           setCursor(r.next_cursor);
         }
       })
@@ -249,7 +262,7 @@ export function AgentChat({
       </button>
       <h2>Conversations</h2>
       {loading && <p role="status">Loading…</p>}
-      {!loading && !conversations.length && <p>No conversations yet.</p>}
+      {!loading && listReady && !conversations.length && <p>No conversations yet.</p>}
       <ul>
         {conversations.map((c) => (
           <li key={c.id}>
@@ -310,7 +323,7 @@ export function AgentChat({
             Delete conversation
           </button>
           <h2>Transcript</h2>
-          {!loading && !messages.length && <p>No messages yet.</p>}
+          {transcriptReady && !messages.length && <p>No messages yet.</p>}
           <ol>
             {messages.map((m) => (
               <li key={m.id}>

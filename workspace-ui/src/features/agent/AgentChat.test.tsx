@@ -523,3 +523,18 @@ it("distinguishes conversations with the same default title by creation time", a
   expect(entries).toHaveLength(2);
   expect(entries[0].textContent).not.toBe(entries[1].textContent);
 });
+
+it("keeps a failed transcript distinct from an empty conversation", async () => {
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL) =>
+    String(input).endsWith("/c1")
+      ? new Response(null, { status: 503 })
+      : Response.json({
+          conversations: [{ id: "c1", title: "Existing" }],
+          next_cursor: null,
+        }),
+  );
+  render(<AgentChat token="token" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
+  await screen.findByRole("alert");
+  expect(screen.queryByText("No messages yet.")).toBeNull();
+});

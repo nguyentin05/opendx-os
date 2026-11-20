@@ -18,11 +18,14 @@ components, and accepted design decisions.
 ## Development status
 
 The repository contains database initialization SQL, local Compose configuration,
-an initial Operator planner, capability services, an App Shell scaffold, and
-sample applications. The system is under development. Full deployment lifecycle,
-identity/permission integration, workflows, storage/scanning, and end-to-end
-acceptance verification remain incomplete. The UI currently uses placeholder
-context and empty app/record state; it is not a connected application portal.
+the Operator, capability services, Workspace UI, and sample applications.
+Workspace UI signs in through Keycloak, discovers authorized apps from the
+runtime registry, and renders record lists, forms, child records, and workflow
+actions from app metadata. My Workspace previews work across authorized apps
+and the Assistant opens alongside the current page.
+
+The project is under development. Deployment lifecycle and end-to-end
+acceptance evidence are tracked in the project documentation.
 
 The [roadmap](ROADMAP.md) tracks planned milestones. The
 [data and manifest contract](docs/reference/data-contracts/index.md) describes intended

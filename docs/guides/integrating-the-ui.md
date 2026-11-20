@@ -5,7 +5,7 @@ diataxis: how-to
 audience: [app-author]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-19
 ---
 
 # Integrating the UI
@@ -17,6 +17,12 @@ decides what to show. Contracts: [runtime rules](../reference/runtime-rules.md),
 [data contract](../reference/data-contracts/index.md),
 [ADR 0007](../adr/0007-keycloak-authenticates-platform-authorizes.md) and
 [ADR 0008](../adr/0008-an-application-declares-several-tables.md).
+
+In the portal, **My Workspace** shows your authorized apps, a work preview,
+and recently opened pages for the current session. Use **Refresh permissions**
+to pick up new app grants or revocations. The **Acting role** control appears
+when you can choose between roles in an app. Protected record links carry the
+acting role, and the server checks which rows it can read.
 
 ## 1. Sign in
 
@@ -44,6 +50,7 @@ Each entry of `apps`:
 | `app_id`, `display_name`, `version` | Identity of the application |
 | `capabilities` | The capabilities it uses |
 | `roles` | The roles the user holds in this application (`name`, `description`) |
+| `work_item_roles` | Names of the user's roles in this app that its stored `sharedAccess` lists for `cap_work.work_items`. An empty array means no eligible role. Treat an omitted field from an older server as an empty array |
 | `tables` | The application's tables exactly as its manifest declares them: `name`, `columns`, `foreignKeys`, `access`, `ui`, and when present `stateMachine`, `attachments` and `belongsTo` ([manifest contract](../reference/manifest/schema.md)) |
 
 Call `/api/auth/me` first after sign-in: it also registers a new user in the
@@ -79,6 +86,12 @@ the header never grants anything.
   (for example, nobody approves their own request): handle a 403.
 - A foreign key to another table of the application (`foreignKeys`) is a
   reference picker over that table's list.
+
+The portal opens the first readable top-level table declared by the app. List
+views support paging, sorting, and an exact-match text filter when a readable
+text column is available. Use **Open** to view a record. New, edit, and
+workflow controls follow the permissions and state published for the table.
+Knowledge-only apps open their published app knowledge or personal library.
 
 ## 4. Read and write records (GraphQL)
 
@@ -143,6 +156,11 @@ the path. The response carries the record's new `status` and `version`.
 | 409 | The record changed since it was shown, or it is no longer in a state the command starts from: reload it |
 | 422 | A required attachment is missing or not yet `CLEAN` |
 
+The confirmation shows the record status and version being reviewed. If a
+command returns 409, the portal reloads the record and requires a new
+confirmation. When the outcome is unknown, an exact retry uses the original
+body and idempotency key.
+
 ## 6. Files
 
 1. `POST /api/cap/process/files/upload` as `multipart/form-data` with `app_id`
@@ -159,8 +177,10 @@ the path. The response carries the record's new `status` and `version`.
 ## 7. Work items
 
 When an application's workflow opens a work item (procurement opens "Review
-procurement request" when a request is submitted), roles the manifest lists
-under `sharedAccess` for `cap_work.work_items` read it through GraphQL:
+procurement request" when a request is submitted), use `work_item_roles` from
+`GET /api/auth/apps` to discover eligible roles for the inbox. Send an eligible
+role as `X-Hasura-Role` on the GraphQL request. Hasura enforces access to work
+items.
 
 ```graphql
 query { cap_work_work_items(order_by: {created_at: desc}) {
@@ -171,6 +191,12 @@ query { cap_work_work_items(order_by: {created_at: desc}) {
 inbox entry links to the record's detail. Only the application's own items are
 returned; they are not narrowed by department yet. The item appears a few
 seconds after the command, once the workflow has run.
+
+**Needs your attention** previews up to five recent work items across eligible
+app roles. **My Work** loads more items and filters the loaded results by
+application and priority. Failed role queries show partial or unavailable
+results. When you open a work item or recent link, the portal refreshes
+permissions before reading the source record.
 
 ## 8. Administration
 
@@ -226,9 +252,19 @@ three departments. `scripts/seed-demo.py scopes`, `flow`, `lines`, `admin` and
 `org` make the calls above from the command line and print what each person may see and do;
 the script is a working reference for request shapes.
 
+## 10. Assistant
+
+The **Assistant** button opens conversations, transcripts, and citations using
+the shared `/api/cap/ai/conversations` service. On a narrow screen the drawer
+opens as a modal. Press Escape or choose **Close assistant** to return to the
+trigger. The conversation and draft remain available in the current session
+when you reopen it. The Assistant uses the question you enter and its available
+knowledge. Record and work views remain available if the Assistant service
+is interrupted.
+
 ## Not available yet
 
 - Changing work items (assign, move between columns): `cap_work.work_items` has
-  no service route yet. Reading them works: see below.
+  no service route yet. See [Work items](#7-work-items) for reads.
 - Accounts that have never signed in are not listed for role assignment.
-- cap-data and cap-ai routes.
+- Custom dashboards, board and calendar views, and an Assistant model picker.
