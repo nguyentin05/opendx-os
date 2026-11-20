@@ -13,7 +13,14 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Added
 
-- CI: nine required checks for pull requests, a per-image build matrix that
+- AI: a global Workspace Assistant in `cap-ai` and the Workspace UI that answers
+  across the application and personal sources the signed-in user can read, with
+  owner-only persistent conversations and protected citations; opt-in Compose
+  overlays and APISIX routes run `cap-ai` (#103).
+- Kubernetes: `DXApplication` gains `spec.interval`, `spec.suspend`, and an
+  on-demand `dxos.io/reconcileAt` annotation; the controller ships as its own
+  `opendx-dxos-controller` image with envtest and kind integration checks (#106).
+- CI: required checks for pull requests, a per-image build matrix that
   publishes to GHCR on `main` and `v*` tags, a tag-driven release workflow that
   packages and attests the source archive, and Release Drafter for release
   notes (#84, #87, #101).
@@ -23,6 +30,8 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Changed
 
+- The Kubernetes controller moves from `dxos-operator controller` to a separate
+  `dxos-controller` binary (#106).
 - PostgreSQL migration SQL is formatted consistently without changing the
   schema (#100).
 
@@ -82,7 +91,7 @@ is published; see [Releasing](docs/contribute/releasing.md).
   quarantine; personal content does not reach hosted models by default, and
   model access stays behind policy, budget, and deployment gates.
 
-## [0.1.0] - 2026-11-08
+## [0.1.0] - 2026-11-09
 
 ### Added
 
