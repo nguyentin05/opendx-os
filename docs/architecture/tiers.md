@@ -39,7 +39,7 @@ flowchart TB
     end
 
     subgraph CP["Out-of-band control plane (operator/)"]
-        OP["dxos-operator (Go)<br/>plan | apply | reconcile | uninstall | verify-audit"]
+        OP["dxos-operator CLI (Go)<br/>plan | apply | reconcile | export-crd<br/>dxos-controller: K8s DXApplication operator"]
     end
 
     T3 -. "declarative manifest.yaml" .-> OP

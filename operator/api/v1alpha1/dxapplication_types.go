@@ -38,6 +38,11 @@ const (
 	// Finalizer guards uninstall: grants are revoked and core.apps is marked
 	// Removed. Domain data, roles and role assignments are retained.
 	Finalizer = "dxos.io/cleanup"
+
+	// ReconcileAnnotation requests an immediate reconciliation when its value
+	// changes; the controller records the handled value in
+	// status.lastHandledReconcileAt (mirrors flux reconcile).
+	ReconcileAnnotation = "dxos.io/reconcileAt"
 )
 
 // UUIDPattern matches user and record identifiers.
@@ -46,6 +51,10 @@ const UUIDPattern = `^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4
 // DXApplicationSpec mirrors the DXApplication manifest contract
 // (docs/reference/manifest/schema.md). JSON field names are identical to the
 // manifest so that both forms convert losslessly.
+//
+// Interval and Suspend are controller-scheduling fields outside that contract:
+// they are never serialized into a manifest and always stay zero-valued when a
+// resource converts back from a package.
 type DXApplicationSpec struct {
 	Knowledge *KnowledgeDef `yaml:"knowledge,omitempty" json:"knowledge,omitempty"`
 	// DisplayName is shown by the App Shell.
@@ -80,6 +89,19 @@ type DXApplicationSpec struct {
 	// Workflows declares the automation flows and their business effects.
 	// +optional
 	Workflows []Workflow `json:"workflows,omitempty"`
+
+	// Interval is how often the controller re-checks this application for
+	// drift once it is Ready. When unset, the controller's --requeue-interval
+	// applies. A spec change reconciles immediately regardless of the interval.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self.matches('^([0-9]+(\\\\.[0-9]+)?(ms|s|m|h))+$') && self != '0s'",message="spec.interval must be a positive duration such as 30s or 5m"
+	Interval *metav1.Duration `json:"interval,omitempty"`
+
+	// Suspend pauses reconciliation of this application, including drift
+	// repair and workflow resynchronization. Deleting a suspended application
+	// still runs so its uninstall is not delayed.
+	// +optional
+	Suspend bool `json:"suspend,omitempty"`
 }
 
 // Role is one application role (core.roles).
@@ -328,6 +350,10 @@ type DXApplicationStatus struct {
 	// ActiveVersion is the version recorded as Ready in core.apps.
 	// +optional
 	ActiveVersion string `json:"activeVersion,omitempty"`
+	// LastHandledReconcileAt is the value of the dxos.io/reconcileAt annotation
+	// most recently observed and handled by the controller.
+	// +optional
+	LastHandledReconcileAt string `json:"lastHandledReconcileAt,omitempty"`
 }
 
 // DXApplication is a cluster-scoped application definition. One resource owns an

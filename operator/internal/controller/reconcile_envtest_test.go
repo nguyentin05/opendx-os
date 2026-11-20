@@ -31,6 +31,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/config"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	dxosv1alpha1 "github.com/opendx-os/opendx-os/operator/api/v1alpha1"
@@ -266,4 +267,102 @@ func TestReconcileLifecycle(t *testing.T) {
 	if n := count(t, db, `SELECT count(*) FROM core.roles WHERE app_id = 'procurement'`); n != 3 {
 		t.Fatal("roles must be retained after delete")
 	}
+}
+
+// TestReconcileScheduling covers the API-level interval validation (the CEL rule
+// is enforced by the API server installing this CRD) and that spec.suspend
+// pauses drift repair until the resource is unsuspended.
+func TestReconcileScheduling(t *testing.T) {
+	skipNameValidation := true
+	db := testutil.NewDatabase(t)
+	hasura := testutil.NewFakeHasura()
+	srv := httptest.NewServer(hasura)
+	defer srv.Close()
+
+	mgr, err := ctrl.NewManager(testCfg, ctrl.Options{
+		Scheme:                 testScheme,
+		Metrics:                metricsserver.Options{BindAddress: "0"},
+		HealthProbeBindAddress: "0",
+		// A second manager in this package (see TestReconcileLifecycle).
+		Controller: config.Controller{SkipNameValidation: &skipNameValidation},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// No workflow engine: SyncWorkflows is a no-op without one.
+	applier := apply.NewRunner(db, apply.Config{HasuraURL: srv.URL}, srv.Client())
+	rec := &DXApplicationReconciler{
+		Client:  mgr.GetClient(),
+		Scheme:  mgr.GetScheme(),
+		Applier: applier,
+		// Short period so the test observes drift repair and the absence of churn.
+		RequeueInterval: 300 * time.Millisecond,
+	}
+	if err := rec.SetupWithManager(mgr); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if err := mgr.Start(ctx); err != nil {
+			t.Error(err)
+		}
+	}()
+	t.Cleanup(func() { cancel(); <-done })
+
+	k8s := testClient
+	get := func(name string) *dxosv1alpha1.DXApplication {
+		var app dxosv1alpha1.DXApplication
+		if err := k8s.Get(ctx, client.ObjectKey{Name: name}, &app); err != nil {
+			t.Fatal(err)
+		}
+		return &app
+	}
+	const insertPerm = "insert:domain.procurement_requests:role_procurement_requester"
+
+	cr, err := crdconv.FromPackage(filepath.Join("..", "..", "..", "apps", "procurement"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A zero interval is rejected by the API server before the controller sees it.
+	invalid := cr.DeepCopy()
+	invalid.Spec.Interval = &metav1.Duration{}
+	if err := k8s.Create(ctx, invalid); !apierrors.IsInvalid(err) {
+		t.Fatalf("interval 0s must be rejected, got %v", err)
+	}
+
+	// A valid interval is accepted and does not stop the application becoming Ready.
+	cr.Spec.Interval = &metav1.Duration{Duration: time.Hour}
+	if err := k8s.Create(ctx, cr); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "Ready with spec.interval set", func() bool { return observed(get(cr.Name), dxosv1alpha1.ConditionReady, metav1.ConditionTrue) })
+
+	// Suspend pauses drift repair: the permission stays gone while suspended.
+	latest := get(cr.Name)
+	latest.Spec.Suspend = true
+	if err := k8s.Update(ctx, latest); err != nil {
+		t.Fatal(err)
+	}
+	// Wait until the controller has observed the pause; otherwise a reconcile
+	// started before the update can still repair the permission below.
+	waitFor(t, "suspend observed", func() bool {
+		app := get(cr.Name)
+		return app.Spec.Suspend && app.Status.ObservedGeneration == app.Generation
+	})
+	hasura.Drop(insertPerm)
+	// Longer than several default requeues; a suspended resource must not act.
+	time.Sleep(1400 * time.Millisecond)
+	if hasura.Has(insertPerm) {
+		t.Fatal("suspended resource repaired drift")
+	}
+	// Unsuspend: the next reconciliation repairs the drift.
+	latest = get(cr.Name)
+	latest.Spec.Suspend = false
+	if err := k8s.Update(ctx, latest); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "drift repaired after unsuspend", func() bool { return hasura.Has(insertPerm) })
 }

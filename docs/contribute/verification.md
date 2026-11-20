@@ -45,6 +45,10 @@ the current `Makefile`, module manifests, and prerequisites first.
 | UI tests and build | `workspace-ui/` | `npm test` then `npm run build` | Node/npm and installed dependencies from `package.json`/lockfile |
 | Combined available suites | Root | `make test` | Runs the groups supported by the checkout; skips UI when `workspace-ui/node_modules/` is missing, and fails instead when `CI=true` |
 
+`.github/workflows/k8s-integration.yml` runs the envtest and kind checks above:
+`make -C operator test-envtest`, `test-controller` against PostgreSQL, and
+`scripts/k8s/dev-cluster.sh up`/`demo` on a disposable kind cluster.
+
 Inspect tests before attributing S01–S08 coverage. Neither a `make test` result nor
 static DDL assertions establish live PostgreSQL/Hasura behavior, concurrency,
 event delivery, or complete acceptance coverage. Integration verification must

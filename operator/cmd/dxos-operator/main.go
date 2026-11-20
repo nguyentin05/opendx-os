@@ -13,8 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Command dxos-operator reconciles DXApplication resources and serves operator
-// maintenance commands.
+// Command dxos-operator is the manifest lifecycle CLI and Compose installer:
+// validate, plan, apply, reconcile, export-crd. The Kubernetes DXApplication
+// controller is the separate dxos-controller binary.
 package main
 
 import (
@@ -36,7 +37,6 @@ import (
 	"github.com/opendx-os/opendx-os/operator/internal/apply"
 	"github.com/opendx-os/opendx-os/operator/internal/crdconv"
 	"github.com/opendx-os/opendx-os/operator/internal/knowledge"
-	"github.com/opendx-os/opendx-os/operator/internal/manager"
 	"github.com/opendx-os/opendx-os/operator/internal/manifest"
 	"github.com/opendx-os/opendx-os/operator/internal/planner"
 	"github.com/opendx-os/opendx-os/operator/internal/reconcile"
@@ -79,9 +79,6 @@ func runCLI(args []string, stdout, stderr io.Writer, applier *apply.Runner, reco
 	case "export-crd":
 		return runExportCRDCmd(args[1:], stdout, stderr)
 
-	case "controller":
-		return manager.Run(args[1:], stdout, stderr)
-
 	case "version":
 		_, _ = fmt.Fprintln(stdout, "dxos-operator v0.1.0 (DX-OS Open-Core OLP 2026)")
 		return 0
@@ -101,7 +98,6 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  apply <manifest.yaml>                    Install or upgrade one application")
 	_, _ = fmt.Fprintln(w, "  reconcile [--interval 30s] <apps-dir>    Install exactly the applications in a directory")
 	_, _ = fmt.Fprintln(w, "  export-crd <app-dir>                     Print a DXApplication resource for an app package")
-	_, _ = fmt.Fprintln(w, "  controller [flags]                       Run the Kubernetes DXApplication controller")
 	_, _ = fmt.Fprintln(w, "  version                                  Print operator version")
 }
 
