@@ -28,13 +28,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/recorder"
 
 	dxosv1alpha1 "github.com/opendx-os/opendx-os/operator/api/v1alpha1"
 	"github.com/opendx-os/opendx-os/operator/internal/apply"
@@ -94,7 +94,7 @@ type DXApplicationReconciler struct {
 	ReconcileTimeout time.Duration
 	// EventRecorder records reconciliation transitions as Kubernetes events;
 	// it is nil in unit tests, where events are not asserted.
-	EventRecorder record.EventRecorder
+	EventRecorder recorder.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=dxos.io,resources=dxapplications,verbs=get;list;watch;update;patch
@@ -157,8 +157,14 @@ func (r *DXApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, r.Update(ctx, &app)
 	}
 	// A suspended resource is not reconciled, including drift repair and
-	// workflow resynchronization; deletion above still runs.
+	// workflow resynchronization; deletion above still runs. Record the
+	// generation so callers can observe that the pause was applied.
 	if app.Spec.Suspend {
+		if app.Status.ObservedGeneration != app.Generation {
+			return ctrl.Result{}, r.patchStatus(ctx, &app, func(a *dxosv1alpha1.DXApplication) {
+				a.Status.ObservedGeneration = a.Generation
+			})
+		}
 		return ctrl.Result{}, nil
 	}
 
@@ -298,7 +304,7 @@ func (r *DXApplicationReconciler) event(app *dxosv1alpha1.DXApplication, eventty
 	if r.EventRecorder == nil {
 		return
 	}
-	r.EventRecorder.Event(app, eventtype, reason, message)
+	r.EventRecorder.Eventf(app, nil, eventtype, reason, "Reconcile", message)
 }
 
 // inlineWorkflows checks the workflow definitions a resource carries inline,

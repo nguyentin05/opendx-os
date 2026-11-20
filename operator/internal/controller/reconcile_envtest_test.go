@@ -346,6 +346,12 @@ func TestReconcileScheduling(t *testing.T) {
 	if err := k8s.Update(ctx, latest); err != nil {
 		t.Fatal(err)
 	}
+	// Wait until the controller has observed the pause; otherwise a reconcile
+	// started before the update can still repair the permission below.
+	waitFor(t, "suspend observed", func() bool {
+		app := get(cr.Name)
+		return app.Spec.Suspend && app.Status.ObservedGeneration == app.Generation
+	})
 	hasura.Drop(insertPerm)
 	// Longer than several default requeues; a suspended resource must not act.
 	time.Sleep(1400 * time.Millisecond)

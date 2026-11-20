@@ -122,7 +122,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		RequeueInterval:  *requeue,
 		ReconcileTimeout: *reconcileTimeout,
 		Concurrency:      *concurrency,
-		EventRecorder:    mgr.GetEventRecorderFor("dxos-controller"),
+		EventRecorder:    mgr.GetEventRecorder("dxos-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "failed to create controller", "controller", "dxapplication")
 		return 1

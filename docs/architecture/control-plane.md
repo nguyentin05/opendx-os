@@ -71,7 +71,7 @@ and pauses its own reconciliation with `spec.suspend`; deleting a suspended
 resource still runs so an uninstall is not delayed. Setting or changing the
 `dxos.io/reconcileAt` annotation requests an immediate reconciliation; the
 handled value is reported in `status.lastHandledReconcileAt`. One reconciliation
-— converge or uninstall — is bounded by `--reconciliation-timeout`, and
+(converge or uninstall) is bounded by `--reconciliation-timeout`, and
 transitions are emitted as Kubernetes events. Failed reconciliations retry
 quickly a few times, then back off to one attempt per minute while the failure
 stays reported in conditions; `--concurrency` allows several resources to be

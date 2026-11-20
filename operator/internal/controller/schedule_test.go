@@ -89,7 +89,7 @@ func TestSuspendSkipsReconciliation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("suspended resource must not error: %v", err)
 	}
-	if res.RequeueAfter != 0 || res.Requeue {
+	if !res.IsZero() {
 		t.Fatalf("suspended resource must not requeue: %+v", res)
 	}
 }
