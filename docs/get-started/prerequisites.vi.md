@@ -5,8 +5,8 @@ diataxis: tutorial
 audience: [evaluator, operator]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
-source_reviewed: 2026-11-16
+last_reviewed: 2026-11-18
+source_reviewed: 2026-11-18
 ---
 
 # Yêu cầu
@@ -22,7 +22,7 @@ Máy của bạn cần có:
 Công cụ không bắt buộc:
 
 - Go 1.24+ và Node.js 22+, chỉ khi bạn build Operator hoặc UI bên ngoài Compose;
-- Python 3.12+ kèm PyYAML để chạy các kiểm tra của repo và tạo dữ liệu demo;
+- Python 3.12+ kèm PyYAML để chạy bộ kiểm thử Python và tạo dữ liệu demo;
 - `postgresql-client` để xem trực tiếp cơ sở dữ liệu.
 
 Mặc định stack chỉ mở cổng trên `127.0.0.1`. Không đưa stack ra mạng không tin

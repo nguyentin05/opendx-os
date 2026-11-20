@@ -5,7 +5,7 @@ diataxis: how-to
 audience: [operator]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-18
 ---
 
 # OpenDX-OS Installation Guide
@@ -23,7 +23,7 @@ readiness remain open.
 - Docker Engine & Docker Compose v2
 - Go 1.24+ (with `GOTOOLCHAIN=auto` for Go 1.27.3 module builds)
 - Node.js 22+ and npm (for building `workspace-ui`)
-- Python 3.12+ with `PyYAML` (for hygiene and contract verification)
+- Python 3.12+ with `PyYAML` (for contract verification and demo seeding)
 - `postgresql-client` (`psql`, `pg_dump`) for database operations
 
 ## Out-of-Tree Archive Installation

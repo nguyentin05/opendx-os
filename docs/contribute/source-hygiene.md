@@ -5,7 +5,7 @@ diataxis: how-to
 audience: [platform-developer]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-18
 ---
 
 # Licensing and source hygiene
@@ -23,6 +23,22 @@ Applies when creating/editing source files, distribution metadata, or preparing 
 | JSON, lockfiles, Markdown, `SKILL.md`, binaries/images | Do not insert an inline header; keep the format/parser valid and record the license scope/attribution through appropriate distribution metadata |
 
 Copyright for self-written code: `Copyright 2026 DX-OS Open-Core Contributors`. The full license text lives in `LICENSE`; there is no need to copy it into every file. Generated or third-party files keep the metadata from their source/generator and must not be relicensed as the project's copyright. `SKILL.md` keeps YAML frontmatter at the top of the file.
+
+## Automated checks
+
+`make check-hygiene` runs `scripts/check_hygiene.py` with the Python standard
+library only. It verifies that:
+
+- the required distribution metadata exists and is non-empty: `LICENSE`,
+  `NOTICE`, `COPYRIGHT.txt`, `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`,
+  `CODE_OF_CONDUCT.md`, and `SECURITY.md`;
+- the self-written source formats listed above carry the SPDX header and
+  copyright line;
+- text files use UTF-8 and LF line endings.
+
+The check does not inspect editor or ignore settings, dependency licenses, or
+architecture boundaries. Dependency attribution stays part of release review,
+and `make check-architecture` covers Tier boundaries.
 
 ## Hygiene and artifacts
 

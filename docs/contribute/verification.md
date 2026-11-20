@@ -5,7 +5,7 @@ diataxis: how-to
 audience: [platform-developer]
 status: active
 owner: platform
-last_reviewed: 2026-11-17
+last_reviewed: 2026-11-18
 ---
 
 # Verification and evidence
@@ -32,7 +32,8 @@ the current `Makefile`, module manifests, and prerequisites first.
 
 | Check | Working directory | Command | Prerequisites and limits |
 | --- | --- | --- | --- |
-| Repository hygiene | Root | `make check-hygiene` | Python 3 and PyYAML; metadata, text/header checks, static boundary/manifest checks |
+| Repository hygiene | Root | `make check-hygiene` | Python 3; required metadata files, SPDX headers, and text encoding |
+| Tier boundaries | Root | `make check-architecture` | Python 3; static check that Tier 1 and Tier 2 runtime code does not name Tier 3 applications |
 | Static contracts | Root | `python3 -m unittest discover -s tests -v` | Python 3 and PyYAML; source/fixture checks, not live database authorization |
 | Operator unit tests | `operator/` | `go test ./...` | Go version/dependencies from `go.mod` |
 | Capability unit tests | `capabilities/` | `go test ./...` | Go version/dependencies from `go.mod`; PDF parser subtests skip unless `poppler-utils` (`pdfinfo`, `pdfimages`, `pdftotext`) is installed |
@@ -40,6 +41,7 @@ the current `Makefile`, module manifests, and prerequisites first.
 | Operator CRD schema | `operator/` | `make test-envtest` | Downloads envtest binaries (kube-apiserver, etcd) into `operator/bin/` |
 | Operator controller lifecycle | `operator/` | `make test-controller` | envtest plus `TEST_DATABASE_URL`; Hasura is a fake modelling `export_metadata` |
 | Operator on a real cluster | Root | `scripts/k8s/dev-cluster.sh up` then `demo` | Docker, kubectl, kind; real PostgreSQL and Hasura in a disposable kind cluster; no Keycloak, Kestra or capabilities |
+| Keycloak conformance | Root | `python3 scripts/integration/keycloak_conformance.py` | A disposable Keycloak serving `platform/keycloak/realm-export.json`; the workflow starts it with `docker run` |
 | UI tests and build | `workspace-ui/` | `npm test` then `npm run build` | Node/npm and installed dependencies from `package.json`/lockfile |
 | Combined available suites | Root | `make test` | Runs the groups supported by the checkout; skips UI when `workspace-ui/node_modules/` is missing, and fails instead when `CI=true` |
 
@@ -51,22 +53,33 @@ The capability module is Go; pytest does not run its Go tests.
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on pull requests, pushes to `main`, manual
-dispatch, and as the reusable workflow the release pipeline calls. Each job name
-below is the check name to require in branch protection. The workflow has no
+`.github/workflows/ci.yml` runs on pull requests and pushes to `main`. Each job
+name below is the check name to require in branch protection. The workflow has no
 `paths` filters: a filtered required check stays pending and blocks a pull
 request. Go jobs read the version from `go.mod` and set `GOTOOLCHAIN=local`, so a
 toolchain bump fails instead of silently downloading another Go release.
 
 | Job | What it runs | Services | Reproduce locally |
 | --- | --- | --- | --- |
-| `hygiene` | `make check-hygiene` | none | `python3 -m pip install pyyaml && make check-hygiene` |
-| `go (operator)`, `go (capabilities)` | `go vet ./...`, `go test -race -count=1 ./...`, then `CGO_ENABLED=0 go build ./...` | none | `cd <module> && go vet ./... && go test -race -count=1 ./... && CGO_ENABLED=0 go build ./...` |
+| `hygiene` | `make check-hygiene` | none | `make check-hygiene` |
+| `architecture` | `make check-architecture` | none | `make check-architecture` |
+| `backend (operator)`, `backend (capabilities)` | `go vet ./...`, `go test -race -count=1 -covermode=atomic ./...` with coverage written to `$RUNNER_TEMP`, then `CGO_ENABLED=0 go build ./...` | none | `cd <module> && go vet ./... && go test -race -count=1 ./... && CGO_ENABLED=0 go build ./...` |
 | `lint (operator)`, `lint (capabilities)` | golangci-lint v2 with the root `.golangci.yml`; pull requests report only issues the change introduces | none | `cd <module> && golangci-lint run --config ../.golangci.yml` |
-| `python` | `python3 -m unittest discover -s tests -p 'test_*.py' -v` | none | `python3 -m pip install pyyaml && python3 -m unittest discover -s tests -p 'test_*.py' -v` |
+| `unit-test` | `python3 -m unittest discover -s tests -p 'test_*.py' -v` | none | `python3 -m pip install pyyaml && python3 -m unittest discover -s tests -p 'test_*.py' -v` |
 | `ui` | `npm ci`, `npm test`, `npm run build` in `workspace-ui/` | none | `cd workspace-ui && npm ci && npm test && npm run build` |
 | `integration` | `go test -tags=integration -p 1 -count=1 ./...` in both modules, then the same pair again against one server | `pgvector/pgvector:pg17`, superuser login, database name containing `test`, passwordless host auth for test roles | see below |
 | `parser` | `go test -count=1 -v ./internal/knowledge/docir/...` on Alpine with the pinned `poppler-utils`; the job fails if a PDF check reports `--- SKIP` | none | `docker run --rm -v "$PWD:/src" -w /src golang:1.27.3-alpine3.23 sh -c 'apk add --no-cache poppler-utils=25.12.0-r0 git && cd capabilities && go test -count=1 -v ./internal/knowledge/docir/...'` |
+
+The Go jobs publish a coverage total in the job summary. Every job that runs a
+suite also runs `.github/actions/assert-clean-tree`, which fails if the suite
+modified tracked or untracked files.
+
+Two workflows cover suites that need an external service:
+
+| Workflow | What it verifies |
+| --- | --- |
+| `keycloak-conformance.yml` | Imports the shipped realm into a disposable Keycloak and checks discovery, JWKS, the `dxos-runtime` audience mapper, token claims from `dxos-portal`, and wrong-password rejection |
+| `release-gate.yml` | Negative tests for the archive gate, then packages a real archive, verifies it, and checks its checksum and install script |
 
 The integration tests create and drop one database per test, so the login must be
 a superuser, the URL must name a database containing `test` (the harness rejects
@@ -91,6 +104,45 @@ Run `actionlint .github/workflows/*.yml` after editing a workflow; it checks
 syntax, expressions, and the declared permissions. A local `make test` is not CI
 evidence: the `go` job adds the race detector, and the `integration` and `parser`
 jobs need their own environment.
+
+## Images and release
+
+`.github/workflows/images.yml` builds the nine image targets in
+[releasing](releasing.md#3-tag-and-run-the-release-workflow). Pull requests build
+without pushing; pushes to `main` and `v*` tags publish to
+`ghcr.io/nguyentin05/<image>` and attest the image digest.
+`.github/workflows/release.yml` runs on `v*` tags and manual dispatch. It
+rejects a tag that is not an ancestor of `main`, warns when the tag is
+lightweight, packs the source tree, runs the archive gate, generates a CycloneDX
+SBOM and `SHA256SUMS`, attests both, and attaches the assets to a release. It
+never publishes the release.
+
+Reproduce the local parts:
+
+```sh
+actionlint .github/workflows/*.yml
+scripts/package_release.sh 0.2.0-local
+scripts/release/verify-archive.sh dist/dxos-open-core-0.2.0-local.tar.gz
+scripts/release/test-verify-archive.sh
+docker buildx build --platform linux/amd64 -f capabilities/Dockerfile \
+  --build-arg SERVICE=cap-ai -t opendx-cap-ai:local capabilities
+docker buildx build --platform linux/amd64 -f workspace-ui/Dockerfile \
+  -t opendx-workspace-ui:local workspace-ui
+```
+
+Dispatch the workflows and verify a downloaded artifact:
+
+```sh
+gh workflow run images.yml
+gh workflow run release.yml -f tag=vX.Y.Z
+gh attestation verify dxos-open-core-X.Y.Z.tar.gz --repo nguyentin05/opendx-os
+gh attestation verify oci://ghcr.io/nguyentin05/opendx-operator:X.Y.Z --repo nguyentin05/opendx-os
+```
+
+A local image build proves the Dockerfile target resolves; it does not prove the
+registry push, attestation, SBOM, or release upload. Dispatch `release.yml` for a
+tag only while its release is still a draft, and review the assets before
+publishing.
 
 ## Recording results
 

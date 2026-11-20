@@ -1,0 +1,98 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Runs the shipped realm against a real Keycloak: discovery, JWKS, the
+# dxos-runtime audience mapper, a token from dxos-portal, and rejection of a
+# wrong password. The server is disposable and the application services are not
+# started, so this stays a protocol conformance check.
+
+name: Keycloak conformance
+
+on:
+  pull_request:
+    paths:
+      - "platform/keycloak/**"
+      - "capabilities/internal/auth/**"
+      - "capabilities/cmd/dxos-authz/**"
+      - "scripts/integration/keycloak_conformance.py"
+      - ".github/workflows/keycloak-conformance.yml"
+  push:
+    branches: [main]
+    paths:
+      - "platform/keycloak/**"
+      - "capabilities/internal/auth/**"
+      - "capabilities/cmd/dxos-authz/**"
+      - "scripts/integration/keycloak_conformance.py"
+      - ".github/workflows/keycloak-conformance.yml"
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keycloak-conformance-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  conformance:
+    name: realm and token conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      KEYCLOAK_IMAGE: quay.io/keycloak/keycloak:26.0
+      KEYCLOAK_BASE_URL: http://127.0.0.1:18085
+      # Keycloak 26 reads the bootstrap administrator from the KC_ variables.
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: conformance-admin
+      # The conformance script drives the admin API with these names.
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: conformance-admin
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Start Keycloak with the shipped realm
+        run: |
+          set -euo pipefail
+          docker run -d --name dxos-keycloak-conformance \
+            --publish 127.0.0.1:18085:8085 \
+            --env KC_BOOTSTRAP_ADMIN_USERNAME --env KC_BOOTSTRAP_ADMIN_PASSWORD \
+            --env KC_HTTP_PORT=8085 --env KC_HEALTH_ENABLED=true \
+            --volume "${PWD}/platform/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro" \
+            "${KEYCLOAK_IMAGE}" start-dev --import-realm
+
+      - name: Wait for the imported realm
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 60); do
+            if curl -fsS "${KEYCLOAK_BASE_URL}/realms/dxos/.well-known/openid-configuration" >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "FAIL: Keycloak did not serve the dxos realm"
+          docker logs dxos-keycloak-conformance
+          exit 1
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Realm, client, and token conformance
+        run: python3 scripts/integration/keycloak_conformance.py
+
+      - name: Stop Keycloak
+        if: always()
+        run: docker rm -f dxos-keycloak-conformance || true

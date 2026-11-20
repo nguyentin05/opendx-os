@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Release Gate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/release/**"
+      - "scripts/package_release.sh"
+      - "scripts/install.sh"
+      - "docs/contribute/releasing.md"
+      - ".github/workflows/release*.yml"
+  pull_request:
+    paths:
+      - "scripts/release/**"
+      - "scripts/package_release.sh"
+      - "scripts/install.sh"
+      - "docs/contribute/releasing.md"
+      - ".github/workflows/release*.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  archive-gate:
+    name: archive gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Prove the gate fails: this rejects archives the package step must never emit.
+      - name: The gate must reject forbidden and incomplete archives
+        run: scripts/release/test-verify-archive.sh
+
+      - name: Package the tree
+        run: scripts/package_release.sh 0.0.0-gate
+
+      - name: The packaged archive must pass the gate
+        run: scripts/release/verify-archive.sh dist/dxos-open-core-0.0.0-gate.tar.gz
+
+      - name: The checksum must match the archive
+        working-directory: dist
+        run: sha256sum -c dxos-open-core-0.0.0-gate.tar.gz.sha256
+
+      # Inspect the artifact the release would ship, not the source tree.
+      - name: The extracted tree must be installable
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          tar -xzf dist/dxos-open-core-0.0.0-gate.tar.gz -C "${tmp}"
+          root="${tmp}/dxos-open-core-0.0.0-gate"
+          test -x "${root}/scripts/install.sh" || { echo "scripts/install.sh is not executable"; exit 1; }
+          bash -n "${root}/scripts/install.sh"
+          bash -n "${root}/scripts/package_release.sh"
+          echo "packaged tree inspected: ${root}"
