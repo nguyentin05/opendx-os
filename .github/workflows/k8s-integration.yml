@@ -1,0 +1,126 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Controller suites that need a Kubernetes API server. The envtest job proves
+# the reconcile path against a real API server and PostgreSQL; the kind job
+# proves the documented local cluster installs an application and repairs drift.
+
+name: Kubernetes Integration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "operator/api/**"
+      - "operator/cmd/**"
+      - "operator/config/**"
+      - "operator/internal/controller/**"
+      - "operator/internal/manifest/**"
+      - "operator/internal/manager/**"
+      - "platform/k8s/**"
+      - "scripts/ci/**"
+      - "scripts/k8s/**"
+      - ".github/workflows/k8s-integration.yml"
+  pull_request:
+    paths:
+      - "operator/api/**"
+      - "operator/cmd/**"
+      - "operator/config/**"
+      - "operator/internal/controller/**"
+      - "operator/internal/manifest/**"
+      - "operator/internal/manager/**"
+      - "platform/k8s/**"
+      - "scripts/ci/**"
+      - "scripts/k8s/**"
+      - ".github/workflows/k8s-integration.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: k8s-integration-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  controller-envtest:
+    name: controller (envtest + PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOTOOLCHAIN: local
+      TEST_DATABASE_URL: postgres://postgres:ci-${{ github.run_id }}@localhost:5432/postgres_test?sslmode=disable
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}
+          POSTGRES_DB: postgres_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: operator/go.mod
+          cache-dependency-path: |
+            operator/go.sum
+            capabilities/go.sum
+
+      - name: Provision cluster roles and platform schemas
+        run: scripts/ci/provision-test-db.sh
+
+      - name: CRD schema against an envtest API server
+        run: make -C operator test-envtest
+
+      - name: Reconcile lifecycle (envtest + PostgreSQL)
+        run: make -C operator test-controller
+
+      - name: The suites must not modify the working tree
+        if: always()
+        uses: ./.github/actions/assert-clean-tree
+
+  kind-demo:
+    name: operator on kind
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: operator/go.mod
+          cache-dependency-path: operator/go.sum
+
+      - name: Install kind and kustomize
+        run: |
+          set -euo pipefail
+          GOBIN="${PWD}/operator/bin" go install sigs.k8s.io/kind@v0.33.0
+          make -C operator kustomize
+
+      - name: Create the disposable cluster and install the operator
+        run: scripts/k8s/dev-cluster.sh up
+
+      - name: Install an application and repair drift
+        run: scripts/k8s/dev-cluster.sh demo
+
+      - name: Delete the cluster
+        if: always()
+        run: scripts/k8s/dev-cluster.sh down

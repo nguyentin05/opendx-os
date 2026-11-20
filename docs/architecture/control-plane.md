@@ -59,10 +59,22 @@ an explicit retention policy and authorized scope.
 
 ## Kubernetes controller
 
-On Kubernetes, `dxos-operator controller` reconciles cluster-scoped
-`DXApplication` resources with the same planner and applier as the CLI and reports
+On Kubernetes, the `dxos-controller` binary reconciles cluster-scoped
+`DXApplication` resources with the same planner and applier as the
+`dxos-operator` CLI and reports
 progress in status conditions. See
 [installation](../operations/installation.md#kubernetes-operator-development-cluster).
 The CLI keeps working without a cluster.
+
+A resource overrides the controller's drift-repair period with `spec.interval`
+and pauses its own reconciliation with `spec.suspend`; deleting a suspended
+resource still runs so an uninstall is not delayed. Setting or changing the
+`dxos.io/reconcileAt` annotation requests an immediate reconciliation; the
+handled value is reported in `status.lastHandledReconcileAt`. One reconciliation
+— converge or uninstall — is bounded by `--reconciliation-timeout`, and
+transitions are emitted as Kubernetes events. Failed reconciliations retry
+quickly a few times, then back off to one attempt per minute while the failure
+stays reported in conditions; `--concurrency` allows several resources to be
+reconciled at once, and their applies serialize on a database lock.
 
 For the exact lifecycle rules, see [Manifest lifecycle](../reference/manifest/lifecycle.md).

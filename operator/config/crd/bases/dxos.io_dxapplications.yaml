@@ -74,6 +74,10 @@ spec:
               DXApplicationSpec mirrors the DXApplication manifest contract
               (docs/reference/manifest/schema.md). JSON field names are identical to the
               manifest so that both forms convert losslessly.
+
+              Interval and Suspend are controller-scheduling fields outside that contract:
+              they are never serialized into a manifest and always stay zero-valued when a
+              resource converts back from a package.
             properties:
               capabilities:
                 description: |-
@@ -88,6 +92,17 @@ spec:
                 description: DisplayName is shown by the App Shell.
                 minLength: 1
                 type: string
+              interval:
+                description: |-
+                  Interval is how often the controller re-checks this application for
+                  drift once it is Ready. When unset, the controller's --requeue-interval
+                  applies. A spec change reconciles immediately regardless of the interval.
+                type: string
+                x-kubernetes-validations:
+                - message: spec.interval must be a positive duration such as 30s or
+                    5m
+                  rule: self.matches('^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$') && self
+                    != '0s'
               knowledge:
                 properties:
                   grantPolicies:
@@ -215,6 +230,12 @@ spec:
                   - table
                   type: object
                 type: array
+              suspend:
+                description: |-
+                  Suspend pauses reconciliation of this application, including drift
+                  repair and workflow resynchronization. Deleting a suspended application
+                  still runs so its uninstall is not delayed.
+                type: boolean
               tables:
                 description: |-
                   Tables declares the application's domain tables (ADR 0008). The Operator
@@ -742,6 +763,11 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              lastHandledReconcileAt:
+                description: |-
+                  LastHandledReconcileAt is the value of the dxos.io/reconcileAt annotation
+                  most recently observed and handled by the controller.
+                type: string
               observedGeneration:
                 format: int64
                 type: integer
