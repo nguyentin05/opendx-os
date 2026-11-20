@@ -121,6 +121,9 @@ jobs:
           platforms: linux/amd64
           # Pull requests build the image but never publish it.
           push: ${{ github.event_name != 'pull_request' }}
+          # Attestations attach to the published image, so pull request builds skip them.
+          provenance: ${{ github.event_name != 'pull_request' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.image }}

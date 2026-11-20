@@ -64,11 +64,12 @@ ruleset does not cover, and rejects any run started by another account.
 
 `.github/workflows/release.yml` then:
 
-1. validates that the tag exists and matches `vX.Y.Z`;
+1. validates that the tag exists, matches `vX.Y.Z`, and is an ancestor of
+   `main` (a lightweight tag only produces a warning);
 2. packs `dist/dxos-open-core-X.Y.Z.tar.gz` with `scripts/package_release.sh`,
-   fails if the archive contains `.agents/`, `AGENTS.md`, `AGENTS.local.md`,
-   `CLAUDE.md`, `.scratch/`, or `docs/_internal/`, and writes
-   `dist/SHA256SUMS`;
+   runs `scripts/release/verify-archive.sh` so the archive is refused when it
+   carries local-only material or lacks a component the installer needs, and
+   writes `dist/SHA256SUMS`;
 3. generates `dist/opendx-os-X.Y.Z.cdx.json` with `anchore/sbom-action`;
 4. attests the tarball and SBOM with `actions/attest-build-provenance`;
 5. uploads the assets to the existing draft release, or creates a draft with

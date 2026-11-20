@@ -41,6 +41,10 @@ jobs:
     name: validate
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
       - name: Validate the tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -55,6 +59,18 @@ jobs:
             exit 1
           fi
           gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null
+          git rev-parse -q --verify "refs/tags/${TAG}^{commit}" >/dev/null || {
+            echo "FAIL: ${TAG} is not present in the checkout."
+            exit 1
+          }
+          if [ "$(git cat-file -t "refs/tags/${TAG}")" != "tag" ]; then
+            echo "::warning::${TAG} is a lightweight tag; prefer an annotated tag."
+          fi
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "refs/tags/${TAG}" origin/main || {
+            echo "FAIL: ${TAG} is not an ancestor of main; refusing to release unreviewed history."
+            exit 1
+          }
 
   package:
     name: package
@@ -78,20 +94,8 @@ jobs:
       - name: Package the source tree
         run: scripts/package_release.sh "${VERSION}"
 
-      - name: Inspect the archive
-        run: |
-          set -euo pipefail
-          archive="dist/dxos-open-core-${VERSION}.tar.gz"
-          test -f "${archive}"
-          listing="$(tar -tzf "${archive}")"
-          status=0
-          for forbidden in "/.agents/" "/AGENTS.md" "/AGENTS.local.md" "/CLAUDE.md" "/.scratch/" "/docs/_internal/"; do
-            if grep -Fq "${forbidden}" <<<"${listing}"; then
-              echo "FAIL: ${archive} contains ${forbidden}"
-              status=1
-            fi
-          done
-          exit "${status}"
+      - name: Verify the archive
+        run: scripts/release/verify-archive.sh "dist/dxos-open-core-${VERSION}.tar.gz"
 
       - name: Generate a CycloneDX SBOM
         uses: anchore/sbom-action@v0.24.3
