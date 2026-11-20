@@ -40,8 +40,11 @@ jobs:
   validate:
     name: validate
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
@@ -71,6 +74,12 @@ jobs:
             echo "FAIL: ${TAG} is not an ancestor of main; refusing to release unreviewed history."
             exit 1
           }
+          sha="$(git rev-list -n 1 "refs/tags/${TAG}^{commit}")"
+          runs="$(gh run list --workflow ci.yml --commit "${sha}" --status success --json databaseId -q length)"
+          if [ "${runs}" -lt 1 ]; then
+            echo "FAIL: ${TAG} points at ${sha}, which has no successful CI run."
+            exit 1
+          fi
 
   package:
     name: package
@@ -80,7 +89,7 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ env.TAG }}
 
@@ -98,7 +107,7 @@ jobs:
         run: scripts/release/verify-archive.sh "dist/dxos-open-core-${VERSION}.tar.gz"
 
       - name: Generate a CycloneDX SBOM
-        uses: anchore/sbom-action@v0.24.3
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           path: .
           format: cyclonedx-json
@@ -149,7 +158,9 @@ jobs:
           cd dist
           sha256sum -c SHA256SUMS
           cd ..
-          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+          release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            -q ".[] | select(.tag_name==\"${TAG}\") | .id" | head -n1)"
+          if [ -n "${release_id}" ]; then
             # A Release Drafter draft already exists for this tag; refresh its
             # assets. This step never changes the draft/published state.
             gh release upload "${TAG}" dist/* --clobber --repo "${GITHUB_REPOSITORY}"

@@ -54,17 +54,21 @@ jobs:
     env:
       KEYCLOAK_IMAGE: quay.io/keycloak/keycloak:26.0
       KEYCLOAK_BASE_URL: http://127.0.0.1:18085
+      # Keycloak 26 reads the bootstrap administrator from the KC_ variables.
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: conformance-admin
+      # The conformance script drives the admin API with these names.
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: conformance-admin
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Start Keycloak with the shipped realm
         run: |
           set -euo pipefail
           docker run -d --name dxos-keycloak-conformance \
             --publish 127.0.0.1:18085:8085 \
-            --env KEYCLOAK_ADMIN --env KEYCLOAK_ADMIN_PASSWORD \
+            --env KC_BOOTSTRAP_ADMIN_USERNAME --env KC_BOOTSTRAP_ADMIN_PASSWORD \
             --env KC_HTTP_PORT=8085 --env KC_HEALTH_ENABLED=true \
             --volume "${PWD}/platform/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro" \
             "${KEYCLOAK_IMAGE}" start-dev --import-realm
@@ -82,7 +86,7 @@ jobs:
           docker logs dxos-keycloak-conformance
           exit 1
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.12"
 
