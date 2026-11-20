@@ -304,7 +304,7 @@ func (r *DXApplicationReconciler) event(app *dxosv1alpha1.DXApplication, eventty
 	if r.EventRecorder == nil {
 		return
 	}
-	r.EventRecorder.Eventf(app, nil, eventtype, reason, "Reconcile", message)
+	r.EventRecorder.Eventf(app, nil, eventtype, reason, "Reconcile", "%s", message)
 }
 
 // inlineWorkflows checks the workflow definitions a resource carries inline,
