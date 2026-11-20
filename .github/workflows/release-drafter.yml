@@ -42,7 +42,6 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
       pull-requests: write
     steps:
       - uses: release-drafter/release-drafter/autolabeler@d1a19e60e81a7e650d00a7de9277f87e439117ea # v7.11.0

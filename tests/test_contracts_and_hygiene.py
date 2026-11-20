@@ -18,8 +18,6 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 class TestContractsAndHygiene(unittest.TestCase):
     def test_repository_hygiene_script_passes(self) -> None:
         target_script = ROOT / "scripts" / "check_hygiene.py"
-        if not target_script.exists():
-            target_script = ROOT / "scripts" / "check_pof.py"
         result = subprocess.run(
             [sys.executable, str(target_script)],
             cwd=ROOT,

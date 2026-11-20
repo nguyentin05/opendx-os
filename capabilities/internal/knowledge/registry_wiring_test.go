@@ -55,6 +55,7 @@ func TestRegistrySharedSlotAndNoAppOverride(t *testing.T) {
 }
 func TestRegistryPersonalHostedZeroEgressAndRevocation(t *testing.T) {
 	s, f := answerSetup()
+	s.Policy = &models.Policy{Authority: &personalAnswerAuthority{}, Enabled: true}
 	s.Resolver = &fixedResolver{profile: answerProfile()}
 	req := answerRequest
 	req.Scope = Scope{Kind: "PERSONAL"}

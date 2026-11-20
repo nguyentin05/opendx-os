@@ -23,12 +23,10 @@ on:
       - "requirements-docs.txt"
       - "tests/test_docs.py"
       - ".github/workflows/docs.yml"
-  workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
+  pages: read
 
 concurrency:
   group: pages
@@ -39,13 +37,11 @@ jobs:
     name: Check MkDocs Site
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
 
@@ -62,7 +58,7 @@ jobs:
         run: python3 -m unittest tests.test_docs -v
 
       - name: Lint Prose with Vale
-        uses: errata-ai/vale-action@v3.0.0
+        uses: errata-ai/vale-action@518a9136acc6e6668ce7c00d367051e0941e87ff # v3.0.0
         with:
           version: 3.27.0
           files: docs
@@ -70,10 +66,10 @@ jobs:
           filter_mode: nofilter
 
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/configure-pages@v6
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
 
@@ -82,9 +78,12 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: check-docs
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -19,6 +19,7 @@ class RegistryMigrationSelection(unittest.TestCase):
             env = dict(os.environ, PATH=str(path)+os.pathsep+os.environ['PATH'], SQL_CAPTURE=str(path/'sql'), MIGRATION_TEST_URL='postgres://test@localhost/registry_test')
             env.pop('RAG_MODELS_SCHEMA_ENABLED', None)
             env.pop('RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED', None)
+            env.pop('RAG_AGENT_MODELS_SCHEMA_ENABLED', None)
             env.update(settings)
             result = subprocess.run(args, cwd=ROOT, env=env, capture_output=True, text=True)
             sql = (path/'sql').read_text() if (path/'sql').exists() else ''
@@ -49,4 +50,21 @@ class RegistryMigrationSelection(unittest.TestCase):
         self.assertLess(sql.index('/0004_models_vectors.sql'), sql.index('/0005_model_registry.sql'))
         self.assertIn("version='0005'", sql)
         result, _ = self.capture(command, RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED='true')
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_fts_upgrade_and_agent_prerequisites(self):
+        command = ['scripts/migrate-rag.sh','--database-url-env','MIGRATION_TEST_URL','--scope','cap-ai','--through']
+        for version in ('0006','0007'):
+            result, sql = self.capture(command+[version])
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn('CREATE TABLE cap_ai.model_profiles', sql)
+            self.assertNotIn('CREATE TABLE cap_ai.model_candidates', sql)
+        result, _ = self.capture(command+['0008'])
+        self.assertNotEqual(result.returncode, 0)
+        result, sql = self.capture(command+['0008'], RAG_MODELS_SCHEMA_ENABLED='true', RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED='true', RAG_AGENT_MODELS_SCHEMA_ENABLED='true')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('CREATE TABLE cap_ai.agent_processing_approvals', sql)
+        result, sql = self.capture(['sh','platform/postgres/init/09_rag_migrations.sh'])
+        self.assertNotIn('/0008_personal_model_processing.sql', sql)
+        result, _ = self.capture(['sh','platform/postgres/init/09_rag_migrations.sh'], RAG_AGENT_MODELS_SCHEMA_ENABLED='true')
         self.assertNotEqual(result.returncode, 0)

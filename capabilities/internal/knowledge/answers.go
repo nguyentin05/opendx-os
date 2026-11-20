@@ -78,13 +78,18 @@ func (s *AnswerService) Answer(ctx context.Context, actor *auth.Identity, req An
 		empty.Status = "NO_EVIDENCE"
 		return empty, nil
 	}
+	if s.Reader == nil {
+		return empty, ErrAuthorityUnavailable
+	}
+	currentHit := func(hit SearchHit) bool {
+		current, err := s.Reader.CanRead(ctx, actor, hit.DocumentID)
+		return err == nil && current == hit.ReadScope && current.DocumentID == hit.DocumentID &&
+			current.VersionID == hit.VersionID && current.RunID != ""
+	}
 	fallback := func(cause error) (AnswerResponse, error) {
-		if s.Reader != nil {
-			for _, hit := range result.Results {
-				current, e := s.Reader.CanRead(ctx, actor, hit.DocumentID)
-				if e != nil || current.VersionID != hit.VersionID {
-					return emptyAnswer("AUTHORIZATION_CHANGED"), nil
-				}
+		for _, hit := range result.Results {
+			if !currentHit(hit) {
+				return emptyAnswer("AUTHORIZATION_CHANGED"), nil
 			}
 		}
 
@@ -101,11 +106,8 @@ func (s *AnswerService) Answer(ctx context.Context, actor *auth.Identity, req An
 		}
 		profile = binding.Profile
 	}
-	if s.Gateway == nil || s.Policy == nil || profile.ID == "" || req.Scope.Kind == "PERSONAL" && profile.Execution != "LOCAL" {
+	if s.Gateway == nil || s.Policy == nil || profile.ID == "" {
 		return fallback(models.ErrPolicy)
-	}
-	if s.Reader == nil {
-		return empty, ErrAuthorityUnavailable
 	}
 	modelApp := req.Scope.AppID
 	if req.Scope.Kind == "PERSONAL" {
@@ -137,8 +139,7 @@ func (s *AnswerService) Answer(ctx context.Context, actor *auth.Identity, req An
 		if hit.Snippet == "" {
 			continue
 		}
-		before, e := s.Reader.CanRead(ctx, actor, hit.DocumentID)
-		if e != nil || before.VersionID != hit.VersionID {
+		if !currentHit(hit) {
 			return emptyAnswer("AUTHORIZATION_CHANGED"), nil
 		}
 		provenance := []string{}
@@ -154,7 +155,7 @@ func (s *AnswerService) Answer(ctx context.Context, actor *auth.Identity, req An
 		}
 		payload = trial
 		evidence = append(evidence, hit)
-		scopes = append(scopes, before)
+		scopes = append(scopes, hit.ReadScope)
 	}
 	if len(evidence) == 0 {
 		return fallback(models.ErrPolicy)
@@ -167,9 +168,8 @@ func (s *AnswerService) Answer(ctx context.Context, actor *auth.Identity, req An
 	generated, callErr := s.Gateway.Call(ctx, actor, op, payload)
 	// Every supplied context source is reauthorized even if it was not cited, or
 	// the provider failed. Discard the whole response, including retrieved titles.
-	for i, hit := range evidence {
-		current, e := s.Reader.CanRead(ctx, actor, hit.DocumentID)
-		if e != nil || current != scopes[i] {
+	for _, hit := range evidence {
+		if !currentHit(hit) {
 			return emptyAnswer("AUTHORIZATION_CHANGED"), nil
 		}
 	}

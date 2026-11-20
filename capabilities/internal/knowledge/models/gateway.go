@@ -24,6 +24,12 @@ type Gateway struct {
 }
 
 func (g *Gateway) Call(ctx context.Context, actor *auth.Identity, op Operation, payload Payload) (Result, error) {
+	if op.ScopeKind == "AGENT" && (payload.Query == "" || len(payload.Evidence) == 0) {
+		return Result{}, ErrPolicy
+	}
+	if op.RequirePersonalQueryApproval && (payload.Query == "" || len(payload.Texts) != 0 || len(payload.Evidence) != 0) {
+		return Result{}, ErrPolicy
+	}
 	approval, err := g.Policy.Check(ctx, actor, op)
 	if err != nil {
 		return Result{}, err
@@ -115,6 +121,14 @@ func (g *Gateway) Call(ctx context.Context, actor *auth.Identity, op Operation, 
 	}
 	if err = g.Budget.Settle(finishCtx, r.ID, "provider-complete", u); err != nil {
 		return Result{}, ErrUncertain
+	}
+	// A global query vector is usable only while its dispatch approval remains
+	// current. The completed provider call is still settled if approval changed.
+	if op.RequirePersonalQueryApproval {
+		fresh, err := g.Policy.Check(ctx, actor, op)
+		if err != nil || fresh.Fingerprint != approval.Fingerprint {
+			return Result{}, ErrPolicy
+		}
 	}
 	result.Usage = u
 	result.ProviderRequestID = ""

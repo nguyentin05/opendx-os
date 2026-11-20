@@ -34,7 +34,6 @@ jobs:
     name: build (${{ matrix.image }})
     runs-on: ubuntu-latest
     permissions:
-      contents: read
       packages: write
       id-token: write
       attestations: write
@@ -85,8 +84,10 @@ jobs:
             file: workspace-ui/Dockerfile
             build-args: ""
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
@@ -94,6 +95,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Derive image metadata
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
@@ -108,6 +110,7 @@ jobs:
             org.opencontainers.image.source=https://github.com/nguyentin05/opendx-os
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.licenses=Apache-2.0
+
       - name: Build and push
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -118,13 +121,17 @@ jobs:
           platforms: linux/amd64
           # Pull requests build the image but never publish it.
           push: ${{ github.event_name != 'pull_request' }}
+          # Attestations attach to the published image, so pull request builds skip them.
+          provenance: ${{ github.event_name != 'pull_request' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
       - name: Attest image provenance
         if: github.event_name != 'pull_request'
-        uses: actions/attest-build-provenance@v4 # v4.2.2
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/nguyentin05/${{ matrix.image }}
           subject-digest: ${{ steps.build.outputs.digest }}

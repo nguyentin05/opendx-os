@@ -19,8 +19,8 @@ a competition score.
 1. Run [verification](verification.md) for the release revision, including all
    [S01–S08 groups](../reference/security/acceptance.md#eight-mandatory-acceptance-groups).
    A mandatory check marked `NOT_RUN` prevents a readiness conclusion. The
-   release workflow runs the continuous-integration checks on the tag; it does
-   not replace the acceptance groups.
+   release workflow does not repeat these checks on the tag, so tag only a
+   revision whose evidence is already recorded.
 2. Complete `LICENSE`, `NOTICE`, `COPYRIGHT.txt`, `README.md`, `CHANGELOG.md`,
    `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `Makefile`,
    `.env.example`, installation instructions, and CycloneDX SBOMs in
@@ -64,14 +64,19 @@ git tag -a vX.Y.Z -m "vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
+Only the repository owner may create, move, or delete a tag: the `protect tags`
+repository ruleset covers every `refs/tags/*` ref and bypasses only that account.
+The release workflow enforces the same boundary for manual dispatch, which the
+ruleset does not cover, and rejects any run started by another account.
+
 `.github/workflows/release.yml` then:
 
-1. validates the tag and runs `ci.yml` against it (the reusable workflow accepts
-   a `ref`, so a manual dispatch verifies the requested tag rather than `main`);
+1. validates that the tag exists, matches `vX.Y.Z`, and is an ancestor of
+   `main` (a lightweight tag only produces a warning);
 2. packs `dist/dxos-open-core-X.Y.Z.tar.gz` with `scripts/package_release.sh`,
-   fails if the archive contains `.agents/`, `AGENTS.md`, `AGENTS.local.md`,
-   `CLAUDE.md`, `.scratch/`, or `docs/_internal/`, and writes
-   `dist/SHA256SUMS`;
+   runs `scripts/release/verify-archive.sh` so the archive is refused when it
+   carries local-only material or lacks a component the installer needs, and
+   writes `dist/SHA256SUMS`;
 3. generates `dist/opendx-os-X.Y.Z.cdx.json` with `anchore/sbom-action`;
 4. attests the tarball and SBOM with `actions/attest-build-provenance`;
 5. uploads the assets to the existing draft release, or creates a draft with

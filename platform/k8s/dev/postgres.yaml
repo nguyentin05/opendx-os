@@ -127,5 +127,15 @@ spec:
                 path: migrations/cap_ai/0004_models_vectors.sql
               - key: cap_ai-0005_model_registry.sql
                 path: migrations/cap_ai/0005_model_registry.sql
+              - key: cap_ai-0006_agent_conversations.sql
+                path: migrations/cap_ai/0006_agent_conversations.sql
+              - key: cap_ai-0007_agent_scopes.sql
+                path: migrations/cap_ai/0007_agent_scopes.sql
+              - key: cap_ai-0008_personal_model_processing.sql
+                path: migrations/cap_ai/0008_personal_model_processing.sql
+              - key: cap_ai-0009_personal_hybrid.sql
+                path: migrations/cap_ai/0009_personal_hybrid.sql
+              - key: cap_ai-0010_agent_model_authority.sql
+                path: migrations/cap_ai/0010_agent_model_authority.sql
       - name: data
         emptyDir: {}

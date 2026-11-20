@@ -6,14 +6,20 @@ package knowledge
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
-	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
+	"github.com/opendx-os/opendx-os/capabilities/internal/testutil"
 )
 
 func TestRegistryAnswerCurrentDatabaseRevocation(t *testing.T) {
@@ -115,4 +121,113 @@ func TestQualifiedLocalPersonalAnswer(t *testing.T) {
 	if e != nil || response.Status != "ANSWERED" || provider.calls != 1 {
 		t.Fatal("qualified local personal answer failed", response, e, provider.calls)
 	}
+}
+
+// answerRunReplacement changes the real database snapshot at the assembly READ.
+type answerRunReplacement struct {
+	AnswerReader
+	db      *sql.DB
+	changed bool
+}
+
+func (r *answerRunReplacement) CanRead(ctx context.Context, actor *auth.Identity, doc string) (ReadScope, error) {
+	if !r.changed {
+		previous, err := r.AnswerReader.CanRead(ctx, actor, doc)
+		if err != nil {
+			return ReadScope{}, err
+		}
+		result, err := r.db.ExecContext(ctx, `WITH replacement AS (
+            INSERT INTO cap_ai.processing_runs(version_id,ingestion_job_id,attempt_no,fencing_token,state)
+            SELECT run.version_id,run.ingestion_job_id,run.attempt_no+1,run.fencing_token+1,'COMPLETE'
+            FROM cap_ai.knowledge_documents d
+            JOIN cap_ai.document_versions v ON v.id=d.active_version_id
+            JOIN cap_ai.processing_runs run ON run.id=v.active_run_id
+            WHERE d.id=$1
+            RETURNING id,version_id
+        )
+        UPDATE cap_ai.document_versions v SET active_run_id=r.id FROM replacement r WHERE v.id=r.version_id`, doc)
+		if err != nil {
+			return ReadScope{}, err
+		}
+		rows, err := result.RowsAffected()
+		if err != nil || rows != 1 {
+			return ReadScope{}, fmt.Errorf("replaced %d active runs: %v", rows, err)
+		}
+		current, err := r.AnswerReader.CanRead(ctx, actor, doc)
+		r.changed = err == nil && current.VersionID == previous.VersionID && current.RunID != previous.RunID
+		return current, err
+	}
+	return r.AnswerReader.CanRead(ctx, actor, doc)
+}
+
+func TestHostedPersonalAnswerAuditedApproval(t *testing.T) {
+	db, s, a, _ := semanticFixture(t)
+	activateText(t, s, workerStore(t, db), a, fileID, "hosted-personal", "Director approval private evidence")
+	for _, migration := range []string{"0005_model_registry.sql", "0008_personal_model_processing.sql"} {
+		raw, err := os.ReadFile("../../../platform/postgres/migrations/cap_ai/" + migration)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = db.Exec(string(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,pricing_revision,enabled) SELECT 'hosted-gen',revision,'GENERATE','HOSTED',provider_id,model_id,limits,pricing_revision,enabled FROM cap_ai.model_profiles WHERE id='embed';
+ INSERT INTO cap_ai.model_candidates(profile_id,revision,adapter_key,declaration_digest,declaration) VALUES('hosted-gen',1,'bounded-http-v1',repeat('a',64),'{}');
+ UPDATE cap_ai.global_model_slots SET profile_id='hosted-gen',profile_revision=1,slot_revision=1 WHERE capability='LLM';
+ INSERT INTO core.user_roles(user_id,role_name) VALUES('11111111-1111-4111-8111-111111111111','role_operator');`); err != nil {
+		t.Fatal(err)
+	}
+	var name string
+	if err := db.QueryRow(`SELECT current_database()`).Scan(&name); err != nil {
+		t.Fatal(err)
+	}
+	u, _ := url.Parse(os.Getenv("TEST_DATABASE_URL"))
+	u.Path = "/" + name
+	gateway := testutil.As(t, u.String(), "dxos_ai_gateway")
+	admin := testutil.As(t, u.String(), "dxos_authz")
+	api := testutil.As(t, u.String(), "dxos_ai_api")
+	provider := &localAnswerProvider{}
+	g := &models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: gateway}}, Budget: &models.Budget{DB: gateway}, Providers: map[string]models.Provider{"fake": provider}}
+	service := AnswerService{Search: s, Reader: NewPolicy(api), Policy: g.Policy, Gateway: g, Resolver: &models.Registry{DB: gateway}}
+	req := AnswerRequest{Scope: Scope{Kind: "PERSONAL"}, Query: "Director", RequireGeneration: true}
+	if _, err := service.Answer(context.Background(), a, req); err != models.ErrPolicy || provider.calls != 0 {
+		t.Fatal("slot alone permitted egress", err, provider.calls)
+	}
+	var approval string
+	if err := admin.QueryRow(`SELECT cap_ai.approve_agent_processing($1,'{"profile_id":"hosted-gen","profile_revision":1,"provider_id":"fake","purpose":"GENERATE","source_policy_id":"local-only","source_policy_version":1,"source_classification":"PERSONAL","query_app_id":"library","query_classification":"PERSONAL","retention_evidence":"review-retention","training_use_evidence":"review-training","region_evidence":"review-region"}')`, a.UserID).Scan(&approval); err != nil {
+		t.Fatal(err)
+	}
+	response, err := service.Answer(context.Background(), a, req)
+	if err != nil || response.Status != "ANSWERED" || provider.calls != 1 {
+		t.Fatal("approved owner generation denied", response, err, provider.calls)
+	}
+	if _, err = service.Answer(context.Background(), &auth.Identity{UserID: otherID, Role: a.Role}, req); err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 1 {
+		t.Fatal("foreign owner content sent")
+	}
+	if _, err = admin.Exec(`SELECT cap_ai.disable_agent_processing($1,$2,'review withdrawn')`, a.UserID, approval); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.Answer(context.Background(), a, req); err != models.ErrPolicy || provider.calls != 1 {
+		t.Fatal("disabled review sent content", err, provider.calls)
+	}
+	if err := admin.QueryRow(`SELECT cap_ai.approve_agent_processing($1,'{"profile_id":"hosted-gen","profile_revision":1,"provider_id":"fake","purpose":"GENERATE","source_policy_id":"local-only","source_policy_version":1,"source_classification":"PERSONAL","query_app_id":"library","query_classification":"PERSONAL","retention_evidence":"renewed-retention","training_use_evidence":"review-training","region_evidence":"review-region"}')`, a.UserID).Scan(&approval); err != nil {
+		t.Fatal(err)
+	}
+	t.Run("same version reparse before hosted PERSONAL assembly", func(t *testing.T) {
+		provider.calls = 0
+		reg := service.Reader
+		reader := &answerRunReplacement{AnswerReader: reg, db: db}
+		service.Reader = reader
+		defer func() { service.Reader = reg }()
+		got, err := service.Answer(t.Context(), a, req)
+		if !reader.changed || err != nil || got.Reason != "AUTHORIZATION_CHANGED" || got.Answer != nil ||
+			len(got.Results) != 0 || len(got.Citations) != 0 || provider.calls != 0 {
+			t.Fatalf("retired run reached the hosted provider or response: %+v err=%v sends=%d", got, err, provider.calls)
+		}
+	})
+
 }

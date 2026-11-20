@@ -4,10 +4,12 @@ package knowledge
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"testing"
+
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
-	"testing"
 )
 
 type answerFixture struct {
@@ -46,6 +48,7 @@ func answerProfile() models.Profile {
 }
 func answerSetup() (*AnswerService, *answerFixture) {
 	f := &answerFixture{scope: ReadScope{DocumentID: "doc", VersionID: "version", RunID: "run"}, hits: []SearchHit{{DocumentID: "doc", VersionID: "version", ChunkID: "chunk", Snippet: "At least 10000000 VND requires Director approval.", Title: "Policy", ElementIDs: []string{"element"}, Positions: []Position{{Provenance: "EXTRACTED"}}}}, result: models.Result{Text: "Director approval is required.", CitationIDs: []string{"E1"}}}
+	f.hits[0].ReadScope = f.scope
 	return &AnswerService{Search: f, Reader: f, Policy: f, Gateway: f, Profile: answerProfile()}, f
 }
 
@@ -82,6 +85,7 @@ func TestPromptInjectionNoTools(t *testing.T) {
 }
 func TestPersonalSearchOnly(t *testing.T) {
 	s, f := answerSetup()
+	s.Policy = &models.Policy{Authority: &personalAnswerAuthority{}, Enabled: true}
 	req := answerRequest
 	req.Scope = Scope{Kind: "PERSONAL"}
 	r, e := s.Answer(context.Background(), answerActor, req)
@@ -123,5 +127,71 @@ func TestGroundedAnswerCitationAndContextLimits(t *testing.T) {
 
 	if r.Citations[0].ChunkID != "chunk" {
 		t.Fatal("citation remapped")
+	}
+}
+
+// The real model policy, rather than a mock policy, determines hosted PERSONAL.
+type personalAnswerAuthority struct{ approved bool }
+
+func (a *personalAnswerAuthority) Current(_ context.Context, _ *auth.Identity, op models.Operation) (models.Decision, error) {
+	p := answerProfile()
+	p.Enabled = true
+	p.PricingRevision = "price-1"
+	raw := []byte(`{"personal_approved":false}`)
+	if a.approved {
+		raw = []byte(`{"personal_approved":true}`)
+	}
+	var d models.Decision
+	if err := json.Unmarshal(raw, &d); err != nil {
+		return models.Decision{}, err
+	}
+	d.Profile = p
+	d.Allowed = true
+	d.Personal = true
+	d.QueryClassification = "PERSONAL"
+	return d, nil
+}
+func (f *answerFixture) ResolveModelApp(context.Context, *auth.Identity, Scope) (string, error) {
+	return "library", nil
+}
+func TestPersonalAnswerCanonicalApproval(t *testing.T) {
+	s, f := answerSetup()
+	a := &personalAnswerAuthority{}
+	s.Policy = &models.Policy{Authority: a, Enabled: true}
+	req := answerRequest
+	req.Scope = Scope{Kind: "PERSONAL"}
+	r, err := s.Answer(context.Background(), answerActor, req)
+	if err != nil || r.Status != "SEARCH_ONLY" || f.calls != 0 {
+		t.Fatal(r, err)
+	}
+	a.approved = true
+	r, err = s.Answer(context.Background(), answerActor, req)
+	if err != nil || r.Status != "ANSWERED" || f.calls != 1 {
+		t.Fatal("canonical approval ignored", r, err)
+	}
+	a.approved = false
+	r, err = s.Answer(context.Background(), answerActor, req)
+	if err != nil || r.Status != "SEARCH_ONLY" || f.calls != 1 {
+		t.Fatal("revoked approval reused", r, err)
+	}
+}
+
+func TestAnswerSearchOnlyDiscardsRetiredReadScope(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*ReadScope)
+	}{
+		{"new run for same version", func(scope *ReadScope) { scope.RunID = "replacement" }},
+		{"new processing policy for same run", func(scope *ReadScope) { scope.PolicyRevision++ }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service, f := answerSetup()
+			service.Gateway = nil
+			tc.change(&f.scope)
+			out, err := service.Answer(t.Context(), answerActor, answerRequest)
+			if err != nil || out.Reason != "AUTHORIZATION_CHANGED" || len(out.Results) != 0 || len(out.Citations) != 0 {
+				t.Fatalf("search-only returned stale evidence: %+v err=%v", out, err)
+			}
+		})
 	}
 }

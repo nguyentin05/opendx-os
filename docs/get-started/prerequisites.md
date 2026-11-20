@@ -5,7 +5,7 @@ diataxis: tutorial
 audience: [evaluator, operator]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-18
 ---
 
 # Prerequisites
@@ -21,7 +21,7 @@ You need a workstation with:
 Optional tools:
 
 - Go 1.24+ and Node.js 22+ only if you build the Operator or UI outside Compose;
-- Python 3.12+ with PyYAML for repository checks and demo seeding;
+- Python 3.12+ with PyYAML for the Python test suite and demo seeding;
 - `postgresql-client` for direct database inspection.
 
 The stack binds published ports to `127.0.0.1` by default. Do not expose it to an

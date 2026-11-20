@@ -5,7 +5,7 @@ diataxis: reference
 audience: [app-author, security-reviewer]
 status: proposed
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-18
 ---
 
 # Native RAG canonical contracts (proposed)
@@ -48,6 +48,8 @@ All objects below belong to `cap_ai`. IDs are UUID unless indicated; app/role re
 | chunks / chunk_elements | version/ordinal/text/content hash/element links; unique version+ordinal; lexical index independent of embedding readiness |
 | jobs | unique version+processing-profile identity, lease token/deadline, attempts, checkpoint, safe error and durable state |
 | profiles / usage / reservations | allowlisted model purpose/classifications/dimension, credential_ref only, actor/app/installation budgets; idempotent reservation/settlement |
+| processing approvals | audited Platform Admin approval binding exact provider/profile revision, purpose, source/query classifications, retention/training-use review and enabled state; see authorization |
+| conversations / messages | owner-only snapshots and source provenance; historical READ survives ordinary source revoke, but retained evidence is reauthorized before reuse |
 
 Canonical logical source identity is scoped, never a global checksum: UPLOAD document identity is `(collection_id, owner_user_id, initial_file_id)` and its version identity is `(document_id, immutable_file_id)`. A registration into a different collection deliberately creates a separate policy object and still requires source readability; it never inherits another collection's grant. PACKAGE document identity is `(app_id, source_id)` and version identity is `(document_id, immutable_package_revision, sha256)`; changing bytes within the same immutable revision is an integrity error. Processing-profile changes create new derived jobs/index revisions, not duplicate canonical originals. Concurrent registrations with distinct request keys but equal scoped source identity and normalized registration payload return the same canonical document/version IDs; conflicting registration metadata returns 409 without mutating the original. DB uniqueness and transactional conflict handling enforce this independently of receipt keys.
 
@@ -67,8 +69,8 @@ All paths are under `/api/cap/ai`. Identity derives from verified context and cu
 | PUT /documents/{id}/policy | expected policy_revision and allowed mode/roles; MANAGE and ceiling; personal broadening rejected |
 | POST /documents/{id}/grants | target user_id/action READ, MANAGE and ceiling; personal always rejected |
 | DELETE /documents/{id}/grants/{userId} | authorized revoke with policy revision, personal grants unsupported |
-| POST /search | app_id/collection_ids/query; scope requests only; authorized active-version lexical or permitted hybrid hits |
-| POST /answers | app_id/collection_ids/query/max_citations; grounded answer only from readable, processing-approved sources |
+| POST /search | scope/query with optional collection filters; authorized active-version lexical or permitted hybrid hits |
+| POST /answers | scope/query/max_citations/require_generation; see the answer contract for implemented response fields and target extensions |
 | GET /documents/{id}/citations/{chunkId} | reauthorized active-version source/asset preview; never raw object keys |
 | GET /ingestions/{jobId} | source owner or authorized manager sees safe progress |
 | GET /admin/model-usage | explicit operations permission, aggregated metering without private content |
@@ -77,7 +79,9 @@ POST registration is CLEAN-only: do not create WAITING_SCAN documents in this MV
 
 Search hit/citation fields: document_id, version_id, chunk_id, page (nullable for Markdown), section_path, element_ids, bbox (nullable), source_url at the protected citation route; search adds authorized excerpt/score. `max_citations` must be bounded by the P7 configuration contract. No unbounded request/parse/context limits may be left to caller control; numerical limits must be fixed in owning phase plan before coding.
 
-Answer response: answer, grounded, citations, model_profile, usage with prompt_tokens/completion_tokens when generation occurred. If no accessible grounding, answer is empty and grounded false. Search-only fallback returns readable citations with answer empty, grounded false, model_profile null and no fabricated usage. Personal queries use local FTS and this fallback when no approved local model exists; no hosted query embedding. Never suggest a generated answer occurred when it did not.
+The [answer contract](answers.md) owns answer serialization and abstention outcomes; never imply generation occurred for search-only results. Existing APP/PERSONAL endpoints retain their selected-role/owner boundaries. The new chat path adds `AGENT` multi-source retrieval: the server resolves all current DB memberships and owner-only PERSONAL sources, and accepts only the question in the turn request. Neither clients nor models can supply role authority or choose a model/provider/profile. APP and PERSONAL support bounded FTS + Embedding fusion when authorized and qualified; otherwise preserve authorized FTS. Hosted PERSONAL source/query processing requires the independent audited approval in [authorization](authorization.md#model-processing-policy), not merely an active slot.
+
+Chat persistence stores owner-only historical message snapshots with source provenance. Ordinary source revocation leaves those snapshots readable only by their conversation owner; current original/citation routes still enforce source READ, and every new generation context reauthorizes source-derived history. See [historical transcript policy](authorization.md#agent-source-selection-and-historical-transcripts). The [owner conversation API](../api/capability-routes.md#owner-conversations) persists turns. Selected-scope answers remain stateless.
 
 ## App publication and indexing
 
@@ -137,8 +141,9 @@ unavailable. Answers retain the existing scoped SEARCH_ONLY fallback when
 generation is optional; with accessible evidence and `require_generation=true`,
 unavailable generation returns 503 `MODEL_UNAVAILABLE`. No evidence remains
 NO_EVIDENCE without a model call. Policy denial remains distinct from model
-unavailability. Personal content **and questions** remain prohibited from hosted
-processing regardless of which model is active.
+unavailability. Slot activation never approves PERSONAL egress: source and query
+processing independently require the [model-processing policy](authorization.md#model-processing-policy).
+Optional migrations 0008–0010 implement audited PERSONAL and per-source AGENT processing. Enable them through the [deployment guide](../../guides/knowledge/models.md).
 
 Startup configuration may declare candidates and adapter/secret references only;
 it cannot override an `ACTIVE` database pointer or auto-promote candidates. Raw
@@ -189,4 +194,4 @@ approval and future lifecycle routes remain separate work.
 
 Configured generation/embedding profiles only; no caller keys, provider URLs or credential refs. Gateway independently verifies processing policy, current authority and user/app/installation quotas before every external operation. Reserve estimated spend before dispatch, settle idempotently with actual/estimated usage after response. Unknown provider outcome retains conservative reservation for bounded reconciliation; retries cannot release all reserved spend or double-settle one successful request. Budget/policy outage fails closed. Kill switch keeps authorized FTS available.
 
-Usage stores operation/model/actor/app/tokens/estimated cost/outcome/latency, never prompt bodies/source bytes/keys. Provider/data-class approvals, maximum cost/token limits, retry bounds and uncertainty reconciliation schedule are mandatory P6 plan inputs. They are not yet approved. Personal sources remain excluded from hosted profiles regardless of spend budget.
+Usage stores operation/model/actor/app/tokens/estimated cost/outcome/latency, never prompt bodies/source bytes/keys. Each real provider/data-class/purpose approval and operational qualification must be provisioned explicitly; this contract approves no provider. Existing conservative token/cost limits and uncertain-charge handling remain required. [Billing attribution](authorization.md#model-operation-billing-attribution) assigns PERSONAL-only calls to the library app and cross-app AGENT calls to the genuine Ready app configured by `AI_AGENT_BILLING_APP_ID`, plus the existing installation/user accounts. That billing app never substitutes for source authorization or classification.

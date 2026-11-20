@@ -16,8 +16,9 @@
 name: Release
 
 on:
-  push:
-    tags: ["v*"]
+  # Temporarily disabled: tag pushes must not package or publish a release.
+  # push:
+  #   tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
@@ -39,69 +40,81 @@ jobs:
   validate:
     name: validate
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
       - name: Validate the tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          if [[ "${GITHUB_TRIGGERING_ACTOR}" != "${GITHUB_REPOSITORY_OWNER}" ]]; then
+            echo "FAIL: only ${GITHUB_REPOSITORY_OWNER} may run the release workflow."
+            exit 1
+          fi
           if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
             echo "FAIL: ${TAG} is not a vX.Y.Z tag."
             exit 1
           fi
           gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null
-
-  verify:
-    name: verify
-    needs: validate
-    permissions:
-      contents: read
-    uses: ./.github/workflows/ci.yml
-    with:
-      ref: ${{ github.event.inputs.tag || github.ref }}
+          git rev-parse -q --verify "refs/tags/${TAG}^{commit}" >/dev/null || {
+            echo "FAIL: ${TAG} is not present in the checkout."
+            exit 1
+          }
+          if [ "$(git cat-file -t "refs/tags/${TAG}")" != "tag" ]; then
+            echo "::warning::${TAG} is a lightweight tag; prefer an annotated tag."
+          fi
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "refs/tags/${TAG}" origin/main || {
+            echo "FAIL: ${TAG} is not an ancestor of main; refusing to release unreviewed history."
+            exit 1
+          }
+          sha="$(git rev-list -n 1 "refs/tags/${TAG}^{commit}")"
+          runs="$(gh run list --workflow ci.yml --commit "${sha}" --status success --json databaseId -q length)"
+          if [ "${runs}" -lt 1 ]; then
+            echo "FAIL: ${TAG} points at ${sha}, which has no successful CI run."
+            exit 1
+          fi
 
   package:
     name: package
-    needs: verify
+    needs: validate
     runs-on: ubuntu-latest
     permissions:
-      contents: read
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.TAG }}
+
       - name: Resolve the version
         id: version
         run: |
           version="${TAG#v}"
           echo "VERSION=${version}" >> "${GITHUB_ENV}"
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
       - name: Package the source tree
         run: scripts/package_release.sh "${VERSION}"
-      - name: Inspect the archive
-        run: |
-          set -euo pipefail
-          archive="dist/dxos-open-core-${VERSION}.tar.gz"
-          test -f "${archive}"
-          listing="$(tar -tzf "${archive}")"
-          status=0
-          for forbidden in "/.agents/" "/AGENTS.md" "/AGENTS.local.md" "/CLAUDE.md" "/.scratch/" "/docs/_internal/"; do
-            if grep -Fq "${forbidden}" <<<"${listing}"; then
-              echo "FAIL: ${archive} contains ${forbidden}"
-              status=1
-            fi
-          done
-          exit "${status}"
+
+      - name: Verify the archive
+        run: scripts/release/verify-archive.sh "dist/dxos-open-core-${VERSION}.tar.gz"
+
       - name: Generate a CycloneDX SBOM
-        uses: anchore/sbom-action@fffec3d851af758d56fee099cf3fbf8aa8779843 # v0.24.3
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           path: .
           format: cyclonedx-json
           output-file: dist/opendx-os-${{ steps.version.outputs.version }}.cdx.json
           upload-artifact: false
           upload-release-assets: false
+
       - name: Write SHA256SUMS
         run: |
           set -euo pipefail
@@ -109,14 +122,16 @@ jobs:
           sha256sum "dxos-open-core-${VERSION}.tar.gz" \
             "opendx-os-${VERSION}.cdx.json" > SHA256SUMS
           sha256sum -c SHA256SUMS
+
       - name: Attest the tarball and SBOM
-        uses: actions/attest-build-provenance@v4 # v4.2.2
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             dist/dxos-open-core-${{ steps.version.outputs.version }}.tar.gz
             dist/opendx-os-${{ steps.version.outputs.version }}.cdx.json
+
       - name: Upload the release assets
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-assets
           path: dist/*
@@ -130,10 +145,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-assets
           path: dist
+
       - name: Create or update the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -142,7 +158,9 @@ jobs:
           cd dist
           sha256sum -c SHA256SUMS
           cd ..
-          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+          release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            -q ".[] | select(.tag_name==\"${TAG}\") | .id" | head -n1)"
+          if [ -n "${release_id}" ]; then
             # A Release Drafter draft already exists for this tag; refresh its
             # assets. This step never changes the draft/published state.
             gh release upload "${TAG}" dist/* --clobber --repo "${GITHUB_REPOSITORY}"

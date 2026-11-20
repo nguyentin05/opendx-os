@@ -18,7 +18,7 @@ type Policy struct {
 }
 
 func (p *Policy) Check(ctx context.Context, actor *auth.Identity, req Operation) (Approval, error) {
-	if p == nil || !p.Enabled || p.Authority == nil || actor == nil || actor.UserID == "" || req.Key == "" || len(req.Key) > 200 || req.ProfileID == "" || req.ProfileRevision < 1 || (req.ScopeKind != "PERSONAL" && req.ScopeKind != "APP") || len(req.Sources) > 50 {
+	if p == nil || !p.Enabled || p.Authority == nil || actor == nil || actor.UserID == "" || req.Key == "" || len(req.Key) > 200 || req.ProfileID == "" || req.ProfileRevision < 1 || !req.validScope() {
 		return Approval{}, ErrPolicy
 	}
 	d, err := p.Authority.Current(ctx, actor, req)
@@ -32,8 +32,18 @@ func (p *Policy) Check(ctx context.Context, actor *auth.Identity, req Operation)
 	if profile.Execution != "LOCAL" && profile.Execution != "HOSTED" {
 		return Approval{}, ErrPolicy
 	}
-	if profile.Execution == "HOSTED" && (req.ScopeKind == "PERSONAL" || d.Personal || d.QueryClassification != "NON_PERSONAL" && d.QueryClassification != "APPROVED") {
+	if req.ScopeKind == "AGENT" && (!d.PersonalApproved || d.QueryClassification != "PERSONAL") {
 		return Approval{}, ErrPolicy
+	}
+	if profile.Execution == "HOSTED" {
+		personal := req.ScopeKind == "PERSONAL" || req.RequirePersonalQueryApproval || d.Personal || d.QueryClassification == "PERSONAL"
+		if personal {
+			if !d.PersonalApproved || (req.Purpose != "EMBED" && req.Purpose != "GENERATE") || d.QueryClassification != "PERSONAL" {
+				return Approval{}, ErrPolicy
+			}
+		} else if d.QueryClassification != "NON_PERSONAL" && d.QueryClassification != "APPROVED" {
+			return Approval{}, ErrPolicy
+		}
 	}
 	// The authority, never the request's QueryClassification, approves query egress.
 	raw, _ := json.Marshal(struct {
@@ -43,4 +53,22 @@ func (p *Policy) Check(ctx context.Context, actor *auth.Identity, req Operation)
 	}{actor, req, d})
 	hash := sha256.Sum256(raw)
 	return Approval{Profile: profile, PolicyRevision: d.PolicyRevision, Fingerprint: hex.EncodeToString(hash[:])}, nil
+}
+
+func (op Operation) validScope() bool {
+	switch op.ScopeKind {
+	case "APP", "PERSONAL":
+		if op.LLMSlotRevision != 0 || len(op.AgentSources) != 0 {
+			return false
+		}
+		if op.RequirePersonalQueryApproval {
+			return op.Purpose == "EMBED" && op.EmbeddingSlotRevision > 0 && len(op.Sources) == 0 && op.Lease == nil
+		}
+		return op.EmbeddingSlotRevision == 0 && len(op.Sources) <= 50
+	case "AGENT":
+		return op.Purpose == "GENERATE" && op.AppID != "" && op.LLMSlotRevision > 0 && op.Lease == nil && len(op.Sources) == 0 &&
+			op.EmbeddingSlotRevision == 0 && !op.RequirePersonalQueryApproval && len(op.AgentSources) > 0 && len(op.AgentSources) <= 50
+	default:
+		return false
+	}
 }
