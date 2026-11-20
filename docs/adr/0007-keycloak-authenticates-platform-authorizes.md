@@ -109,7 +109,8 @@ provide the endpoint the webhook calls.
    assigned to a person, and an operator cannot revoke their own
    `role_operator`. A new installation has no operator, so the account named by
    `BOOTSTRAP_OPERATOR_EMAIL` becomes one on its first sign-in, once, while
-   nobody holds the role.
+   nobody holds the role. The token must carry `email_verified: true`, and
+   users cannot edit their own email or name in Keycloak.
 
 ## Where `dxos-authz` sits
 

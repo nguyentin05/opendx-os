@@ -30,14 +30,18 @@ import (
 
 const alice = "22222222-2222-4222-8222-222222222222"
 
-// fakeAuthn accepts the token "good" as alice.
-type fakeAuthn struct{ name string }
+// fakeAuthn accepts the token "good" as alice, whose email is verified
+// unless unverified is set.
+type fakeAuthn struct {
+	name       string
+	unverified bool
+}
 
 func (f *fakeAuthn) Authenticate(_ context.Context, token string) (*auth.Principal, error) {
 	if token != "good" {
 		return nil, errors.New("bad token")
 	}
-	return &auth.Principal{Subject: alice, Email: "alice@example.test", Name: f.name}, nil
+	return &auth.Principal{Subject: alice, Email: "alice@example.test", Name: f.name, EmailVerified: !f.unverified}, nil
 }
 
 type fakeStore struct {
@@ -422,5 +426,13 @@ func TestFirstOperatorIsBootstrappedByEmail(t *testing.T) {
 	r.Administer(none, "")
 	if _, _ = call(t, Handler(r), "/api/auth/me", "good", ""); len(none.bootstrap) != 0 {
 		t.Fatal("without BOOTSTRAP_OPERATOR_EMAIL nobody is bootstrapped")
+	}
+	// A user who types the configured address as their own email gets a
+	// token with email_verified false.
+	unverified := &fakeDirectory{}
+	r = NewResolver(&fakeAuthn{name: "Alice", unverified: true}, &fakeStore{status: "ACTIVE"}, 0)
+	r.Administer(unverified, "alice@example.test")
+	if code, _ := call(t, Handler(r), "/api/auth/me", "good", ""); code != http.StatusOK || len(unverified.bootstrap) != 0 {
+		t.Fatalf("an unverified email must not be bootstrapped: %d %v", code, unverified.bootstrap)
 	}
 }
