@@ -49,11 +49,16 @@ is published; see [Releasing](docs/contribute/releasing.md).
   The `cap-ai` service itself still runs from the opt-in overlay.
 - Keycloak access tokens last one hour instead of five minutes, so the
   Workspace UI no longer signs users out every five minutes (#38).
+- Workspace UI: the access token is refreshed in memory before the access or
+  refresh-token window ends, so a long session keeps its open screens and typed
+  forms instead of signing out at expiry (#38).
 - CI runs `scripts/test-platform.sh`, which now also asserts the cap-hr and
   cap-work SQL contracts, on a fresh database (#15).
 
 ### Security
 
+- The Workspace UI keeps access and refresh tokens in memory only; neither is
+  written to `localStorage` or `sessionStorage` (#38).
 - `dxos-authz` bootstraps the platform operator only from a token whose
   `email_verified` claim is true.
 - The Keycloak realm lets only administrators edit a user's email and name,

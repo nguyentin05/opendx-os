@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 DX-OS Open-Core Contributors
+import { bearer } from '../../auth';
 export type Citation = { title: string; url: string; snippet?: string };
 export type Result = {
   status: string;
@@ -32,7 +33,7 @@ export class AgentClient {
     init: RequestInit = {},
   ): Promise<T> {
     const headers = new Headers(init.headers);
-    headers.set("Authorization", "Bearer " + this.token);
+    headers.set("Authorization", bearer(this.token));
     if (init.body) headers.set("Content-Type", "application/json");
     const response = await fetch(path, { ...init, headers, signal });
     if (!response.ok) throw new AgentError(response.status);

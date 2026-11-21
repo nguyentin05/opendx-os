@@ -3,6 +3,7 @@
 
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { ChangeEvent, ComponentProps } from 'react';
+import { bearer } from '../../auth';
 import type { AppRoleContext } from '../../core/session-context';
 import { executeGraphQL, GraphQLRequestError, isRecord, isRecordID } from './graphql';
 
@@ -42,7 +43,7 @@ export function FileField(props: FileFieldProps) {
 }
 
 function fileHeaders({ token, role }: AppRoleContext) {
-  return { Authorization: 'Bearer ' + token, 'X-Hasura-Role': role };
+  return { Authorization: bearer(token), 'X-Hasura-Role': role };
 }
 
 function ScopedFileField({ appID, context, value, onChange, onUploadPendingChange, onInfected, input, label }: FileFieldProps) {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 DX-OS Open-Core Contributors
 
+import { bearer } from '../../auth';
 import type { AppRoleContext } from '../../core/session-context';
 import type { InstalledTable } from '../../types/registry';
 import { allowedFields, canEditRecord, isAttachmentColumn, isFileFormField, isParentColumn, tableGraphQLName, writableFormFields } from './registry';
@@ -82,7 +83,7 @@ export async function executeGraphQL<T>(
       method: 'POST',
       signal,
       headers: {
-        Authorization: 'Bearer ' + ctx.token,
+        Authorization: bearer(ctx.token),
         'X-Hasura-Role': ctx.role,
         'Content-Type': 'application/json',
       },
