@@ -245,3 +245,70 @@ it('evicts revoked work while an unaffected grant’s later page is still pendin
   finishBeta(workResponse([row('Next authorized item', 'HIGH')]));
   await screen.findByText('Next authorized item');
 });
+
+function inboxApp(): InstalledApp {
+  return {
+    ...app('alpha', 'Alpha'),
+    tables: [{
+      name: 'domain.requests',
+      columns: [{ name: 'title', type: 'text', nullable: false }],
+      access: {
+        select: [{ role: 'role_alpha', scope: 'own', columns: ['id', 'title', 'status', 'updated_at'] }],
+        insert: [],
+      },
+      ui: { listColumns: ['title'], formFields: [], actions: ['submit'] },
+      stateMachine: {
+        initial: 'DRAFT', editableStates: ['DRAFT'], terminalStates: ['SUBMITTED'],
+        commands: [{ name: 'submit', from: ['DRAFT'], to: 'SUBMITTED', allowedRoles: ['role_alpha'] }],
+      },
+    }],
+  };
+}
+
+function inboxSession(): Session {
+  const alpha = inboxApp();
+  return { token: 'token', user: { ...session.user, roles: alpha.roles }, apps: [alpha] };
+}
+
+function inboxRow(id: string) {
+  return { id, title: 'Yêu cầu ' + id, status: 'DRAFT', updated_at: '2026-11-20T10:00:00+00:00' };
+}
+
+function inboxAwareFetch(handler: (query: string) => Promise<Response> | Response) {
+  return async (_url: string, init: RequestInit) => {
+    const { query } = JSON.parse(String(init.body)) as { query: string };
+    if (query.includes('cap_work_work_items')) return Response.json({ data: { cap_work_work_items: [] } });
+    return handler(query);
+  };
+}
+
+it('shows an empty inbox when no record waits for the user', async () => {
+  window.history.replaceState(null, '', '/my-work');
+  vi.stubGlobal('fetch', inboxAwareFetch(() => Response.json({ data: { domain_requests: [] } })));
+  render(<App initialSession={inboxSession()} />);
+  expect(await screen.findByText('Không có hồ sơ nào đang chờ bạn xử lý.')).toBeTruthy();
+});
+
+it('shows the inbox loading state while records are fetched', async () => {
+  window.history.replaceState(null, '', '/my-work');
+  vi.stubGlobal('fetch', inboxAwareFetch(() => new Promise<Response>(() => {})));
+  render(<App initialSession={inboxSession()} />);
+  expect(await screen.findByText('Đang tải hồ sơ chờ xử lý…')).toBeTruthy();
+});
+
+it('reports a partial inbox and retries it', async () => {
+  window.history.replaceState(null, '', '/my-work');
+  const id = 'b21e978e-4a77-4d62-85bb-72270ddfbf79';
+  let fail = true;
+  vi.stubGlobal('fetch', inboxAwareFetch(() => fail
+    ? new Response('', { status: 503 })
+    : Response.json({ data: { domain_requests: [inboxRow(id)] } })));
+  render(<App initialSession={inboxSession()} />);
+  expect(await screen.findByText(/Một số hồ sơ chưa tải được/)).toBeTruthy();
+
+  fail = false;
+  fireEvent.click(screen.getByRole('button', { name: 'Thử lại' }));
+
+  expect(await screen.findByRole('link', { name: 'Yêu cầu ' + id })).toBeTruthy();
+  expect(screen.queryByText(/Một số hồ sơ chưa tải được/)).toBeNull();
+});

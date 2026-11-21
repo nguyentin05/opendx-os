@@ -3,7 +3,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { Session } from '../../auth';
+import { commandLabel, stateLabel } from '../../core/labels';
+import { useWorkspaceRoute } from '../../core/routes';
 import { WorkspaceLink } from '../../shell/AppShell';
+import { loadInbox } from './inbox';
+import type { InboxItem, InboxResult } from './inbox';
 import { targetURL, workTarget } from './recent';
 import { loadWorkPage, mergeWorkItems, retainAuthorizedWork, workGrants, workItemKey } from './work-items';
 import type { WorkItem } from './work-items';
@@ -46,6 +50,32 @@ export function WorkItemList({ session, onOpenWorkItem, items }: MyWorkProps & {
   );
 }
 
+export function InboxList({ session, items }: { session: Session; items: InboxItem[] }) {
+  const { navigate } = useWorkspaceRoute();
+  return (
+    <ul className="workspace-work-list workspace-inbox" role="list">
+      {items.map(item => {
+        const app = session.apps.find(app => app.app_id === item.appID);
+        const href = targetURL(session, { appID: item.appID, role: item.role, tableName: item.table, recordID: item.recordID });
+        return (
+          <li key={item.appID + ':' + item.table + ':' + item.recordID}>
+            {href ? <WorkspaceLink href={href} onNavigate={navigate}>{item.title}</WorkspaceLink> : <span>{item.title}</span>}
+            <div className="workspace-work-meta">
+              <span>{app?.display_name}</span>
+              <span className="workspace-work-status">{stateLabel(item.status)}</span>
+              <span className="workspace-work-status">{item.commands.map(commandLabel).join(', ')}</span>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+export function InboxAvailability({ partial }: { partial: boolean }) {
+  return partial ? <p role="status">Một số hồ sơ chưa tải được. Hãy thử lại.</p> : null;
+}
+
 export function WorkAvailability({ partial, itemCount }: { partial: boolean; itemCount: number }) {
   return partial ? (
     <p role="status">
@@ -64,10 +94,28 @@ export function MyWork({ session, onOpenWorkItem }: MyWorkProps) {
   const [priorityFilter, setPriorityFilter] = useState('');
   const [request, setRequest] = useState<PageRequest>();
   const [loaded, setLoaded] = useState<LoadedWork>();
+  const [inbox, setInbox] = useState<{ session: Session; data: InboxResult }>();
+  const [inboxLoading, setInboxLoading] = useState(false);
+  const [inboxRetry, setInboxRetry] = useState(0);
+  const inboxData = inbox?.session === session ? inbox.data : undefined;
   const cursors = request?.session === session ? request.cursors : firstPage;
   const current = loaded?.session === session ? loaded : undefined;
   const result = current?.data;
   const loading = apps.length > 0 && current?.cursors !== cursors;
+
+  useEffect(() => {
+    if (!session.apps.length) return;
+    const controller = new AbortController();
+    setInboxLoading(true);
+    void loadInbox(session, controller.signal).then(data => {
+      if (!controller.signal.aborted) setInbox({ session, data });
+    }).catch(() => {
+      if (!controller.signal.aborted) setInbox({ session, data: { items: [], partial: true } });
+    }).finally(() => {
+      if (!controller.signal.aborted) setInboxLoading(false);
+    });
+    return () => controller.abort();
+  }, [session, inboxRetry]);
 
   useEffect(() => {
     if (!apps.length) return;
@@ -114,6 +162,18 @@ export function MyWork({ session, onOpenWorkItem }: MyWorkProps) {
   return (
     <>
       <h1>My Work</h1>
+      <section className="workspace-panel" aria-labelledby="inbox-heading">
+        <h2 id="inbox-heading">Chờ tôi xử lý</h2>
+        {inboxLoading && <p role="status">Đang tải hồ sơ chờ xử lý…</p>}
+        <InboxAvailability partial={Boolean(inboxData?.partial)} />
+        {inboxData && inboxData.items.length > 0 && <InboxList session={session} items={inboxData.items} />}
+        {!inboxLoading && inboxData && !inboxData.items.length && !inboxData.partial && (
+          <p>Không có hồ sơ nào đang chờ bạn xử lý.</p>
+        )}
+        {inboxData?.partial && (
+          <button onClick={() => setInboxRetry(value => value + 1)}>Thử lại</button>
+        )}
+      </section>
       {apps.length > 0 && (
         <div className="workspace-table-controls">
           <label>

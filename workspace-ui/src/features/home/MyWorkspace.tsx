@@ -6,7 +6,9 @@ import type { Session } from '../../auth';
 import { useWorkspaceRoute } from '../../core/routes';
 import { resolveAppRole } from '../../core/session-context';
 import { WorkspaceLink } from '../../shell/AppShell';
-import { WorkAvailability, WorkItemList } from './MyWork';
+import { InboxAvailability, InboxList, WorkAvailability, WorkItemList } from './MyWork';
+import { loadInbox } from './inbox';
+import type { InboxResult } from './inbox';
 import { targetURL } from './recent';
 import type { RecentTarget } from './recent';
 import { loadWorkPreview, workGrants } from './work-items';
@@ -26,13 +28,31 @@ export function MyWorkspace({ session, onOpenApp, onOpenWorkItem, recent = [], o
   const { navigate } = useWorkspaceRoute();
   const hasWork = useMemo(() => workGrants(session).length > 0, [session]);
   const [loaded, setLoaded] = useState<{ session: Session; data: Preview }>();
+  const [inbox, setInbox] = useState<{ session: Session; data: InboxResult }>();
+  const [inboxLoading, setInboxLoading] = useState(false);
+  const [inboxRetry, setInboxRetry] = useState(0);
   const result = loaded?.session === session ? loaded.data : undefined;
+  const inboxData = inbox?.session === session ? inbox.data : undefined;
   const apps = session.apps.filter(app => resolveAppRole(session, app.app_id));
   const entries = recent.flatMap(target => {
     const href = targetURL(session, target);
     const app = apps.find(app => app.app_id === target.appID);
     return href && app ? [{ target, href, app }] : [];
   });
+
+  useEffect(() => {
+    if (!session.apps.length) return;
+    const controller = new AbortController();
+    setInboxLoading(true);
+    void loadInbox(session, controller.signal, 3).then(data => {
+      if (!controller.signal.aborted) setInbox({ session, data });
+    }).catch(() => {
+      if (!controller.signal.aborted) setInbox({ session, data: { items: [], partial: true } });
+    }).finally(() => {
+      if (!controller.signal.aborted) setInboxLoading(false);
+    });
+    return () => controller.abort();
+  }, [session, inboxRetry]);
 
   useEffect(() => {
     if (!hasWork) return;
@@ -49,6 +69,20 @@ export function MyWorkspace({ session, onOpenApp, onOpenWorkItem, recent = [], o
     <>
       <h1>My Workspace</h1>
       <p>Welcome, {session.user.display_name}.</p>
+      <section className="workspace-panel" aria-labelledby="workspace-inbox">
+        <h2 id="workspace-inbox">Chờ tôi xử lý</h2>
+        {inboxLoading && <p role="status">Đang tải hồ sơ chờ xử lý…</p>}
+        <InboxAvailability partial={Boolean(inboxData?.partial)} />
+        {inboxData && inboxData.items.length > 0 && <InboxList session={session} items={inboxData.items} />}
+        {!inboxLoading && inboxData && !inboxData.items.length && !inboxData.partial && (
+          <p>Không có hồ sơ nào đang chờ bạn xử lý.</p>
+        )}
+        {inboxData?.partial && (
+          <button onClick={() => setInboxRetry(value => value + 1)}>Thử lại</button>
+        )}
+        <WorkspaceLink href="/my-work" onNavigate={navigate}>Xem tất cả trong Việc của tôi</WorkspaceLink>
+      </section>
+
       <section className="workspace-panel" aria-labelledby="workspace-attention">
         <h2 id="workspace-attention">Needs your attention</h2>
         {hasWork && !result && <p role="status">Loading work items…</p>}
