@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 DX-OS Open-Core Contributors
+import { bearer } from '../../auth';
 export interface Registration { document_id:string;version_id:string;job_id:string;revision:number;status:string }
 export interface DocumentSummary {document_id:string;title:string;revision:number;desired_version_status?:string;active_version_status?:string;warnings:string[]}
 export interface DocumentPage {documents:DocumentSummary[];next_cursor?:string}
@@ -21,7 +22,7 @@ export class KnowledgeClient {
   const { signal, token, role } = this.context;
   signal.throwIfAborted();
   const response = await fetch(path, {
-   ...init, signal, headers: { Authorization: `Bearer ${token}`, 'X-Hasura-Role': role, ...init.headers },
+   ...init, signal, headers: { Authorization: bearer(token), 'X-Hasura-Role': role, ...init.headers },
   });
   signal.throwIfAborted();
   if (!response.ok) {
@@ -44,7 +45,7 @@ export class KnowledgeClient {
  search(query:string):Promise<SearchResult>{return this.request('/api/cap/ai/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scope:{kind:'PERSONAL'},query,limit:10,retrieval:'LEXICAL'})})}
  remove(doc:DocumentSummary):Promise<void>{return this.request('/api/cap/ai/documents/'+encodeURIComponent(doc.document_id),{method:'DELETE',headers:{'Idempotency-Key':this.key('delete:'+doc.document_id+':'+doc.revision),'If-Match':`"${doc.revision}"`}})}
  citation(hit:SearchHit):Promise<SearchHit>{return this.request('/api/cap/ai/documents/'+encodeURIComponent(hit.document_id)+'/citations/'+encodeURIComponent(hit.chunk_id)+'?version_id='+encodeURIComponent(hit.version_id))}
- async original(doc:DocumentSummary):Promise<Blob>{const response=await fetch('/api/cap/ai/documents/'+encodeURIComponent(doc.document_id)+'/original',{signal:this.context.signal,headers:{Authorization:`Bearer ${this.context.token}`,'X-Hasura-Role':this.context.role}});if(!response.ok)throw new Error('Không tải được tệp gốc.');const blob=await response.blob();if(this.context.signal.aborted)throw new DOMException('Context changed','AbortError');return blob}
+ async original(doc:DocumentSummary):Promise<Blob>{const response=await fetch('/api/cap/ai/documents/'+encodeURIComponent(doc.document_id)+'/original',{signal:this.context.signal,headers:{Authorization:bearer(this.context.token),'X-Hasura-Role':this.context.role}});if(!response.ok)throw new Error('Không tải được tệp gốc.');const blob=await response.blob();if(this.context.signal.aborted)throw new DOMException('Context changed','AbortError');return blob}
  appSources():Promise<{sources:AppSource[]}>{return this.request('/api/cap/ai/app-knowledge?app_id='+encodeURIComponent(this.context.appID))}
  searchApp(query:string):Promise<SearchResult>{return this.request('/api/cap/ai/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scope:{kind:'APP',app_id:this.context.appID},query,limit:10,retrieval:'LEXICAL'})})}
  answerApp(query:string):Promise<AnswerResponse>{return this.request('/api/cap/ai/answers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scope:{kind:'APP',app_id:this.context.appID},query,max_citations:8})})}

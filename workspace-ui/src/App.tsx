@@ -2,7 +2,7 @@
 // Copyright 2026 DX-OS Open-Core Contributors
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { finishSignIn, signIn } from './auth';
+import { endSession, finishSignIn, registerSession, signIn, watchSession } from './auth';
 import type { Session } from './auth';
 import { toTableURL, useWorkspaceRoute } from './core/routes';
 import type { WorkspaceRoute } from './core/routes';
@@ -54,15 +54,20 @@ function WorkspaceRoot({ initialSession }: { initialSession?: Session }) {
     callbackStarted.current = true;
 
     void finishSignIn().then(value => {
-      if (value) setCredential(value);
+      if (!value) return;
+      registerSession(value);
+      setCredential({ token: value.token, expires: value.expires });
     }).catch(() => setMessage('Đăng nhập thất bại. Hãy thử lại.'));
   }, [initialSession]);
 
+  const signInToken = credential?.token;
   useEffect(() => {
-    if (!credential || !Number.isFinite(credential.expires)) return;
-    const timer = setTimeout(() => setCredential(null), Math.max(0, credential.expires - Date.now()));
-    return () => clearTimeout(timer);
-  }, [credential]);
+    if (!signInToken) return;
+    return watchSession(signInToken, () => {
+      setCredential(null);
+      setMessage('Phiên đăng nhập đã kết thúc. Hãy đăng nhập lại.');
+    });
+  }, [signInToken]);
 
   if (credential) {
     return (
@@ -71,6 +76,7 @@ function WorkspaceRoot({ initialSession }: { initialSession?: Session }) {
         token={credential.token}
         initialSession={initialSession}
         onSignOut={() => {
+          endSession(credential.token);
           setCredential(null);
           setMessage('');
         }}

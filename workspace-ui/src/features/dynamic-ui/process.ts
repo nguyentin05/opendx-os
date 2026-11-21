@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 DX-OS Open-Core Contributors
 
+import { bearer } from '../../auth';
 import { isRecord } from './graphql';
 import type { RequestContext } from './graphql';
 
@@ -29,7 +30,7 @@ export async function executeCommand(
       method: 'POST',
       signal,
       headers: {
-        'Authorization': 'Bearer ' + ctx.token,
+        'Authorization': bearer(ctx.token),
         'Content-Type': 'application/json',
         'X-Hasura-Role': ctx.role,
         'Idempotency-Key': idempotencyKey,
