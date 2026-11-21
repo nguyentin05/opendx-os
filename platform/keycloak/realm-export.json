@@ -39,6 +39,95 @@
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "+"
       }
+    },
+    {
+      "clientId": "dxos-rag-worker",
+      "enabled": true,
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "secret": "${RAG_WORKER_CLIENT_SECRET}",
+      "protocolMappers": [
+        {
+          "name": "dxos-runtime-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "dxos-runtime",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "dxos-file-service",
+      "enabled": true,
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "secret": "${RAG_FILE_CLIENT_SECRET}",
+      "protocolMappers": [
+        {
+          "name": "dxos-runtime-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "dxos-runtime",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "dxos-rag-dispatcher",
+      "enabled": true,
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "secret": "${RAG_DISPATCHER_CLIENT_SECRET}",
+      "protocolMappers": [
+        {
+          "name": "dxos-runtime-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "dxos-runtime",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": "33333333-3333-4333-8333-000000000001",
+      "username": "service-account-dxos-rag-worker",
+      "enabled": true,
+      "emailVerified": true,
+      "serviceAccountClientId": "dxos-rag-worker"
+    },
+    {
+      "id": "33333333-3333-4333-8333-000000000002",
+      "username": "service-account-dxos-file-service",
+      "enabled": true,
+      "emailVerified": true,
+      "serviceAccountClientId": "dxos-file-service"
+    },
+    {
+      "id": "33333333-3333-4333-8333-000000000003",
+      "username": "service-account-dxos-rag-dispatcher",
+      "enabled": true,
+      "emailVerified": true,
+      "serviceAccountClientId": "dxos-rag-dispatcher"
     }
   ],
   "loginWithEmailAllowed": true,
