@@ -24,7 +24,7 @@ func TestDispatcherUsesBoundedPrivateNotification(t *testing.T) {
 		w.WriteHeader(204)
 	}))
 	defer server.Close()
-	d := Dispatcher{Endpoint: server.URL, Token: "test-service", Client: server.Client()}
+	d := Dispatcher{Endpoint: server.URL, Token: StaticToken("test-service"), Client: server.Client()}
 	n := Notification{AppID: "library", Generation: 3, SpecDigest: "digest", EventID: "event"}
 	if e := d.Deliver(context.Background(), n); e != nil || calls != 1 {
 		t.Fatal(e, calls)

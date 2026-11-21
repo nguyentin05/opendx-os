@@ -18,10 +18,14 @@ import (
 func main() {
 	once := flag.Bool("once", false, "deliver at most one durable notification")
 	flag.Parse()
-	for _, key := range []string{"DATABASE_URL", "RAG_INTERNAL_AI_URL", "RAG_DISPATCHER_BEARER_TOKEN"} {
+	for _, key := range []string{"DATABASE_URL", "RAG_INTERNAL_AI_URL"} {
 		if os.Getenv(key) == "" {
 			log.Fatal("missing package dispatcher configuration")
 		}
+	}
+	serviceToken, err := knowledge.TokenGetterFrom(os.Getenv("RAG_DISPATCHER_BEARER_TOKEN"), os.Getenv("OIDC_TOKEN_URL"), os.Getenv("RAG_DISPATCHER_CLIENT_ID"), os.Getenv("RAG_DISPATCHER_CLIENT_SECRET"))
+	if err != nil {
+		log.Fatal("invalid package dispatcher token configuration")
 	}
 	if os.Getenv("RAG_SOURCE_QUALIFIED") != "true" || os.Getenv("RAG_METADATA_QUALIFIED") != "true" || os.Getenv("RAG_PARSER_QUALIFIED") != "true" {
 		log.Fatal("package dispatcher requires qualified predecessor slices")
@@ -33,7 +37,7 @@ func main() {
 	defer db.Close()
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer cancel()
-	d := knowledge.Dispatcher{DB: db, Endpoint: os.Getenv("RAG_INTERNAL_AI_URL"), Token: os.Getenv("RAG_DISPATCHER_BEARER_TOKEN")}
+	d := knowledge.Dispatcher{DB: db, Endpoint: os.Getenv("RAG_INTERNAL_AI_URL"), Token: serviceToken}
 	if *once {
 		if _, e := d.Once(ctx); e != nil {
 			log.Fatal("package notification delivery failed")

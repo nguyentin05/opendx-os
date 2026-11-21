@@ -44,7 +44,7 @@ func TestDispatcherRestartUsesCurrentAuthority(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	dispatcher := Dispatcher{DB: db, Endpoint: server.URL, Token: "service"}
+	dispatcher := Dispatcher{DB: db, Endpoint: server.URL, Token: StaticToken("service")}
 	if _, e = dispatcher.Once(context.Background()); e == nil {
 		t.Fatal("failed delivery did not defer")
 	}
@@ -54,7 +54,7 @@ func TestDispatcherRestartUsesCurrentAuthority(t *testing.T) {
 		t.Fatal("failed delivery lost", state)
 	}
 	db.Exec(`UPDATE core.outbox_events SET next_attempt_at=now()`)
-	dispatcher = Dispatcher{DB: db, Endpoint: server.URL, Token: "service"}
+	dispatcher = Dispatcher{DB: db, Endpoint: server.URL, Token: StaticToken("service")}
 	if _, e = dispatcher.Once(context.Background()); e != nil {
 		t.Fatal(e)
 	}

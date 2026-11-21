@@ -72,26 +72,31 @@ func (s *Service) delegatedSource(ctx context.Context, g knowledge.SourceGrant) 
 }
 
 type DelegationClient struct {
-	endpoint, bearer string
-	client           *http.Client
+	endpoint string
+	token    auth.TokenGetter
+	client   *http.Client
 }
 
-func NewDelegationClient(endpoint, bearer string) (*DelegationClient, error) {
+func NewDelegationClient(endpoint string, token auth.TokenGetter) (*DelegationClient, error) {
 	u, err := url.Parse(endpoint)
-	if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") || u.RawQuery != "" || u.Fragment != "" || strings.TrimSpace(bearer) == "" || strings.ContainsAny(bearer, "\r\n") {
+	if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") || u.RawQuery != "" || u.Fragment != "" || token == nil {
 		return nil, errors.New("invalid internal validator configuration")
 	}
-	return &DelegationClient{endpoint: strings.TrimRight(endpoint, "/") + "/internal/v1/source-delegations/validate", bearer: bearer, client: &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+	return &DelegationClient{endpoint: strings.TrimRight(endpoint, "/") + "/internal/v1/source-delegations/validate", token: token, client: &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 
 func (c *DelegationClient) ValidateDelegation(ctx context.Context, token, workerID, sourceID string) (knowledge.SourceGrant, error) {
 	var out knowledge.SourceGrant
+	bearer, err := c.token(ctx)
+	if err != nil || strings.TrimSpace(bearer) == "" {
+		return out, knowledge.ErrAuthorityUnavailable
+	}
 	body, _ := json.Marshal(map[string]string{"token": token, "worker_id": workerID, "source_id": sourceID})
 	req, err := http.NewRequestWithContext(ctx, "POST", c.endpoint, bytes.NewReader(body))
 	if err != nil {
 		return out, knowledge.ErrAuthorityUnavailable
 	}
-	req.Header.Set("Authorization", "Bearer "+c.bearer)
+	req.Header.Set("Authorization", "Bearer "+bearer)
 	req.Header.Set("Content-Type", "application/json")
 	response, err := c.client.Do(req)
 	if err != nil {
