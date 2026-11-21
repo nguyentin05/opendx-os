@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/docir"
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
 )
@@ -21,11 +22,13 @@ type ParseAdapter interface {
 	Parse(context.Context, docir.ParseRequest, io.Reader) (docir.Result, error)
 }
 type Worker struct {
-	Store                                *Store
-	Parser                               ParseAdapter
-	FileEndpoint, ServiceToken, WorkerID string
-	PackageEndpoint                      string
-	Client                               *http.Client
+	Store           *Store
+	Parser          ParseAdapter
+	FileEndpoint    string
+	ServiceToken    auth.TokenGetter
+	WorkerID        string
+	PackageEndpoint string
+	Client          *http.Client
 }
 
 func (w *Worker) Once(ctx context.Context) error {
@@ -124,14 +127,18 @@ func (w *Worker) process(ctx context.Context, lease Lease) error {
 		endpoint, route = w.PackageEndpoint, "/internal/v1/package-sources/"
 	}
 	u, err := url.Parse(endpoint)
-	if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") || u.RawQuery != "" || u.Fragment != "" || w.ServiceToken == "" || !idPattern.MatchString(source.ID) {
+	if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") || u.RawQuery != "" || u.Fragment != "" || w.ServiceToken == nil || !idPattern.MatchString(source.ID) {
 		return ErrInvalid
+	}
+	bearer, tokenErr := w.ServiceToken(ctx)
+	if tokenErr != nil || strings.TrimSpace(bearer) == "" {
+		return ErrAuthorityUnavailable
 	}
 	request, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(endpoint, "/")+route+source.ID, nil)
 	if err != nil {
 		return err
 	}
-	request.Header.Set("Authorization", "Bearer "+w.ServiceToken)
+	request.Header.Set("Authorization", "Bearer "+bearer)
 	request.Header.Set("X-Source-Delegation", token)
 	client := w.Client
 	if client == nil {
@@ -174,7 +181,7 @@ func (w *Worker) process(ctx context.Context, lease Lease) error {
 }
 
 func (w *Worker) Run(ctx context.Context) error {
-	if !idPattern.MatchString(w.WorkerID) || w.Parser == nil || w.Store == nil || w.FileEndpoint == "" || w.ServiceToken == "" {
+	if !idPattern.MatchString(w.WorkerID) || w.Parser == nil || w.Store == nil || w.FileEndpoint == "" || w.ServiceToken == nil {
 		return ErrInvalid
 	}
 	for range WorkerConcurrency {

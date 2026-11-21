@@ -68,7 +68,7 @@ func TestPersonalMarkdownOwnerFlow(t *testing.T) {
 	})
 	source := httptest.NewServer(s.DelegatedHandler(verifier, workerID, workerStore))
 	defer source.Close()
-	worker := knowledge.Worker{Store: workerStore, Parser: docir.Parser{}, WorkerID: workerID, ServiceToken: "service-fixture", FileEndpoint: source.URL}
+	worker := knowledge.Worker{Store: workerStore, Parser: docir.Parser{}, WorkerID: workerID, ServiceToken: auth.StaticToken("service-fixture"), FileEndpoint: source.URL}
 	if e = worker.Once(ctx); e != nil {
 		t.Fatal(e)
 	}

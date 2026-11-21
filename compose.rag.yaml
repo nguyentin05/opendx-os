@@ -32,7 +32,10 @@ services:
       RAG_SOURCE_QUALIFIED: ${RAG_SOURCE_QUALIFIED:-false}
       RAG_INTERNAL_LISTEN: ":8181"
       RAG_INTERNAL_AI_URL: http://cap-ai:8184
-      RAG_INTERNAL_BEARER_TOKEN: ${RAG_FILE_BEARER_TOKEN:?set the File Service delegation token}
+      OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/token}
+      RAG_FILE_CLIENT_ID: ${RAG_FILE_CLIENT_ID:-dxos-file-service}
+      RAG_FILE_CLIENT_SECRET: ${RAG_FILE_CLIENT_SECRET:-}
+      RAG_INTERNAL_BEARER_TOKEN: ${RAG_INTERNAL_BEARER_TOKEN:-${RAG_FILE_BEARER_TOKEN:-}}
 
   cap-ai:
     build:
@@ -108,7 +111,10 @@ services:
       <<: *qualified
       AI_WORKER_DATABASE_URL: *worker-db
       RAG_WORKER_SERVICE_SUBJECT: ${RAG_WORKER_SERVICE_SUBJECT}
-      RAG_WORKER_BEARER_TOKEN: ${RAG_WORKER_BEARER_TOKEN:?set the worker delegation token}
+      OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/token}
+      RAG_WORKER_CLIENT_ID: ${RAG_WORKER_CLIENT_ID:-dxos-rag-worker}
+      RAG_WORKER_CLIENT_SECRET: ${RAG_WORKER_CLIENT_SECRET:-}
+      RAG_WORKER_BEARER_TOKEN: ${RAG_WORKER_BEARER_TOKEN:-}
       RAG_INTERNAL_FILE_URL: http://cap-process:8181
       RAG_INTERNAL_AI_URL: http://cap-ai:8184
       PARSER_SOCKET: *socket
@@ -137,7 +143,10 @@ services:
       <<: *qualified
       DATABASE_URL: *dispatcher-db
       RAG_INTERNAL_AI_URL: http://cap-ai:8184
-      RAG_DISPATCHER_BEARER_TOKEN: ${RAG_DISPATCHER_BEARER_TOKEN:?set the dispatcher delegation token}
+      OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/token}
+      RAG_DISPATCHER_CLIENT_ID: ${RAG_DISPATCHER_CLIENT_ID:-dxos-rag-dispatcher}
+      RAG_DISPATCHER_CLIENT_SECRET: ${RAG_DISPATCHER_CLIENT_SECRET:-}
+      RAG_DISPATCHER_BEARER_TOKEN: ${RAG_DISPATCHER_BEARER_TOKEN:-}
     depends_on:
       - cap-ai
 

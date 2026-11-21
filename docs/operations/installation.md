@@ -57,6 +57,12 @@ readiness remain open.
    `scripts/test-compose.sh` waits for every service, logs in as each runtime role
    from another container and probes each HTTP entry point.
 
+   To run cap-ai, the personal library and the FTS-only Assistant, use
+   `make rag-up` instead of the plain `docker compose up -d` above. It creates
+   local secrets in `.env.rag`, starts `compose.rag.yaml`, and enables the
+   Assistant once `personal_library` is `Ready`
+   ([knowledge models](../guides/knowledge/models.md#compose-installation)).
+
    Sign-in uses Keycloak (realm `dxos`, client `dxos-portal`, browser flow with
    PKCE). Create accounts in the Keycloak admin console
    (`http://localhost:8085/admin`, `KEYCLOAK_ADMIN`/`KEYCLOAK_ADMIN_PASSWORD`). A

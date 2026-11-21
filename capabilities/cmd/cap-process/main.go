@@ -100,7 +100,11 @@ func main() {
 		if os.Getenv("RAG_SOURCE_QUALIFIED") != "true" {
 			log.Fatal("internal source service requires qualified sources")
 		}
-		validator, err := files.NewDelegationClient(os.Getenv("RAG_INTERNAL_AI_URL"), os.Getenv("RAG_INTERNAL_BEARER_TOKEN"))
+		serviceToken, err := auth.TokenGetterFrom(os.Getenv("RAG_INTERNAL_BEARER_TOKEN"), os.Getenv("OIDC_TOKEN_URL"), os.Getenv("RAG_FILE_CLIENT_ID"), os.Getenv("RAG_FILE_CLIENT_SECRET"))
+		if err != nil {
+			log.Fatal("invalid internal source token configuration")
+		}
+		validator, err := files.NewDelegationClient(os.Getenv("RAG_INTERNAL_AI_URL"), serviceToken)
 		if err != nil {
 			log.Fatal("invalid internal source validator configuration")
 		}

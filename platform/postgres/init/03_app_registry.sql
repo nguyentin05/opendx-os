@@ -171,3 +171,12 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO core.user_roles (user_id, role_name)
 VALUES ('22222222-2222-4222-8222-000000000005', 'role_workflow')
 ON CONFLICT DO NOTHING;
+
+-- The knowledge services authenticate with Keycloak client credentials. Their
+-- fixed service-account subjects must exist as ACTIVE identities; they hold no
+-- business roles and act only through the internal service listeners.
+INSERT INTO core.users (id, email, display_name) VALUES
+    ('33333333-3333-4333-8333-000000000001', 'rag-worker@dxos.internal', 'RAG worker service'),
+    ('33333333-3333-4333-8333-000000000002', 'file-service@dxos.internal', 'File service delegation'),
+    ('33333333-3333-4333-8333-000000000003', 'rag-dispatcher@dxos.internal', 'RAG package dispatcher')
+ON CONFLICT (id) DO NOTHING;

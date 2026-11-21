@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.PHONY: help check check-hygiene check-architecture test test-unit test-integration clean
+.PHONY: help check check-hygiene check-architecture test test-unit test-integration rag-up clean
 
 help:
 	@echo "OpenDX-OS (DX-OS Open-Core) Build & Verification Targets:"
@@ -23,9 +23,13 @@ help:
 	@echo "  make test               Run available module unit and contract test suites"
 	@echo "  make test-unit          Run fast unit and contract tests without external service dependencies"
 	@echo "  make test-integration   Run real-database and service integration suites (requires TEST_DATABASE_URL)"
+	@echo "  make rag-up             Start the stack with cap-ai, the personal library and FTS-only Assistant"
 	@echo "  make clean              Remove temporary build and dist artifacts"
 
 check: check-hygiene check-architecture
+
+rag-up: ## Start the stack with cap-ai and the personal library
+	@scripts/rag-up.sh
 
 check-hygiene:
 	@python3 scripts/check_hygiene.py
