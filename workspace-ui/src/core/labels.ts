@@ -21,6 +21,16 @@ const commands: Record<string, string> = {
   cancel: 'Huỷ',
 };
 
+// Columns every process table carries, owned by the platform rather than an app.
+const platformColumns: Record<string, string> = {
+  id: 'Mã',
+  status: 'Trạng thái',
+  version: 'Phiên bản',
+  created_at: 'Tạo lúc',
+  created_by: 'Người tạo',
+  updated_at: 'Cập nhật lúc',
+};
+
 export function humanizeName(name: string): string {
   const words = name.replace(/_/g, ' ').trim().toLowerCase();
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : name;
@@ -32,4 +42,8 @@ export function stateLabel(name: string): string {
 
 export function commandLabel(name: string): string {
   return commands[name] ?? humanizeName(name);
+}
+
+export function platformColumnLabel(name: string): string {
+  return platformColumns[name] ?? humanizeName(name);
 }

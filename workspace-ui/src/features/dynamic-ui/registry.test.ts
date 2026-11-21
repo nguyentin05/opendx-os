@@ -129,4 +129,8 @@ describe('columnLabel', () => {
   it('humanizes a column without a label', () => {
     expect(columnLabel(table, { name: 'vendor_name' })).toBe('Vendor name');
   });
+
+  it('names platform columns in Vietnamese', () => {
+    expect(columnLabel(table, { name: 'updated_at' })).toBe('Cập nhật lúc');
+  });
 });
