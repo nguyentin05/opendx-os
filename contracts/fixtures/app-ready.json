@@ -361,6 +361,12 @@
             "approve_budget",
             "reject",
             "cancel"
+          ],
+          "title": "Yêu cầu mua sắm",
+          "inboxActions": [
+            "submit",
+            "approve",
+            "approve_budget"
           ]
         }
       },
@@ -453,7 +459,8 @@
               "type": "text",
               "required": false
             }
-          ]
+          ],
+          "title": "Nhà cung cấp"
         }
       },
       {
@@ -572,7 +579,8 @@
               "type": "number",
               "required": true
             }
-          ]
+          ],
+          "title": "Hàng hoá trong yêu cầu"
         }
       }
     ],

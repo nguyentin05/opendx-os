@@ -227,8 +227,8 @@ type WorkflowDef struct {
 
 // EffectDef defines a repeatable workflow effect.
 type EffectDef struct {
-	StepName     string          `yaml:"stepName" json:"stepName"`
-	Kind         string          `yaml:"kind" json:"kind"`
+	StepName     string   `yaml:"stepName" json:"stepName"`
+	Kind         string   `yaml:"kind" json:"kind"`
 	WhenCommands []string `yaml:"whenCommands" json:"whenCommands"`
 	// Fields is required for create_work_item and absent for complete_work_item.
 	Fields *EffectFieldsDef `yaml:"fields,omitempty" json:"fields,omitempty"`
@@ -248,6 +248,11 @@ type UISchemaDef struct {
 	ListColumns []string       `yaml:"listColumns" json:"listColumns"`
 	FormFields  []FormFieldDef `yaml:"formFields" json:"formFields"`
 	Actions     []string       `yaml:"actions,omitempty" json:"actions,omitempty"`
+	// Title names the table in the App Shell; the table name is used when absent.
+	Title string `yaml:"title,omitempty" json:"title,omitempty"`
+	// InboxActions are the actions that put a record in a user's inbox; all
+	// actions count when absent.
+	InboxActions []string `yaml:"inboxActions,omitempty" json:"inboxActions,omitempty"`
 }
 
 // FormFieldDef defines a form input field in the dynamic UI shell.

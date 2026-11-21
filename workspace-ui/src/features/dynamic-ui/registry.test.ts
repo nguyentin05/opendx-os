@@ -2,7 +2,7 @@
 // Copyright 2026 DX-OS Open-Core Contributors
 
 import { describe, expect, it } from 'vitest';
-import { columnLabel } from './registry';
+import { columnLabel, tableLabel } from './registry';
 import type { InstalledApp, InstalledTable } from '../../types/registry';
 import { allowedFields, tableGraphQLName, topLevelTables, writableFormFields } from './registry';
 
@@ -132,5 +132,17 @@ describe('columnLabel', () => {
 
   it('names platform columns in Vietnamese', () => {
     expect(columnLabel(table, { name: 'updated_at' })).toBe('Cập nhật lúc');
+  });
+});
+
+describe('tableLabel', () => {
+  const base = { name: 'domain.requests', columns: [], access: { select: [], insert: [] } };
+
+  it('uses the manifest title', () => {
+    expect(tableLabel({ ...base, ui: { listColumns: [], formFields: [], title: 'Yêu cầu' } } as InstalledTable)).toBe('Yêu cầu');
+  });
+
+  it('falls back to the table name', () => {
+    expect(tableLabel({ ...base, ui: { listColumns: [], formFields: [] } } as InstalledTable)).toBe('domain.requests');
   });
 });

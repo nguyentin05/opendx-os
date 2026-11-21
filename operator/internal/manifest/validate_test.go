@@ -27,6 +27,17 @@ func TestValidateAcceptsCompleteWorkItem(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsTableTitleAndInboxActions(t *testing.T) {
+	app := loadFixture(t, "procurement")
+	if err := Validate(app); err != nil {
+		t.Fatalf("fixture rejected: %v", err)
+	}
+	ui := app.Spec.Tables[0].UI
+	if ui.Title == "" || len(ui.InboxActions) == 0 {
+		t.Fatalf("fixture ui lost title or inboxActions: %+v", ui)
+	}
+}
+
 func TestValidateRejectsManagedInsertColumns(t *testing.T) {
 	app := loadFixture(t, "procurement")
 	app.Spec.Tables[0].Access.Insert[0].Columns = []string{"status", "version"}
@@ -136,6 +147,10 @@ func TestValidateRolesScopesAndCapabilities(t *testing.T) {
 			a.Spec.Tables[0].Attachments = nil
 		}},
 		{"work item effect without cap-work", func(a *DXApplication) { a.Spec.Capabilities = []string{CapProcess, CapHR} }},
+		{"inbox action outside ui.actions", func(a *DXApplication) { a.Spec.Tables[0].UI.InboxActions = []string{"close"} }},
+		{"empty inbox actions", func(a *DXApplication) { a.Spec.Tables[0].UI.InboxActions = []string{} }},
+		{"duplicate inbox action", func(a *DXApplication) { a.Spec.Tables[0].UI.InboxActions = []string{"submit", "submit"} }},
+		{"blank table title", func(a *DXApplication) { a.Spec.Tables[0].UI.Title = "  " }},
 		{"unknown effect kind", func(a *DXApplication) { a.Spec.Workflows[0].Effects[1].Kind = "send_email" }},
 		{"complete work item with fields", func(a *DXApplication) {
 			a.Spec.Workflows[0].Effects[1].Fields = &EffectFieldsDef{Title: "Close", Description: "Close it", Priority: "LOW"}

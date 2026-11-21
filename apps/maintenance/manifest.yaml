@@ -72,6 +72,7 @@ spec:
           to: CANCELLED
           allowedRoles: [role_maintenance_manager]
     ui:
+      title: "Phiếu bảo trì"
       listColumns: [issue_summary, assignee_id, device_id, status, version, updated_at]
       formFields:
         - { name: assignee_id, label: "Kỹ thuật viên phụ trách", type: uuid, required: true }
@@ -79,3 +80,4 @@ spec:
         - { name: issue_summary, label: "Mô tả sự cố", type: text, required: true }
         - { name: resolution_note, label: "Ghi chú xử lý", type: text, required: false }
       actions: [submit, close, cancel]
+      inboxActions: [submit, close]

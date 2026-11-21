@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -491,6 +492,17 @@ func validateTable(app *DXApplication, t *TableDef, tables, commands map[string]
 	for _, c := range ui.Actions {
 		if !own[c] {
 			return fmt.Errorf("unknown ui.actions command %q", c)
+		}
+	}
+	if ui.Title != "" && strings.TrimSpace(ui.Title) == "" {
+		return errors.New("invalid ui.title: it must not be blank")
+	}
+	if ui.InboxActions != nil && (len(ui.InboxActions) == 0 || !uniqueNames(ui.InboxActions, identifier)) {
+		return errors.New("invalid ui.inboxActions: list one or more distinct actions")
+	}
+	for _, c := range ui.InboxActions {
+		if !slices.Contains(ui.Actions, c) {
+			return fmt.Errorf("ui.inboxActions command %q is not in ui.actions", c)
 		}
 	}
 	fields := map[string]bool{}

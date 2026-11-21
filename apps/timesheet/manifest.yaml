@@ -59,8 +59,10 @@ spec:
           to: REJECTED
           allowedRoles: [role_timesheet_manager]
     ui:
+      title: "Bảng chấm công"
       listColumns: [created_by, work_date, logged_hours, status, version, updated_at]
       formFields:
         - { name: work_date, label: "Ngày làm việc", type: date, required: true }
         - { name: logged_hours, label: "Số giờ đã ghi (0-24)", type: number, required: true }
       actions: [approve, reject]
+      inboxActions: [approve]

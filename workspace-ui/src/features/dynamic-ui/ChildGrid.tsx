@@ -8,7 +8,7 @@ import type { InstalledTable } from '../../types/registry';
 import { childPageSize, deleteChildRecord, GraphQLRequestError, isRecordID, loadChildPage } from './graphql';
 import { RecordForm } from './RecordForm';
 import type { RecordWriteGuard } from './RecordForm';
-import { allowedFields, canEditRecord, columnLabel, writableFormFields } from './registry';
+import { allowedFields, canEditRecord, columnLabel, tableLabel, writableFormFields } from './registry';
 
 export interface ChildGridProps {
   parent: InstalledTable;
@@ -119,8 +119,8 @@ function ChildGridContents({ parent, parentRecord, child, context, onParentChang
   const showRowActions = canUpdate || canRemove;
 
   return (
-    <section className="workspace-table" aria-label={child.name}>
-      <h3>{child.name}</h3>
+    <section className="workspace-table" aria-label={tableLabel(child)}>
+      <h3>{tableLabel(child)}</h3>
       {!current && <p role="status">Đang tải dòng con…</p>}
       {current && 'error' in current && (
         <>
