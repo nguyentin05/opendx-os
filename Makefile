@@ -29,7 +29,7 @@ help:
 check: check-hygiene check-architecture
 
 rag-up: ## Start the stack with cap-ai and the personal library
-	@COMPOSE_PROJECT_NAME="$${COMPOSE_PROJECT_NAME:-dxos-rag}" POSTGRES_PORT="$${POSTGRES_PORT:-15432}" scripts/rag-up.sh
+	@scripts/rag-up.sh
 
 check-hygiene:
 	@python3 scripts/check_hygiene.py

@@ -60,10 +60,6 @@ jobs:
       # The conformance script drives the admin API with these names.
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: conformance-admin
-      # Imported as ${RAG_*_CLIENT_SECRET} by the realm file.
-      RAG_WORKER_CLIENT_SECRET: conformance-worker-secret
-      RAG_FILE_CLIENT_SECRET: conformance-file-secret
-      RAG_DISPATCHER_CLIENT_SECRET: conformance-dispatcher-secret
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -73,7 +69,6 @@ jobs:
           docker run -d --name dxos-keycloak-conformance \
             --publish 127.0.0.1:18085:8085 \
             --env KC_BOOTSTRAP_ADMIN_USERNAME --env KC_BOOTSTRAP_ADMIN_PASSWORD \
-            --env RAG_WORKER_CLIENT_SECRET --env RAG_FILE_CLIENT_SECRET --env RAG_DISPATCHER_CLIENT_SECRET \
             --env KC_HTTP_PORT=8085 --env KC_HEALTH_ENABLED=true \
             --volume "${PWD}/platform/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro" \
             "${KEYCLOAK_IMAGE}" start-dev --import-realm

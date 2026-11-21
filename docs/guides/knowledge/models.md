@@ -36,8 +36,10 @@ the same file order and project name throughout an installation.
 
 1. From a clean checkout, run:
    ```bash
-   COMPOSE_PROJECT_NAME=dxos-rag POSTGRES_PORT=15432 make rag-up
+   make rag-up
    ```
+   It uses the same Compose project as `docker compose up`; set
+   `COMPOSE_PROJECT_NAME` and `POSTGRES_PORT` to run a separate stack.
    The target calls `scripts/rag-up.sh`, which creates `.env.rag` (git-ignored,
    mode 0600) when it is missing. It fills random DB passwords, a parser token
    and the three Keycloak client secrets, and sets the fixed service subjects,
@@ -61,9 +63,14 @@ the same file order and project name throughout an installation.
    reconciliation, and back up the volume before changing its image.
 4. The services obtain their own tokens: `dxos-rag-worker`,
    `dxos-file-service` and `dxos-rag-dispatcher` are confidential realm clients
-   with service accounts. The realm imports their secrets from the
-   `RAG_*_CLIENT_SECRET` environment variables and gives each a fixed subject
-   that is an ACTIVE Core identity. The worker, File Service delegation client
+   with service accounts, each with a fixed subject that is an ACTIVE Core
+   identity. The realm imports them disabled with a generated secret, so a stack
+   without this overlay cannot mint service tokens. `rag-up` starts Keycloak
+   first, then enables the three clients through the admin API with the
+   `RAG_*_CLIENT_SECRET` values from `.env.rag`. Keycloak's public hostname is
+   fixed with `KEYCLOAK_HOSTNAME` (default `http://localhost:8085`) so tokens
+   fetched over the internal network carry the issuer the services verify; it
+   must match `OIDC_ISSUER_URL`. The worker, File Service delegation client
    and dispatcher refresh at 75% of the token lifetime, so no manual renewal or
    container recreation is needed. `PARSER_SERVICE_TOKEN` is still a separate
    random secret of at least 32 characters, and the parser and worker share a

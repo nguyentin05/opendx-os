@@ -21,8 +21,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-dxos-rag}"
-export POSTGRES_PORT="${POSTGRES_PORT:-15432}"
 ENV_FILE=".env.rag"
 
 fail() {
@@ -130,7 +128,78 @@ psql_value() {
     compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "$1"' sh "$1" 2>/dev/null || true
 }
 
-printf '[rag-up] starting %s on port %s\n' "$COMPOSE_PROJECT_NAME" "$POSTGRES_PORT"
+# Exported value first, then .env.rag, then .env, then the default.
+env_value() {
+    local key="$1" default="$2" value
+    value="${!key:-}"
+    for file in "$ENV_FILE" .env; do
+        [ -n "$value" ] && break
+        [ -f "$file" ] && value="$(grep -m1 "^${key}=" "$file" | cut -d= -f2- || true)"
+    done
+    printf '%s' "${value:-$default}"
+}
+
+# The realm ships the knowledge service clients disabled with a generated
+# secret; enable them here with the secrets from .env.rag.
+configure_service_clients() {
+    KC_URL="http://localhost:$(env_value KEYCLOAK_PORT 8085)" \
+    KC_ADMIN="$(env_value KEYCLOAK_ADMIN admin)" \
+    KC_ADMIN_PASSWORD="$(env_value KEYCLOAK_ADMIN_PASSWORD admin)" \
+    RAG_WORKER_CLIENT_SECRET="$(env_value RAG_WORKER_CLIENT_SECRET '')" \
+    RAG_FILE_CLIENT_SECRET="$(env_value RAG_FILE_CLIENT_SECRET '')" \
+    RAG_DISPATCHER_CLIENT_SECRET="$(env_value RAG_DISPATCHER_CLIENT_SECRET '')" \
+    python3 - <<'PY'
+import json, os, sys, time, urllib.error, urllib.parse, urllib.request
+
+base = os.environ["KC_URL"]
+
+def call(path, data=None, token=None, form=False, method=None):
+    headers = {"Accept": "application/json"}
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    body = None
+    if data is not None:
+        body = urllib.parse.urlencode(data).encode() if form else json.dumps(data).encode()
+        headers["Content-Type"] = "application/x-www-form-urlencoded" if form else "application/json"
+    with urllib.request.urlopen(urllib.request.Request(base + path, body, headers, method=method), timeout=10) as r:
+        raw = r.read()
+        return json.loads(raw) if raw else None
+
+deadline = time.time() + 300
+while True:
+    try:
+        admin = call("/realms/master/protocol/openid-connect/token",
+                     {"grant_type": "password", "client_id": "admin-cli",
+                      "username": os.environ["KC_ADMIN"], "password": os.environ["KC_ADMIN_PASSWORD"]},
+                     form=True)["access_token"]
+        clients = {}
+        for client_id in ("dxos-rag-worker", "dxos-file-service", "dxos-rag-dispatcher"):
+            found = call("/admin/realms/dxos/clients?clientId=" + client_id, token=admin)
+            if len(found) != 1:
+                raise LookupError(client_id)
+            clients[client_id] = found[0]
+        break
+    except (urllib.error.URLError, OSError, LookupError, KeyError):
+        if time.time() > deadline:
+            sys.exit("[rag-up] FAIL: Keycloak or its dxos service clients are unavailable")
+        time.sleep(5)
+
+for client_id, env in (("dxos-rag-worker", "RAG_WORKER_CLIENT_SECRET"),
+                       ("dxos-file-service", "RAG_FILE_CLIENT_SECRET"),
+                       ("dxos-rag-dispatcher", "RAG_DISPATCHER_CLIENT_SECRET")):
+    secret = os.environ[env]
+    if len(secret) < 32:
+        sys.exit("[rag-up] FAIL: " + env + " in .env.rag is missing or too short")
+    # A partial representation recreates the service account; send it whole.
+    client = dict(clients[client_id], enabled=True, secret=secret)
+    call("/admin/realms/dxos/clients/" + client["id"], client, token=admin, method="PUT")
+print("[rag-up] knowledge service clients enabled")
+PY
+}
+
+printf '[rag-up] starting the stack with the knowledge overlay\n'
+compose up -d --build keycloak
+configure_service_clients
 compose up -d --build
 
 deadline=$((SECONDS + 300))
@@ -147,7 +216,7 @@ if [ "$capability" != "1" ] || [ "$schema" != "1" ]; then
     cat >&2 <<EOF
 [rag-up] FAIL: the PostgreSQL volume was initialized without cap-ai.
 Recreate this stack's data so the overlay's capability list is applied:
-  docker compose -p $COMPOSE_PROJECT_NAME down -v
+  docker compose --env-file .env.rag -f compose.yaml -f compose.rag.yaml down -v
 Then run make rag-up again. This script does not delete data.
 EOF
     exit 1

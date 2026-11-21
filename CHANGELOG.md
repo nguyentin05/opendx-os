@@ -15,7 +15,10 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 - Compose: `make rag-up` starts the stack with cap-ai, the personal library and
   the FTS-only Assistant, creating local secrets and renewing the worker, File
-  Service and dispatcher tokens with Keycloak client credentials (#121).
+  Service and dispatcher tokens with Keycloak client credentials. The realm
+  ships those service clients disabled until `rag-up` enables them, and
+  Keycloak's public hostname is fixed with `KEYCLOAK_HOSTNAME` so tokens carry
+  one issuer.
 - Workspace UI: a "Chờ tôi xử lý" inbox derived from each held role's commands
   and the record states those commands start from, with records merged across
   roles and links to the record detail (#42).

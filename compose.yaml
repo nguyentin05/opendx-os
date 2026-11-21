@@ -143,10 +143,6 @@ services:
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
-      # Realm placeholders for the knowledge service clients.
-      RAG_WORKER_CLIENT_SECRET: ${RAG_WORKER_CLIENT_SECRET:-}
-      RAG_FILE_CLIENT_SECRET: ${RAG_FILE_CLIENT_SECRET:-}
-      RAG_DISPATCHER_CLIENT_SECRET: ${RAG_DISPATCHER_CLIENT_SECRET:-}
       # Tokens must carry the same issuer the services verify, even when they
       # are requested from another container over the internal hostname.
       KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-http://localhost:8085}

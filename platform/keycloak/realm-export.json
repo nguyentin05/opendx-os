@@ -42,12 +42,11 @@
     },
     {
       "clientId": "dxos-rag-worker",
-      "enabled": true,
+      "enabled": false,
       "publicClient": false,
       "serviceAccountsEnabled": true,
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
-      "secret": "${RAG_WORKER_CLIENT_SECRET}",
       "protocolMappers": [
         {
           "name": "dxos-runtime-audience",
@@ -64,12 +63,11 @@
     },
     {
       "clientId": "dxos-file-service",
-      "enabled": true,
+      "enabled": false,
       "publicClient": false,
       "serviceAccountsEnabled": true,
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
-      "secret": "${RAG_FILE_CLIENT_SECRET}",
       "protocolMappers": [
         {
           "name": "dxos-runtime-audience",
@@ -86,12 +84,11 @@
     },
     {
       "clientId": "dxos-rag-dispatcher",
-      "enabled": true,
+      "enabled": false,
       "publicClient": false,
       "serviceAccountsEnabled": true,
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
-      "secret": "${RAG_DISPATCHER_CLIENT_SECRET}",
       "protocolMappers": [
         {
           "name": "dxos-runtime-audience",
