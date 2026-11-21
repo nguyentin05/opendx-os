@@ -5,7 +5,7 @@ apiVersion: dxos.io/v1alpha1
 kind: DXApplication
 metadata:
   name: procurement
-  displayName: Material Procurement
+  displayName: Mua sắm vật tư
   version: 0.3.0
 spec:
   capabilities:
@@ -14,11 +14,11 @@ spec:
   - cap-work
   roles:
   - name: role_procurement_requester
-    description: Creates and submits purchase requests
+    description: Tạo và gửi yêu cầu mua sắm
   - name: role_procurement_manager
-    description: Approves the purchase requests of their own department
+    description: Duyệt yêu cầu mua sắm của phòng ban mình
   - name: role_procurement_finance
-    description: Reviews the budget of requests approved by a department
+    description: Xem xét ngân sách của các yêu cầu đã được phòng ban duyệt
   sharedAccess:
   - table: core.users
     roles:
@@ -210,19 +210,19 @@ spec:
       - updated_at
       formFields:
       - name: vendor_name
-        label: Vendor Name
+        label: Tên nhà cung cấp
         type: text
         required: true
       - name: item_description
-        label: Item Description
+        label: Mô tả hàng hoá
         type: text
         required: true
       - name: quoted_amount
-        label: Quoted Amount
+        label: Số tiền báo giá
         type: number
         required: true
       - name: quote_file_id
-        label: Supplier Quote File
+        label: Tệp báo giá của nhà cung cấp
         type: file
         required: false
       actions:
@@ -274,11 +274,11 @@ spec:
       - tax_code
       formFields:
       - name: name
-        label: Vendor Name
+        label: Tên nhà cung cấp
         type: text
         required: true
       - name: tax_code
-        label: Tax Code
+        label: Mã số thuế
         type: text
         required: false
   # The lines of a request. They follow it: readable with the request, editable
@@ -333,15 +333,15 @@ spec:
       - unit_price
       formFields:
       - name: item
-        label: Item
+        label: Hàng hoá
         type: text
         required: true
       - name: quantity
-        label: Quantity
+        label: Số lượng
         type: number
         required: true
       - name: unit_price
-        label: Unit Price
+        label: Đơn giá
         type: number
         required: true
   workflows:
@@ -355,8 +355,8 @@ spec:
       whenCommands:
       - submit
       fields:
-        title: Review procurement request
-        description: Review the submitted request in its source application.
+        title: Duyệt yêu cầu mua sắm
+        description: Xem xét yêu cầu đã gửi trong ứng dụng nguồn.
         priority: MEDIUM
     - stepName: close_review
       kind: complete_work_item

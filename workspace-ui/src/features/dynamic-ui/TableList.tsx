@@ -2,10 +2,11 @@
 // Copyright 2026 DX-OS Open-Core Contributors
 
 import { useEffect, useState } from 'react';
+import { stateLabel } from '../../core/labels';
 import type { AppRoleContext } from '../../core/session-context';
 import type { InstalledTable } from '../../types/registry';
 import { executeGraphQL, GraphQLRequestError, isRecord } from './graphql';
-import { allowedFields, tableGraphQLName } from './registry';
+import { allowedFields, columnLabel, tableGraphQLName } from './registry';
 
 export interface TableListProps {
   table: InstalledTable;
@@ -62,7 +63,8 @@ function describeList({ table, context }: TableListProps) {
     }
   }`;
 
-  return { root, columns, selected, query, canOpen, canCreate, filterColumn };
+  const labels = new Map(columns.map(column => [column.name, columnLabel(table, column)]));
+  return { root, columns, labels, selected, query, canOpen, canCreate, filterColumn };
 }
 
 function validCell(value: unknown, column: Column): value is Cell {
@@ -90,14 +92,14 @@ function readRows(value: unknown, selected: Column[]): Row[] {
 export function TableList(props: TableListProps) {
   const { table, context } = props;
   if (!table.access.select.some(rule => rule.role === context.role)) {
-    return <p role="alert">This role cannot view records.</p>;
+    return <p role="alert">Vai trò hiện tại không được xem hồ sơ. Hãy chọn vai trò khác hoặc liên hệ quản trị viên.</p>;
   }
 
   let description: ReturnType<typeof describeList>;
   try {
     description = describeList(props);
   } catch {
-    return <p role="alert">Records are unavailable.</p>;
+    return <p role="alert">Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.</p>;
   }
   const scope = JSON.stringify([
     context.userID, context.token, context.app.app_id, context.role, table.name, description,
@@ -106,10 +108,10 @@ export function TableList(props: TableListProps) {
   return (
     <section className="workspace-table">
       <h2>{table.name}</h2>
-      {description.canCreate && <button type="button" onClick={props.onCreate}>New record</button>}
+      {description.canCreate && <button type="button" onClick={props.onCreate}>Tạo mới</button>}
       {description.columns.length > 0
         ? <PaginatedTable key={scope} context={context} onOpen={props.onOpen} description={description} />
-        : <p>No list columns are available to this role.</p>}
+        : <p>Vai trò này chưa có cột nào để hiển thị.</p>}
     </section>
   );
 }
@@ -126,18 +128,19 @@ type PageResult =
   | { message: string };
 
 const failureMessages = {
-  unauthenticated: 'Sign in again to view records.',
-  forbidden: 'This role cannot view records.',
-  unavailable: 'Records are unavailable.',
+  unauthenticated: 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.',
+  forbidden: 'Vai trò hiện tại không được xem hồ sơ. Hãy chọn vai trò khác hoặc liên hệ quản trị viên.',
+  unavailable: 'Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.',
 };
 
 function PaginatedTable({ context, onOpen, description }: Pick<TableListProps, 'context' | 'onOpen'> & {
   description: ReturnType<typeof describeList>;
 }) {
   // The parent remounts this page whenever its description or scope changes.
-  const [{ root, columns, selected, query, canOpen, filterColumn }] = useState(description);
+  const [{ root, columns, labels, selected, query, canOpen, canCreate, filterColumn }] = useState(description);
   const [options, setOptions] = useState<PageOptions>({ offset: 0, sort: columns[0].name, direction: 'asc', filter: '' });
   const [filterDraft, setFilterDraft] = useState('');
+  const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState<{ options: PageOptions; page: PageResult }>();
   const { token, role } = context;
 
@@ -163,7 +166,7 @@ function PaginatedTable({ context, onOpen, description }: Pick<TableListProps, '
       }
     });
     return () => controller.abort();
-  }, [token, role, query, root, options, selected, canOpen, filterColumn]);
+  }, [token, role, query, root, options, selected, canOpen, filterColumn, attempt]);
 
   const page = result?.options === options ? result.page : undefined;
   const rows = page && 'rows' in page ? page.rows : [];
@@ -177,40 +180,50 @@ function PaginatedTable({ context, onOpen, description }: Pick<TableListProps, '
             event.preventDefault();
             if (filterDraft !== options.filter) setOptions({ ...options, offset: 0, filter: filterDraft });
           }}>
-            <label>Filter by {filterColumn} <input value={filterDraft} onChange={event => setFilterDraft(event.target.value)} /></label>
-            <button type="submit">Apply filter</button>
+            <label>Lọc theo {labels.get(filterColumn) ?? filterColumn} <input value={filterDraft} onChange={event => setFilterDraft(event.target.value)} /></label>
+            <button type="submit">Áp dụng</button>
           </form>
         )}
-        <label>Sort by <select value={options.sort} onChange={event => {
+        <label>Sắp xếp theo <select value={options.sort} onChange={event => {
           const sort = event.target.value;
           if (columns.some(column => column.name === sort)) setOptions({ ...options, offset: 0, sort });
         }}>
-          {columns.map(column => <option key={column.name}>{column.name}</option>)}
+          {columns.map(column => <option key={column.name} value={column.name}>{labels.get(column.name) ?? column.name}</option>)}
         </select></label>
-        <label>Sort direction <select value={options.direction} onChange={event => {
+        <label>Chiều sắp xếp <select value={options.direction} onChange={event => {
           const direction = event.target.value;
           if (direction === 'asc' || direction === 'desc') setOptions({ ...options, offset: 0, direction });
         }}>
-          <option value="asc">Ascending</option>
-          <option value="desc">Descending</option>
+          <option value="asc">Tăng dần</option>
+          <option value="desc">Giảm dần</option>
         </select></label>
       </div>
-      {!page && <p role="status">Loading records…</p>}
-      {page && 'message' in page && <p role="alert">{page.message}</p>}
-      {page && 'rows' in page && rows.length === 0 && <p role="status">No records found.</p>}
+      {!page && <p role="status">Đang tải hồ sơ…</p>}
+      {page && 'message' in page && (
+        <>
+          <p role="alert">{page.message}</p>
+          <button type="button" onClick={() => setAttempt(value => value + 1)}>Thử lại</button>
+        </>
+      )}
+      {page && 'rows' in page && rows.length === 0 && (
+        <p role="status">{canCreate ? 'Chưa có hồ sơ nào. Bấm "Tạo mới" để bắt đầu.' : 'Chưa có hồ sơ nào.'}</p>
+      )}
       {rows.length > 0 && (
         <table>
           <thead><tr>
-            {columns.map(column => <th key={column.name} scope="col">{column.name}</th>)}
-            {canOpen && <th scope="col">Actions</th>}
+            {columns.map(column => <th key={column.name} scope="col">{labels.get(column.name) ?? column.name}</th>)}
+            {canOpen && <th scope="col">Thao tác</th>}
           </tr></thead>
           <tbody>
             {rows.slice(0, pageSize).map((row, index) => {
               const id = canOpen && typeof row.id === 'string' ? row.id : undefined;
               return (
                 <tr key={id ?? index}>
-                  {columns.map(column => <td key={column.name}>{row[column.name]}</td>)}
-                  {id && <td><button type="button" onClick={() => onOpen(id)}>Open</button></td>}
+                  {columns.map(column => {
+                    const cell = row[column.name];
+                    return <td key={column.name}>{column.name === 'status' && typeof cell === 'string' ? stateLabel(cell) : cell}</td>;
+                  })}
+                  {id && <td><button type="button" onClick={() => onOpen(id)}>Mở</button></td>}
                 </tr>
               );
             })}
@@ -218,13 +231,13 @@ function PaginatedTable({ context, onOpen, description }: Pick<TableListProps, '
         </table>
       )}
       {(options.offset > 0 || hasNext) && (
-        <nav className="workspace-table-controls" aria-label="Record pages">
+        <nav className="workspace-table-controls" aria-label="Các trang hồ sơ">
           <button type="button" disabled={options.offset === 0} onClick={() => setOptions({
             ...options, offset: Math.max(0, options.offset - pageSize),
-          })}>Previous page</button>
+          })}>Trang trước</button>
           <button type="button" disabled={!hasNext} onClick={() => setOptions({
             ...options, offset: Math.min(maxOffset, options.offset + pageSize),
-          })}>Next page</button>
+          })}>Trang sau</button>
         </nav>
       )}
     </>

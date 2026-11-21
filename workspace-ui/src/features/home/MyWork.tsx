@@ -17,8 +17,8 @@ export interface MyWorkProps {
   onOpenWorkItem: (item: WorkItem) => void;
 }
 
-const priorities: Record<string, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', CRITICAL: 'Critical' };
-const boardColumns: Record<string, string> = { TODO: 'To do', IN_PROGRESS: 'In progress', DONE: 'Done' };
+const priorities: Record<string, string> = { LOW: 'Thấp', MEDIUM: 'Trung bình', HIGH: 'Cao', CRITICAL: 'Nghiêm trọng' };
+const boardColumns: Record<string, string> = { TODO: 'Cần làm', IN_PROGRESS: 'Đang làm', DONE: 'Hoàn tất' };
 const firstPage = {};
 const pageSize = 20;
 
@@ -39,9 +39,9 @@ export function WorkItemList({ session, onOpenWorkItem, items }: MyWorkProps & {
               : <span>{item.title}</span>}
             <div className="workspace-work-meta">
               <span>{app?.display_name} · <span>{item.role}</span></span>
-              <span className="workspace-work-status">{item.priority ? label(priorities, item.priority) : 'Priority unavailable'}</span>
-              <span className="workspace-work-status">{item.boardColumn ? label(boardColumns, item.boardColumn) : 'State unavailable'}</span>
-              {!href && <span>Source unavailable</span>}
+              <span className="workspace-work-status">{item.priority ? label(priorities, item.priority) : 'Chưa có mức ưu tiên'}</span>
+              <span className="workspace-work-status">{item.boardColumn ? label(boardColumns, item.boardColumn) : 'Chưa có trạng thái'}</span>
+              {!href && <span>Không mở được hồ sơ nguồn.</span>}
             </div>
           </li>
         );
@@ -79,7 +79,7 @@ export function InboxAvailability({ partial }: { partial: boolean }) {
 export function WorkAvailability({ partial, itemCount }: { partial: boolean; itemCount: number }) {
   return partial ? (
     <p role="status">
-      {itemCount ? 'Some work items are unavailable. Results are partial.' : 'Work items are temporarily unavailable.'}
+      {itemCount ? 'Một số việc chưa tải được. Kết quả chỉ là một phần.' : 'Việc đang tạm thời không khả dụng. Hãy thử lại sau ít phút.'}
     </p>
   ) : null;
 }
@@ -161,7 +161,7 @@ export function MyWork({ session, onOpenWorkItem }: MyWorkProps) {
 
   return (
     <>
-      <h1>My Work</h1>
+      <h1>Việc của tôi</h1>
       <section className="workspace-panel" aria-labelledby="inbox-heading">
         <h2 id="inbox-heading">Chờ tôi xử lý</h2>
         {inboxLoading && <p role="status">Đang tải hồ sơ chờ xử lý…</p>}
@@ -177,32 +177,32 @@ export function MyWork({ session, onOpenWorkItem }: MyWorkProps) {
       {apps.length > 0 && (
         <div className="workspace-table-controls">
           <label>
-            Application{' '}
+            Ứng dụng{' '}
             <select value={selectedApp} onChange={event => setAppFilter(event.target.value)}>
-              <option value="">All applications</option>
+              <option value="">Tất cả ứng dụng</option>
               {apps.map(app => <option key={app.app_id} value={app.app_id}>{app.display_name}</option>)}
             </select>
           </label>
           <label>
-            Priority{' '}
+            Mức ưu tiên{' '}
             <select value={priorityFilter} onChange={event => setPriorityFilter(event.target.value)}>
-              <option value="">All priorities</option>
+              <option value="">Tất cả mức ưu tiên</option>
               {Object.entries(priorities).map(([value, name]) => <option key={value} value={value}>{name}</option>)}
             </select>
           </label>
         </div>
       )}
-      {loading && <p role="status">Loading work items…</p>}
+      {loading && <p role="status">Đang tải công việc…</p>}
       <WorkAvailability partial={Boolean(result?.partial)} itemCount={work.length} />
       {items.length > 0 && <WorkItemList session={session} onOpenWorkItem={onOpenWorkItem} items={items} />}
       {!loading && !items.length && (
         selectedApp || priorityFilter
-          ? <p>No loaded work items match your filters.</p>
-          : !result?.partial && <p>No work items are available to your account.</p>
+          ? <p>Không có việc nào khớp bộ lọc hiện tại.</p>
+          : !result?.partial && <p>Chưa có việc nào dành cho tài khoản của bạn.</p>
       )}
       {result && (hasMore || result.partial) && (
         <button disabled={loading} onClick={() => setRequest({ session, cursors: { ...result.next } })}>
-          {result.partial ? 'Retry unavailable work' : 'Load more'}
+          {result.partial ? 'Thử lại phần chưa tải được' : 'Tải thêm'}
         </button>
       )}
     </>

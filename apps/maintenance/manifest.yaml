@@ -4,15 +4,15 @@ apiVersion: dxos.io/v1alpha1
 kind: DXApplication
 metadata:
   name: maintenance
-  displayName: "Equipment Maintenance"
+  displayName: "Bảo trì thiết bị"
   version: "0.2.0"
 spec:
   capabilities: [cap-process, cap-hr, cap-data]
   roles:
     - name: role_maintenance_technician
-      description: Records and works on maintenance tasks
+      description: Ghi nhận và xử lý công việc bảo trì
     - name: role_maintenance_manager
-      description: Closes or cancels the maintenance tasks of their department
+      description: Đóng hoặc huỷ công việc bảo trì của phòng ban mình
   sharedAccess:
     - table: core.users
       roles: [role_maintenance_technician, role_maintenance_manager]
@@ -74,8 +74,8 @@ spec:
     ui:
       listColumns: [issue_summary, assignee_id, device_id, status, version, updated_at]
       formFields:
-        - { name: assignee_id, label: "Assigned Technician", type: uuid, required: true }
-        - { name: device_id, label: "Equipment / Device", type: uuid, required: false }
-        - { name: issue_summary, label: "Issue Summary", type: text, required: true }
-        - { name: resolution_note, label: "Resolution Note", type: text, required: false }
+        - { name: assignee_id, label: "Kỹ thuật viên phụ trách", type: uuid, required: true }
+        - { name: device_id, label: "Thiết bị", type: uuid, required: false }
+        - { name: issue_summary, label: "Mô tả sự cố", type: text, required: true }
+        - { name: resolution_note, label: "Ghi chú xử lý", type: text, required: false }
       actions: [submit, close, cancel]

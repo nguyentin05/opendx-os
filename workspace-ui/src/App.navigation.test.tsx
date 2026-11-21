@@ -23,7 +23,7 @@ function recordsTable(role: string): InstalledTable {
 }
 
 function openApplication(name: string) {
- fireEvent.click(within(screen.getByRole('navigation', { name: 'Workspace' })).getByRole('link', { name }));
+ fireEvent.click(within(screen.getByRole('navigation', { name: 'Không gian làm việc' })).getByRole('link', { name }));
 }
 
 afterEach(()=>{
@@ -38,17 +38,17 @@ it('navigates a real registry table and capability-only library using the indepe
  render(<App initialSession={session}/>);
  openApplication('Sample app');
  await screen.findByText('A declared record');
- fireEvent.click(screen.getByRole('button',{name:'Personal library'}));
- expect(screen.getByLabelText('Upload document')).toBeTruthy();
- fireEvent.change(screen.getByLabelText('Search your documents'),{target:{value:'policy'}});
- fireEvent.click(screen.getByRole('button',{name:'Search'}));
+ fireEvent.click(screen.getByRole('button',{name:'Thư viện cá nhân'}));
+ expect(screen.getByLabelText('Tải tài liệu lên')).toBeTruthy();
+ fireEvent.change(screen.getByLabelText('Tìm trong tài liệu của bạn'),{target:{value:'policy'}});
+ fireEvent.click(screen.getByRole('button',{name:'Tìm'}));
  await waitFor(()=>expect(headers).toContain('role_library_user'));
  expect(headers).toContain('role_sample');
  openApplication('Sample app');
  await screen.findByText('A declared record');
- expect(screen.queryByLabelText('Upload document')).toBeNull();
- fireEvent.click(screen.getByRole('button',{name:'Personal library'}));
- expect(screen.getByLabelText('Upload document')).toBeTruthy();
+ expect(screen.queryByLabelText('Tải tài liệu lên')).toBeNull();
+ fireEvent.click(screen.getByRole('button',{name:'Thư viện cá nhân'}));
+ expect(screen.getByLabelText('Tải tài liệu lên')).toBeTruthy();
  expect(screen.queryByLabelText(/API key/i)).toBeNull();
 });
 
@@ -56,9 +56,9 @@ it('opens shared sources and manager controls in an app that also owns the perso
  vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>new Response(JSON.stringify(String(input)==='/v1/graphql'?{data:{domain_records:[{title:'Declared shared record'}]}}:String(input).includes('/app-knowledge')?{sources:[{source_id:'policy',document_id:'d',status:'READY',readable:false,manageable:true,active_version_available:false}]}:{documents:[]}),{status:200})));
  const session:Session={token:'combined-token',user:{id:'A',email:'a@test.invalid',display_name:'Alice',roles:[]},apps:[{app_id:'combined',display_name:'Combined app',version:'1',capabilities:['cap-ai'],roles:[{name:'role_combined'}],tables:[recordsTable('role_combined')],knowledge:{version:1,personalLibrary:{enabled:true,allowedRoles:['role_combined']},sources:[{id:'policy',path:'knowledge/policy.md',mediaType:'text/markdown',indexingProfile:'standard-text-v1',access:{mode:'RESTRICTED',allowedRoles:['role_combined'],grantsManagedBy:'manager'}}],grantPolicies:{manager:{allowedRoles:['role_combined']}}}}]};
  render(<App initialSession={session}/>);openApplication('Combined app');
- await screen.findByRole('heading',{name:'App knowledge'});await screen.findByText('Declared shared record');await screen.findByRole('button',{name:'Manage grants policy'});
- fireEvent.click(screen.getByRole('button',{name:'Personal library'}));expect(screen.getByLabelText('Upload document')).toBeTruthy();expect(screen.queryByRole('heading',{name:'App knowledge'})).toBeNull();
- openApplication('Combined app');await screen.findByRole('heading',{name:'App knowledge'});expect(screen.queryByLabelText('Upload document')).toBeNull();
+ await screen.findByRole('heading',{name:'Tri thức của ứng dụng'});await screen.findByText('Declared shared record');await screen.findByRole('button',{name:'Quản lý quyền đọc policy'});
+ fireEvent.click(screen.getByRole('button',{name:'Thư viện cá nhân'}));expect(screen.getByLabelText('Tải tài liệu lên')).toBeTruthy();expect(screen.queryByRole('heading',{name:'Tri thức của ứng dụng'})).toBeNull();
+ openApplication('Combined app');await screen.findByRole('heading',{name:'Tri thức của ứng dụng'});expect(screen.queryByLabelText('Tải tài liệu lên')).toBeNull();
 });
 
 it('keeps the open record and acting role usable while the drawer reports an AI outage', async () => {
@@ -78,25 +78,25 @@ it('keeps the open record and acting role usable while the drawer reports an AI 
   : Response.json({data: {domain_records_by_pk: {id, title: 'Available record'}}})));
 
  render(<App initialSession={session} />);
- const record = within(screen.getByRole('region', {name: 'Record details'}));
+ const record = within(screen.getByRole('region', {name: 'Chi tiết hồ sơ'}));
  await record.findByText('Available record');
- const trigger = screen.getByRole('button', {name: 'Assistant'});
+ const trigger = screen.getByRole('button', {name: 'Trợ lý'});
  trigger.focus();
  fireEvent.click(trigger);
- const drawer = within(screen.getByRole('dialog', {name: 'Assistant'}));
- await drawer.findByText('Assistant is temporarily unavailable.');
+ const drawer = within(screen.getByRole('dialog', {name: 'Trợ lý'}));
+ await drawer.findByText('Trợ lý tạm thời không khả dụng.');
  expect(record.getByText('Available record')).toBeTruthy();
- expect(screen.getByRole('button', {name: /Acting role.*role_sample/})).toBeTruthy();
+ expect(screen.getByRole('button', {name: /Vai trò đang dùng.*role_sample/})).toBeTruthy();
  expect(window.location.pathname).toBe('/apps/sample/tables/domain.records/' + id);
- fireEvent.keyDown(drawer.getByRole('button', {name: 'Close assistant'}), {key: 'Escape'});
- expect(screen.queryByRole('dialog', {name: 'Assistant'})).toBeNull();
+ fireEvent.keyDown(drawer.getByRole('button', {name: 'Đóng trợ lý'}), {key: 'Escape'});
+ expect(screen.queryByRole('dialog', {name: 'Trợ lý'})).toBeNull();
  expect(document.activeElement).toBe(trigger);
  expect(record.getByText('Available record')).toBeTruthy();
 
  fireEvent.click(trigger);
- fireEvent.click(screen.getByRole('link', {name: 'My Workspace'}));
- expect(screen.getByRole('heading', {name: 'My Workspace'})).toBeTruthy();
- expect(drawer.getByText('Assistant is temporarily unavailable.')).toBeTruthy();
+ fireEvent.click(screen.getByRole('link', {name: 'Không gian của tôi'}));
+ expect(screen.getByRole('heading', {name: 'Không gian của tôi'})).toBeTruthy();
+ expect(drawer.getByText('Trợ lý tạm thời không khả dụng.')).toBeTruthy();
 });
 
 it('withholds an open drawer during verification and restores its retry without moving focus from Refresh permissions', async () => {
@@ -118,20 +118,20 @@ it('withholds an open drawer during verification and restores its retry without 
  }));
 
  render(<App initialSession={session} />);
- fireEvent.click(screen.getByRole('button', {name: 'Assistant'}));
+ fireEvent.click(screen.getByRole('button', {name: 'Trợ lý'}));
  fireEvent.click(await screen.findByRole('button', {name: 'Existing'}));
- fireEvent.change(await screen.findByLabelText('Question'), {target: {value: 'Question'}});
- fireEvent.click(screen.getByRole('button', {name: 'Send'}));
- await screen.findByText(/UNCERTAIN/);
- const refresh = screen.getByRole('button', {name: 'Refresh permissions'});
+ fireEvent.change(await screen.findByLabelText('Câu hỏi'), {target: {value: 'Câu hỏi'}});
+ fireEvent.click(screen.getByRole('button', {name: 'Gửi'}));
+ await screen.findByText(/Chưa xác định/);
+ const refresh = screen.getByRole('button', {name: 'Làm mới quyền'});
  refresh.focus();
  fireEvent.click(refresh);
- expect(screen.queryByRole('dialog', {name: 'Assistant'})).toBeNull();
- expect(screen.queryByRole('button', {name: 'Assistant'})).toBeNull();
+ expect(screen.queryByRole('dialog', {name: 'Trợ lý'})).toBeNull();
+ expect(screen.queryByRole('button', {name: 'Trợ lý'})).toBeNull();
  await act(async () => completeVerification(Response.json(user)));
- expect(screen.getByRole('dialog', {name: 'Assistant'})).toBeTruthy();
+ expect(screen.getByRole('dialog', {name: 'Trợ lý'})).toBeTruthy();
  expect(document.activeElement).toBe(refresh);
- fireEvent.click(await screen.findByRole('button', {name: 'Retry'}));
+ fireEvent.click(await screen.findByRole('button', {name: 'Thử lại'}));
  await waitFor(() => expect(keys).toHaveLength(2));
  expect(keys[1]).toBe(keys[0]);
 });
@@ -161,21 +161,21 @@ it('aborts protected chat requests and discards drawer state when verification i
  }));
 
  render(<App initialSession={session} />);
- fireEvent.click(screen.getByRole('button', {name: 'Assistant'}));
+ fireEvent.click(screen.getByRole('button', {name: 'Trợ lý'}));
  fireEvent.click(await screen.findByRole('button', {name: 'Alice chat'}));
- fireEvent.change(screen.getByRole('textbox', {name: 'Question'}), {target: {value: 'Private draft'}});
- fireEvent.click(screen.getByRole('button', {name: 'Refresh permissions'}));
- await screen.findByText('Welcome, Bob.');
+ fireEvent.change(screen.getByRole('textbox', {name: 'Câu hỏi'}), {target: {value: 'Private draft'}});
+ fireEvent.click(screen.getByRole('button', {name: 'Làm mới quyền'}));
+ await screen.findByText('Chào Bob.');
  expect(transcriptSignal?.aborted).toBe(true);
- expect(screen.queryByRole('dialog', {name: 'Assistant'})).toBeNull();
+ expect(screen.queryByRole('dialog', {name: 'Trợ lý'})).toBeNull();
  await act(async () => completeTranscript(Response.json({
   messages: [{id: 'm1', seq: 1, role: 'ASSISTANT', status: 'COMPLETE', content: 'Private transcript'}],
   next_after_seq: null,
  })));
- fireEvent.click(screen.getByRole('button', {name: 'Assistant'}));
+ fireEvent.click(screen.getByRole('button', {name: 'Trợ lý'}));
  await screen.findByRole('button', {name: 'Bob chat'});
  expect(screen.queryByText('Private transcript')).toBeNull();
- expect(screen.queryByRole('textbox', {name: 'Question'})).toBeNull();
+ expect(screen.queryByRole('textbox', {name: 'Câu hỏi'})).toBeNull();
  expect(screen.queryByRole('button', {name: 'Alice chat'})).toBeNull();
 });
 
@@ -196,13 +196,13 @@ it('returns to Home when a permission refresh revokes the open personal library'
  });
 
  render(<App initialSession={session} />);
- fireEvent.click(screen.getByRole('button', { name: 'Personal library' }));
- expect(screen.getByLabelText('Upload document')).toBeTruthy();
- fireEvent.click(screen.getByRole('button', { name: 'Refresh permissions' }));
+ fireEvent.click(screen.getByRole('button', { name: 'Thư viện cá nhân' }));
+ expect(screen.getByLabelText('Tải tài liệu lên')).toBeTruthy();
+ fireEvent.click(screen.getByRole('button', { name: 'Làm mới quyền' }));
 
- expect(screen.queryByLabelText('Upload document')).toBeNull();
- await screen.findByRole('heading', { name: 'My Workspace' });
- expect(screen.queryByRole('button', { name: 'Personal library' })).toBeNull();
+ expect(screen.queryByLabelText('Tải tài liệu lên')).toBeNull();
+ await screen.findByRole('heading', { name: 'Không gian của tôi' });
+ expect(screen.queryByRole('button', { name: 'Thư viện cá nhân' })).toBeNull();
 });
 
 it('opens the canonical detail and creation routes from the generic table outlet', async () => {
@@ -222,11 +222,11 @@ it('opens the canonical detail and creation routes from the generic table outlet
  render(<App initialSession={session} />);
  openApplication('Sample app');
 
- fireEvent.click(await screen.findByRole('button', {name: 'Open'}));
+ fireEvent.click(await screen.findByRole('button', {name: 'Mở'}));
  expect(window.location.pathname).toBe('/apps/sample/tables/domain.records/' + id);
  expect(window.location.search).toBe('?role=role_sample');
  openApplication('Sample app');
- fireEvent.click(await screen.findByRole('button', {name: 'New record'}));
+ fireEvent.click(await screen.findByRole('button', {name: 'Tạo mới'}));
  expect(window.location.pathname).toBe('/apps/sample/tables/domain.records/new');
  expect(window.location.search).toBe('?role=role_sample');
 });
@@ -258,25 +258,25 @@ it('opens a knowledge-only app with its verified acting role and records its app
  }));
 
  render(<App initialSession={session} />);
- const shortcuts = within(screen.getByRole('region', {name: 'Your apps'}));
+ const shortcuts = within(screen.getByRole('region', {name: 'Ứng dụng của bạn'}));
  fireEvent.click(shortcuts.getByRole('link', {name: 'Handbook'}));
  await screen.findByText('policy');
- expect(screen.queryByRole('navigation', {name: 'Application views'})).toBeNull();
+ expect(screen.queryByRole('navigation', {name: 'Các màn hình của ứng dụng'})).toBeNull();
  expect(requests).toEqual([{url: '/api/cap/ai/app-knowledge?app_id=handbook', role}]);
- fireEvent.click(screen.getByRole('link', {name: 'My Workspace'}));
- const recent = within(screen.getByRole('region', {name: 'Recently viewed'}));
+ fireEvent.click(screen.getByRole('link', {name: 'Không gian của tôi'}));
+ const recent = within(screen.getByRole('region', {name: 'Xem gần đây'}));
  const link = recent.getByRole('link', {name: 'Handbook'});
  expect(link.getAttribute('href')).toBe('/apps/handbook?role=role_reader');
  fireEvent.click(link);
  await screen.findByText('policy');
- fireEvent.click(screen.getByRole('link', {name: 'My Workspace'}));
+ fireEvent.click(screen.getByRole('link', {name: 'Không gian của tôi'}));
 
  granted = false;
  const priorRequests = requests.length;
- const currentRecent = within(screen.getByRole('region', {name: 'Recently viewed'}));
+ const currentRecent = within(screen.getByRole('region', {name: 'Xem gần đây'}));
  fireEvent.click(currentRecent.getByRole('link', {name: 'Handbook'}));
- await screen.findByRole('heading', {name: 'Access unavailable'});
- expect(screen.queryByRole('region', {name: 'App knowledge'})).toBeNull();
+ await screen.findByRole('heading', {name: 'Không thể truy cập'});
+ expect(screen.queryByRole('region', {name: 'Tri thức của ứng dụng'})).toBeNull();
  expect(requests).toHaveLength(priorRequests);
 });
 
@@ -298,12 +298,12 @@ it('honors a personal-library app URL only for its permitted acting role', async
  vi.stubGlobal('fetch', fetcher);
  window.history.replaceState(null, '', '/apps/library?role=role_observer');
  render(<App initialSession={session} />);
- expect(screen.queryByLabelText('Upload document')).toBeNull();
+ expect(screen.queryByLabelText('Tải tài liệu lên')).toBeNull();
  expect(fetcher).toHaveBeenCalledTimes(0);
 
  openApplication('Library app');
- expect(screen.getByLabelText('Upload document')).toBeTruthy();
- expect(screen.getByRole('button', {name: /Acting role.*role_library_user/})).toBeTruthy();
+ expect(screen.getByLabelText('Tải tài liệu lên')).toBeTruthy();
+ expect(screen.getByRole('button', {name: /Vai trò đang dùng.*role_library_user/})).toBeTruthy();
  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
  expect(new Headers(fetcher.mock.calls[0][1]?.headers).get('X-Hasura-Role')).toBe(role);
 });

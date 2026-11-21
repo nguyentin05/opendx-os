@@ -86,7 +86,7 @@ class BackendAcceptance(unittest.TestCase):
         self.assertEqual(db_scalar(f"SELECT count(*) FROM core.processed_workflow_steps WHERE event_id='{event}' AND step_name='create_review'"), '1')
         work_item = str(uuid.UUID(first_effect[1]['work_item_id']))
         item = json.loads(db_scalar(f"SELECT json_build_object('workspace_id',workspace_id,'title',title,'description',description,'priority',priority,'assigned_employee_id',assigned_employee_id) FROM core.work_items WHERE id='{work_item}'"))
-        self.assertEqual(item, {'workspace_id': self.workspace, 'title': 'Review procurement request',
+        self.assertEqual(item, {'workspace_id': self.workspace, 'title': 'Duyệt yêu cầu mua sắm',
             'description': 'Review the submitted request in its source application.',
             'priority': 'MEDIUM', 'assigned_employee_id': None})
 

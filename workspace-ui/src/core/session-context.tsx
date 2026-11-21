@@ -97,7 +97,7 @@ export function useSessionContext(token: string | null, route: WorkspaceRoute, i
 
     void loadSession(load.token, controller.signal).then(
       session => finish(session, null),
-      () => finish(null, 'Current permissions are unavailable.'),
+      () => finish(null, 'Quyền hiện tại không khả dụng. Hãy làm mới quyền.'),
     );
     return () => controller.abort();
   }, [load]);

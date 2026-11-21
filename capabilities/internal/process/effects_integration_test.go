@@ -83,7 +83,7 @@ func TestEffectCreatesOneWorkItemPerStep(t *testing.T) {
 		Scan(&app, &sourceType, &sourceID, &title, &createdBy); err != nil {
 		t.Fatal(err)
 	}
-	if app != "procurement" || sourceType != "domain.procurement_requests" || sourceID != entity || title != "Review procurement request" || createdBy != service.UserID {
+	if app != "procurement" || sourceType != "domain.procurement_requests" || sourceID != entity || title != "Duyệt yêu cầu mua sắm" || createdBy != service.UserID {
 		t.Fatalf("work item: %s %s %s %q %s", app, sourceType, sourceID, title, createdBy)
 	}
 	if n := o.count(t, `SELECT count(*) FROM cap_work.work_items`); n != 1 {

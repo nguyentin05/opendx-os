@@ -119,7 +119,7 @@ function fill(label: string, value: string) {
 }
 
 function save() {
-  fireEvent.click(screen.getByRole('button', { name: 'Save record' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Lưu hồ sơ' }));
 }
 
 afterEach(() => {
@@ -145,7 +145,7 @@ it('creates a record through the generic outlet with typed values and a readable
   expect(screen.queryByText('Confidential')).toBeNull();
   expect(screen.queryByLabelText('Locked')).toBeNull();
   expect(screen.queryByLabelText('Version')).toBeNull();
-  expect(screen.getByText(/file upload is unavailable/i)).toBeTruthy();
+  expect(screen.getByText(/Tải tệp tạm thời không khả dụng/)).toBeTruthy();
 
   fill('Title', 'New request');
   fill('Amount', '0.25');
@@ -176,7 +176,7 @@ it('shows required and UUID validation before sending a mutation', async () => {
   save();
 
   expect(screen.getAllByRole('alert').map(item => item.textContent)).toEqual([
-    'Title is required.', 'Amount is required.', 'Reference ID must be a valid UUID.',
+    'Title là bắt buộc.', 'Amount là bắt buộc.', 'Reference ID phải là UUID hợp lệ.',
   ]);
   expect(requests.some(request => request.query.startsWith('mutation'))).toBe(false);
 });
@@ -215,13 +215,13 @@ it('loads the edit route by ID and sends only changed values including a cleared
     return dataResponse('domain_requests_by_pk', { ...draft, notes: saved ? null : draft.notes, reference_id: null });
   });
   showForm('/' + id);
-  fireEvent.click(await screen.findByRole('button', { name: 'Edit record' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Sửa hồ sơ' }));
   expect(window.location.pathname).toBe(tablePath + '/' + id + '/edit');
 
   expect((await screen.findByLabelText('Amount') as HTMLInputElement).value).toBe('12.5');
   expect(screen.queryByLabelText('Reference ID')).toBeNull();
   save();
-  await screen.findByText('No changes to save.');
+  await screen.findByText('Không có thay đổi để lưu.');
   expect(requests.some(request => request.query.startsWith('mutation'))).toBe(false);
 
   fill('Notes', '');
@@ -254,7 +254,7 @@ it.each([
   fill('Title', 'Attempted edit');
   save();
 
-  expect((await screen.findByRole('alert')).textContent).toMatch(/could not be saved|cannot save/i);
+  expect((await screen.findByRole('alert')).textContent).toMatch(/Không lưu được hồ sơ/);
   expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Attempted edit');
   expect(screen.queryByText('Private server details')).toBeNull();
   expect(window.location.pathname).toBe(tablePath + '/' + id + '/edit');
@@ -265,7 +265,7 @@ it('hides the edit action on the detail of a noneditable process record', async 
   showForm('/' + id);
 
   await screen.findByText('Existing request');
-  expect(screen.queryByRole('button', { name: 'Edit record' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Sửa hồ sơ' })).toBeNull();
 });
 
 it.each([
@@ -294,7 +294,7 @@ it.each(['unreadable', 'outside the app'])('does not query or offer a raw input 
   const requests = serve(() => dataResponse('domain_vendors', [{ id: vendorID, name: 'Private vendor' }]));
   showForm('/new', role, { ...session, apps: [updatedApp, { ...app, app_id: 'other', tables: [vendors] }] });
 
-  await screen.findByText(/vendor.*unavailable/i);
+  await screen.findByText(/Danh sách tham chiếu tạm thời không khả dụng/);
   expect(screen.queryByLabelText('Vendor')).toBeNull();
   expect(requests).toHaveLength(0);
 });
@@ -348,7 +348,7 @@ it('aborts a pending vendor lookup on navigation', async () => {
   const requests = serve(({ query }) => query.includes('domain_vendors(')
     ? pending : dataResponse('domain_requests', [{ id, title: 'List request' }]));
   showForm();
-  await screen.findByText(/loading vendor/i);
+  await screen.findByText(/Đang tải lựa chọn Vendor/);
 
   act(() => open(''));
   await screen.findByText('List request');
@@ -385,10 +385,10 @@ it.each(['core.users', 'cap_hr.org_units', 'cap_data.devices'])(
     fill('Title', 'New shared request');
     fill('Amount', '10');
     save();
-    await screen.findByText('Assigned record is required.');
+    await screen.findByText('Assigned record là bắt buộc.');
     fill('Assigned record', 'unknown');
     save();
-    await screen.findByText('Assigned record must be a valid UUID.');
+    await screen.findByText('Assigned record phải là UUID hợp lệ.');
     expect(requests).toHaveLength(0);
 
     fill('Assigned record', otherID);
@@ -418,11 +418,11 @@ it('does not accept a raw UUID for an app-scoped work item reference', async () 
   showForm('/new', role, { ...session, apps: [{ ...app, tables: [requestTable] }] });
 
   expect(screen.queryByRole('textbox', { name: 'Work item' })).toBeNull();
-  expect(screen.getByText(/work item.*unavailable/i)).toBeTruthy();
+  expect(screen.getByText(/Danh sách tham chiếu tạm thời không khả dụng/)).toBeTruthy();
   fill('Title', 'Request with an app-scoped reference');
   fill('Amount', '10');
   save();
-  await screen.findByText('Work item is required.');
+  await screen.findByText('Work item là bắt buộc.');
   expect(requests).toHaveLength(0);
 });
 
@@ -452,7 +452,7 @@ it('keeps cancel disabled on a regular form while a save is pending', async () =
   fill('Amount', '2');
   save();
 
-  const cancel = screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement;
+  const cancel = screen.getByRole('button', { name: 'Huỷ' }) as HTMLButtonElement;
   expect(cancel.disabled).toBe(true);
   finishSave(dataResponse('insert_domain_requests_one', null));
   await screen.findByRole('alert');

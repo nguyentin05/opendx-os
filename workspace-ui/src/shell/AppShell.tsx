@@ -89,6 +89,7 @@ export function AppShell({
 
   return (
     <div className="workspace-shell">
+      <a className="workspace-skip-link" href="#workspace-main">Bỏ qua tới nội dung chính</a>
       <header className="workspace-topbar">
         <button
           type="button"
@@ -104,8 +105,8 @@ export function AppShell({
         <div className="workspace-account">
           {assistant}
           {session && <span className="workspace-identity">{session.user.display_name}</span>}
-          {onRefresh && <button onClick={onRefresh} disabled={pending}>Refresh permissions</button>}
-          {onSignOut && <button onClick={onSignOut}>Sign out</button>}
+          {onRefresh && <button onClick={onRefresh} disabled={pending}>Làm mới quyền</button>}
+          {onSignOut && <button onClick={onSignOut}>Đăng xuất</button>}
         </div>
       </header>
 
@@ -114,7 +115,7 @@ export function AppShell({
         id="workspace-sidebar"
         className="workspace-sidebar"
         data-open={navOpen}
-        aria-label="Workspace"
+        aria-label="Không gian làm việc"
         onKeyDown={event => {
           if (navOpen && event.key === 'Escape') {
             event.preventDefault();
@@ -123,14 +124,14 @@ export function AppShell({
         }}
       >
         <WorkspaceLink href="/" onNavigate={go} current={!auxiliaryViewActive && route.kind === 'home'}>
-          My Workspace
+          Không gian của tôi
         </WorkspaceLink>
         <WorkspaceLink href="/my-work" onNavigate={go} current={!auxiliaryViewActive && route.kind === 'work'}>
-          My Work
+          Việc của tôi
         </WorkspaceLink>
         {apps.length > 0 && (
           <>
-            <h2>Applications</h2>
+            <h2>Ứng dụng</h2>
             {apps.map(app => (
               <WorkspaceLink
                 key={app.app_id}
@@ -152,12 +153,12 @@ export function AppShell({
               library.open();
             }}
           >
-            Personal library
+            Thư viện cá nhân
           </button>
         )}
       </nav>
 
-      <main className="workspace-main" ref={main} tabIndex={-1}>
+      <main id="workspace-main" className="workspace-main" ref={main} tabIndex={-1}>
         {showRoles && (
           <div className="workspace-role" onKeyDown={event => {
             if (roleMenuOpen && event.key === 'Escape') {
@@ -178,7 +179,7 @@ export function AppShell({
                 }
               }}
             >
-              Acting role{context && ' · ' + context.role}
+              Vai trò đang dùng{context && ' · ' + context.role}
             </button>
             <div id="workspace-role-options" hidden={!roleMenuOpen}>
               {roleMenuOpen && roles.map(grant => (
@@ -197,7 +198,7 @@ export function AppShell({
             </div>
           </div>
         )}
-        {pending && <p role="status">Checking current permissions…</p>}
+        {pending && <p role="status">Đang kiểm tra quyền hiện tại…</p>}
         {error && <p role="alert">{error}</p>}
         {session && children}
       </main>

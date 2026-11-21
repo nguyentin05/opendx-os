@@ -26,17 +26,17 @@ function mergeMessages(messages: Message[], incoming: Message[]): Message[] {
 function emptyResultMessage(result: Result, incomplete: boolean) {
   switch (result.reason) {
     case "MODEL_CHARGE_UNCERTAIN":
-      return "UNCERTAIN: The model charge could not be confirmed.";
+      return "Chưa xác định: chưa xác nhận được chi phí mô hình.";
     case "TURN_PENDING":
-      return "Turn pending";
+      return "Lượt hỏi đang chờ";
     case "SEARCH_UNAVAILABLE":
-      return "Search is temporarily unavailable.";
+      return "Tìm kiếm tạm thời không khả dụng.";
   }
   if (result.status === "NO_EVIDENCE")
     return incomplete
-      ? "No evidence found in the sources searched."
-      : "No evidence found.";
-  return "No generated answer available.";
+      ? "Không tìm thấy nguồn nào trong các nguồn đã tìm."
+      : "Không tìm thấy nguồn nào.";
+  return "Chưa có câu trả lời được tạo.";
 }
 
 export function AgentChat({
@@ -172,7 +172,7 @@ export function AgentChat({
         if (signal.aborted) return;
         if (result.reason === "TURN_PENDING") {
           setError(
-            "This turn is pending. Retry the same question to check its result.",
+            "Lượt hỏi này đang chờ. Hãy gửi lại đúng câu hỏi để kiểm tra kết quả.",
           );
           return;
         }
@@ -202,7 +202,7 @@ export function AgentChat({
         if (!signal.aborted) {
           setError(
             e instanceof TypeError
-              ? "UNCERTAIN: The request may have been processed. Retry the same question to check its result."
+              ? "Chưa xác định: yêu cầu có thể đã được xử lý. Hãy gửi lại đúng câu hỏi để kiểm tra kết quả."
               : errorMessage(e),
           );
         }
@@ -223,7 +223,7 @@ export function AgentChat({
       .catch(() => {
         if (!signal.aborted && request === previewRequest.current)
           setPreviewError(
-            "This citation is unavailable or access has changed.",
+            "Trích dẫn này không khả dụng hoặc quyền truy cập đã thay đổi.",
           );
       });
   };
@@ -232,10 +232,10 @@ export function AgentChat({
     return (
       <>
         <p>{result.answer || emptyResultMessage(result, incomplete)}</p>
-        {incomplete && <p>Some sources could not be searched.</p>}
+        {incomplete && <p>Một số nguồn chưa tìm được. Hãy thử lại.</p>}
         {result.citations?.map((c, i) => (
           <button key={i} onClick={() => showCitation(c)}>
-            {c.title || "Citation"}
+            {c.title || "Trích dẫn"}
           </button>
         ))}
       </>
@@ -243,8 +243,8 @@ export function AgentChat({
   };
   return (
     <section>
-      <h1>Assistant</h1>
-      <p>Ask questions across your available knowledge.</p>
+      <h1>Trợ lý</h1>
+      <p>Đặt câu hỏi trên nguồn tri thức bạn được xem.</p>
       {error && <p role="alert">{error}</p>}
       <button
         disabled={busy}
@@ -258,11 +258,11 @@ export function AgentChat({
           })
         }
       >
-        New conversation
+        Cuộc trò chuyện mới
       </button>
-      <h2>Conversations</h2>
-      {loading && <p role="status">Loading…</p>}
-      {!loading && listReady && !conversations.length && <p>No conversations yet.</p>}
+      <h2>Cuộc trò chuyện</h2>
+      {loading && <p role="status">Đang tải…</p>}
+      {!loading && listReady && !conversations.length && <p>Chưa có cuộc trò chuyện nào. Hãy đặt câu hỏi đầu tiên.</p>}
       <ul>
         {conversations.map((c) => (
           <li key={c.id}>
@@ -294,7 +294,7 @@ export function AgentChat({
             })
           }
         >
-          More conversations
+          Tải thêm cuộc trò chuyện
         </button>
       )}
       {selected && (
@@ -320,14 +320,15 @@ export function AgentChat({
               })
             }
           >
-            Delete conversation
+            Xoá cuộc trò chuyện
           </button>
-          <h2>Transcript</h2>
-          {transcriptReady && !messages.length && <p>No messages yet.</p>}
+          <h2>Nội dung trao đổi</h2>
+          {!transcriptReady && <p role="status">Đang tải nội dung trao đổi…</p>}
+          {transcriptReady && !messages.length && <p>Chưa có tin nhắn nào.</p>}
           <ol>
             {messages.map((m) => (
               <li key={m.id}>
-                <strong>{m.role === "USER" ? "You" : "Assistant"}</strong>
+                <strong>{m.role === "USER" ? "Bạn" : "Trợ lý"}</strong>
                 {m.response ? resultView(m.response) : <p>{m.content}</p>}
               </li>
             ))}
@@ -347,10 +348,10 @@ export function AgentChat({
                 })
               }
             >
-              More messages
+              Tải thêm tin nhắn
             </button>
           )}
-          <label htmlFor="agent-question">Question</label>
+          <label htmlFor="agent-question">Câu hỏi</label>
           <textarea
             id="agent-question"
             maxLength={2000}
@@ -359,8 +360,7 @@ export function AgentChat({
           />
           {pending && pending.query !== question.trim() && (
             <p role="status">
-              Restore the pending question to retry, or discard it to start a
-              new one.
+              Khôi phục câu hỏi đang chờ để thử lại, hoặc bỏ nó để bắt đầu câu hỏi mới.
             </p>
           )}
           {pending && (
@@ -371,7 +371,7 @@ export function AgentChat({
                 setPending(null);
               }}
             >
-              Discard pending turn
+              Bỏ lượt hỏi đang chờ
             </button>
           )}
           <button
@@ -383,9 +383,9 @@ export function AgentChat({
             }
             onClick={send}
           >
-            {pending?.query === question.trim() ? "Retry" : "Send"}
+            {pending?.query === question.trim() ? "Thử lại" : "Gửi"}
           </button>
-          {busy && <p role="status">Working…</p>}
+          {busy && <p role="status">Đang xử lý…</p>}
           {previewError && <p role="alert">{previewError}</p>}
           {preview && (
             <aside>

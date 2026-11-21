@@ -67,8 +67,8 @@ export function MyWorkspace({ session, onOpenApp, onOpenWorkItem, recent = [], o
 
   return (
     <>
-      <h1>My Workspace</h1>
-      <p>Welcome, {session.user.display_name}.</p>
+      <h1>Không gian của tôi</h1>
+      <p>Chào {session.user.display_name}.</p>
       <section className="workspace-panel" aria-labelledby="workspace-inbox">
         <h2 id="workspace-inbox">Chờ tôi xử lý</h2>
         {inboxLoading && <p role="status">Đang tải hồ sơ chờ xử lý…</p>}
@@ -84,19 +84,19 @@ export function MyWorkspace({ session, onOpenApp, onOpenWorkItem, recent = [], o
       </section>
 
       <section className="workspace-panel" aria-labelledby="workspace-attention">
-        <h2 id="workspace-attention">Needs your attention</h2>
-        {hasWork && !result && <p role="status">Loading work items…</p>}
+        <h2 id="workspace-attention">Cần bạn chú ý</h2>
+        {hasWork && !result && <p role="status">Đang tải công việc…</p>}
         <WorkAvailability partial={Boolean(result?.partial)} itemCount={result?.items.length ?? 0} />
         {result && result.items.length > 0 && (
           <WorkItemList session={session} onOpenWorkItem={onOpenWorkItem} items={result.items} />
         )}
         {(!hasWork || (result && !result.items.length && !result.partial))
-          && <p>No work items are available to your account.</p>}
-        <WorkspaceLink href="/my-work" onNavigate={navigate}>See all in My Work</WorkspaceLink>
+          && <p>Chưa có việc nào dành cho tài khoản của bạn.</p>}
+        <WorkspaceLink href="/my-work" onNavigate={navigate}>Xem tất cả trong Việc của tôi</WorkspaceLink>
       </section>
 
       <section className="workspace-panel" aria-labelledby="workspace-apps-heading">
-        <h2 id="workspace-apps-heading">Your apps</h2>
+        <h2 id="workspace-apps-heading">Ứng dụng của bạn</h2>
         {apps.length > 0 ? (
           <ul className="workspace-app-shortcuts" role="list">
             {apps.map(app => (
@@ -107,11 +107,11 @@ export function MyWorkspace({ session, onOpenApp, onOpenWorkItem, recent = [], o
               </li>
             ))}
           </ul>
-        ) : <p>No applications are available to your account.</p>}
+        ) : <p>Tài khoản của bạn chưa có ứng dụng nào. Hãy liên hệ quản trị viên để được cấp quyền.</p>}
       </section>
 
       <section className="workspace-panel" aria-labelledby="workspace-recent-heading">
-        <h2 id="workspace-recent-heading">Recently viewed</h2>
+        <h2 id="workspace-recent-heading">Xem gần đây</h2>
         {entries.length > 0 && onOpenRecent ? (
           <ul className="workspace-recent" role="list">
             {entries.map(({ target, href, app }) => (
@@ -124,7 +124,7 @@ export function MyWorkspace({ session, onOpenApp, onOpenWorkItem, recent = [], o
               </li>
             ))}
           </ul>
-        ) : <p>Open an app or record to find it here during this session.</p>}
+        ) : <p>Mở một ứng dụng hoặc hồ sơ để thấy lại tại đây trong phiên làm việc này.</p>}
       </section>
     </>
   );

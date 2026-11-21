@@ -37,7 +37,7 @@ type Field = FormField & {
 };
 type Values = Record<string, string>;
 
-const cannotEdit = 'This record cannot be edited.';
+const cannotEdit = 'Không thể sửa hồ sơ này.';
 const inputTypes = { text: 'text', number: 'number', date: 'date', uuid: 'text' } as const;
 // Only organization-scoped shared targets can use raw UUID entry.
 const sharedUUIDTargets = new Set(['core.users', 'cap_hr.org_units', 'cap_data.devices']);
@@ -58,7 +58,7 @@ function EditError({ message, onCancel }: { message: string; onCancel: () => voi
   return (
     <>
       <p role="alert">{message}</p>
-      <button type="button" onClick={onCancel}>Cancel</button>
+      <button type="button" onClick={onCancel}>Huỷ</button>
     </>
   );
 }
@@ -85,13 +85,13 @@ function EditRecordLoader(props: EditRecordProps) {
       if (controller.signal.aborted) return;
       setResult({
         error: error instanceof GraphQLRequestError && error.kind === 'unauthenticated'
-          ? 'Sign in again to edit this record.' : cannotEdit,
+          ? 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.' : cannotEdit,
       });
     });
     return () => controller.abort();
   }, [token, role, table, recordID, fields]);
 
-  if (!result) return <p role="status">Loading record…</p>;
+  if (!result) return <p role="status">Đang tải hồ sơ…</p>;
   if ('error' in result) return <EditError message={result.error} onCancel={onCancel} />;
   return <RecordForm {...props} mode="update" record={result.record} />;
 }
@@ -108,29 +108,29 @@ export function RecordForm(props: RecordFormProps) {
     if (!column) return [];
     if (isFileFormField(table, field)) {
       return isAttachmentColumn(table, field.name) ? [{ ...field, column, attachment: true }]
-        : [{ ...field, column, unavailable: 'File upload is unavailable.' }];
+        : [{ ...field, column, unavailable: 'Tải tệp tạm thời không khả dụng. Hãy thử lại sau ít phút.' }];
     }
     if (!Object.prototype.hasOwnProperty.call(inputTypes, field.type)) {
-      return [{ ...field, column, unavailable: 'This input is unavailable.' }];
+      return [{ ...field, column, unavailable: 'Trường này tạm thời không khả dụng.' }];
     }
     const reference = table.foreignKeys?.find(key => key.column === field.name);
     if (reference) {
       if (field.type === 'uuid' && column.type === 'uuid' && sharedUUIDTargets.has(reference.references)) {
-        return [{ ...field, column, description: 'Enter the record UUID.' }];
+        return [{ ...field, column, description: 'Nhập mã UUID của hồ sơ.' }];
       }
       const target = app.tables.find(candidate => candidate.name === reference.references
         && allowedFields(candidate, role, 'select').includes('id'));
-      return target ? [{ ...field, column, target }] : [{ ...field, column, unavailable: 'Reference selection is unavailable.' }];
+      return target ? [{ ...field, column, target }] : [{ ...field, column, unavailable: 'Danh sách tham chiếu tạm thời không khả dụng.' }];
     }
     return [{ ...field, column }];
   });
 
   const scope = JSON.stringify([context.userID, context.token, role, app.app_id, table, mode, record, fields]);
   return (
-    <section aria-label={mode === 'insert' ? 'New record' : 'Edit record'}>
-      <h2>{mode === 'insert' ? 'New record' : 'Edit record'}</h2>
+    <section aria-label={mode === 'insert' ? 'Tạo hồ sơ' : 'Sửa hồ sơ'}>
+      <h2>{mode === 'insert' ? 'Tạo hồ sơ' : 'Sửa hồ sơ'}</h2>
       {fields.length ? <FormFields key={scope} {...props} fields={fields} />
-        : <EditError message="No editable fields are available to this role." onCancel={onCancel} />}
+        : <EditError message="Vai trò này chưa có trường nào có thể sửa." onCancel={onCancel} />}
     </section>
   );
 }
@@ -141,19 +141,19 @@ function textValue(value: unknown): string {
 
 function fieldValue(field: Field, draft: string): string | number | null {
   if (!draft.trim()) {
-    if (field.required || !field.column.nullable) throw new Error(field.label + ' is required.');
+    if (field.required || !field.column.nullable) throw new Error(field.label + ' là bắt buộc.');
     return null;
   }
 
   if (field.attachment || field.type === 'uuid') {
-    if (!isRecordID(draft)) throw new Error(field.label + ' must be a valid UUID.');
+    if (!isRecordID(draft)) throw new Error(field.label + ' phải là UUID hợp lệ.');
     return draft;
   }
   if (field.type === 'number') {
     const number = Number(draft);
-    if (!Number.isFinite(number)) throw new Error(field.label + ' must be a number.');
+    if (!Number.isFinite(number)) throw new Error(field.label + ' phải là số.');
     if (field.column.type === 'integer' && !Number.isInteger(number)) {
-      throw new Error(field.label + ' must be a whole number.');
+      throw new Error(field.label + ' phải là số nguyên.');
     }
     return number;
   }
@@ -194,7 +194,7 @@ function FormFields({ table, context, mode, record, childScope, writeGuard, onSa
       const { name, label, required, column, unavailable } = field;
       const draft = values[name];
       if (unavailable) {
-        if (mode === 'insert' && (required || !column.nullable)) messages[name] = label + ' is required.';
+        if (mode === 'insert' && (required || !column.nullable)) messages[name] = label + ' là bắt buộc.';
         continue;
       }
       // An unreadable update value starts blank. Preserve it unless the user supplies a replacement.
@@ -210,7 +210,7 @@ function FormFields({ table, context, mode, record, childScope, writeGuard, onSa
     setErrors(messages);
     if (Object.keys(messages).length) return;
     if (mode === 'update' && !Object.keys(submitted).length) {
-      setMessage('No changes to save.');
+      setMessage('Không có thay đổi để lưu.');
       return;
     }
 
@@ -224,11 +224,11 @@ function FormFields({ table, context, mode, record, childScope, writeGuard, onSa
       const id = isRecordID(record?.id) ? record.id : undefined;
       saved = await saveRecord(context, table, mode, submitted, id, controller.signal, childScope);
       if (controller.signal.aborted) return;
-      if (!saved) setMessage('This record could not be saved.');
+      if (!saved) setMessage('Không lưu được hồ sơ. Hãy thử lại.');
     } catch (error) {
       if (controller.signal.aborted) return;
       const expired = error instanceof GraphQLRequestError && error.kind === 'unauthenticated';
-      setMessage(expired ? 'Sign in again to save this record.' : 'This record could not be saved.');
+      setMessage(expired ? 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.' : 'Không lưu được hồ sơ. Hãy thử lại.');
     } finally {
       finishWrite?.();
       if (!controller.signal.aborted) {
@@ -294,10 +294,10 @@ function FormFields({ table, context, mode, record, childScope, writeGuard, onSa
             </div>
           );
         })}
-        <button type="submit" disabled={uploading || blockedAttachment}>{pending ? 'Saving…' : 'Save record'}</button>
+        <button type="submit" disabled={uploading || blockedAttachment}>{pending ? 'Đang lưu…' : 'Lưu hồ sơ'}</button>
       </fieldset>
-      <button type="button" disabled={pending} onClick={onCancel}>Cancel</button>
-      {message && <p role={message === 'No changes to save.' ? 'status' : 'alert'}>{message}</p>}
+      <button type="button" disabled={pending} onClick={onCancel}>Huỷ</button>
+      {message && <p role={message === 'Không có thay đổi để lưu.' ? 'status' : 'alert'}>{message}</p>}
     </form>
   );
 }
@@ -338,18 +338,18 @@ function ReferenceInput({ context: { token, role }, table, label, onChange, ...i
         const value = event.target.value;
         if (value === '' || options.some(option => option.id === value)) onChange(value);
       }}>
-        <option value="">Select a record</option>
+        <option value="">Chọn một hồ sơ</option>
         {input.value && !options.some(option => option.id === input.value)
-          && <option value={input.value}>Selected record</option>}
+          && <option value={input.value}>Hồ sơ đã chọn</option>}
         {options.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
       </select>
-      {!current && <p role="status">Loading {label} options…</p>}
-      {current && !page && <p role="status">{label} options are unavailable.</p>}
+      {!current && <p role="status">Đang tải lựa chọn {label}…</p>}
+      {current && !page && <p role="status">Lựa chọn {label} tạm thời không khả dụng. Hãy thử lại sau ít phút.</p>}
       {(offset > 0 || page?.hasNext) && (
-        <div aria-label={label + ' pages'}>
-          <button type="button" disabled={offset === 0} onClick={() => setOffset(offset - referencePageSize)}>Previous</button>
+        <div aria-label={label + ' – các trang'}>
+          <button type="button" disabled={offset === 0} onClick={() => setOffset(offset - referencePageSize)}>Trang trước</button>
           <button type="button" disabled={!page?.hasNext || offset + referencePageSize > 2147483647}
-            onClick={() => setOffset(offset + referencePageSize)}>Next</button>
+            onClick={() => setOffset(offset + referencePageSize)}>Trang sau</button>
         </div>
       )}
     </>

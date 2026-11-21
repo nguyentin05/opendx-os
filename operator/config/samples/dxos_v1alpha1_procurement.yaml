@@ -17,112 +17,17 @@ kind: DXApplication
 metadata:
   name: procurement
 spec:
-  attachments:
-  - column: quote_file_id
-    requireCleanOnCommands:
-    - submit
-    - approve
-    - approve_budget
   capabilities:
   - cap-process
   - cap-hr
   - cap-work
-  displayName: Material Procurement
-  domainAccess:
-    insert:
-    - columns:
-      - vendor_name
-      - item_description
-      - quoted_amount
-      - quote_file_id
-      role: role_procurement_requester
-    select:
-    - columns:
-      - id
-      - created_by
-      - org_unit_id
-      - vendor_name
-      - item_description
-      - quoted_amount
-      - quote_file_id
-      - rejection_reason
-      - status
-      - version
-      - created_at
-      - updated_at
-      role: role_procurement_requester
-      scope: own
-    - columns:
-      - id
-      - created_by
-      - org_unit_id
-      - vendor_name
-      - item_description
-      - quoted_amount
-      - quote_file_id
-      - rejection_reason
-      - status
-      - version
-      - created_at
-      - updated_at
-      role: role_procurement_manager
-      scope: department
-    - columns:
-      - id
-      - created_by
-      - org_unit_id
-      - vendor_name
-      - item_description
-      - quoted_amount
-      - quote_file_id
-      - rejection_reason
-      - status
-      - version
-      - created_at
-      - updated_at
-      recordFilter:
-        status:
-          _neq: DRAFT
-      role: role_procurement_finance
-      scope: organization
-    update:
-    - columns:
-      - vendor_name
-      - item_description
-      - quoted_amount
-      - quote_file_id
-      role: role_procurement_requester
-      scope: own
-  domainTable:
-    columns:
-    - check: length(trim(vendor_name)) > 0
-      name: vendor_name
-      nullable: false
-      type: text
-    - check: length(trim(item_description)) > 0
-      name: item_description
-      nullable: false
-      type: text
-    - check: quoted_amount > 0
-      name: quoted_amount
-      nullable: false
-      type: numeric(14,2)
-    - name: quote_file_id
-      nullable: true
-      type: uuid
-    - name: rejection_reason
-      nullable: true
-      type: text
-    foreignKeys:
-    - column: quote_file_id
-      references: core.files
-    name: domain.procurement_requests
+  displayName: Mua sắm vật tư
   roles:
-  - description: Creates and submits purchase requests
+  - description: Tạo và gửi yêu cầu mua sắm
     name: role_procurement_requester
-  - description: Approves the purchase requests of their own department
+  - description: Duyệt yêu cầu mua sắm của phòng ban mình
     name: role_procurement_manager
-  - description: Reviews the budget of requests approved by a department
+  - description: Xem xét ngân sách của các yêu cầu đã được phòng ban duyệt
     name: role_procurement_finance
   sharedAccess:
   - columns:
@@ -154,92 +59,355 @@ spec:
     - role_procurement_manager
     - role_procurement_finance
     table: core.files
-  stateMachine:
-    commands:
-    - allowedRoles:
-      - role_procurement_requester
-      from:
-      - DRAFT
-      name: submit
-      to: SUBMITTED
-    - allowedRoles:
-      - role_procurement_manager
-      from:
-      - SUBMITTED
-      name: approve
-      recordFilter:
-        created_by:
-          _neq: X-Hasura-User-Id
-      to: BUDGET_REVIEW
-    - allowedRoles:
-      - role_procurement_finance
-      from:
-      - BUDGET_REVIEW
-      name: approve_budget
-      recordFilter:
-        created_by:
-          _neq: X-Hasura-User-Id
-      to: APPROVED
-    - allowedRoles:
-      - role_procurement_manager
-      - role_procurement_finance
-      from:
-      - SUBMITTED
-      - BUDGET_REVIEW
-      name: reject
-      to: REJECTED
-    - allowedRoles:
-      - role_procurement_requester
-      from:
-      - DRAFT
-      - SUBMITTED
-      name: cancel
-      to: CANCELLED
-    editableStates:
-    - DRAFT
-    initial: DRAFT
-    terminalStates:
-    - APPROVED
-    - REJECTED
-    - CANCELLED
-  uiSchema:
-    actions:
-    - submit
-    - approve
-    - approve_budget
-    - reject
-    - cancel
-    formFields:
-    - label: Vendor Name
+  - columns:
+    - id
+    - title
+    - description
+    - priority
+    - board_column
+    - assignee_id
+    - source_type
+    - source_id
+    - created_at
+    roles:
+    - role_procurement_manager
+    - role_procurement_finance
+    table: cap_work.work_items
+  tables:
+  - access:
+      insert:
+      - columns:
+        - vendor_name
+        - item_description
+        - quoted_amount
+        - quote_file_id
+        - vendor_id
+        role: role_procurement_requester
+      select:
+      - columns:
+        - id
+        - created_by
+        - org_unit_id
+        - vendor_name
+        - item_description
+        - quoted_amount
+        - quote_file_id
+        - rejection_reason
+        - vendor_id
+        - status
+        - version
+        - created_at
+        - updated_at
+        role: role_procurement_requester
+        scope: own
+      - columns:
+        - id
+        - created_by
+        - org_unit_id
+        - vendor_name
+        - item_description
+        - quoted_amount
+        - quote_file_id
+        - rejection_reason
+        - vendor_id
+        - status
+        - version
+        - created_at
+        - updated_at
+        recordFilter:
+          status:
+            _neq: DRAFT
+        role: role_procurement_manager
+        scope: department
+      - columns:
+        - id
+        - created_by
+        - org_unit_id
+        - vendor_name
+        - item_description
+        - quoted_amount
+        - quote_file_id
+        - rejection_reason
+        - vendor_id
+        - status
+        - version
+        - created_at
+        - updated_at
+        recordFilter:
+          status:
+            _neq: DRAFT
+        role: role_procurement_finance
+        scope: organization
+      update:
+      - columns:
+        - vendor_name
+        - item_description
+        - quoted_amount
+        - quote_file_id
+        - vendor_id
+        role: role_procurement_requester
+        scope: own
+    attachments:
+    - column: quote_file_id
+      requireCleanOnCommands:
+      - submit
+      - approve
+      - approve_budget
+    columns:
+    - check: length(trim(vendor_name)) > 0
       name: vendor_name
-      required: true
+      nullable: false
       type: text
-    - label: Item Description
+    - check: length(trim(item_description)) > 0
       name: item_description
-      required: true
+      nullable: false
       type: text
-    - label: Quoted Amount
+    - check: quoted_amount > 0
       name: quoted_amount
-      required: true
-      type: number
-    - label: Supplier Quote File
-      name: quote_file_id
-      required: false
-      type: file
-    listColumns:
-    - vendor_name
-    - item_description
-    - quoted_amount
-    - quote_file_id
-    - status
-    - version
-    - updated_at
-  version: 0.2.0
+      nullable: false
+      type: numeric(14,2)
+    - name: quote_file_id
+      nullable: true
+      type: uuid
+    - name: rejection_reason
+      nullable: true
+      type: text
+    - name: vendor_id
+      nullable: true
+      type: uuid
+    foreignKeys:
+    - column: quote_file_id
+      references: core.files
+    - column: vendor_id
+      references: domain.procurement_vendors
+    name: domain.procurement_requests
+    stateMachine:
+      commands:
+      - allowedRoles:
+        - role_procurement_requester
+        from:
+        - DRAFT
+        name: submit
+        to: SUBMITTED
+      - allowedRoles:
+        - role_procurement_manager
+        from:
+        - SUBMITTED
+        name: approve
+        recordFilter:
+          created_by:
+            _neq: X-Hasura-User-Id
+        to: BUDGET_REVIEW
+      - allowedRoles:
+        - role_procurement_finance
+        from:
+        - BUDGET_REVIEW
+        name: approve_budget
+        recordFilter:
+          created_by:
+            _neq: X-Hasura-User-Id
+        to: APPROVED
+      - allowedRoles:
+        - role_procurement_manager
+        - role_procurement_finance
+        from:
+        - SUBMITTED
+        - BUDGET_REVIEW
+        name: reject
+        payload:
+        - column: rejection_reason
+          required: true
+        to: REJECTED
+      - allowedRoles:
+        - role_procurement_requester
+        from:
+        - DRAFT
+        - SUBMITTED
+        name: cancel
+        to: CANCELLED
+      editableStates:
+      - DRAFT
+      initial: DRAFT
+      terminalStates:
+      - APPROVED
+      - REJECTED
+      - CANCELLED
+    ui:
+      actions:
+      - submit
+      - approve
+      - approve_budget
+      - reject
+      - cancel
+      formFields:
+      - label: Tên nhà cung cấp
+        name: vendor_name
+        required: true
+        type: text
+      - label: Mô tả hàng hoá
+        name: item_description
+        required: true
+        type: text
+      - label: Số tiền báo giá
+        name: quoted_amount
+        required: true
+        type: number
+      - label: Tệp báo giá của nhà cung cấp
+        name: quote_file_id
+        required: false
+        type: file
+      listColumns:
+      - vendor_name
+      - item_description
+      - quoted_amount
+      - quote_file_id
+      - status
+      - version
+      - updated_at
+  - access:
+      insert:
+      - columns:
+        - name
+        - tax_code
+        role: role_procurement_finance
+      select:
+      - columns:
+        - id
+        - name
+        - tax_code
+        - version
+        - updated_at
+        role: role_procurement_requester
+        scope: organization
+      - columns:
+        - id
+        - name
+        - tax_code
+        - version
+        - updated_at
+        role: role_procurement_manager
+        scope: organization
+      - columns:
+        - id
+        - name
+        - tax_code
+        - version
+        - updated_at
+        role: role_procurement_finance
+        scope: organization
+      update:
+      - columns:
+        - name
+        - tax_code
+        role: role_procurement_finance
+        scope: organization
+    columns:
+    - check: length(trim(name)) > 0
+      name: name
+      nullable: false
+      type: text
+    - name: tax_code
+      nullable: true
+      type: text
+    name: domain.procurement_vendors
+    ui:
+      formFields:
+      - label: Tên nhà cung cấp
+        name: name
+        required: true
+        type: text
+      - label: Mã số thuế
+        name: tax_code
+        required: false
+        type: text
+      listColumns:
+      - name
+      - tax_code
+  - access:
+      delete:
+      - role: role_procurement_requester
+      insert:
+      - columns:
+        - item
+        - quantity
+        - unit_price
+        role: role_procurement_requester
+      select:
+      - columns:
+        - id
+        - request_id
+        - item
+        - quantity
+        - unit_price
+        - version
+        - updated_at
+        role: role_procurement_requester
+      - columns:
+        - id
+        - request_id
+        - item
+        - quantity
+        - unit_price
+        - version
+        - updated_at
+        role: role_procurement_manager
+      - columns:
+        - id
+        - request_id
+        - item
+        - quantity
+        - unit_price
+        - version
+        - updated_at
+        role: role_procurement_finance
+      update:
+      - columns:
+        - item
+        - quantity
+        - unit_price
+        role: role_procurement_requester
+    belongsTo:
+      column: request_id
+      table: domain.procurement_requests
+    columns:
+    - check: length(trim(item)) > 0
+      name: item
+      nullable: false
+      type: text
+    - check: quantity > 0
+      name: quantity
+      nullable: false
+      type: numeric(14,2)
+    - check: unit_price > 0
+      name: unit_price
+      nullable: false
+      type: numeric(14,2)
+    name: domain.procurement_items
+    ui:
+      formFields:
+      - label: Hàng hoá
+        name: item
+        required: true
+        type: text
+      - label: Số lượng
+        name: quantity
+        required: true
+        type: number
+      - label: Đơn giá
+        name: unit_price
+        required: true
+        type: number
+      listColumns:
+      - item
+      - quantity
+      - unit_price
+  version: 0.3.0
   workflows:
   - definition: |
       # SPDX-License-Identifier: Apache-2.0
       # Copyright 2026 DX-OS Open-Core Contributors
-      # Import and verify against the deployed Kestra plugin version before enabling.
+      # Deployed by the operator. On a submitted record it asks cap-process to run the
+      # create_review effect the manifest declares; the event id makes a retry harmless.
       id: procurement_approval_flow
       namespace: dxos.apps.procurement
       triggers:
@@ -258,19 +426,38 @@ spec:
               contentType: application/json
               headers:
                 Authorization: "Bearer {{ secret('DXOS_WORKFLOW_TOKEN') }}"
-                X-Hasura-Role: role_workflow
                 Idempotency-Key: "{{ trigger.body.event_id }}:create_review"
               body: |
                 {"event_id":"{{ trigger.body.event_id }}","step_name":"create_review"}
+        - id: close_review_only
+          type: io.kestra.plugin.core.flow.If
+          condition: "{{ trigger.body.app_id == 'procurement' and (trigger.body.payload.command == 'approve' or trigger.body.payload.command == 'reject' or trigger.body.payload.command == 'cancel') }}"
+          then:
+            - id: close_review
+              type: io.kestra.plugin.core.http.Request
+              uri: "{{ secret('DXOS_PROCESS_URL') }}/api/cap/process/effects/work-item"
+              method: POST
+              contentType: application/json
+              headers:
+                Authorization: "Bearer {{ secret('DXOS_WORKFLOW_TOKEN') }}"
+                Idempotency-Key: "{{ trigger.body.event_id }}:close_review"
+              body: |
+                {"event_id":"{{ trigger.body.event_id }}","step_name":"close_review"}
     effects:
     - fields:
-        description: Review the submitted request in its source application.
+        description: Xem xét yêu cầu đã gửi trong ứng dụng nguồn.
         priority: MEDIUM
-        title: Review procurement request
+        title: Duyệt yêu cầu mua sắm
       kind: create_work_item
       stepName: create_review
       whenCommands:
       - submit
+    - kind: complete_work_item
+      stepName: close_review
+      whenCommands:
+      - approve
+      - reject
+      - cancel
     file: workflows/procurement_flow.yaml
     id: procurement_approval_flow
     subscribedEvents:

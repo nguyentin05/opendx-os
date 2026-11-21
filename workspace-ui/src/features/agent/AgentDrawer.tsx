@@ -89,14 +89,14 @@ function AgentDrawerContents({ token, open, suspended, onClose, pendingTurns }: 
       ref={drawer}
       id={agentDrawerID}
       className="workspace-agent-drawer"
-      aria-label="Assistant"
+      aria-label="Trợ lý"
       aria-modal={visible && modal ? true : undefined}
       onCancel={event => {
         event.preventDefault();
         close();
       }}
     >
-      <button type="button" ref={closeButton} onClick={close}>Close assistant</button>
+      <button type="button" ref={closeButton} onClick={close}>Đóng trợ lý</button>
       {opened && <AgentChat token={token} pendingTurns={pendingTurns} visible={visible} />}
     </dialog>
   );

@@ -40,7 +40,7 @@ function recordResponse(title: string, field = 'domain_dispatches') {
 }
 
 function primaryNavigation() {
-  return within(screen.getByRole('navigation', { name: 'Workspace' }));
+  return within(screen.getByRole('navigation', { name: 'Không gian làm việc' }));
 }
 
 afterEach(() => {
@@ -54,10 +54,10 @@ it('shows My Workspace with shortcuts from the authenticated app registry', () =
   render(<App initialSession={alice} />);
 
   const main = within(screen.getByRole('main'));
-  expect(main.getByRole('heading', { name: 'My Workspace' })).toBeTruthy();
+  expect(main.getByRole('heading', { name: 'Không gian của tôi' })).toBeTruthy();
   expect(main.getByRole('link', { name: 'Dispatch Office' }).getAttribute('href')).toBe('/apps/dispatch');
   expect(primaryNavigation().getAllByRole('link').map(link => link.textContent)).toEqual([
-    'My Workspace', 'My Work', 'Dispatch Office',
+    'Không gian của tôi', 'Việc của tôi', 'Dispatch Office',
   ]);
 });
 
@@ -71,7 +71,7 @@ it.each([
   vi.stubGlobal('fetch', fetch);
   render(<App initialSession={alice} />);
 
-  expect(screen.getByRole('heading', { name: 'Access unavailable' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Không thể truy cập' })).toBeTruthy();
   expect(screen.queryByText('Private dispatch')).toBeNull();
   expect(fetch).not.toHaveBeenCalled();
 });
@@ -85,7 +85,7 @@ it('keeps the workspace chrome mounted during table navigation', async () => {
   render(<App initialSession={alice} />);
 
   const topbar = screen.getByRole('banner');
-  const sidebar = screen.getByRole('navigation', { name: 'Workspace' });
+  const sidebar = screen.getByRole('navigation', { name: 'Không gian làm việc' });
   const main = screen.getByRole('main');
   fireEvent.click(primaryNavigation().getByRole('link', { name: 'Dispatch Office' }));
   await screen.findByText('Private dispatch');
@@ -93,7 +93,7 @@ it('keeps the workspace chrome mounted during table navigation', async () => {
   await screen.findByText('Airport route');
 
   expect(screen.getByRole('banner')).toBe(topbar);
-  expect(screen.getByRole('navigation', { name: 'Workspace' })).toBe(sidebar);
+  expect(screen.getByRole('navigation', { name: 'Không gian làm việc' })).toBe(sidebar);
   expect(screen.getByRole('main')).toBe(main);
   expect(screen.queryByText('Private dispatch')).toBeNull();
 });
@@ -114,7 +114,7 @@ it('keeps the role switcher open during permission refresh and offers only fresh
   render(<App initialSession={alice} />);
   await screen.findByText('Private dispatch');
 
-  const switcher = screen.getByRole('button', { name: /Acting role.*role_dispatcher/ });
+  const switcher = screen.getByRole('button', { name: /Vai trò đang dùng.*role_dispatcher/ });
   fireEvent.click(switcher);
   expect(switcher.getAttribute('aria-expanded')).toBe('true');
   expect(screen.queryByText('Private dispatch')).toBeNull();
@@ -125,7 +125,7 @@ it('keeps the role switcher open during permission refresh and offers only fresh
   })));
 
   expect(requests.slice(1, 3)).toEqual(['/api/auth/me', '/api/auth/apps']);
-  expect(screen.getByRole('button', { name: /Acting role.*role_supervisor/ })).toBe(switcher);
+  expect(screen.getByRole('button', { name: /Vai trò đang dùng.*role_supervisor/ })).toBe(switcher);
   expect(switcher.getAttribute('aria-expanded')).toBe('true');
   expect(screen.queryByRole('button', { name: 'role_dispatcher' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'role_supervisor' }));
@@ -144,7 +144,7 @@ it('announces the current role and returns focus after keyboard dismissal or sel
   render(<App initialSession={alice} />);
   await screen.findByText('Private dispatch');
 
-  const switcher = screen.getByRole('button', { name: /Acting role.*role_dispatcher/ });
+  const switcher = screen.getByRole('button', { name: /Vai trò đang dùng.*role_dispatcher/ });
   fireEvent.click(switcher);
   const supervisor = await screen.findByRole('button', { name: 'role_supervisor' });
   supervisor.focus();
@@ -157,7 +157,7 @@ it('announces the current role and returns focus after keyboard dismissal or sel
   currentSupervisor.focus();
   fireEvent.click(currentSupervisor, { detail: 0 });
   await screen.findByText('Review record');
-  expect(screen.getByRole('button', { name: /Acting role.*role_supervisor/ })).toBe(switcher);
+  expect(screen.getByRole('button', { name: /Vai trò đang dùng.*role_supervisor/ })).toBe(switcher);
   expect(document.activeElement).toBe(switcher);
 });
 
@@ -167,10 +167,10 @@ it('clears private data at sign-out and stays signed out when the same account i
   const view = render(<App initialSession={alice} />);
   await screen.findByText('Private dispatch');
 
-  fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }));
   view.rerender(<App initialSession={{ ...alice }} />);
 
-  expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Đăng nhập' })).toBeTruthy();
   expect(screen.queryByText('Private dispatch')).toBeNull();
   expect(screen.queryByRole('link', { name: 'Dispatch Office' })).toBeNull();
 });

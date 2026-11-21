@@ -98,15 +98,15 @@ it('posts multipart, blocks form submission during upload, and saves just the qu
   expect(headers.has('Content-Type')).toBe(false);
   expect(Array.from((request.body as FormData).entries())).toEqual([['app_id', 'sample'], ['file', file]]);
 
-  const save = screen.getByRole('button', { name: 'Save record' }) as HTMLButtonElement;
+  const save = screen.getByRole('button', { name: 'Lưu hồ sơ' }) as HTMLButtonElement;
   expect(save.disabled).toBe(true);
   fireEvent.submit(save.form!);
   expect(fetch).toHaveBeenCalledTimes(1);
 
   await act(async () => upload.finish(uploaded()));
-  await screen.findByText(/QUARANTINED/);
-  expect(screen.queryByText(/\bCLEAN\b/)).toBeNull();
-  expect((screen.getByRole('button', { name: /download/i }) as HTMLButtonElement).disabled).toBe(true);
+  await screen.findByText(/Đang chờ quét tệp/);
+  expect(screen.queryByText(/Tệp đã quét xong và an toàn/)).toBeNull();
+  expect((screen.getByRole('button', { name: /^Tải (?!lại)/i }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(save);
 
   const graphQL = fetch.mock.calls.filter(([url]) => url === '/v1/graphql');
@@ -132,9 +132,9 @@ it('prevents attaching or downloading a file after an infected scan', async () =
   const fetch = serve(path => path === uploadRoute ? uploaded() : scanned('INFECTED'));
   render(form());
   choose();
-  await screen.findByText(/INFECTED/);
-  const download = screen.getByRole('button', { name: /download/i }) as HTMLButtonElement;
-  const save = screen.getByRole('button', { name: 'Save record' }) as HTMLButtonElement;
+  await screen.findByText(/Tệp bị chặn vì phát hiện mã độc/);
+  const download = screen.getByRole('button', { name: /^Tải (?!lại)/i }) as HTMLButtonElement;
+  const save = screen.getByRole('button', { name: 'Lưu hồ sơ' }) as HTMLButtonElement;
   expect(download.disabled).toBe(true);
   expect(save.disabled).toBe(true);
   fireEvent.submit(save.form!);
@@ -153,10 +153,10 @@ it('downloads a scanned attachment for the read-only role through the protected 
   vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: create, revokeObjectURL: revoke }));
   const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
   render(detail({ ...context, role: reader }));
-  await screen.findByText(/\bCLEAN\b/);
+  await screen.findByText(/Tệp đã quét xong và an toàn/);
   expect(screen.queryByLabelText('Quote')).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Edit record' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: /download/i }));
+  expect(screen.queryByRole('button', { name: 'Sửa hồ sơ' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /^Tải (?!lại)/i }));
 
   await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
   const [path, request] = fetch.mock.calls[fetch.mock.calls.length - 1];
@@ -177,10 +177,10 @@ it.each([
   const fetch = serve((_path, init) => String(init.body).includes('core_files')
     ? scanResponse() : graphql('domain_requests_by_pk', { id, quote_file_id: fileID }));
   render(detail({ ...context, role: reader }));
-  await screen.findByText(/scan status is unavailable/i);
-  expect((screen.getByRole('button', { name: /download/i }) as HTMLButtonElement).disabled).toBe(true);
+  await screen.findByText(/Không lấy được trạng thái quét tệp/);
+  expect((screen.getByRole('button', { name: /^Tải (?!lại)/i }) as HTMLButtonElement).disabled).toBe(true);
   expect(fetch.mock.calls.some(([path]) => path === downloadRoute)).toBe(false);
-  expect(screen.queryByRole('button', { name: /recheck scan status/i })).toBeNull();
+  expect(screen.queryByRole('button', { name: /Kiểm tra lại trạng thái quét/ })).toBeNull();
 });
 
 it('polls a quarantined file until it becomes clean', async () => {
@@ -190,9 +190,9 @@ it('polls a quarantined file until it becomes clean', async () => {
     return graphql('domain_requests_by_pk', { id, quote_file_id: fileID });
   });
   render(detail({ ...context, role: reader }));
-  await screen.findByText(/QUARANTINED/);
-  await screen.findByText(/\bCLEAN\b/, {}, { timeout: 2500 });
-  expect((screen.getByRole('button', { name: /download/i }) as HTMLButtonElement).disabled).toBe(false);
+  await screen.findByText(/Đang chờ quét tệp/);
+  await screen.findByText(/Tệp đã quét xong và an toàn/, {}, { timeout: 2500 });
+  expect((screen.getByRole('button', { name: /^Tải (?!lại)/i }) as HTMLButtonElement).disabled).toBe(false);
 });
 
 it('discards a slower replaced upload and keeps the latest accepted file ID', async () => {
@@ -208,9 +208,9 @@ it('discards a slower replaced upload and keeps the latest accepted file ID', as
   choose(new File(['png'], 'replacement.png', { type: 'image/png' }));
   expect(fetch.mock.calls[0][1].signal?.aborted).toBe(true);
   await act(async () => second.finish(uploaded(replacementID)));
-  await screen.findByText(/QUARANTINED/);
+  await screen.findByText(/Đang chờ quét tệp/);
   await act(async () => first.finish(uploaded()));
-  fireEvent.click(screen.getByRole('button', { name: 'Save record' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Lưu hồ sơ' }));
   const mutation = fetch.mock.calls.find(([, init]) => String(init.body).includes('mutation'));
   expect(JSON.parse(String(mutation?.[1].body)).variables).toEqual({ object: { quote_file_id: replacementID } });
 });
@@ -229,15 +229,15 @@ it('aborts a pending status request on a role change and discards its old clean 
   expect(fetch.mock.calls[1][1].signal?.aborted).toBe(true);
   await act(async () => oldStatus.finish(scanned('CLEAN')));
   await act(async () => newStatus.finish(scanned('INFECTED')));
-  await screen.findByText(/INFECTED/);
-  expect((screen.getByRole('button', { name: /download/i }) as HTMLButtonElement).disabled).toBe(true);
+  await screen.findByText(/Tệp bị chặn vì phát hiện mã độc/);
+  expect((screen.getByRole('button', { name: /^Tải (?!lại)/i }) as HTMLButtonElement).disabled).toBe(true);
 });
 
 it('accepts a supported extension when the browser does not supply a MIME type', async () => {
   const fetch = serve(path => path === uploadRoute ? uploaded() : scanned('QUARANTINED'));
   render(form());
   const file = choose(new File(['%PDF-'], 'quote.PDF'));
-  await screen.findByText(/QUARANTINED/);
+  await screen.findByText(/Đang chờ quét tệp/);
   expect((fetch.mock.calls[0][1].body as FormData).get('file')).toBe(file);
 });
 
@@ -249,17 +249,17 @@ it('keeps a replacement error visible if the canceled upload later reports a fai
     return uploads++ ? new Response(null, { status: 503 }) : first.result;
   });
   render(form(context, fileID));
-  await screen.findByText(/\bCLEAN\b/);
+  await screen.findByText(/Tệp đã quét xong và an toàn/);
   choose();
   choose(new File(['png'], 'replacement.png', { type: 'image/png' }));
   await screen.findByRole('alert');
   await act(async () => first.finish(new Response(null, { status: 400 })));
 
   expect(fetch.mock.calls.find(([path]) => path === uploadRoute)?.[1].signal?.aborted).toBe(true);
-  expect(screen.getByRole('alert').textContent).toMatch(/upload is unavailable/i);
-  await screen.findByText(/\bCLEAN\b/);
-  fireEvent.click(screen.getByRole('button', { name: 'Save record' }));
-  await screen.findByText('No changes to save.');
+  expect(screen.getByRole('alert').textContent).toMatch(/Tải tệp tạm thời không khả dụng/);
+  await screen.findByText(/Tệp đã quét xong và an toàn/);
+  fireEvent.click(screen.getByRole('button', { name: 'Lưu hồ sơ' }));
+  await screen.findByText('Không có thay đổi để lưu.');
 });
 
 it('allows a scan recheck after a quarantined file temporarily becomes unavailable', async () => {
@@ -271,12 +271,12 @@ it('allows a scan recheck after a quarantined file temporarily becomes unavailab
     return scanned('CLEAN');
   });
   render(detail({ ...context, role: reader }));
-  await screen.findByText(/QUARANTINED/);
-  await screen.findByText(/scan status is unavailable/i, {}, { timeout: 2500 });
-  const download = screen.getByRole('button', { name: /download/i }) as HTMLButtonElement;
+  await screen.findByText(/Đang chờ quét tệp/);
+  await screen.findByText(/Không lấy được trạng thái quét tệp/, {}, { timeout: 2500 });
+  const download = screen.getByRole('button', { name: /^Tải (?!lại)/i }) as HTMLButtonElement;
   expect(download.disabled).toBe(true);
-  fireEvent.click(screen.getByRole('button', { name: /recheck scan status/i }));
-  await screen.findByText(/\bCLEAN\b/);
+  fireEvent.click(screen.getByRole('button', { name: /Kiểm tra lại trạng thái quét/ }));
+  await screen.findByText(/Tệp đã quét xong và an toàn/);
   expect(download.disabled).toBe(false);
 });
 
@@ -291,8 +291,8 @@ it('saves a declared attachment UUID when its form field is annotated as a numbe
   });
   render(form(context, undefined, numericForm));
   choose();
-  await screen.findByText(/QUARANTINED/);
-  fireEvent.click(screen.getByRole('button', { name: 'Save record' }));
+  await screen.findByText(/Đang chờ quét tệp/);
+  fireEvent.click(screen.getByRole('button', { name: 'Lưu hồ sơ' }));
   const mutation = fetch.mock.calls.find(([, init]) => String(init.body).includes('mutation'));
   expect(mutation).toBeDefined();
   expect(JSON.parse(String(mutation?.[1].body)).variables).toEqual({ object: { quote_file_id: fileID } });

@@ -97,13 +97,13 @@ export class AgentClient {
 }
 export function errorMessage(error: unknown) {
   if (error instanceof AgentError) {
-    if (error.status === 503) return "Assistant is temporarily unavailable.";
+    if (error.status === 503) return "Trợ lý tạm thời không khả dụng.";
     if (error.status === 401)
-      return "Your session is unavailable. Please sign in again.";
+      return "Phiên đăng nhập không khả dụng. Hãy đăng nhập lại.";
     if (error.status === 404)
-      return "This conversation or citation is unavailable or access has changed.";
+      return "Cuộc trò chuyện hoặc trích dẫn này không khả dụng, hoặc quyền truy cập đã thay đổi.";
     if (error.status === 409)
-      return "The conversation changed or a turn is pending. Refresh before starting a new question.";
+      return "Cuộc trò chuyện đã thay đổi hoặc có lượt hỏi đang chờ. Hãy làm mới trước khi đặt câu hỏi mới.";
   }
-  return "The request could not be completed. Please try again.";
+  return "Không hoàn thành được yêu cầu. Hãy thử lại.";
 }

@@ -43,13 +43,13 @@ it("continues a conversation with cited answers and safely handles denied previe
   );
   render(<AgentChat token="token" />);
   fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
-  fireEvent.change(await screen.findByLabelText("Question"), {
+  fireEvent.change(await screen.findByLabelText("Câu hỏi"), {
     target: { value: "What changed?" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  fireEvent.click(screen.getByRole("button", { name: "Gửi" }));
   await screen.findByText("Across apps");
   fireEvent.click(screen.getByRole("button", { name: "Policy" }));
-  await screen.findByText(/citation is unavailable/i);
+  await screen.findByText(/Trích dẫn này không khả dụng/);
   expect(screen.queryByRole("combobox")).toBeNull();
   expect(
     calls.every(
@@ -99,7 +99,7 @@ it("retries a pending or uncertain turn with the same idempotency key", async ()
           });
         return Response.json({
           status: "ANSWERED",
-          answer: "Done",
+          answer: "Hoàn tất",
           citations: [],
         });
       }
@@ -113,15 +113,15 @@ it("retries a pending or uncertain turn with the same idempotency key", async ()
   );
   render(<AgentChat token="token" />);
   fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
-  fireEvent.change(await screen.findByLabelText("Question"), {
-    target: { value: "Question" },
+  fireEvent.change(await screen.findByLabelText("Câu hỏi"), {
+    target: { value: "Câu hỏi" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  await screen.findByText(/UNCERTAIN/);
-  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-  await screen.findByText(/turn is pending/i);
-  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-  await screen.findByText("Done");
+  fireEvent.click(screen.getByRole("button", { name: "Gửi" }));
+  await screen.findByText(/Chưa xác định/);
+  fireEvent.click(screen.getByRole("button", { name: "Thử lại" }));
+  await screen.findByText(/Lượt hỏi này đang chờ/);
+  fireEvent.click(screen.getByRole("button", { name: "Thử lại" }));
+  await screen.findByText("Hoàn tất");
   expect(new Set(keys).size).toBe(1);
 });
 it("rejects an external citation without sending credentials", async () => {
@@ -156,7 +156,7 @@ it("rejects an external citation without sending credentials", async () => {
   render(<AgentChat token="secret" />);
   fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
   fireEvent.click(await screen.findByRole("button", { name: "External" }));
-  await screen.findByText(/citation is unavailable/i);
+  await screen.findByText(/Trích dẫn này không khả dụng/);
   expect(fetcher).toHaveBeenCalledTimes(2);
 });
 it("cancels the active transcript when leaving after selecting a conversation", async () => {
@@ -196,13 +196,13 @@ it("can create another conversation after deletion", async () => {
   render(<AgentChat token="token" />);
   fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
   fireEvent.click(
-    await screen.findByRole("button", { name: "Delete conversation" }),
+    await screen.findByRole("button", { name: "Xoá cuộc trò chuyện" }),
   );
   await waitFor(() =>
     expect(
       (
         screen.getByRole("button", {
-          name: "New conversation",
+          name: "Cuộc trò chuyện mới",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(false),
@@ -232,11 +232,11 @@ it("shows uncertain charge without resending automatically", async () => {
   );
   render(<AgentChat token="token" />);
   fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
-  fireEvent.change(await screen.findByLabelText("Question"), {
-    target: { value: "Question" },
+  fireEvent.change(await screen.findByLabelText("Câu hỏi"), {
+    target: { value: "Câu hỏi" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  await screen.findByText(/UNCERTAIN/);
+  fireEvent.click(screen.getByRole("button", { name: "Gửi" }));
+  await screen.findByText(/Chưa xác định/);
   expect(sent).toBe(1);
 });
 it("merges a sent turn with its canonical transcript when paging", async () => {
@@ -297,12 +297,12 @@ it("merges a sent turn with its canonical transcript when paging", async () => {
   );
   render(<AgentChat token="token" />);
   fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
-  fireEvent.change(await screen.findByLabelText("Question"), {
+  fireEvent.change(await screen.findByLabelText("Câu hỏi"), {
     target: { value: "New question" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  fireEvent.click(screen.getByRole("button", { name: "Gửi" }));
   await screen.findByText("New answer");
-  fireEvent.click(screen.getByRole("button", { name: "More messages" }));
+  fireEvent.click(screen.getByRole("button", { name: "Tải thêm tin nhắn" }));
   await waitFor(() =>
     expect(screen.getAllByText("New answer")).toHaveLength(1),
   );
@@ -325,17 +325,17 @@ it("waits for the initial transcript before allowing a send", async () => {
   );
   render(<AgentChat token="token" />);
   fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
-  fireEvent.change(screen.getByLabelText("Question"), {
-    target: { value: "Question" },
+  fireEvent.change(screen.getByLabelText("Câu hỏi"), {
+    target: { value: "Câu hỏi" },
   });
   expect(
-    (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+    (screen.getByRole("button", { name: "Gửi" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
   resolve(Response.json({ messages: [], next_after_seq: null }));
   await waitFor(() =>
     expect(
-      (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: "Gửi" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false),
   );
@@ -385,7 +385,7 @@ it("rejects redirects on the actual protected preview request", async () => {
   render(<AgentChat token="token" />);
   fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
   fireEvent.click(await screen.findByRole("button", { name: "Source" }));
-  await screen.findByText(/citation is unavailable/i);
+  await screen.findByText(/Trích dẫn này không khả dụng/);
   expect(redirect).toBe("error");
 });
 it("preserves two identical sent turns while canonical pages arrive separately", async () => {
@@ -450,18 +450,18 @@ it("preserves two identical sent turns while canonical pages arrive separately",
   fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
   await screen.findByText("Old");
   for (let i = 0; i < 2; i++) {
-    fireEvent.change(screen.getByLabelText("Question"), {
+    fireEvent.change(screen.getByLabelText("Câu hỏi"), {
       target: { value: "Same question" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.click(screen.getByRole("button", { name: "Gửi" }));
     await waitFor(() =>
       expect(screen.getAllByText("Same answer")).toHaveLength(i + 1),
     );
   }
-  fireEvent.click(screen.getByRole("button", { name: "More messages" }));
+  fireEvent.click(screen.getByRole("button", { name: "Tải thêm tin nhắn" }));
   await waitFor(() => expect(pages).toBe(1));
   expect(screen.getAllByText("Same answer")).toHaveLength(2);
-  fireEvent.click(screen.getByRole("button", { name: "More messages" }));
+  fireEvent.click(screen.getByRole("button", { name: "Tải thêm tin nhắn" }));
   await waitFor(() => expect(pages).toBe(2));
   expect(screen.getAllByText("Same answer")).toHaveLength(2);
 });
@@ -485,8 +485,8 @@ it("keeps a reopened completed turn singular after an uncertain retry", async ()
   render(<AgentChat token="token" pendingTurns={{c1: {query: "Stored question", key: "accepted-key"}}} />);
   fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
   await screen.findByText("Stored answer");
-  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-  await waitFor(() => expect(screen.queryByRole("button", {name: "Retry"})).toBeNull());
+  fireEvent.click(screen.getByRole("button", { name: "Thử lại" }));
+  await waitFor(() => expect(screen.queryByRole("button", {name: "Thử lại"})).toBeNull());
   expect(send).toHaveBeenCalledOnce();
   expect(screen.getAllByText("Stored question")).toHaveLength(1);
   expect(screen.getAllByText("Stored answer")).toHaveLength(1);
@@ -505,9 +505,9 @@ it("shows search outage and partial coverage without implying all sources were s
   }));
   render(<AgentChat token="token" />);
   fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
-  expect(await screen.findByText("Search is temporarily unavailable.")).toBeTruthy();
-  expect(screen.getByText("Some sources could not be searched.")).toBeTruthy();
-  expect(screen.getByText("No evidence found in the sources searched.")).toBeTruthy();
+  expect(await screen.findByText("Tìm kiếm tạm thời không khả dụng.")).toBeTruthy();
+  expect(screen.getByText("Một số nguồn chưa tìm được. Hãy thử lại.")).toBeTruthy();
+  expect(screen.getByText("Không tìm thấy nguồn nào trong các nguồn đã tìm.")).toBeTruthy();
 });
 
 it("distinguishes conversations with the same default title by creation time", async () => {
@@ -536,5 +536,5 @@ it("keeps a failed transcript distinct from an empty conversation", async () => 
   render(<AgentChat token="token" />);
   fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
   await screen.findByRole("alert");
-  expect(screen.queryByText("No messages yet.")).toBeNull();
+  expect(screen.queryByText("Chưa có tin nhắn nào.")).toBeNull();
 });

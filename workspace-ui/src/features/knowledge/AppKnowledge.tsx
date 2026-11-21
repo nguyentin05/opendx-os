@@ -38,7 +38,7 @@ function ScopedAppKnowledge({token, appID, role}: Pick<Props, 'token' | 'appID' 
  const [citation, setCitation] = useState<SearchHit | null>(null);
  const [manage, setManage] = useState<AppSource | null>(null);
  const [message, setMessage] = useState('');
- const [pollMessage, setPollMessage] = useState('');
+ const [pollMessage, setPollMessage] = useState('Đang tải tri thức của ứng dụng…');
  const [busy, setBusy] = useState(false);
 
  useEffect(() => {
@@ -81,9 +81,9 @@ function ScopedAppKnowledge({token, appID, role}: Pick<Props, 'token' | 'appID' 
      clearInteractions();
      verifiedSources = [];
      setSources([]);
-     setPollMessage('App knowledge access could not be verified.');
+     setPollMessage('Không kiểm tra được quyền truy cập tri thức của ứng dụng. Hãy làm mới quyền.');
     } else {
-     setPollMessage('App knowledge is temporarily unavailable.');
+     setPollMessage('Tri thức của ứng dụng tạm thời không khả dụng. Hãy thử lại sau ít phút.');
     }
    } finally {
     if (!controller.signal.aborted) timer = setTimeout(() => void load(), 2000);
@@ -110,10 +110,10 @@ function ScopedAppKnowledge({token, appID, role}: Pick<Props, 'token' | 'appID' 
    const result = await client.searchApp(query);
    if (!signal.aborted) {
     setHits(result.results);
-    if (!result.results.length) setMessage('No accessible evidence found.');
+    if (!result.results.length) setMessage('Không tìm thấy nguồn nào bạn được xem.');
    }
   } catch (error) {
-   if (!signal.aborted) setMessage(error instanceof Error ? error.message : 'Search unavailable.');
+   if (!signal.aborted) setMessage(error instanceof Error ? error.message : 'Tìm kiếm tạm thời không khả dụng.');
   } finally {
    if (!signal.aborted) setBusy(false);
   }
@@ -134,7 +134,7 @@ function ScopedAppKnowledge({token, appID, role}: Pick<Props, 'token' | 'appID' 
     setHits(reply.results);
    }
   } catch (error) {
-   if (!signal.aborted) setMessage(error instanceof Error ? error.message : 'Answer unavailable.');
+   if (!signal.aborted) setMessage(error instanceof Error ? error.message : 'Chưa tạo được câu trả lời. Hãy thử lại.');
   } finally {
    if (!signal.aborted) setBusy(false);
   }
@@ -148,30 +148,30 @@ function ScopedAppKnowledge({token, appID, role}: Pick<Props, 'token' | 'appID' 
    const result = await client.citation(hit);
    if (!signal.aborted) setCitation(result);
   } catch {
-   if (!signal.aborted) setMessage('Citation access changed or is unavailable.');
+   if (!signal.aborted) setMessage('Quyền xem trích dẫn đã thay đổi hoặc không khả dụng.');
   }
  }
 
- return <section aria-label="App knowledge">
-  <h2>App knowledge</h2>
+ return <section aria-label="Tri thức của ứng dụng">
+  <h2>Tri thức của ứng dụng</h2>
   {pollMessage&&<p role="status">{pollMessage}</p>}
   {message&&<p role="status">{message}</p>}
   <ul>{sources.map(source=><li key={source.source_id}>
-   <strong>{source.source_id}</strong>: <span>{source.status==='READY'?'Ready':source.status==='FAILED'?'Indexing failed':'Indexing'}</span>
-   {source.active_version_available&&source.status!=='READY'&&<p>Showing the previous approved version while the update is indexing.</p>}
-   {source.manageable&&source.document_id&&<button onClick={()=>setManage(source)}>Manage grants {source.source_id}</button>}
+   <strong>{source.source_id}</strong>: <span>{source.status==='READY'?'Sẵn sàng':source.status==='FAILED'?'Đánh chỉ mục thất bại':'Đang đánh chỉ mục'}</span>
+   {source.active_version_available&&source.status!=='READY'&&<p>Đang hiển thị phiên bản đã duyệt trước đó trong khi bản cập nhật được đánh chỉ mục.</p>}
+   {source.manageable&&source.document_id&&<button onClick={()=>setManage(source)}>Quản lý quyền đọc {source.source_id}</button>}
   </li>)}</ul>
-  <label>Search app documents <input value={query} onChange={event=>setQuery(event.target.value)}/></label>
-  <button disabled={!client||busy||!query.trim()} onClick={()=>void search()}>Search app</button>
-  <button disabled={!client||busy||!query.trim()} onClick={()=>void ask()}>Ask app</button>
-  {answer&&<div aria-label="App answer">
+  <label>Tìm trong tài liệu của ứng dụng <input value={query} onChange={event=>setQuery(event.target.value)}/></label>
+  <button disabled={!client||busy||!query.trim()} onClick={()=>void search()}>Tìm trong ứng dụng</button>
+  <button disabled={!client||busy||!query.trim()} onClick={()=>void ask()}>Hỏi ứng dụng</button>
+  {answer&&<div aria-label="Câu trả lời của ứng dụng">
    {answer.status==='ANSWERED'&&answer.answer&&<p>{answer.answer}</p>}
-   {answer.status==='SEARCH_ONLY'&&<p>Search only: {answer.reason==='AUTHORIZATION_CHANGED'?'access changed; ask again.':answer.reason==='UNSUPPORTED_ANSWER'?'the answer could not be supported by the evidence.':'generation is unavailable for this request.'}</p>}
-   {answer.status==='NO_EVIDENCE'&&<p>No accessible evidence found.</p>}
-   {answer.citations.map((hit,index)=><button key={hit.chunk_id} onClick={()=>void showCitation(hit)}>View answer citation {index+1}</button>)}
+   {answer.status==='SEARCH_ONLY'&&<p>Chỉ tìm được nguồn: {answer.reason==='AUTHORIZATION_CHANGED'?'quyền truy cập đã thay đổi; hãy hỏi lại.':answer.reason==='UNSUPPORTED_ANSWER'?'câu trả lời chưa được nguồn chứng minh.':'tính năng tạo câu trả lời không khả dụng cho yêu cầu này.'}</p>}
+   {answer.status==='NO_EVIDENCE'&&<p>Không tìm thấy nguồn nào bạn được xem.</p>}
+   {answer.citations.map((hit,index)=><button key={hit.chunk_id} onClick={()=>void showCitation(hit)}>Xem trích dẫn {index+1}</button>)}
   </div>}
-  <ul>{hits.map(hit=><li key={hit.chunk_id}><h3>{hit.title}</h3><p>{hit.snippet}</p><button onClick={()=>void showCitation(hit)}>View citation</button></li>)}</ul>
-  {citation&&<div role="dialog" aria-label="Protected citation"><h3>{citation.title}</h3><p>{citation.snippet}</p><p>{citation.section_path.join(' / ')}</p>{citation.positions.map((position,index)=><p key={index}>{position.page_no?'Page '+position.page_no:''} {position.provenance}</p>)}<button onClick={()=>setCitation(null)}>Close citation</button></div>}
+  <ul>{hits.map(hit=><li key={hit.chunk_id}><h3>{hit.title}</h3><p>{hit.snippet}</p><button onClick={()=>void showCitation(hit)}>Xem trích dẫn</button></li>)}</ul>
+  {citation&&<div role="dialog" aria-label="Trích dẫn được bảo vệ"><h3>{citation.title}</h3><p>{citation.snippet}</p><p>{citation.section_path.join(' / ')}</p>{citation.positions.map((position,index)=><p key={index}>{position.page_no?'Trang '+position.page_no:''} {position.provenance}</p>)}<button onClick={()=>setCitation(null)}>Đóng trích dẫn</button></div>}
   {client&&manage?.document_id&&<GrantManagement key={manage.document_id} client={client} documentID={manage.document_id} sourceID={manage.source_id} onClose={()=>setManage(null)}/>}
  </section>
 }

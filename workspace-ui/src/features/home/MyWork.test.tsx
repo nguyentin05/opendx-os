@@ -50,15 +50,15 @@ it('filters loaded results by app and priority, and loads more per eligible gran
 
   render(<App initialSession={session} />);
   await screen.findByText('Alpha high');
-  expect(screen.getByRole('heading', { name: 'My Work' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Việc của tôi' })).toBeTruthy();
   expect(screen.getByText('Beta low')).toBeTruthy();
-  fireEvent.change(screen.getByLabelText('Application'), { target: { value: 'alpha' } });
+  fireEvent.change(screen.getByLabelText('Ứng dụng'), { target: { value: 'alpha' } });
   expect(screen.queryByText('Beta low')).toBeNull();
-  fireEvent.change(screen.getByLabelText('Priority'), { target: { value: 'HIGH' } });
+  fireEvent.change(screen.getByLabelText('Mức ưu tiên'), { target: { value: 'HIGH' } });
   expect(screen.queryByText('Alpha low 0')).toBeNull();
   expect(screen.queryByText('Alpha older high')).toBeNull();
 
-  fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Tải thêm' }));
 
   expect(await screen.findByText('Alpha older high')).toBeTruthy();
   expect(screen.getByText('Alpha high')).toBeTruthy();
@@ -79,13 +79,13 @@ it('reports partial coverage during a failed grant and recovers it on retry', as
 
   render(<App initialSession={session} />);
   await screen.findByText('Available work');
-  expect(screen.getByText(/Some work items are unavailable/)).toBeTruthy();
+  expect(screen.getByText(/Một số việc chưa tải được/)).toBeTruthy();
   available = true;
-  fireEvent.click(screen.getByRole('button', { name: 'Retry unavailable work' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Thử lại phần chưa tải được' }));
 
   expect(await screen.findByText('Recovered work')).toBeTruthy();
   expect(screen.getByText('Available work')).toBeTruthy();
-  expect(screen.queryByText(/Some work items are unavailable/)).toBeNull();
+  expect(screen.queryByText(/Một số việc chưa tải được/)).toBeNull();
 });
 
 it('replaces an unlinkable duplicate when a later page provides a readable originating role', async () => {
@@ -117,7 +117,7 @@ it('replaces an unlinkable duplicate when a later page provides a readable origi
   }} />);
   await screen.findByText('Shared work without source access');
 
-  fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Tải thêm' }));
 
   const item = await screen.findByRole('link', { name: 'Shared work with source access' });
   expect(item.getAttribute('href')).toBe('/apps/alpha/tables/domain.records/' + sourceID + '?role=' + viewerRole.name);
@@ -147,9 +147,9 @@ it.each([403, 'access-denied', 'missing-order-by'])('purges a revoked grant on t
 
   render(<App initialSession={session} />);
   await screen.findByText('Restricted work 0');
-  fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Tải thêm' }));
 
-  const retry = await screen.findByRole('button', { name: 'Retry unavailable work' });
+  const retry = await screen.findByRole('button', { name: 'Thử lại phần chưa tải được' });
   expect(screen.queryByText(/Restricted work/)).toBeNull();
   expect(screen.getByText('Still authorized')).toBeTruthy();
 
@@ -189,14 +189,14 @@ it('drops cached priority, status and source links when a later page narrows the
 
   render(<App initialSession={{ ...session, apps: [alpha], user: { ...session.user, roles: alpha.roles } }} />);
   await screen.findByRole('link', { name: 'Earlier work 0' });
-  fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Tải thêm' }));
 
   await screen.findByText('Later work');
   expect(screen.getByText('Earlier work 0')).toBeTruthy();
   expect(screen.queryByRole('link', { name: 'Earlier work 0' })).toBeNull();
   expect(screen.queryAllByText('Critical', { selector: 'span' })).toHaveLength(0);
-  expect(screen.queryAllByText('To do', { selector: 'span' })).toHaveLength(0);
-  expect(screen.queryByRole('button', { name: 'Retry unavailable work' })).toBeNull();
+  expect(screen.queryAllByText('Cần làm', { selector: 'span' })).toHaveLength(0);
+  expect(screen.queryByRole('button', { name: 'Thử lại phần chưa tải được' })).toBeNull();
 });
 
 it.each([401, 503])('handles a later work response (%s) according to its effect on cached grants', async status => {
@@ -211,8 +211,8 @@ it.each([401, 503])('handles a later work response (%s) according to its effect 
 
   render(<App initialSession={session} />);
   await screen.findByText('Alpha title 0');
-  fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
-  await screen.findByRole('button', { name: 'Retry unavailable work' });
+  fireEvent.click(screen.getByRole('button', { name: 'Tải thêm' }));
+  await screen.findByRole('button', { name: 'Thử lại phần chưa tải được' });
 
   expect(Boolean(screen.queryByText('Alpha title 0'))).toBe(status === 503);
   expect(Boolean(screen.queryByText('Beta title'))).toBe(status === 503);
@@ -237,11 +237,11 @@ it('evicts revoked work while an unaffected grant’s later page is still pendin
   });
   render(<App initialSession={session} />);
   await screen.findByText('role_alpha item 0');
-  fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Tải thêm' }));
 
   await waitFor(() => expect(screen.queryByText('role_alpha item 0')).toBeNull());
   expect(screen.getByText('role_beta item 0')).toBeTruthy();
-  expect(screen.getByText('Loading work items…')).toBeTruthy();
+  expect(screen.getByText('Đang tải công việc…')).toBeTruthy();
   finishBeta(workResponse([row('Next authorized item', 'HIGH')]));
   await screen.findByText('Next authorized item');
 });
