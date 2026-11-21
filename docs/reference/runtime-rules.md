@@ -32,7 +32,8 @@ re-checks what reaches SQL or decides access, failing closed on a corrupted row.
   `_eq` means IS NULL, null `_neq` means IS NOT NULL; ordinary SQL NULL
   comparisons do not match.
 - Attachments are `uuid` columns with a foreign key to `core.files`; workflow
-  effects are `create_work_item` steps on declared commands.
+  effects are `create_work_item` or `complete_work_item` steps on declared
+  commands. Only `create_work_item` declares fields.
 - Role names start with `role_`, so no role can take a name Hasura treats as
   privileged (`admin`); `dxos-authz` never hands one out.
 
@@ -97,6 +98,11 @@ caller's body. Each step runs at most once per event
 (`cap_process.processed_workflow_steps`). An event goes to the flow the operator
 deployed for its application (`core.app_workflows`), never to a destination named
 by the event.
+
+`complete_work_item` sets `board_column = 'DONE'` on the application work items
+that point at the event's record and commits that update with the receipt. It
+returns the number of completed items, replays through the same receipt, and
+never touches another application's items.
 
 ## Fixtures and checks
 

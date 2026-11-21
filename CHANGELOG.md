@@ -13,6 +13,11 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Added
 
+- Workspace UI: a "Chờ tôi xử lý" inbox derived from each held role's commands
+  and the record states those commands start from, with records merged across
+  roles and links to the record detail (#42).
+- Manifest and runtime: a `complete_work_item` workflow effect that marks a
+  record's open work items `DONE` once per event and step (#42).
 - AI: a global Workspace Assistant in `cap-ai` and the Workspace UI that answers
   across the application and personal sources the signed-in user can read, with
   owner-only persistent conversations and protected citations; opt-in Compose
@@ -30,6 +35,8 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Changed
 
+- The Workspace UI copy and the sample application labels are Vietnamese; table
+  headers come from manifest labels, and My Work hides `DONE` items (#45).
 - The Kubernetes controller moves from `dxos-operator controller` to a separate
   `dxos-controller` binary (#106).
 - PostgreSQL migration SQL is formatted consistently without changing the
