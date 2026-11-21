@@ -3,7 +3,7 @@
   "enabled": true,
   "displayName": "DX-OS Open-Core Realm",
   "sslRequired": "external",
-  "accessTokenLifespan": 3600,
+  "accessTokenLifespan": 300,
   "registrationAllowed": false,
   "clients": [
     {

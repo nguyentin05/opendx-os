@@ -47,8 +47,6 @@ is published; see [Releasing](docs/contribute/releasing.md).
 - Compose: the default stack enables the `cap-ai` schema, so the sample
   `personal_library` application installs `Ready` instead of `Failed` (#110).
   The `cap-ai` service itself still runs from the opt-in overlay.
-- Keycloak access tokens last one hour instead of five minutes, so the
-  Workspace UI no longer signs users out every five minutes (#38).
 - Workspace UI: the access token is refreshed in memory before the access or
   refresh-token window ends, so a long session keeps its open screens and typed
   forms instead of signing out at expiry (#38).
@@ -57,6 +55,9 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Security
 
+- Keycloak access tokens last five minutes again now that the Workspace UI
+  refreshes them, so a leaked token is usable for a shorter time (#38).
+  Existing installations set Access Token Lifespan in the admin console.
 - The Workspace UI keeps access and refresh tokens in memory only; neither is
   written to `localStorage` or `sessionStorage` (#38).
 - `dxos-authz` bootstraps the platform operator only from a token whose
