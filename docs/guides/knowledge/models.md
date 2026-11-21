@@ -34,51 +34,44 @@ knowledge API, private File Service delegation, package dispatcher, parser and
 worker. Add `compose.models.yaml` only for model schema/runtime support. Use
 the same file order and project name throughout an installation.
 
-1. On a fresh deployment, include `cap-ai` alongside the existing
-   `ENABLED_CAPABILITIES`. The RAG overlay supplies that list by default when
-   the variable is absent. If using `.env.example`, edit its explicit list.
-   Provide separate URL-safe secrets in `AI_DATABASE_PASSWORD`,
-   `AI_WORKER_DATABASE_PASSWORD` and `AI_DISPATCHER_DATABASE_PASSWORD`.
-   The models overlay also requires `AI_GATEWAY_DATABASE_PASSWORD` and selects
-   PostgreSQL 17 with pgvector. Both PG17 images use the same data directory.
-   To upgrade retained data, use the checksummed migration procedure below,
+1. From a clean checkout, run:
+   ```bash
+   COMPOSE_PROJECT_NAME=dxos-rag POSTGRES_PORT=15432 make rag-up
+   ```
+   The target calls `scripts/rag-up.sh`, which creates `.env.rag` (git-ignored,
+   mode 0600) when it is missing. It fills random DB passwords, a parser token
+   and the three Keycloak client secrets, and sets the fixed service subjects,
+   client ids and FTS flags. It never prints or overwrites a secret; a later run
+   leaves the file unchanged.
+2. The script starts the base and RAG files with
+   `docker compose --env-file .env --env-file .env.rag -f compose.yaml -f
+   compose.rag.yaml up -d --build` (merging the files for older Compose
+   releases). It waits for `personal_library` to become `Ready`, sets
+   `AI_AGENT_BILLING_APP_ID=personal_library` and `RAG_AGENT_ENABLED=true`, and
+   reruns `up -d`. The UI is at `http://localhost:5173`; the Assistant and
+   personal library are on. `scripts/test-compose.sh` and the demo seed remain
+   optional follow-ups.
+3. The overlay enables `cap-ai` in `ENABLED_CAPABILITIES`. That list is applied
+   only when the PostgreSQL volume is first initialized. If an existing volume
+   was created without it, `rag-up` stops with a message to recreate that volume;
+   it does not delete data. The models overlay also requires
+   `AI_GATEWAY_DATABASE_PASSWORD` and selects PostgreSQL 17 with pgvector. To
+   upgrade retained data, use the checksummed migration procedure below,
    register cap-ai and provision its restricted roles and passwords before app
-   reconciliation, and back up the volume before changing its image. Init scripts
-   run only on an empty volume.
-2. Supply distinct OIDC UUIDs and renewable audience-matched access tokens
-   for the worker, File Service and dispatcher in the variables in
-   `.env.example`. Register the worker subject as an ACTIVE Core identity.
-   Configure the same issuer, JWKS and audience on the services. Use a separate
-   random `PARSER_SERVICE_TOKEN` of at least 32 characters. Renew tokens and
-   recreate their consumers before expiry. API, worker and dispatcher each
-   connect under the corresponding restricted DB login. Inside cap-ai the
-   private delegation/reconcile handlers use the worker and dispatcher
-   connections. The model Gateway has a separate restricted login.
-3. Set `RAG_SOURCE_QUALIFIED`, `RAG_METADATA_QUALIFIED` and
-   `RAG_PARSER_QUALIFIED` only after verifying the source and parser
-   prerequisites in the deployment. Set `RAG_METADATA_ENABLED=true` and
-   enable `RAG_PACKAGE_ENABLED`, `RAG_PERSONAL_ENABLED`, or both.
-   Enable `RAG_PRIVATE_UPLOAD_ENABLED` for private uploads. The Operator scans
-   declared package sources and writes approved bytes into a private named
-   volume. cap-ai reads those bytes. The parser and worker share a separate
-   private socket volume and UID 10001. File Service and cap-ai delegation
-   listeners have no published host ports or gateway routes.
-4. With the agent off, bootstrap the stack and reconcile the intended app packages.
-   Use `docker compose -f compose.yaml -f compose.rag.yaml up -d --build` for
-   FTS-only mode. For model storage, also pass `-f compose.models.yaml` before
-   `up`, supply the schema flags below and configure `RAG_MODEL_CATALOG_FILE`
-   and `RAG_MODEL_CREDENTIAL_ENV_FILE`. The credential-free catalog is a
-   file-backed secret: its host ownership and mode must allow runtime UID 10001
-   to read it. The latter is a private env file containing only credentials
-   named by the catalog; Compose reads it to supply environment variables to
-   API and worker. An empty file suffices when the catalog references no secrets.
-   Keep vendor credentials in the approved adapter deployment.
-5. Select an actual registered `Ready` app for `AI_AGENT_BILLING_APP_ID`.
-   Confirm its state through the application registry before enabling chat.
-   Set `RAG_AGENT_ENABLED=true` and rerun the same Compose command. cap-ai
-   validates the configured billing app at startup. With models off, chat
-   returns owner-scoped lexical evidence. The Assistant uses the UI origin,
-   which proxies protected requests through APISIX.
+   reconciliation, and back up the volume before changing its image.
+4. The services obtain their own tokens: `dxos-rag-worker`,
+   `dxos-file-service` and `dxos-rag-dispatcher` are confidential realm clients
+   with service accounts. The realm imports their secrets from the
+   `RAG_*_CLIENT_SECRET` environment variables and gives each a fixed subject
+   that is an ACTIVE Core identity. The worker, File Service delegation client
+   and dispatcher refresh at 75% of the token lifetime, so no manual renewal or
+   container recreation is needed. `PARSER_SERVICE_TOKEN` is still a separate
+   random secret of at least 32 characters, and the parser and worker share a
+   private socket volume and UID 10001. API, worker and dispatcher each connect
+   under the corresponding restricted DB login.
+5. Model activation stays manual. Add `compose.models.yaml`, provide the schema
+   flags, catalog and credential file, and follow the steps below. `make rag-up`
+   never enables models.
 6. Before enabling model calls, qualify the bounded adapter, import disabled
    candidates, complete Platform Admin review and activate the exact EMBEDDING
    and/or LLM revisions through the deployment's audited slot procedure.
@@ -88,6 +81,38 @@ the same file order and project name throughout an installation.
    them. The agent only resolves global slots. Missing review, binding, budget
    or adapter keeps the affected operation unavailable. The optional overlays
    provide no active slot, budget, account identity or provider approval.
+
+### Advanced: bring your own identities
+
+Use this path when the deployment already issues tokens or manages its own
+Keycloak clients.
+
+- Set `RAG_WORKER_SERVICE_SUBJECT`, `RAG_FILE_SERVICE_SUBJECT` and
+  `RAG_DISPATCHER_SERVICE_SUBJECT` to distinct OIDC subjects and register each
+  as an ACTIVE Core identity. The shipped realm clients use the fixed subjects
+  in `.env.example`.
+- Either supply renewable audience-matched tokens in
+  `RAG_WORKER_BEARER_TOKEN`, `RAG_FILE_BEARER_TOKEN` (cap-process receives it
+  as `RAG_INTERNAL_BEARER_TOKEN`) and `RAG_DISPATCHER_BEARER_TOKEN`, or leave
+  them empty and set the `RAG_*_CLIENT_ID` / `RAG_*_CLIENT_SECRET` pairs. A
+  configured static token wins; otherwise the service uses client credentials.
+  Static tokens must be renewed before expiry and their consumers recreated.
+- Configure the same issuer, JWKS and audience on the services
+  (`OIDC_ISSUER_URL`, `OIDC_JWKS_URL`, `OIDC_AUDIENCE`) and the internal token
+  endpoint (`OIDC_TOKEN_URL`). Set `KEYCLOAK_HOSTNAME` to the public origin of
+  that issuer, so tokens requested over the internal Keycloak hostname still
+  carry the issuer the services verify.
+- Use a separate random `PARSER_SERVICE_TOKEN` of at least 32 characters and
+  separate DB passwords.
+- Set `RAG_SOURCE_QUALIFIED`, `RAG_METADATA_QUALIFIED` and
+  `RAG_PARSER_QUALIFIED` only after verifying the source and parser
+  prerequisites. Set `RAG_METADATA_ENABLED=true` and enable
+  `RAG_PACKAGE_ENABLED`, `RAG_PERSONAL_ENABLED`, or both. Enable
+  `RAG_PRIVATE_UPLOAD_ENABLED` for private uploads.
+- Run `docker compose -f compose.yaml -f compose.rag.yaml up -d --build` with
+  your env file. Select a registered `Ready` app for
+  `AI_AGENT_BILLING_APP_ID`, set `RAG_AGENT_ENABLED=true`, and rerun the same
+  command. With models off, chat returns owner-scoped lexical evidence.
 
 ## Storage and activation
 
