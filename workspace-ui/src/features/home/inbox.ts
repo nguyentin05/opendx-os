@@ -72,7 +72,7 @@ export function inboxGroups(session: Session): { groups: InboxGroup[]; partial: 
       const stateMachine = table.stateMachine;
       if (!stateMachine) continue;
       for (const command of stateMachine.commands) {
-        if (!table.ui.actions?.includes(command.name)) continue;
+        if (!(table.ui.inboxActions ?? table.ui.actions)?.includes(command.name)) continue;
         for (const role of command.allowedRoles) {
           if (!holdsAppGrant(session, app.app_id, role)) continue;
           let filter: Record<string, unknown> | undefined;

@@ -13,6 +13,11 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Added
 
+- Manifest: tables gain an optional `ui.title`, shown in the portal instead of
+  the table name, and an optional `ui.inboxActions`, so a record enters the
+  "Chờ tôi xử lý" inbox only for the commands that move it forward rather than
+  for optional ones such as cancel or reject. The sample applications declare
+  both.
 - Workspace UI: a "Chờ tôi xử lý" inbox derived from each held role's commands
   and the record states those commands start from, with records merged across
   roles and links to the record detail (#42).

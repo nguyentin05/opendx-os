@@ -586,11 +586,24 @@ spec:
                             type: object
                           minItems: 1
                           type: array
+                        inboxActions:
+                          description: |-
+                            InboxActions are the actions that put a record in a user's inbox; all
+                            actions count when absent. Each must also be listed in actions.
+                          items:
+                            type: string
+                          minItems: 1
+                          type: array
                         listColumns:
                           items:
                             type: string
                           minItems: 1
                           type: array
+                        title:
+                          description: Title names the table in the App Shell; the
+                            table name is used when absent.
+                          minLength: 1
+                          type: string
                       required:
                       - formFields
                       - listColumns

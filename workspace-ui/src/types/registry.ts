@@ -119,6 +119,8 @@ export interface InstalledTable {
     listColumns: string[];
     formFields: FormField[];
     actions?: string[];
+    title?: string;
+    inboxActions?: string[];
   };
   stateMachine?: {
     initial: string;

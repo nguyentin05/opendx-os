@@ -6,7 +6,7 @@ import { stateLabel } from '../../core/labels';
 import type { AppRoleContext } from '../../core/session-context';
 import type { InstalledTable } from '../../types/registry';
 import { executeGraphQL, GraphQLRequestError, isRecord } from './graphql';
-import { allowedFields, columnLabel, tableGraphQLName } from './registry';
+import { allowedFields, columnLabel, tableGraphQLName, tableLabel } from './registry';
 
 export interface TableListProps {
   table: InstalledTable;
@@ -107,7 +107,7 @@ export function TableList(props: TableListProps) {
 
   return (
     <section className="workspace-table">
-      <h2>{table.name}</h2>
+      <h2>{tableLabel(table)}</h2>
       {description.canCreate && <button type="button" onClick={props.onCreate}>Tạo mới</button>}
       {description.columns.length > 0
         ? <PaginatedTable key={scope} context={context} onOpen={props.onOpen} description={description} />

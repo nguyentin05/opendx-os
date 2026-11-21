@@ -256,6 +256,10 @@ spec:
         name: quote_file_id
         required: false
         type: file
+      inboxActions:
+      - submit
+      - approve
+      - approve_budget
       listColumns:
       - vendor_name
       - item_description
@@ -264,6 +268,7 @@ spec:
       - status
       - version
       - updated_at
+      title: Yêu cầu mua sắm
   - access:
       insert:
       - columns:
@@ -323,6 +328,7 @@ spec:
       listColumns:
       - name
       - tax_code
+      title: Nhà cung cấp
   - access:
       delete:
       - role: role_procurement_requester
@@ -401,6 +407,7 @@ spec:
       - item
       - quantity
       - unit_price
+      title: Hàng hoá trong yêu cầu
   version: 0.3.0
   workflows:
   - definition: |

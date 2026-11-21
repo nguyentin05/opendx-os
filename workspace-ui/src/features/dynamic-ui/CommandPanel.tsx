@@ -8,7 +8,7 @@ import type { AppRoleContext } from '../../core/session-context';
 import type { InstalledTable } from '../../types/registry';
 import { GraphQLRequestError, isRecord, isRecordID, loadRecord } from './graphql';
 import { executeCommand, ProcessCommandError } from './process';
-import { allowedFields, columnLabel, isParentColumn } from './registry';
+import { allowedFields, columnLabel, isParentColumn, tableLabel } from './registry';
 
 type Command = NonNullable<InstalledTable['stateMachine']>['commands'][number];
 
@@ -339,7 +339,7 @@ function RecordActions({
               : commandLabel(decision.command.name) + ' hồ sơ'}
           </h3>
           <p id={dialogDescription}>
-            {decision.retry ? 'Kiểm tra yêu cầu gốc cho' : 'Cập nhật'} hồ sơ {table.name} {decision.retry?.entityID ?? id}
+            {decision.retry ? 'Kiểm tra yêu cầu gốc cho' : 'Cập nhật'} hồ sơ {tableLabel(table)} {decision.retry?.entityID ?? id}
             {' từ '}{stateLabel(description.status)} phiên bản {description.version} sang {stateLabel(decision.retry?.to ?? decision.command.to)}.
           </p>
           <form noValidate onSubmit={confirm}>
