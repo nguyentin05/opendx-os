@@ -297,11 +297,14 @@ type Workflow struct {
 type Effect struct {
 	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9_]*$`
 	StepName string `json:"stepName"`
-	// +kubebuilder:validation:Enum=create_work_item
+	// +kubebuilder:validation:Enum=create_work_item;complete_work_item
 	Kind string `json:"kind"`
 	// +kubebuilder:validation:MinItems=1
-	WhenCommands []string     `json:"whenCommands"`
-	Fields       EffectFields `json:"fields"`
+	WhenCommands []string `json:"whenCommands"`
+	// Fields are the literal work item fields owned by the manifest. They are
+	// required for create_work_item and must be absent for complete_work_item.
+	// +optional
+	Fields *EffectFields `json:"fields,omitempty"`
 }
 
 // EffectFields are the literal work item fields owned by the manifest.

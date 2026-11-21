@@ -98,8 +98,11 @@ function subMilliseconds(timestamp: string): number {
 }
 
 function workQuery(fields: readonly string[]): string {
+  // A role that cannot read board_column (an older server) cannot filter on it
+  // either; that grant keeps its rows and the DONE check falls back to the UI.
+  const where = fields.includes('board_column') ? 'where: {board_column: {_neq: "DONE"}}, ' : '';
   return `query WorkspaceWork($limit: Int!, $offset: Int!) {
-    cap_work_work_items(limit: $limit, offset: $offset, order_by: [{created_at: desc}, {id: desc}]) {
+    cap_work_work_items(${where}limit: $limit, offset: $offset, order_by: [{created_at: desc}, {id: desc}]) {
       id title created_at ${fields.join(' ')}
     }
   }`;
@@ -131,7 +134,7 @@ async function loadGrant(
   if (!Array.isArray(data.cap_work_work_items) || data.cap_work_work_items.length > limit) {
     throw new GraphQLRequestError('unavailable');
   }
-  return data.cap_work_work_items.map((row): WorkItem => {
+  return data.cap_work_work_items.filter(row => !isRecord(row) || row.board_column !== 'DONE').map((row): WorkItem => {
     if (!isRecord(row) || typeof row.id !== 'string' || !row.id || typeof row.title !== 'string'
       || typeof row.created_at !== 'string'
       || !Number.isFinite(Date.parse(row.created_at))) throw new GraphQLRequestError('unavailable');

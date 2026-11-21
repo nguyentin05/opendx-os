@@ -229,8 +229,9 @@ type WorkflowDef struct {
 type EffectDef struct {
 	StepName     string          `yaml:"stepName" json:"stepName"`
 	Kind         string          `yaml:"kind" json:"kind"`
-	WhenCommands []string        `yaml:"whenCommands" json:"whenCommands"`
-	Fields       EffectFieldsDef `yaml:"fields" json:"fields"`
+	WhenCommands []string `yaml:"whenCommands" json:"whenCommands"`
+	// Fields is required for create_work_item and absent for complete_work_item.
+	Fields *EffectFieldsDef `yaml:"fields,omitempty" json:"fields,omitempty"`
 }
 
 // EffectFieldsDef defines literal parameters for a create_work_item effect

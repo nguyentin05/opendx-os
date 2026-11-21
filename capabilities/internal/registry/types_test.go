@@ -41,6 +41,16 @@ func decodeRow(row map[string]any) (*AppDefinition, error) {
 	return Decode(row["app_id"].(string), row["display_name"].(string), row["version"].(string), spec)
 }
 
+func TestDecodeRejectsFieldsOnCompleteWorkItem(t *testing.T) {
+	row := readyRow(t)
+	workflows := row["spec"].(map[string]any)["workflows"].([]any)
+	effects := workflows[0].(map[string]any)["effects"].([]any)
+	effects[1].(map[string]any)["fields"] = map[string]any{"title": "Close"}
+	if _, err := decodeRow(row); err == nil {
+		t.Fatal("complete_work_item with fields must be rejected")
+	}
+}
+
 func TestDecodeReadyApplication(t *testing.T) {
 	a, err := decodeRow(readyRow(t))
 	if err != nil {

@@ -200,7 +200,7 @@ func (e *Engine) EffectHandler(serviceToken string) (http.Handler, error) {
 			WriteError(w, 400)
 			return
 		}
-		result, err := e.ExecuteWorkItemEffect(r.Context(), id, req.EventID, req.StepName)
+		result, err := e.ExecuteEffect(r.Context(), id, req.EventID, req.StepName)
 		if err != nil {
 			status := 503
 			if errors.Is(err, ErrEffectDenied) {
@@ -210,6 +210,6 @@ func (e *Engine) EffectHandler(serviceToken string) (http.Handler, error) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"work_item_id": result}) // Best-effort response; the client may have disconnected.
+		_, _ = w.Write(result) // Best-effort response; the client may have disconnected.
 	}), nil
 }

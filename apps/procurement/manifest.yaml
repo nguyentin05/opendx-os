@@ -360,3 +360,9 @@ spec:
         title: Review procurement request
         description: Review the submitted request in its source application.
         priority: MEDIUM
+    - stepName: close_review
+      kind: complete_work_item
+      whenCommands:
+      - approve
+      - reject
+      - cancel
