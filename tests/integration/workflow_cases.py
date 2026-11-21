@@ -53,7 +53,7 @@ class WorkflowCases(unittest.TestCase):
         row = self.wait(lambda: self.effect(case), int(os.environ.get('TEST_WORKFLOW_DEADLINE', '75')))
         self.assertEqual(row['workspace'], self.live.workspace)
         self.assertEqual(row['title'], 'Duyệt yêu cầu mua sắm' if case['app_id'] == 'procurement' else 'Review fixture request')
-        self.assertEqual(row['description'], 'Review the submitted request in its source application.')
+        self.assertEqual(row['description'], 'Xem xét yêu cầu đã gửi trong ứng dụng nguồn.' if case['app_id'] == 'procurement' else 'Review the submitted request in its source application.')
         self.assertEqual(row['priority'], 'MEDIUM')
         self.assertIsNone(row['assigned'])
         self.assertEqual(row['result'], {'work_item_id': row['id']})
