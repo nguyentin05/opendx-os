@@ -124,10 +124,10 @@ type Workflow struct {
 	Effects          []Effect `json:"effects"`
 }
 type Effect struct {
-	StepName     string       `json:"stepName"`
-	Kind         string       `json:"kind"`
-	WhenCommands []string     `json:"whenCommands"`
-	Fields       EffectFields `json:"fields"`
+	StepName     string        `json:"stepName"`
+	Kind         string        `json:"kind"`
+	WhenCommands []string      `json:"whenCommands"`
+	Fields       *EffectFields `json:"fields"`
 }
 type EffectFields struct {
 	Title       string `json:"title"`

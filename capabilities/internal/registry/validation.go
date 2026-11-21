@@ -72,10 +72,18 @@ func (a *AppDefinition) Validate() error {
 			return errors.New("invalid workflow id")
 		}
 		for _, e := range w.Effects {
-			if !identifier.MatchString(e.StepName) || steps[e.StepName] || e.Kind != "create_work_item" ||
-				strings.TrimSpace(e.Fields.Title) == "" || !oneOf(e.Fields.Priority, "LOW", "MEDIUM", "HIGH", "CRITICAL") ||
-				(e.Fields.AssigneeID != "" && !uuidPattern.MatchString(e.Fields.AssigneeID)) {
+			if !identifier.MatchString(e.StepName) || steps[e.StepName] || !oneOf(e.Kind, "create_work_item", "complete_work_item") {
 				return fmt.Errorf("invalid workflow effect %q", e.StepName)
+			}
+			switch e.Kind {
+			case "create_work_item":
+				if e.Fields == nil || strings.TrimSpace(e.Fields.Title) == "" || strings.TrimSpace(e.Fields.Description) == "" || !oneOf(e.Fields.Priority, "LOW", "MEDIUM", "HIGH", "CRITICAL") || (e.Fields.AssigneeID != "" && !uuidPattern.MatchString(e.Fields.AssigneeID)) {
+					return fmt.Errorf("invalid workflow effect %q", e.StepName)
+				}
+			case "complete_work_item":
+				if e.Fields != nil {
+					return fmt.Errorf("workflow effect %q: complete_work_item must not declare fields", e.StepName)
+				}
 			}
 			steps[e.StepName] = true
 			for _, c := range e.WhenCommands {

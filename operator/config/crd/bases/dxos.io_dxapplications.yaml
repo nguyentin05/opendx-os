@@ -626,8 +626,9 @@ spec:
                           through cap-process.
                         properties:
                           fields:
-                            description: EffectFields are the literal work item fields
-                              owned by the manifest.
+                            description: |-
+                              Fields are the literal work item fields owned by the manifest. They are
+                              required for create_work_item and must be absent for complete_work_item.
                             properties:
                               assigneeId:
                                 pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
@@ -653,6 +654,7 @@ spec:
                           kind:
                             enum:
                             - create_work_item
+                            - complete_work_item
                             type: string
                           stepName:
                             pattern: ^[a-z][a-z0-9_]*$
@@ -663,7 +665,6 @@ spec:
                             minItems: 1
                             type: array
                         required:
-                        - fields
                         - kind
                         - stepName
                         - whenCommands

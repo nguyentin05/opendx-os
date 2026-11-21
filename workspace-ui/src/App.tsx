@@ -55,7 +55,7 @@ function WorkspaceRoot({ initialSession }: { initialSession?: Session }) {
 
     void finishSignIn().then(value => {
       if (value) setCredential(value);
-    }).catch(() => setMessage('Sign-in failed. Please try again.'));
+    }).catch(() => setMessage('Đăng nhập thất bại. Hãy thử lại.'));
   }, [initialSession]);
 
   useEffect(() => {
@@ -80,11 +80,11 @@ function WorkspaceRoot({ initialSession }: { initialSession?: Session }) {
 
   return (
     <main className="workspace-sign-in">
-      <h1>Welcome to OpenDX-OS</h1>
-      <p>Sign in to open your applications.</p>
+      <h1>Chào mừng đến với OpenDX-OS</h1>
+      <p>Đăng nhập để mở các ứng dụng của bạn.</p>
       {message && <p role="status">{message}</p>}
-      <button onClick={() => void signIn().catch(() => setMessage('Sign-in is unavailable.'))}>
-        Sign in
+      <button onClick={() => void signIn().catch(() => setMessage('Dịch vụ đăng nhập tạm thời không phản hồi. Hãy thử lại sau ít phút.'))}>
+        Đăng nhập
       </button>
     </main>
   );
@@ -230,8 +230,8 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
     if (targetDenied || !context || (requestedTable && !table)) {
       return (
         <>
-          <h1>Access unavailable</h1>
-          <p role="alert">This application, role or view is unavailable to your account.</p>
+          <h1>Không thể truy cập</h1>
+          <p role="alert">Ứng dụng, vai trò hoặc màn hình này không khả dụng với tài khoản của bạn.</p>
         </>
       );
     }
@@ -266,7 +266,7 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
       <>
         <h1>{context.app.display_name}</h1>
         {tables.length > 0 && (
-          <nav className="workspace-table-nav" aria-label="Application views">
+          <nav className="workspace-table-nav" aria-label="Các màn hình của ứng dụng">
             {tables.map(entry => (
               <WorkspaceLink
                 key={entry.name}
@@ -299,7 +299,7 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
             contextKey={scope}
           />
         )}
-        {!table && !showAppKnowledge && <p>No views are available for this role.</p>}
+        {!table && !showAppKnowledge && <p>Vai trò này chưa có màn hình nào. Hãy chọn vai trò khác.</p>}
       </>
     );
   }
@@ -325,7 +325,7 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
           aria-haspopup="dialog"
           onClick={() => assistant.open ? closeAssistant() : setAssistantSession({ ...assistant, open: true })}
         >
-          <span aria-hidden="true">✦</span> Assistant
+          <span aria-hidden="true">✦</span> Trợ lý
         </button>
       )}
       assistantDrawer={assistant && (

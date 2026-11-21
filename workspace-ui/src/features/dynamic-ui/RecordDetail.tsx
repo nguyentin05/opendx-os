@@ -2,6 +2,7 @@
 // Copyright 2026 DX-OS Open-Core Contributors
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { stateLabel } from '../../core/labels';
 import { toTableURL, useWorkspaceRoute } from '../../core/routes';
 import type { AppRoleContext } from '../../core/session-context';
 import { WorkspaceLink } from '../../shell/AppShell';
@@ -11,7 +12,7 @@ import { CommandPanel } from './CommandPanel';
 import type { CommandAttempts, CommandFeedback } from './CommandPanel';
 import { FileField } from './FileField';
 import { GraphQLRequestError, isRecordID, loadRecord } from './graphql';
-import { allowedFields, canEditRecord, isAttachmentColumn } from './registry';
+import { allowedFields, canEditRecord, columnLabel, isAttachmentColumn } from './registry';
 
 export interface RecordDetailProps {
   table: InstalledTable;
@@ -25,9 +26,9 @@ export interface RecordDetailProps {
 }
 
 const failureMessages = {
-  unauthenticated: 'Sign in again to view this record.',
-  forbidden: 'This role cannot view this record.',
-  unavailable: 'Record is unavailable.',
+  unauthenticated: 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.',
+  forbidden: 'Vai trò hiện tại không được xem hồ sơ này. Hãy chọn vai trò khác hoặc liên hệ quản trị viên.',
+  unavailable: 'Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.',
 };
 
 export function RecordDetail(props: RecordDetailProps) {
@@ -36,13 +37,13 @@ export function RecordDetail(props: RecordDetailProps) {
   const validID = isRecordID(recordID);
   const fields = validID && readable.has('id') ? describeFields(table, app, readable, context.role) : [];
   return (
-    <section aria-label="Record details">
-      <button type="button" onClick={onBack}>Back to records</button>
+    <section aria-label="Chi tiết hồ sơ">
+      <button type="button" onClick={onBack}>Quay lại danh sách</button>
       <h2>{table.name}</h2>
       {!readable.has('id')
         ? <p role="alert">{failureMessages.forbidden}</p>
         : !validID
-          ? <p role="status">Record not found.</p>
+          ? <p role="status">Không tìm thấy hồ sơ.</p>
           : <RecordContents
             key={JSON.stringify([context.userID, context.token, context.role, app.app_id, table, recordID, fields])}
             {...props}
@@ -66,7 +67,7 @@ function describeFields(table: InstalledTable, app: InstalledApp, readable: Set<
       && candidate.name === references.get(name) && allowedFields(candidate, role, 'select').includes('id'));
     return {
       name,
-      label: labels.get(name) ?? name.replace(/_/g, ' '),
+      label: labels.get(name) ?? columnLabel(table, { name }),
       target: target?.name,
       attachment: isAttachmentColumn(table, name),
     };
@@ -131,14 +132,14 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
 
   return (
     <>
-      <button type="button" onClick={() => refresh()} disabled={!current || writePending}>Refresh record</button>
+      <button type="button" onClick={() => refresh()} disabled={!current || writePending}>Tải lại hồ sơ</button>
       {feedback && <p ref={feedbackRef} tabIndex={-1} role={feedback.error ? 'alert' : 'status'}>{feedback.message}</p>}
-      {!current && <p role="status">Loading record…</p>}
+      {!current && <p role="status">Đang tải hồ sơ…</p>}
       {current && 'error' in current && <p role="alert">{failureMessages[current.error]}</p>}
-      {record === null && <p role="status">Record not found.</p>}
+      {record === null && <p role="status">Không tìm thấy hồ sơ.</p>}
       {record && (
         <>
-          {canEditRecord(table, role, record) && <button type="button" onClick={onEdit} disabled={writePending}>Edit record</button>}
+          {canEditRecord(table, role, record) && <button type="button" onClick={onEdit} disabled={writePending}>Sửa hồ sơ</button>}
           {fields.length ? (
             <dl>
               {fields.map(({ name, label, target, attachment }) => {
@@ -153,13 +154,13 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
                           ? <WorkspaceLink href={toTableURL(app.app_id, target, value, role)} onNavigate={navigate}>
                             {value}
                           </WorkspaceLink>
-                          : value === null ? '—' : String(value)}
+                          : value === null ? '—' : name === 'status' ? stateLabel(String(value)) : String(value)}
                     </dd>
                   </div>
                 );
               })}
             </dl>
-          ) : <p>No detail fields are available to this role.</p>}
+          ) : <p>Vai trò này chưa có trường nào để hiển thị.</p>}
           <CommandPanel table={table} appID={app.app_id} context={context} record={record}
             attempts={props.commandAttempts ?? localAttempts}
             writeGuard={{ pending: writePending, begin: beginRecordWrite }}

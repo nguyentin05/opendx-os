@@ -18,8 +18,10 @@ decides what to show. Contracts: [runtime rules](../reference/runtime-rules.md),
 [ADR 0007](../adr/0007-keycloak-authenticates-platform-authorizes.md) and
 [ADR 0008](../adr/0008-an-application-declares-several-tables.md).
 
-In the portal, **My Workspace** shows your authorized apps, a work preview,
-and recently opened pages for the current session. Use **Refresh permissions**
+The Workspace UI copy is Vietnamese; identifiers, API field names and URLs stay
+as published. In the portal, **Không gian của tôi** (My Workspace) shows your
+authorized apps, a work preview, and recently opened pages for the current
+session. Use **Refresh permissions**
 to pick up new app grants or revocations. The **Acting role** control appears
 when you can choose between roles in an app. Protected record links carry the
 acting role, and the server checks which rows it can read.
@@ -193,10 +195,28 @@ returned; they are not narrowed by department yet. The item appears a few
 seconds after the command, once the workflow has run.
 
 **Needs your attention** previews up to five recent work items across eligible
-app roles. **My Work** loads more items and filters the loaded results by
-application and priority. Failed role queries show partial or unavailable
-results. When you open a work item or recent link, the portal refreshes
-permissions before reading the source record.
+app roles. **Việc của tôi** (My Work) loads more items, hides items whose
+`board_column` is `DONE`, and filters the loaded results by application and
+priority. Failed role queries show partial or unavailable results. When you open
+a work item or recent link, the portal refreshes permissions before reading the
+source record.
+
+### Chờ tôi xử lý (the record inbox)
+
+The inbox is derived from record state, not from work items. For every command
+the acting role may run (the command is in `ui.actions` and the role is in
+`allowedRoles`), query the table as that role with
+`where: {_and: [{status: {_in: <the command's from states>}}, <recordFilter>]}`,
+ordered by `updated_at` desc and limited to 20 rows. Hasura row permissions apply
+the role's scope and select filter, so a record leaves the inbox as soon as its
+state changes. Commands that share a record filter share a query; a different
+filter is never widened. `X-Hasura-User-Id` in a filter is replaced with the
+signed-in user's id; any other `X-Hasura-*` placeholder skips that command's group
+and makes the result partial. Merge groups, de-duplicate by application, table and
+record id, and keep the command labels whose `from` contains the record status.
+Each row links through the record detail URL with the acting role. A 401 clears
+the session, a 403 drops that group, and other failures show a partial result
+with a retry.
 
 ## 8. Administration
 

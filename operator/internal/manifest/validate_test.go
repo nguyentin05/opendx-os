@@ -17,6 +17,16 @@ package manifest
 
 import "testing"
 
+func TestValidateAcceptsCompleteWorkItem(t *testing.T) {
+	app := loadFixture(t, "procurement")
+	if err := Validate(app); err != nil {
+		t.Fatalf("fixture rejected: %v", err)
+	}
+	if kind := app.Spec.Workflows[0].Effects[1].Kind; kind != "complete_work_item" {
+		t.Fatalf("fixture effect kind = %q, want complete_work_item", kind)
+	}
+}
+
 func TestValidateRejectsManagedInsertColumns(t *testing.T) {
 	app := loadFixture(t, "procurement")
 	app.Spec.Tables[0].Access.Insert[0].Columns = []string{"status", "version"}
@@ -126,6 +136,14 @@ func TestValidateRolesScopesAndCapabilities(t *testing.T) {
 			a.Spec.Tables[0].Attachments = nil
 		}},
 		{"work item effect without cap-work", func(a *DXApplication) { a.Spec.Capabilities = []string{CapProcess, CapHR} }},
+		{"unknown effect kind", func(a *DXApplication) { a.Spec.Workflows[0].Effects[1].Kind = "send_email" }},
+		{"complete work item with fields", func(a *DXApplication) {
+			a.Spec.Workflows[0].Effects[1].Fields = &EffectFieldsDef{Title: "Close", Description: "Close it", Priority: "LOW"}
+		}},
+		{"complete work item without cap-work", func(a *DXApplication) {
+			a.Spec.Capabilities = []string{CapProcess, CapHR}
+			a.Spec.Workflows[0].Effects = a.Spec.Workflows[0].Effects[1:]
+		}},
 		{"workspace session variable", func(a *DXApplication) {
 			a.Spec.Tables[0].StateMachine.Commands[1].RecordFilter = map[string]any{"created_by": map[string]any{"_eq": "X-Hasura-Workspace-Id"}}
 		}},

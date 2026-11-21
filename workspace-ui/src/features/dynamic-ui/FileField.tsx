@@ -24,12 +24,12 @@ const maxBytes = 20 * 1024 * 1024;
 const scanQuery = `query AttachmentScan($id: uuid!) {
   core_files(where: {id: {_eq: $id}}) { scan_status }
 }`;
-const unavailableMessage = 'File scan status is unavailable.';
+const unavailableMessage = 'Không lấy được trạng thái quét tệp.';
 const scanMessages = {
-  loading: 'Checking scan status…',
-  QUARANTINED: 'QUARANTINED — Scan pending.',
-  CLEAN: 'CLEAN — Scan passed.',
-  INFECTED: 'INFECTED — This file is blocked.',
+  loading: 'Đang kiểm tra trạng thái quét…',
+  QUARANTINED: 'Đang chờ quét tệp.',
+  CLEAN: 'Tệp đã quét xong và an toàn.',
+  INFECTED: 'Tệp bị chặn vì phát hiện mã độc.',
   unavailable: unavailableMessage,
   retryable: unavailableMessage,
 } as const;
@@ -37,7 +37,7 @@ type ScanStatus = keyof typeof scanMessages;
 
 export function FileField(props: FileFieldProps) {
   const { appID, context: { app, userID, role, token } } = props;
-  if (appID !== app.app_id) return <p role="status">The attachment is unavailable.</p>;
+  if (appID !== app.app_id) return <p role="status">Tệp đính kèm không khả dụng.</p>;
   return <ScopedFileField key={JSON.stringify([appID, userID, role, token])} {...props} />;
 }
 
@@ -61,7 +61,7 @@ function ScopedFileField({ appID, context, value, onChange, onUploadPendingChang
 
     const supported = file.type ? fileTypes.includes(file.type) : /\.(pdf|png|jpe?g)$/i.test(file.name);
     if (!supported || file.size > maxBytes || file.size === 0) {
-      setError('Choose a PDF, PNG or JPEG file up to 20 MiB.');
+      setError('Chọn tệp PDF, PNG hoặc JPEG tối đa 20 MiB.');
       setUploading(false);
       onUploadPendingChange?.(false);
       return;
@@ -81,8 +81,8 @@ function ScopedFileField({ appID, context, value, onChange, onUploadPendingChang
       if (signal.aborted) return;
       if (!reply.ok) {
         setError(reply.status === 400
-          ? 'The service rejected this file. Choose a PDF, PNG or JPEG file up to 20 MiB.'
-          : 'File upload is unavailable.');
+          ? 'Dịch vụ từ chối tệp này. Chọn tệp PDF, PNG hoặc JPEG tối đa 20 MiB.'
+          : 'Tải tệp tạm thời không khả dụng. Hãy thử lại sau ít phút.');
         return;
       }
       const result: unknown = await reply.json();
@@ -92,7 +92,7 @@ function ScopedFileField({ appID, context, value, onChange, onUploadPendingChang
       }
       onChange(result.file_id);
     } catch {
-      if (!signal.aborted) setError('File upload is unavailable.');
+      if (!signal.aborted) setError('Tải tệp tạm thời không khả dụng. Hãy thử lại sau ít phút.');
     } finally {
       if (!signal.aborted) {
         uploadRequest.current = null;
@@ -104,9 +104,9 @@ function ScopedFileField({ appID, context, value, onChange, onUploadPendingChang
 
   return (
     <>
-      {onChange && <input {...input} aria-label={input?.id ? undefined : label ?? 'Attachment'}
+      {onChange && <input {...input} aria-label={input?.id ? undefined : label ?? 'Tệp đính kèm'}
         type="file" accept={acceptedFiles} onChange={event => void upload(event)} />}
-      {uploading && <p role="status">Uploading file…</p>}
+      {uploading && <p role="status">Đang tải tệp…</p>}
       {error && <p role="alert">{error}</p>}
       {isRecordID(value) && !uploading
         && <ScannedAttachment key={value} fileID={value} context={context} label={label} onInfected={onInfected} />}
@@ -207,13 +207,13 @@ function ScannedAttachment({ fileID, context, label, onInfected }: {
         <button type="button" onClick={() => {
           setStatus('loading');
           setAttempt(previous => previous + 1);
-        }}>Recheck scan status</button>
+        }}>Kiểm tra lại trạng thái quét</button>
       )}
-      <button type="button" aria-label={label ? 'Download ' + label : undefined}
+      <button type="button" aria-label={label ? 'Tải ' + label : undefined}
         disabled={status !== 'CLEAN' || downloading} onClick={() => void download()}>
-        {downloading ? 'Downloading…' : 'Download file'}
+        {downloading ? 'Đang tải…' : 'Tải tệp'}
       </button>
-      {downloadError && <p role="alert">File download is unavailable.</p>}
+      {downloadError && <p role="alert">Tải tệp tạm thời không khả dụng. Hãy thử lại sau ít phút.</p>}
     </>
   );
 }

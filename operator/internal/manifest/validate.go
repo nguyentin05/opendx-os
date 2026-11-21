@@ -245,11 +245,23 @@ func Validate(app *DXApplication) error {
 		}
 		flows[f.ID] = true
 		for _, e := range f.Effects {
-			if !identifier.MatchString(e.StepName) || steps[e.StepName] || e.Kind != "create_work_item" || !uniqueNames(e.WhenCommands, identifier) || strings.TrimSpace(e.Fields.Title) == "" || strings.TrimSpace(e.Fields.Description) == "" || !oneOf(e.Fields.Priority, "LOW", "MEDIUM", "HIGH", "CRITICAL") || (e.Fields.AssigneeID != "" && !uuidPattern.MatchString(e.Fields.AssigneeID)) {
+			if !identifier.MatchString(e.StepName) || steps[e.StepName] || !uniqueNames(e.WhenCommands, identifier) {
+				return fmt.Errorf("invalid workflow effect %q", e.StepName)
+			}
+			switch e.Kind {
+			case "create_work_item":
+				if e.Fields == nil || strings.TrimSpace(e.Fields.Title) == "" || strings.TrimSpace(e.Fields.Description) == "" || !oneOf(e.Fields.Priority, "LOW", "MEDIUM", "HIGH", "CRITICAL") || (e.Fields.AssigneeID != "" && !uuidPattern.MatchString(e.Fields.AssigneeID)) {
+					return fmt.Errorf("invalid workflow effect %q", e.StepName)
+				}
+			case "complete_work_item":
+				if e.Fields != nil {
+					return fmt.Errorf("workflow effect %q: complete_work_item must not declare fields", e.StepName)
+				}
+			default:
 				return fmt.Errorf("invalid workflow effect %q", e.StepName)
 			}
 			if !app.UsesCapability(CapWork) {
-				return fmt.Errorf("workflow effect %q creates a work item, which requires capability cap-work", e.StepName)
+				return fmt.Errorf("workflow effect %q manages work items, which requires capability cap-work", e.StepName)
 			}
 			steps[e.StepName] = true
 			for _, c := range e.WhenCommands {

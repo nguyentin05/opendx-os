@@ -33,28 +33,28 @@ it('loads on first open and retains the transcript, draft and exact retry across
   const view = render(<AgentDrawer {...props} open={false} />);
   expect(fetcher).toHaveBeenCalledTimes(0);
   view.rerender(<AgentDrawer {...props} open />);
-  const drawer = within(screen.getByRole('dialog', { name: 'Assistant' }));
-  expect(document.activeElement).toBe(drawer.getByRole('button', { name: 'Close assistant' }));
+  const drawer = within(screen.getByRole('dialog', { name: 'Trợ lý' }));
+  expect(document.activeElement).toBe(drawer.getByRole('button', { name: 'Đóng trợ lý' }));
   fireEvent.click(await drawer.findByRole('button', { name: 'Policy chat' }));
   await drawer.findByText('Earlier answer');
-  const question = drawer.getByRole<HTMLTextAreaElement>('textbox', { name: 'Question' });
+  const question = drawer.getByRole<HTMLTextAreaElement>('textbox', { name: 'Câu hỏi' });
   fireEvent.change(question, { target: { value: 'Draft question' } });
 
   fireEvent.keyDown(question, { key: 'Escape' });
   expect(props.onClose).toHaveBeenCalledOnce();
   view.rerender(<AgentDrawer {...props} open={false} />);
-  expect(screen.queryByRole('dialog', { name: 'Assistant' })).toBeNull();
+  expect(screen.queryByRole('dialog', { name: 'Trợ lý' })).toBeNull();
   view.rerender(<AgentDrawer {...props} open />);
   expect(drawer.getByText('Earlier answer')).toBeTruthy();
-  expect(drawer.getByRole<HTMLTextAreaElement>('textbox', { name: 'Question' }).value).toBe('Draft question');
-  fireEvent.click(drawer.getByRole('button', { name: 'Send' }));
-  await drawer.findByText(/UNCERTAIN/);
+  expect(drawer.getByRole<HTMLTextAreaElement>('textbox', { name: 'Câu hỏi' }).value).toBe('Draft question');
+  fireEvent.click(drawer.getByRole('button', { name: 'Gửi' }));
+  await drawer.findByText(/Chưa xác định/);
 
-  fireEvent.click(drawer.getByRole('button', { name: 'Close assistant' }));
+  fireEvent.click(drawer.getByRole('button', { name: 'Đóng trợ lý' }));
   expect(props.onClose).toHaveBeenCalledTimes(2);
   view.rerender(<AgentDrawer {...props} open={false} />);
   view.rerender(<AgentDrawer {...props} open />);
-  fireEvent.click(drawer.getByRole('button', { name: 'Retry' }));
+  fireEvent.click(drawer.getByRole('button', { name: 'Thử lại' }));
   await drawer.findByText('New answer');
   expect(attempts).toHaveLength(2);
   expect(attempts[0].key).toBeTruthy();
@@ -98,6 +98,6 @@ it('requires a fresh request to reopen a protected citation preview', async () =
   expect(screen.getByText('Historical answer')).toBeTruthy();
   expect(screen.queryByText('Restricted preview text')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Open policy' }));
-  await screen.findByText(/this citation is unavailable/i);
+  await screen.findByText(/Trích dẫn này không khả dụng/i);
   expect(previews).toBe(2);
 });

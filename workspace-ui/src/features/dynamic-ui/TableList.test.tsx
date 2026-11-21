@@ -74,13 +74,13 @@ it('reads only allowed columns and opens the granted ID without displaying it as
 
   await screen.findByText('Allowed title');
   expect(screen.queryByText('Hidden value')).toBeNull();
-  expect(screen.getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['title', 'Actions']);
+  expect(screen.getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['Title', 'Thao tác']);
   expect(requestBody(fetch).query).toMatch(/\{\s*title\s+id\s*\}/);
   expect(requestBody(fetch).query).not.toContain('secret');
 
-  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Mở' }));
   expect(onOpen).toHaveBeenCalledWith(id);
-  fireEvent.click(screen.getByRole('button', { name: 'New record' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Tạo mới' }));
   expect(onCreate).toHaveBeenCalledOnce();
 });
 
@@ -91,15 +91,15 @@ it('does not select ID or offer creation or opening without the necessary grants
   await screen.findByText('Readable title');
   expect(requestBody(fetch).query).toMatch(/\{\s*title\s*\}/);
   expect(JSON.stringify(requestBody(fetch).variables)).not.toContain('"id"');
-  expect(screen.queryByRole('button', { name: 'Open' })).toBeNull();
-  expect(screen.queryByRole('button', { name: 'New record' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Mở' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Tạo mới' })).toBeNull();
 });
 
 it.each(['title) { secret', 'undeclared'])('refuses the invalid list column %s before fetching', async column => {
   const fetch = mockFetch(() => listResponse([]));
   render(list({ table: { ...table, ui: { ...table.ui, listColumns: [column, 'title'] } } }));
 
-  expect((await screen.findByRole('alert')).textContent).toBe('Records are unavailable.');
+  expect((await screen.findByRole('alert')).textContent).toBe('Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.');
   expect(fetch).not.toHaveBeenCalled();
 });
 
@@ -126,29 +126,29 @@ it('uses bounded pages and carries filter values and sort through GraphQL variab
   expect(requestBody(fetch).variables).toEqual({
     limit: 26, offset: 0, orderBy: [{ title: 'asc' }], where: {},
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Trang sau' }));
   await waitFor(() => expect(requestBody(fetch, 1).variables.offset).toBe(25));
 
   const text = 'some %_" literal';
-  fireEvent.change(screen.getByLabelText('Filter by title'), { target: { value: text } });
-  fireEvent.click(screen.getByRole('button', { name: 'Apply filter' }));
+  fireEvent.change(screen.getByLabelText('Lọc theo Title'), { target: { value: text } });
+  fireEvent.click(screen.getByRole('button', { name: 'Áp dụng' }));
   await waitFor(() => expect(requestBody(fetch, 2).variables).toEqual({
     limit: 26, offset: 0, orderBy: [{ title: 'asc' }], where: { title: { _eq: text } },
   }));
   expect(requestBody(fetch, 2).query).not.toContain(text);
 
-  fireEvent.change(screen.getByLabelText('Sort direction'), { target: { value: 'desc' } });
+  fireEvent.change(screen.getByLabelText('Chiều sắp xếp'), { target: { value: 'desc' } });
   await waitFor(() => expect(requestBody(fetch, 3).variables.orderBy).toEqual([{ title: 'desc' }]));
 });
 
 it.each([
-  { response: () => listResponse([]), message: 'No records found.' },
-  { response: () => new Response('', { status: 401 }), message: 'Sign in again to view records.' },
-  { response: () => new Response('', { status: 403 }), message: 'This role cannot view records.' },
-  { response: () => Response.json({ errors: [{ message: 'partial error' }], data: { domain_records: [] } }), message: 'Records are unavailable.' },
-  { response: () => Response.json({ data: {} }), message: 'Records are unavailable.' },
-  { response: () => listResponse([{ title: 'Would leak' }, {}]), message: 'Records are unavailable.' },
-  { response: () => listResponse([{ title: { secret: 'Would leak' } }]), message: 'Records are unavailable.' },
+  { response: () => listResponse([]), message: 'Chưa có hồ sơ nào.' },
+  { response: () => new Response('', { status: 401 }), message: 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.' },
+  { response: () => new Response('', { status: 403 }), message: 'Vai trò hiện tại không được xem hồ sơ. Hãy chọn vai trò khác hoặc liên hệ quản trị viên.' },
+  { response: () => Response.json({ errors: [{ message: 'partial error' }], data: { domain_records: [] } }), message: 'Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.' },
+  { response: () => Response.json({ data: {} }), message: 'Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.' },
+  { response: () => listResponse([{ title: 'Would leak' }, {}]), message: 'Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.' },
+  { response: () => listResponse([{ title: { secret: 'Would leak' } }]), message: 'Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.' },
 ])('renders $message for the corresponding response', async ({ response, message }) => {
   mockFetch(response);
   render(list({ context: reader }));
@@ -165,7 +165,7 @@ it('discards a late response after a role change even when fetch ignores abort',
   fetch.mockImplementationOnce(() => oldRequest);
   const view = render(list());
 
-  expect(screen.getByText('Loading records…')).toBeTruthy();
+  expect(screen.getByText('Đang tải hồ sơ…')).toBeTruthy();
   view.rerender(list({ context: reader }));
   await screen.findByText('Current role record');
   expect(fetch.mock.calls[0][1]?.signal?.aborted).toBe(true);

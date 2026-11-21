@@ -25,8 +25,21 @@ import (
 
 func TestEffectOrdinaryUserDenied(t *testing.T) {
 	e := NewEngine(nil, nil)
-	if _, err := e.ExecuteWorkItemEffect(context.Background(), &auth.Identity{}, "bad", "step"); err == nil {
+	if _, err := e.ExecuteEffect(context.Background(), &auth.Identity{}, "bad", "step"); err == nil {
 		t.Fatal("ordinary user accepted")
+	}
+}
+
+func TestResolveEffectAcceptsBothKinds(t *testing.T) {
+	for _, kind := range []string{"create_work_item", "complete_work_item"} {
+		workflows := []registry.Workflow{{
+			SubscribedEvents: []string{"command.committed"},
+			Effects:          []registry.Effect{{StepName: "review", Kind: kind, WhenCommands: []string{"submit"}}},
+		}}
+		effect, err := resolveEffect(workflows, "command.committed", "submit", "review")
+		if err != nil || effect == nil || effect.Kind != kind {
+			t.Fatalf("%s: %v %v", kind, effect, err)
+		}
 	}
 }
 

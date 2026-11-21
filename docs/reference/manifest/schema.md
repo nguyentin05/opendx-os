@@ -19,11 +19,11 @@ One installation serves one organization, so a manifest names no workspace.
 | --- | --- |
 | `kind` | `DXApplication` (`apiVersion: dxos.io/v1alpha1`) |
 | `metadata` | `name` (the `app_id`), `displayName`, `version` of the app package |
-| `spec.capabilities` | Tier 2 capabilities the app uses. `cap-process` is required; `cap-hr` adds departments (`org_unit_id`, `department` scope); `cap-work` is required by `create_work_item` effects. Each must be enabled when the app is installed |
+| `spec.capabilities` | Tier 2 capabilities the app uses. `cap-process` is required; `cap-hr` adds departments (`org_unit_id`, `department` scope); `cap-work` is required by the work-item effects (`create_work_item` and `complete_work_item`). Each must be enabled when the app is installed |
 | `spec.roles` | Roles the app owns (`name`, optional `description`). Every role used anywhere in the manifest must be declared here. A role belongs to exactly one app; `role_operator`, `role_auditor` and `role_workflow` are reserved |
 | `spec.sharedAccess` | Optional. Shared tables the app's roles read, from a closed catalog: `core.users`, `core.files`, `cap_hr.org_units`, `cap_hr.staff`, `cap_work.work_items`, `cap_data.devices`. Rows of `core.files` and `cap_work.work_items` are limited to the app's own `app_id`; a role sees only the files its user uploaded or that are attached to records it may read. No write access |
 | `spec.tables` | Domain tables, or an empty list for a validated capability-only knowledge application (see Knowledge v1); each entry has the fields below. Table names are unique, and a table belongs to one application |
-| `spec.workflows` | Optional. Flows with an identity, a YAML file in the package, `command.committed` subscription and literal `create_work_item` effects (`title`, `description`, `priority`, optional `assigneeId`) on commands of any table. At most one flow subscribes to an event type. The file is a Kestra flow the operator deploys ([workflow deployment](../api/events.md#workflow-deployment)) |
+| `spec.workflows` | Optional. Flows with an identity, a YAML file in the package, `command.committed` subscription and business effects on commands of any table. `create_work_item` requires `fields` (`title`, `description`, `priority`, optional `assigneeId`) and opens a work item. `complete_work_item` declares no `fields` and marks the record's open work items `DONE`. At most one flow subscribes to an event type. The file is a Kestra flow the operator deploys ([workflow deployment](../api/events.md#workflow-deployment)) |
 
 Each entry of `spec.tables`:
 

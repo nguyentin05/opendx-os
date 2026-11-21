@@ -52,14 +52,15 @@ it('queries each held eligible app role and previews five unique newest items wi
   const { user, ...rest } = session(apps);
   const current = { ...rest, user: { ...user, roles: user.roles.filter(role => role.name !== 'role_outdated') } };
   const results = {
-    role_a: [row('shared', 9), row('a', 7), row('old', 1)],
+    role_a: [row('shared', 9), row('a', 7), row('old', 1), { ...row('closed', 11), board_column: 'DONE' }],
     role_b: [row('shared', 9), row('b', 6)],
     role_c: [row('c', 10), row('shared', 8)],
   };
   const fetch = vi.fn(async (_url: string, init: RequestInit) => {
-    const { role, variables } = request(init);
+    const { role, variables, query } = request(init);
     expect(variables.offset).toBe(0);
     expect(variables.limit).toBeLessThanOrEqual(6);
+    expect(query).toContain('where: {board_column: {_neq: "DONE"}}');
     expect(new Headers(init.headers).get('Authorization')).toBe('Bearer token');
     return response(...results[role as keyof typeof results]);
   });
@@ -148,12 +149,14 @@ it('keeps a failed grant at its current offset while other grants advance and fi
 it('keeps readable work when the role cannot select board_column', async () => {
   const { loadWorkPreview } = await import('./work-items');
   vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
-    if (request(init).query.includes('board_column')) return Response.json({
+    const { query } = request(init);
+    if (query.includes('board_column')) return Response.json({
       errors: [{
         message: "field 'board_column' not found in type: 'cap_work_work_items'",
         extensions: { code: 'validation-failed', path: '$.selectionSet.cap_work_work_items.selectionSet.board_column' },
       }],
     });
+    expect(query).not.toContain('where: {board_column');
     const { board_column: _, ...item } = row('visible', 9);
     return Response.json({ data: { cap_work_work_items: [item] } });
   });

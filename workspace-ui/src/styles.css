@@ -421,3 +421,19 @@ body {
     grid-row: 3;
   }
 }
+
+.workspace-skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -4rem;
+  z-index: 10;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--workspace-accent);
+  border-radius: 0.25rem;
+  background: var(--workspace-surface);
+  color: var(--workspace-text);
+}
+
+.workspace-skip-link:focus-visible {
+  top: 1rem;
+}

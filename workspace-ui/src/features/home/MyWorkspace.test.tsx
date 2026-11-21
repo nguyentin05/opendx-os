@@ -34,7 +34,7 @@ function workResponse(title: string, sourceType = table.name) {
 }
 
 function home() {
-  fireEvent.click(within(screen.getByRole('navigation', { name: 'Workspace' })).getByRole('link', { name: 'My Workspace' }));
+  fireEvent.click(within(screen.getByRole('navigation', { name: 'Không gian làm việc' })).getByRole('link', { name: 'Không gian của tôi' }));
 }
 
 afterEach(() => {
@@ -50,7 +50,7 @@ it('shows the empty work state when the registry publishes no eligible roles', (
 
   render(<App initialSession={{ ...session, apps: [{ ...session.apps[0], work_item_roles: [] }] }} />);
 
-  expect(screen.getByText('No work items are available to your account.')).toBeTruthy();
+  expect(screen.getByText('Chưa có việc nào dành cho tài khoản của bạn.')).toBeTruthy();
   expect(within(screen.getByRole('main')).getByRole('link', { name: 'Records' })).toBeTruthy();
   expect(fetch).not.toHaveBeenCalled();
 });
@@ -69,7 +69,7 @@ it('discards a late request when the account changes', async () => {
 
   expect(signal?.aborted).toBe(true);
   expect(screen.queryByText('Old account item')).toBeNull();
-  expect(screen.getByText('No work items are available to your account.')).toBeTruthy();
+  expect(screen.getByText('Chưa có việc nào dành cho tài khoản của bạn.')).toBeTruthy();
 });
 
 it('rejects source links for undeclared, child and unreadable tables', async () => {
@@ -115,7 +115,7 @@ it('refreshes permissions before opening work under its originating role and kee
 
   const work = await screen.findByRole('link', { name: 'Review request' });
   expect(work.getAttribute('href')).toBe('/apps/records/tables/domain.records/' + sourceID + '?role=role_reviewer');
-  expect(screen.getByText('In progress')).toBeTruthy();
+  expect(screen.getByText('Đang làm')).toBeTruthy();
   expect(screen.getByText(role.name)).toBeTruthy();
   fireEvent.click(work);
 
@@ -127,17 +127,17 @@ it('refreshes permissions before opening work under its originating role and kee
   expect(storeLocally).not.toHaveBeenCalled();
 
   revoked = true;
-  const recentSection = within(screen.getByRole('region', { name: 'Recently viewed' }));
+  const recentSection = within(screen.getByRole('region', { name: 'Xem gần đây' }));
   const recent = recentSection.getByRole('link', { name: /Records.*domain\.records/ });
   fireEvent.click(recent);
-  expect(screen.getByText('Checking current permissions…')).toBeTruthy();
-  expect(screen.queryByRole('region', { name: 'Record details' })).toBeNull();
+  expect(screen.getByText('Đang kiểm tra quyền hiện tại…')).toBeTruthy();
+  expect(screen.queryByRole('region', { name: 'Chi tiết hồ sơ' })).toBeNull();
   await act(async () => finishApps(Response.json({ apps: [{ ...session.apps[0], roles: [defaultRole] }] })));
 
-  await screen.findByRole('heading', { name: 'Access unavailable' });
+  await screen.findByRole('heading', { name: 'Không thể truy cập' });
   expect(sequence).toEqual(['me', 'apps', 'role_reviewer', 'me', 'apps']);
   home();
-  expect(within(screen.getByRole('region', { name: 'Recently viewed' })).queryByRole('link')).toBeNull();
+  expect(within(screen.getByRole('region', { name: 'Xem gần đây' })).queryByRole('link')).toBeNull();
 });
 
 it('refuses a work target when fresh account grants revoke the originating role', async () => {
@@ -153,9 +153,9 @@ it('refuses a work target when fresh account grants revoke the originating role'
 
   fireEvent.click(await screen.findByRole('link', { name: 'Revoked review' }));
 
-  expect(screen.getByText('Checking current permissions…')).toBeTruthy();
-  expect(screen.queryByRole('region', { name: 'Record details' })).toBeNull();
-  await screen.findByRole('heading', { name: 'Access unavailable' });
+  expect(screen.getByText('Đang kiểm tra quyền hiện tại…')).toBeTruthy();
+  expect(screen.queryByRole('region', { name: 'Chi tiết hồ sơ' })).toBeNull();
+  await screen.findByRole('heading', { name: 'Không thể truy cập' });
   expect(reads).not.toHaveBeenCalled();
 });
 
@@ -190,11 +190,11 @@ it('keeps a record outside its role scope out of recent navigation', async () =>
       : Response.json({ data: { domain_records_by_pk: null } });
   });
   render(<App initialSession={session} />);
-  await screen.findByText('Record not found.');
+  await screen.findByText('Không tìm thấy hồ sơ.');
 
   home();
 
-  expect(within(screen.getByRole('region', { name: 'Recently viewed' })).queryByRole('link')).toBeNull();
+  expect(within(screen.getByRole('region', { name: 'Xem gần đây' })).queryByRole('link')).toBeNull();
 });
 
 it('shows readable work with unavailable priority, state and source link', async () => {
@@ -214,9 +214,9 @@ it('shows readable work with unavailable priority, state and source link', async
   render(<App initialSession={session} />);
 
   await screen.findByText('Limited work details');
-  expect(screen.getByText('Priority unavailable')).toBeTruthy();
-  expect(screen.getByText('State unavailable')).toBeTruthy();
-  expect(screen.getByText('Source unavailable')).toBeTruthy();
+  expect(screen.getByText('Chưa có mức ưu tiên')).toBeTruthy();
+  expect(screen.getByText('Chưa có trạng thái')).toBeTruthy();
+  expect(screen.getByText('Không mở được hồ sơ nguồn.')).toBeTruthy();
   expect(screen.queryByRole('link', { name: 'Limited work details' })).toBeNull();
   expect(screen.queryByText(/work items are temporarily unavailable/i)).toBeNull();
 });

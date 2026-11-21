@@ -2,12 +2,13 @@
 // Copyright 2026 DX-OS Open-Core Contributors
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { stateLabel } from '../../core/labels';
 import type { AppRoleContext } from '../../core/session-context';
 import type { InstalledTable } from '../../types/registry';
 import { childPageSize, deleteChildRecord, GraphQLRequestError, isRecordID, loadChildPage } from './graphql';
 import { RecordForm } from './RecordForm';
 import type { RecordWriteGuard } from './RecordForm';
-import { allowedFields, canEditRecord, writableFormFields } from './registry';
+import { allowedFields, canEditRecord, columnLabel, writableFormFields } from './registry';
 
 export interface ChildGridProps {
   parent: InstalledTable;
@@ -24,9 +25,9 @@ type Action = { mode: 'insert' } | { mode: 'update' | 'delete'; row: Row };
 
 const maxOffset = Math.floor(2147483647 / childPageSize) * childPageSize;
 const readErrors = {
-  unauthenticated: 'Sign in again to view child records.',
-  forbidden: 'This role cannot view these child records.',
-  unavailable: 'Child records are unavailable.',
+  unauthenticated: 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.',
+  forbidden: 'Vai trò hiện tại không được xem các dòng con này. Hãy chọn vai trò khác hoặc liên hệ quản trị viên.',
+  unavailable: 'Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.',
 };
 
 export function ChildGrid(props: ChildGridProps) {
@@ -50,6 +51,7 @@ function ChildGridContents({ parent, parentRecord, child, context, onParentChang
     return { columns, labels, fields, updatable: readable.has('id') && updateFields.length > 0 };
   });
   const [offset, setOffset] = useState(0);
+  const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState<{ offset: number; page: ChildPage } | { offset: number; error: string }>();
   const [action, setAction] = useState<Action>();
   const [removeError, setRemoveError] = useState('');
@@ -67,7 +69,7 @@ function ChildGridContents({ parent, parentRecord, child, context, onParentChang
       }
     });
     return () => controller.abort();
-  }, [context, child, scope, projection, offset]);
+  }, [context, child, scope, projection, offset, attempt]);
 
   useLayoutEffect(() => () => removalRequest.current?.abort(), []);
 
@@ -87,7 +89,7 @@ function ChildGridContents({ parent, parentRecord, child, context, onParentChang
     removalRequest.current = controller;
     setRemoving(true);
     setRemoveError('');
-    const failure = 'This child record could not be removed.';
+    const failure = 'Không xoá được dòng con này. Hãy thử lại.';
     let removed;
     try {
       removed = await deleteChildRecord(context, child, { ...scope, childRecord: row }, row.id, controller.signal);
@@ -96,7 +98,7 @@ function ChildGridContents({ parent, parentRecord, child, context, onParentChang
     } catch (error) {
       if (controller.signal.aborted) return;
       const expired = error instanceof GraphQLRequestError && error.kind === 'unauthenticated';
-      setRemoveError(expired ? 'Sign in again to remove this child record.' : failure);
+      setRemoveError(expired ? 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.' : failure);
     } finally {
       finishWrite?.();
       if (!controller.signal.aborted) {
@@ -119,38 +121,49 @@ function ChildGridContents({ parent, parentRecord, child, context, onParentChang
   return (
     <section className="workspace-table" aria-label={child.name}>
       <h3>{child.name}</h3>
-      {!current && <p role="status">Loading child records…</p>}
-      {current && 'error' in current && <p role="alert">{current.error}</p>}
+      {!current && <p role="status">Đang tải dòng con…</p>}
+      {current && 'error' in current && (
+        <>
+          <p role="alert">{current.error}</p>
+          <button type="button" onClick={() => setAttempt(value => value + 1)}>Thử lại</button>
+        </>
+      )}
       {canAdd && !action && <button type="button" disabled={writeGuard?.pending}
-        onClick={() => setAction({ mode: 'insert' })}>Add child record</button>}
-      {page && rows.length === 0 && <p role="status">No child records found.</p>}
+        onClick={() => setAction({ mode: 'insert' })}>Thêm dòng con</button>}
+      {page && rows.length === 0 && (
+        <p role="status">{canAdd ? 'Chưa có dòng con nào. Bấm "Thêm dòng con" để bắt đầu.' : 'Chưa có dòng con nào.'}</p>
+      )}
       {rows.length > 0 && (columns.length > 0 || showRowActions) && (
         <table>
           <thead><tr>
-            {columns.map(name => <th key={name} scope="col">{projection.labels.get(name) ?? name}</th>)}
-            {showRowActions && <th scope="col">Actions</th>}
+            {columns.map(name => <th key={name} scope="col">{projection.labels.get(name) ?? columnLabel(child, { name })}</th>)}
+            {showRowActions && <th scope="col">Thao tác</th>}
           </tr></thead>
           <tbody>{rows.map((row, index) => (
             <tr key={isRecordID(row.id) ? row.id : index}>
-              {columns.map(name => <td key={name}>{row[name] === null ? '—' : String(row[name])}</td>)}
+              {columns.map(name => (
+                <td key={name}>
+                  {row[name] === null ? '—' : name === 'status' ? stateLabel(String(row[name])) : String(row[name])}
+                </td>
+              ))}
               {showRowActions && <td>
                 {canUpdate && <button type="button" disabled={Boolean(action || writeGuard?.pending)}
-                  onClick={() => setAction({ mode: 'update', row })}>Edit child record</button>}
+                  onClick={() => setAction({ mode: 'update', row })}>Sửa dòng con</button>}
                 {canRemove && <button type="button" disabled={Boolean(action || writeGuard?.pending)}
-                  onClick={() => setAction({ mode: 'delete', row })}>Remove child record</button>}
+                  onClick={() => setAction({ mode: 'delete', row })}>Xoá dòng con</button>}
               </td>}
             </tr>
           ))}</tbody>
         </table>
       )}
       {page && rows.length > 0 && columns.length === 0 && !showRowActions
-        && <p>No child list columns are available to this role.</p>}
+        && <p>Vai trò này chưa có cột nào để hiển thị.</p>}
       {(offset > 0 || page?.hasNext) && (
-        <nav aria-label={child.name + ' pages'}>
+        <nav aria-label={child.name + ' – các trang'}>
           <button type="button" disabled={Boolean(action) || offset === 0}
-            onClick={() => setOffset(offset - childPageSize)}>Previous page</button>
+            onClick={() => setOffset(offset - childPageSize)}>Trang trước</button>
           <button type="button" disabled={Boolean(action) || !page?.hasNext || offset >= maxOffset}
-            onClick={() => setOffset(offset + childPageSize)}>Next page</button>
+            onClick={() => setOffset(offset + childPageSize)}>Trang sau</button>
         </nav>
       )}
       {((action?.mode === 'insert' && canAdd) || (action?.mode === 'update' && canUpdate)) && (
@@ -161,9 +174,9 @@ function ChildGridContents({ parent, parentRecord, child, context, onParentChang
       )}
       {action?.mode === 'delete' && canRemove && (
         <>
-          <p>Remove this child record?</p>
-          <button type="button" disabled={removing || writeGuard?.pending} onClick={() => void remove(action.row)}>Confirm removal</button>
-          <button type="button" disabled={removing} onClick={cancelAction}>Cancel</button>
+          <p>Xoá dòng con này?</p>
+          <button type="button" disabled={removing || writeGuard?.pending} onClick={() => void remove(action.row)}>Xác nhận xoá</button>
+          <button type="button" disabled={removing} onClick={cancelAction}>Huỷ</button>
           {removeError && <p role="alert">{removeError}</p>}
         </>
       )}

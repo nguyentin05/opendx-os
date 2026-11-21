@@ -142,7 +142,7 @@ func TestCRDSchemaRejectsInvalidResources(t *testing.T) {
 		"effect kind": func(a *dxosv1alpha1.DXApplication) {
 			a.Spec.Workflows = []dxosv1alpha1.Workflow{{ID: "f", Definition: "id: f", SubscribedEvents: []string{"command.committed"},
 				Effects: []dxosv1alpha1.Effect{{StepName: "s", Kind: "send_email", WhenCommands: []string{"close"},
-					Fields: dxosv1alpha1.EffectFields{Title: "t", Description: "d", Priority: "LOW"}}}}}
+					Fields: &dxosv1alpha1.EffectFields{Title: "t", Description: "d", Priority: "LOW"}}}}}
 		},
 	}
 	for name, mutate := range cases {
@@ -159,6 +159,20 @@ func TestCRDSchemaRejectsInvalidResources(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCRDSchemaAcceptsCompleteWorkItemEffect(t *testing.T) {
+	ctx := context.Background()
+	app := minimalApp("schema-complete-work-item")
+	app.Spec.Capabilities = append(app.Spec.Capabilities, "cap-work")
+	app.Spec.Workflows = []dxosv1alpha1.Workflow{{
+		ID: "f", Definition: "id: f", SubscribedEvents: []string{"command.committed"},
+		Effects: []dxosv1alpha1.Effect{{StepName: "close", Kind: "complete_work_item", WhenCommands: []string{"close"}}},
+	}}
+	if err := testClient.Create(ctx, app); err != nil {
+		t.Fatalf("admission rejected complete_work_item: %v", err)
+	}
+	t.Cleanup(func() { _ = testClient.Delete(ctx, app) })
 }
 
 func TestKnowledgeCapabilityOnlyCRDRoundTrip(t *testing.T) {

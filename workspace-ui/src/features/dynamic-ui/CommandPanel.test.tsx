@@ -88,7 +88,7 @@ function button(name: string) {
 }
 
 async function openReject(reason: string) {
-  fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Từ chối' }));
   fireEvent.change(screen.getByLabelText(/rejection reason/i), { target: { value: reason } });
 }
 
@@ -102,8 +102,8 @@ it('shows only registered UI actions available to the acting role and viewed sta
   render(<CommandPanel table={table} appID="sample" context={{ token: 'token', app, role, userID: 'user' }}
     record={viewed} onChanged={vi.fn()} />);
 
-  const actions = within(screen.getByRole('region', { name: 'Record actions' })).getAllByRole('button');
-  expect(actions.map(action => action.textContent)).toEqual(['Reject', 'Assess']);
+  const actions = within(screen.getByRole('region', { name: 'Hành động trên hồ sơ' })).getAllByRole('button');
+  expect(actions.map(action => action.textContent)).toEqual(['Từ chối', 'Assess']);
 });
 
 it('requires a nonempty declared rejection reason and sends it only on confirmation', async () => {
@@ -111,12 +111,12 @@ it('requires a nonempty declared rejection reason and sends it only on confirmat
   const server = serve();
   render(<App initialSession={session} />);
   await openReject('  ');
-  fireEvent.click(button('Confirm reject'));
-  expect((await screen.findByRole('alert')).textContent).toMatch(/rejection reason is required/i);
+  fireEvent.click(button('Xác nhận Từ chối'));
+  expect((await screen.findByRole('alert')).textContent).toMatch(/rejection reason là bắt buộc/i);
   expect(server.posts).toEqual([]);
 
   fireEvent.change(screen.getByLabelText(/rejection reason/i), { target: { value: 'Incorrect total' } });
-  fireEvent.click(button('Confirm reject'));
+  fireEvent.click(button('Xác nhận Từ chối'));
 
   await waitFor(() => expect(server.posts).toHaveLength(1));
   expect(JSON.parse(server.posts[0].body)).toEqual({
@@ -131,18 +131,18 @@ it('validates numeric and UUID payloads and omits untouched optional fields', as
   render(<App initialSession={session} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Assess' }));
   fireEvent.change(screen.getByLabelText(/assessed amount/i), { target: { value: 'wrong' } });
-  fireEvent.click(button('Confirm assess'));
+  fireEvent.click(button('Xác nhận Assess'));
   expect((await screen.findByRole('alert')).textContent).toMatch(/assessed amount/i);
   expect(server.posts).toHaveLength(0);
 
   fireEvent.change(screen.getByLabelText(/assessed amount/i), { target: { value: '42.50' } });
   fireEvent.change(screen.getByLabelText(/review id/i), { target: { value: 'wrong' } });
-  fireEvent.click(button('Confirm assess'));
+  fireEvent.click(button('Xác nhận Assess'));
   expect((await screen.findByRole('alert')).textContent).toMatch(/review id/i);
   expect(server.posts).toHaveLength(0);
 
   fireEvent.change(screen.getByLabelText(/review id/i), { target: { value: '' } });
-  fireEvent.click(button('Confirm assess'));
+  fireEvent.click(button('Xác nhận Assess'));
   await waitFor(() => expect(JSON.parse(server.posts[0].body).payload).toEqual({ assessed_amount: 42.5 }));
 });
 
@@ -151,10 +151,10 @@ it('identifies the record and the requested transition before confirmation', asy
   serve();
   render(<App initialSession={session} />);
   await openReject('');
-  const dialog = screen.getByRole('dialog', { name: 'Reject record' });
+  const dialog = screen.getByRole('dialog', { name: 'Từ chối hồ sơ' });
   const description = document.getElementById(dialog.getAttribute('aria-describedby') ?? '');
   expect(description?.textContent ?? '').toContain(id);
-  expect(description?.textContent ?? '').toMatch(/review.*version 3.*rejected/i);
+  expect(description?.textContent ?? '').toMatch(/Cập nhật hồ sơ .* sang Rejected/);
 });
 
 it('uses Escape to cancel without a POST and restores action focus', async () => {
@@ -162,13 +162,13 @@ it('uses Escape to cancel without a POST and restores action focus', async () =>
   const server = serve();
   render(<App initialSession={session} />);
   await openReject('Incorrect total');
-  const dialog = screen.getByRole('dialog', { name: 'Reject record' });
-  expect(document.activeElement).toBe(button('Cancel'));
+  const dialog = screen.getByRole('dialog', { name: 'Từ chối hồ sơ' });
+  expect(document.activeElement).toBe(button('Huỷ'));
 
   fireEvent.keyDown(dialog, { key: 'Escape' });
 
   expect(screen.queryByRole('dialog')).toBeNull();
-  expect(document.activeElement).toBe(button('Reject'));
+  expect(document.activeElement).toBe(button('Từ chối'));
   expect(server.posts).toEqual([]);
 });
 
@@ -179,10 +179,10 @@ it.each([{ version: 4, status: 'review' }, { version: 3, status: 'rejected' }])(
     render(<App initialSession={session} />);
     await openReject('Incorrect total');
     server.update({ ...viewed, ...change, title: 'Updated record' });
-    fireEvent.click(button('Confirm reject'));
+    fireEvent.click(button('Xác nhận Từ chối'));
 
     await screen.findByText('Updated record');
-    expect((screen.getByRole('alert')).textContent).toMatch(/review.*decid/i);
+    expect((screen.getByRole('alert')).textContent).toMatch(/Hồ sơ vừa được người khác thay đổi/);
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(server.posts).toHaveLength(0);
   },
@@ -196,16 +196,16 @@ it('refreshes after a POST conflict and waits for a new confirmation', async () 
   });
   render(<App initialSession={session} />);
   await openReject('Incorrect total');
-  fireEvent.click(button('Confirm reject'));
+  fireEvent.click(button('Xác nhận Từ chối'));
 
   await screen.findByText('Updated record');
-  expect((screen.getByRole('alert')).textContent).toMatch(/review.*decid/i);
+  expect((screen.getByRole('alert')).textContent).toMatch(/Hồ sơ vừa được người khác thay đổi/);
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(server.posts).toHaveLength(1);
 
   await openReject('After review');
-  fireEvent.click(button('Confirm reject'));
-  await screen.findByText('Reject completed.');
+  fireEvent.click(button('Xác nhận Từ chối'));
+  await screen.findByText('Từ chối đã hoàn tất.');
   expect(JSON.parse(server.posts[1].body)).toMatchObject({
     expected_version: 4, payload: { rejection_reason: 'After review' },
   });
@@ -223,22 +223,22 @@ it('retains the exact uncertain attempt through navigation and asks the backend 
   });
   render(<App initialSession={session} />);
   await openReject('Incorrect total');
-  fireEvent.click(button('Confirm reject'));
-  expect((await screen.findByRole('alert')).textContent).toMatch(/outcome.*unknown/i);
+  fireEvent.click(button('Xác nhận Từ chối'));
+  expect((await screen.findByRole('alert')).textContent).toMatch(/Chưa rõ kết quả/);
 
   act(() => open(otherID));
   await screen.findByRole('button', { name: 'Reopen' });
-  expect(screen.queryByRole('button', { name: 'Retry reject' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Thử lại: Từ chối' })).toBeNull();
   act(() => open(id.toUpperCase()));
-  fireEvent.click(await screen.findByRole('button', { name: 'Retry reject' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Thử lại: Từ chối' }));
   expect((screen.getByLabelText(/rejection reason/i) as HTMLInputElement).readOnly).toBe(true);
   const readsBeforeRetry = server.reads();
-  fireEvent.click(button('Confirm retry'));
+  fireEvent.click(button('Xác nhận thử lại'));
 
   await screen.findByRole('button', { name: 'Reopen' });
   expect(server.posts).toEqual([server.posts[0], server.posts[0]]);
   expect(server.reads()).toBe(readsBeforeRetry + 1);
-  expect(screen.queryByRole('button', { name: 'Retry reject' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Thử lại: Từ chối' })).toBeNull();
 });
 
 it('keeps an uncertain request through record and permission refreshes within the same role', async () => {
@@ -246,18 +246,18 @@ it('keeps an uncertain request through record and permission refreshes within th
   const server = serve(() => { throw new TypeError('Network failure'); });
   render(<App initialSession={session} />);
   await openReject('Incorrect total');
-  fireEvent.click(button('Confirm reject'));
+  fireEvent.click(button('Xác nhận Từ chối'));
   await screen.findByRole('alert');
-  fireEvent.click(button('Cancel'));
+  fireEvent.click(button('Huỷ'));
 
-  fireEvent.click(button('Refresh record'));
-  await screen.findByRole('button', { name: 'Retry reject' });
+  fireEvent.click(button('Tải lại hồ sơ'));
+  await screen.findByRole('button', { name: 'Thử lại: Từ chối' });
 
   server.publish({ ...table, ui: { ...table.ui, formFields: [
     { name: 'rejection_reason', label: 'Reason for rejection', type: 'text', required: true },
   ] } });
-  fireEvent.click(button('Refresh permissions'));
-  await screen.findByRole('button', { name: 'Retry reject' });
+  fireEvent.click(button('Làm mới quyền'));
+  await screen.findByRole('button', { name: 'Thử lại: Từ chối' });
   expect(server.posts).toHaveLength(1);
 });
 
@@ -289,21 +289,21 @@ it.each([
   const server = serve(() => new Response(null, { status: 503 }));
   render(<App initialSession={session} />);
   await openReject('Incorrect total');
-  fireEvent.click(button('Confirm reject'));
+  fireEvent.click(button('Xác nhận Từ chối'));
   await screen.findByRole('alert');
-  fireEvent.click(button('Cancel'));
+  fireEvent.click(button('Huỷ'));
 
   server.publish(published);
-  fireEvent.click(button('Refresh permissions'));
-  expect((await screen.findByRole('alert')).textContent).toMatch(/action configuration changed/i);
-  expect(screen.queryByRole('button', { name: 'Retry reject' })).toBeNull();
+  fireEvent.click(button('Làm mới quyền'));
+  expect((await screen.findByRole('alert')).textContent).toMatch(/Cấu hình hành động đã thay đổi/);
+  expect(screen.queryByRole('button', { name: 'Thử lại: Từ chối' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Assess' })).toBeNull();
   expect(screen.queryByText('Incorrect total')).toBeNull();
 
   const readsBeforeReview = server.reads();
-  fireEvent.click(button('Reload record to review actions'));
+  fireEvent.click(button('Tải lại hồ sơ để xem hành động'));
   await screen.findByRole('button', { name: 'Assess' });
-  expect(screen.queryByRole('button', { name: 'Retry reject' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Thử lại: Từ chối' })).toBeNull();
   expect(server.reads()).toBe(readsBeforeReview + 1);
   expect(server.posts).toHaveLength(1);
 });
@@ -313,18 +313,18 @@ it('shows a normal action to another authorized role and account', async () => {
   serve(() => new Response(null, { status: 503 }));
   const { rerender } = render(<App initialSession={session} />);
   await openReject('Incorrect total');
-  fireEvent.click(button('Confirm reject'));
+  fireEvent.click(button('Xác nhận Từ chối'));
   await screen.findByRole('alert');
 
   act(() => open(id, 'owner'));
-  await screen.findByRole('button', { name: 'Reject' });
-  expect(screen.queryByRole('button', { name: 'Retry reject' })).toBeNull();
+  await screen.findByRole('button', { name: 'Từ chối' });
+  expect(screen.queryByRole('button', { name: 'Thử lại: Từ chối' })).toBeNull();
 
   act(() => open());
-  await screen.findByRole('button', { name: 'Retry reject' });
+  await screen.findByRole('button', { name: 'Thử lại: Từ chối' });
   rerender(<App initialSession={{ ...session, user: { ...session.user, id: 'another-account' } }} />);
-  await screen.findByRole('button', { name: 'Reject' });
-  expect(screen.queryByRole('button', { name: 'Retry reject' })).toBeNull();
+  await screen.findByRole('button', { name: 'Từ chối' });
+  expect(screen.queryByRole('button', { name: 'Thử lại: Từ chối' })).toBeNull();
 });
 
 it('guards concurrent detail writes and retains a posted attempt if the record is left while waiting', async () => {
@@ -334,33 +334,33 @@ it('guards concurrent detail writes and retains a posted attempt if the record i
   const server = serve(() => response);
   render(<App initialSession={session} />);
   await openReject('Incorrect total');
-  fireEvent.click(button('Confirm reject'));
+  fireEvent.click(button('Xác nhận Từ chối'));
   await waitFor(() => expect(server.posts).toHaveLength(1));
-  expect(button('Refresh record').disabled).toBe(true);
-  expect(button('Edit record').disabled).toBe(true);
-  expect(button('Confirm reject').matches(':disabled')).toBe(true);
+  expect(button('Tải lại hồ sơ').disabled).toBe(true);
+  expect(button('Sửa hồ sơ').disabled).toBe(true);
+  expect(button('Xác nhận Từ chối').matches(':disabled')).toBe(true);
 
   act(() => open(otherID));
-  await screen.findByRole('button', { name: 'Reject' });
+  await screen.findByRole('button', { name: 'Từ chối' });
   await act(async () => finish(Response.json({ status: 'rejected', version: 4 })));
-  expect(screen.queryByText('Reject completed.')).toBeNull();
+  expect(screen.queryByText('Từ chối đã hoàn tất.')).toBeNull();
   act(() => open());
-  await screen.findByRole('button', { name: 'Retry reject' });
+  await screen.findByRole('button', { name: 'Thử lại: Từ chối' });
   expect(server.posts).toHaveLength(1);
 });
 
 it.each([
-  [401, /sign in again/i], [403, /cannot run/i],
-  [404, /unavailable/i], [422, /attachment/i],
+  [401, /Phiên đăng nhập đã hết hạn/], [403, /không được thực hiện/],
+  [404, /không khả dụng/i], [422, /Tệp đính kèm/i],
 ] as const)('handles HTTP %i using only safe user-facing details', async (status, message) => {
   open();
   const server = serve(() => new Response('Protected backend detail', { status }));
   render(<App initialSession={session} />);
   await openReject('Incorrect total');
-  fireEvent.click(button('Confirm reject'));
+  fireEvent.click(button('Xác nhận Từ chối'));
 
   expect((await screen.findByRole('alert')).textContent).toMatch(message);
   expect(screen.queryByText('Protected backend detail')).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Retry reject' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Thử lại: Từ chối' })).toBeNull();
   expect(server.posts).toHaveLength(1);
 });

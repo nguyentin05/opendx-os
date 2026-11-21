@@ -2,6 +2,7 @@
 // Copyright 2026 DX-OS Open-Core Contributors
 
 import type { FormField, InstalledApp, InstalledTable } from '../../types/registry';
+import { platformColumnLabel } from '../../core/labels';
 
 const fieldIdentifier = /^[a-z][a-z0-9_]*$/;
 const domainTableIdentifier = /^domain\.[a-z][a-z0-9_]*$/;
@@ -15,6 +16,13 @@ export function topLevelTables(app: InstalledApp, role: string): InstalledTable[
   return app.tables.filter(table =>
     !table.belongsTo && table.access.select.some(rule => rule.role === role),
   );
+}
+
+// Manifest labels are the source of column titles; a column without one uses
+// the platform column glossary or a humanized name so the shell stays generic.
+export function columnLabel(table: InstalledTable, column: { name: string }): string {
+  const label = table.ui.formFields?.find(field => field.name === column.name)?.label;
+  return label || platformColumnLabel(column.name);
 }
 
 export function isParentColumn(name: string): boolean {

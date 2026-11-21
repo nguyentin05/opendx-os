@@ -4,13 +4,13 @@ apiVersion: dxos.io/v1alpha1
 kind: DXApplication
 metadata:
   name: personal_library
-  displayName: Personal library
+  displayName: Thư viện cá nhân
   version: 1.0.0
 spec:
   capabilities: [cap-process, cap-ai]
   roles:
     - name: role_library_user
-      description: Access to the user's owner-only personal library
+      description: Truy cập thư viện cá nhân chỉ dành cho chủ sở hữu
   sharedAccess:
     - table: core.files
       roles: [role_library_user]

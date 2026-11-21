@@ -65,7 +65,7 @@ function serve(apps: () => InstalledApp[], respond: (request: WorkspaceRequest) 
 }
 
 function sidebar() {
-  return within(screen.getByRole('navigation', { name: 'Workspace' }));
+  return within(screen.getByRole('navigation', { name: 'Không gian làm việc' }));
 }
 
 function deepLink(path: string) {
@@ -92,20 +92,20 @@ it('discovers a fourth registry app after refresh and uses its declared table, r
   });
   render(<App initialSession={session(initialApps)} />);
 
-  const shortcuts = within(screen.getByRole('region', { name: 'Your apps' }));
+  const shortcuts = within(screen.getByRole('region', { name: 'Ứng dụng của bạn' }));
   expect(shortcuts.getAllByRole('link')).toHaveLength(3);
   expect(sidebar().queryByRole('link', { name: 'Facilities Bookings' })).toBeNull();
   published = [...initialApps, facilities];
-  fireEvent.click(screen.getByRole('button', { name: 'Refresh permissions' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Làm mới quyền' }));
   const app = await sidebar().findByRole('link', { name: 'Facilities Bookings' });
-  expect(within(screen.getByRole('region', { name: 'Your apps' })).getAllByRole('link')).toHaveLength(4);
+  expect(within(screen.getByRole('region', { name: 'Ứng dụng của bạn' })).getAllByRole('link')).toHaveLength(4);
   fireEvent.click(app);
   await screen.findByText('Meeting room B');
 
-  fireEvent.change(screen.getByLabelText('Filter by title'), { target: { value: 'Meeting room B' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Apply filter' }));
+  fireEvent.change(screen.getByLabelText('Lọc theo Title'), { target: { value: 'Meeting room B' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Áp dụng' }));
   await screen.findByText('Meeting room B');
-  fireEvent.change(screen.getByLabelText('Sort direction'), { target: { value: 'desc' } });
+  fireEvent.change(screen.getByLabelText('Chiều sắp xếp'), { target: { value: 'desc' } });
   await screen.findByText('Meeting room B');
 
   expect(requests).toHaveLength(3);
@@ -137,32 +137,32 @@ it('drops revoked work and recent links, rejects manager deep links and handles 
   render(<App initialSession={session(published)} />);
   fireEvent.click(await screen.findByRole('link', { name: 'Inspect pump' }));
   await screen.findByText('Private pump inspection');
-  fireEvent.click(sidebar().getByRole('link', { name: 'My Workspace' }));
+  fireEvent.click(sidebar().getByRole('link', { name: 'Không gian của tôi' }));
 
   const work = await screen.findByRole('link', { name: 'Inspect pump' });
   const maintenanceURL = work.getAttribute('href')!;
-  expect(within(screen.getByRole('region', { name: 'Recently viewed' }))
+  expect(within(screen.getByRole('region', { name: 'Xem gần đây' }))
     .getByRole('link', { name: /Maintenance/ }).getAttribute('href')).toBe(maintenanceURL);
   published = [timesheet];
   const priorRequests = requests.length;
   fireEvent.click(work);
-  await screen.findByRole('heading', { name: 'Access unavailable' });
+  await screen.findByRole('heading', { name: 'Không thể truy cập' });
   expect(screen.queryByText('Private pump inspection')).toBeNull();
 
   deepLink(maintenanceURL);
-  expect(screen.getByRole('heading', { name: 'Access unavailable' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Không thể truy cập' })).toBeTruthy();
   deepLink('/apps/procurement/tables/domain.procurement_requests/' + recordID + '?role=role_procurement_manager');
-  expect(screen.getByRole('heading', { name: 'Access unavailable' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Không thể truy cập' })).toBeTruthy();
   expect(requests).toHaveLength(priorRequests);
 
-  fireEvent.click(sidebar().getByRole('link', { name: 'My Workspace' }));
+  fireEvent.click(sidebar().getByRole('link', { name: 'Không gian của tôi' }));
   expect(sidebar().queryByRole('link', { name: /Maintenance|Procurement/ })).toBeNull();
   expect(screen.queryByRole('link', { name: 'Inspect pump' })).toBeNull();
-  expect(within(screen.getByRole('region', { name: 'Recently viewed' })).queryByRole('link')).toBeNull();
+  expect(within(screen.getByRole('region', { name: 'Xem gần đây' })).queryByRole('link')).toBeNull();
 
   deepLink('/apps/timesheet/tables/domain.timesheets/' + recordID + '?role=role_time_entry');
-  await screen.findByText('Record not found.');
-  expect(screen.queryByRole('region', { name: 'Record actions' })).toBeNull();
+  await screen.findByText('Không tìm thấy hồ sơ.');
+  expect(screen.queryByRole('region', { name: 'Hành động trên hồ sơ' })).toBeNull();
 });
 
 it('treats an HTTP 200 GraphQL permission error as a denied record and suppresses partial data', async () => {
@@ -180,13 +180,13 @@ it('treats an HTTP 200 GraphQL permission error as a denied record and suppresse
   });
   render(<App initialSession={session([timesheet])} />);
 
-  expect((await screen.findByRole('alert')).textContent).toBe('This role cannot view this record.');
+  expect((await screen.findByRole('alert')).textContent).toBe('Vai trò hiện tại không được xem hồ sơ này. Hãy chọn vai trò khác hoặc liên hệ quản trị viên.');
   expect(screen.queryByText('Private partial timesheet')).toBeNull();
   expect(screen.queryByText('Protected backend detail')).toBeNull();
   expect(requests).toHaveLength(1);
-  fireEvent.click(screen.getByRole('button', { name: 'Back to records' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Quay lại danh sách' }));
   expect(window.location.pathname).toBe('/apps/timesheet/tables/domain.timesheets');
-  await screen.findByText('No records found.');
+  await screen.findByText('Chưa có hồ sơ nào.');
 });
 
 it('returns from a narrow Assistant outage by keyboard and leaves a conflicted workflow decision unexecuted', async () => {
@@ -238,7 +238,7 @@ it('returns from a narrow Assistant outage by keyboard and leaves a conflicted w
     menu.focus();
     fireEvent.click(menu, { detail: 0 });
     expect(menu.getAttribute('aria-expanded')).toBe('true');
-    expect(document.activeElement).toBe(sidebar().getByRole('link', { name: 'My Workspace' }));
+    expect(document.activeElement).toBe(sidebar().getByRole('link', { name: 'Không gian của tôi' }));
     fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
     expect(document.activeElement).toBe(menu);
     expect(menu.getAttribute('aria-expanded')).toBe('false');
@@ -248,37 +248,37 @@ it('returns from a narrow Assistant outage by keyboard and leaves a conflicted w
     fireEvent.click(app, { detail: 0 });
     expect(document.activeElement).toBe(menu);
     expect(menu.getAttribute('aria-expanded')).toBe('false');
-    const firstRow = await screen.findByRole('row', { name: 'Office supplies Open' });
-    fireEvent.click(within(firstRow).getByRole('button', { name: 'Open' }));
+    const firstRow = await screen.findByRole('row', { name: 'Office supplies Mở' });
+    fireEvent.click(within(firstRow).getByRole('button', { name: 'Mở' }));
 
-    const trigger = screen.getByRole('button', { name: 'Assistant' });
+    const trigger = screen.getByRole('button', { name: 'Trợ lý' });
     trigger.focus();
     fireEvent.click(trigger, { detail: 0 });
-    const assistant = screen.getByRole('dialog', { name: 'Assistant' });
+    const assistant = screen.getByRole('dialog', { name: 'Trợ lý' });
     expect(assistant.getAttribute('aria-modal')).toBe('true');
     expect(showModal.mock.contexts).toContain(assistant);
     expect((await within(assistant).findByRole('alert')).textContent)
-      .toBe('Assistant is temporarily unavailable.');
-    expect(within(assistant).queryByText('No conversations yet.')).toBeNull();
-    const close = within(assistant).getByRole('button', { name: 'Close assistant' });
+      .toBe('Trợ lý tạm thời không khả dụng.');
+    expect(within(assistant).queryByText('Chưa có cuộc trò chuyện nào. Hãy đặt câu hỏi đầu tiên.')).toBeNull();
+    const close = within(assistant).getByRole('button', { name: 'Đóng trợ lý' });
     expect(document.activeElement).toBe(close);
     fireEvent.keyDown(close, { key: 'Escape' });
-    expect(screen.queryByRole('dialog', { name: 'Assistant' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Trợ lý' })).toBeNull();
     expect(document.activeElement).toBe(trigger);
 
-    const record = within(screen.getByRole('region', { name: 'Record details' }));
+    const record = within(screen.getByRole('region', { name: 'Chi tiết hồ sơ' }));
     await record.findByText('Office supplies');
-    fireEvent.click(record.getByRole('button', { name: 'Approve' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm approve' }));
+    fireEvent.click(record.getByRole('button', { name: 'Duyệt' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận Duyệt' }));
     await record.findByText('Office supplies (revised)');
-    expect(record.getByRole('alert').textContent).toMatch(/review.*decid/i);
-    expect(record.getByText('submitted')).toBeTruthy();
-    expect(record.getByRole('button', { name: 'Approve' })).toBeTruthy();
+    expect(record.getByRole('alert').textContent).toMatch(/Hồ sơ vừa được người khác thay đổi/);
+    expect(record.getByText('Submitted')).toBeTruthy();
+    expect(record.getByRole('button', { name: 'Duyệt' })).toBeTruthy();
     expect(screen.queryByRole('dialog')).toBeNull();
-    fireEvent.click(record.getByRole('button', { name: 'Back to records' }));
-    const secondRow = await screen.findByRole('row', { name: 'Replacement filters Open' });
-    fireEvent.click(within(secondRow).getByRole('button', { name: 'Open' }));
-    const nextRecord = within(screen.getByRole('region', { name: 'Record details' }));
+    fireEvent.click(record.getByRole('button', { name: 'Quay lại danh sách' }));
+    const secondRow = await screen.findByRole('row', { name: 'Replacement filters Mở' });
+    fireEvent.click(within(secondRow).getByRole('button', { name: 'Mở' }));
+    const nextRecord = within(screen.getByRole('region', { name: 'Chi tiết hồ sơ' }));
     await nextRecord.findByText('Replacement filters');
     expect(nextRecord.queryByText('Office supplies (revised)')).toBeNull();
     expect(requests[requests.length - 1]).toMatchObject({

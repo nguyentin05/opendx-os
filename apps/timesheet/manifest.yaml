@@ -4,15 +4,15 @@ apiVersion: dxos.io/v1alpha1
 kind: DXApplication
 metadata:
   name: timesheet
-  displayName: "Employee Timesheet"
+  displayName: "Bảng công nhân viên"
   version: "0.2.0"
 spec:
   capabilities: [cap-process, cap-hr]
   roles:
     - name: role_timesheet_employee
-      description: Logs their own working hours
+      description: Ghi giờ làm việc của bản thân
     - name: role_timesheet_manager
-      description: Approves the timesheets of their department
+      description: Duyệt bảng công của phòng ban mình
   sharedAccess:
     - table: core.users
       roles: [role_timesheet_employee, role_timesheet_manager]
@@ -61,6 +61,6 @@ spec:
     ui:
       listColumns: [created_by, work_date, logged_hours, status, version, updated_at]
       formFields:
-        - { name: work_date, label: "Work Date", type: date, required: true }
-        - { name: logged_hours, label: "Logged Hours (0-24)", type: number, required: true }
+        - { name: work_date, label: "Ngày làm việc", type: date, required: true }
+        - { name: logged_hours, label: "Số giờ đã ghi (0-24)", type: number, required: true }
       actions: [approve, reject]

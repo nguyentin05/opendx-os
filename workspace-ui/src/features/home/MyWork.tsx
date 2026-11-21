@@ -3,7 +3,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { Session } from '../../auth';
+import { commandLabel, stateLabel } from '../../core/labels';
+import { useWorkspaceRoute } from '../../core/routes';
 import { WorkspaceLink } from '../../shell/AppShell';
+import { loadInbox } from './inbox';
+import type { InboxItem, InboxResult } from './inbox';
 import { targetURL, workTarget } from './recent';
 import { loadWorkPage, mergeWorkItems, retainAuthorizedWork, workGrants, workItemKey } from './work-items';
 import type { WorkItem } from './work-items';
@@ -13,8 +17,8 @@ export interface MyWorkProps {
   onOpenWorkItem: (item: WorkItem) => void;
 }
 
-const priorities: Record<string, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', CRITICAL: 'Critical' };
-const boardColumns: Record<string, string> = { TODO: 'To do', IN_PROGRESS: 'In progress', DONE: 'Done' };
+const priorities: Record<string, string> = { LOW: 'Thấp', MEDIUM: 'Trung bình', HIGH: 'Cao', CRITICAL: 'Nghiêm trọng' };
+const boardColumns: Record<string, string> = { TODO: 'Cần làm', IN_PROGRESS: 'Đang làm', DONE: 'Hoàn tất' };
 const firstPage = {};
 const pageSize = 20;
 
@@ -35,9 +39,9 @@ export function WorkItemList({ session, onOpenWorkItem, items }: MyWorkProps & {
               : <span>{item.title}</span>}
             <div className="workspace-work-meta">
               <span>{app?.display_name} · <span>{item.role}</span></span>
-              <span className="workspace-work-status">{item.priority ? label(priorities, item.priority) : 'Priority unavailable'}</span>
-              <span className="workspace-work-status">{item.boardColumn ? label(boardColumns, item.boardColumn) : 'State unavailable'}</span>
-              {!href && <span>Source unavailable</span>}
+              <span className="workspace-work-status">{item.priority ? label(priorities, item.priority) : 'Chưa có mức ưu tiên'}</span>
+              <span className="workspace-work-status">{item.boardColumn ? label(boardColumns, item.boardColumn) : 'Chưa có trạng thái'}</span>
+              {!href && <span>Không mở được hồ sơ nguồn.</span>}
             </div>
           </li>
         );
@@ -46,10 +50,36 @@ export function WorkItemList({ session, onOpenWorkItem, items }: MyWorkProps & {
   );
 }
 
+export function InboxList({ session, items }: { session: Session; items: InboxItem[] }) {
+  const { navigate } = useWorkspaceRoute();
+  return (
+    <ul className="workspace-work-list workspace-inbox" role="list">
+      {items.map(item => {
+        const app = session.apps.find(app => app.app_id === item.appID);
+        const href = targetURL(session, { appID: item.appID, role: item.role, tableName: item.table, recordID: item.recordID });
+        return (
+          <li key={item.appID + ':' + item.table + ':' + item.recordID}>
+            {href ? <WorkspaceLink href={href} onNavigate={navigate}>{item.title}</WorkspaceLink> : <span>{item.title}</span>}
+            <div className="workspace-work-meta">
+              <span>{app?.display_name}</span>
+              <span className="workspace-work-status">{stateLabel(item.status)}</span>
+              <span className="workspace-work-status">{item.commands.map(commandLabel).join(', ')}</span>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+export function InboxAvailability({ partial }: { partial: boolean }) {
+  return partial ? <p role="status">Một số hồ sơ chưa tải được. Hãy thử lại.</p> : null;
+}
+
 export function WorkAvailability({ partial, itemCount }: { partial: boolean; itemCount: number }) {
   return partial ? (
     <p role="status">
-      {itemCount ? 'Some work items are unavailable. Results are partial.' : 'Work items are temporarily unavailable.'}
+      {itemCount ? 'Một số việc chưa tải được. Kết quả chỉ là một phần.' : 'Việc đang tạm thời không khả dụng. Hãy thử lại sau ít phút.'}
     </p>
   ) : null;
 }
@@ -64,10 +94,28 @@ export function MyWork({ session, onOpenWorkItem }: MyWorkProps) {
   const [priorityFilter, setPriorityFilter] = useState('');
   const [request, setRequest] = useState<PageRequest>();
   const [loaded, setLoaded] = useState<LoadedWork>();
+  const [inbox, setInbox] = useState<{ session: Session; data: InboxResult }>();
+  const [inboxLoading, setInboxLoading] = useState(false);
+  const [inboxRetry, setInboxRetry] = useState(0);
+  const inboxData = inbox?.session === session ? inbox.data : undefined;
   const cursors = request?.session === session ? request.cursors : firstPage;
   const current = loaded?.session === session ? loaded : undefined;
   const result = current?.data;
   const loading = apps.length > 0 && current?.cursors !== cursors;
+
+  useEffect(() => {
+    if (!session.apps.length) return;
+    const controller = new AbortController();
+    setInboxLoading(true);
+    void loadInbox(session, controller.signal).then(data => {
+      if (!controller.signal.aborted) setInbox({ session, data });
+    }).catch(() => {
+      if (!controller.signal.aborted) setInbox({ session, data: { items: [], partial: true } });
+    }).finally(() => {
+      if (!controller.signal.aborted) setInboxLoading(false);
+    });
+    return () => controller.abort();
+  }, [session, inboxRetry]);
 
   useEffect(() => {
     if (!apps.length) return;
@@ -113,36 +161,48 @@ export function MyWork({ session, onOpenWorkItem }: MyWorkProps) {
 
   return (
     <>
-      <h1>My Work</h1>
+      <h1>Việc của tôi</h1>
+      <section className="workspace-panel" aria-labelledby="inbox-heading">
+        <h2 id="inbox-heading">Chờ tôi xử lý</h2>
+        {inboxLoading && <p role="status">Đang tải hồ sơ chờ xử lý…</p>}
+        <InboxAvailability partial={Boolean(inboxData?.partial)} />
+        {inboxData && inboxData.items.length > 0 && <InboxList session={session} items={inboxData.items} />}
+        {!inboxLoading && inboxData && !inboxData.items.length && !inboxData.partial && (
+          <p>Không có hồ sơ nào đang chờ bạn xử lý.</p>
+        )}
+        {inboxData?.partial && (
+          <button onClick={() => setInboxRetry(value => value + 1)}>Thử lại</button>
+        )}
+      </section>
       {apps.length > 0 && (
         <div className="workspace-table-controls">
           <label>
-            Application{' '}
+            Ứng dụng{' '}
             <select value={selectedApp} onChange={event => setAppFilter(event.target.value)}>
-              <option value="">All applications</option>
+              <option value="">Tất cả ứng dụng</option>
               {apps.map(app => <option key={app.app_id} value={app.app_id}>{app.display_name}</option>)}
             </select>
           </label>
           <label>
-            Priority{' '}
+            Mức ưu tiên{' '}
             <select value={priorityFilter} onChange={event => setPriorityFilter(event.target.value)}>
-              <option value="">All priorities</option>
+              <option value="">Tất cả mức ưu tiên</option>
               {Object.entries(priorities).map(([value, name]) => <option key={value} value={value}>{name}</option>)}
             </select>
           </label>
         </div>
       )}
-      {loading && <p role="status">Loading work items…</p>}
+      {loading && <p role="status">Đang tải công việc…</p>}
       <WorkAvailability partial={Boolean(result?.partial)} itemCount={work.length} />
       {items.length > 0 && <WorkItemList session={session} onOpenWorkItem={onOpenWorkItem} items={items} />}
       {!loading && !items.length && (
         selectedApp || priorityFilter
-          ? <p>No loaded work items match your filters.</p>
-          : !result?.partial && <p>No work items are available to your account.</p>
+          ? <p>Không có việc nào khớp bộ lọc hiện tại.</p>
+          : !result?.partial && <p>Chưa có việc nào dành cho tài khoản của bạn.</p>
       )}
       {result && (hasMore || result.partial) && (
         <button disabled={loading} onClick={() => setRequest({ session, cursors: { ...result.next } })}>
-          {result.partial ? 'Retry unavailable work' : 'Load more'}
+          {result.partial ? 'Thử lại phần chưa tải được' : 'Tải thêm'}
         </button>
       )}
     </>

@@ -91,7 +91,7 @@ it('loads the deep link with role credentials and publishes only projected field
   expect(screen.getByText('Vendor')).toBeTruthy();
   expect(screen.getByRole('link', { name: otherID }).getAttribute('href'))
     .toBe('/apps/sample/tables/domain.vendors/' + otherID + '?role=role_editor');
-  expect(screen.getByText('draft')).toBeTruthy();
+  expect(screen.getByText('Draft')).toBeTruthy();
   expect(screen.getByText('2')).toBeTruthy();
   expect(screen.queryByText('Hidden value')).toBeNull();
   const [endpoint, request] = fetch.mock.calls[0];
@@ -110,19 +110,19 @@ it('omits process metadata the acting role cannot read even when returned by the
 
   await screen.findByText('Reader title');
   expect(screen.queryByText(/^(status|version|draft|42)$/i)).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Edit record' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Sửa hồ sơ' })).toBeNull();
   const body = JSON.parse(String(fetch.mock.calls[0][1].body));
   expect(body.query).toMatch(/domain_records_by_pk\(id: \$id\)\s*\{\s*id title\s*\}/);
 });
 
 it.each([
-  ['missing', () => recordResponse(null), 'Record not found.'],
-  ['HTTP 404', () => new Response('Protected content', { status: 404 }), 'Record is unavailable.'],
+  ['missing', () => recordResponse(null), 'Không tìm thấy hồ sơ.'],
+  ['HTTP 404', () => new Response('Protected content', { status: 404 }), 'Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.'],
   ['revoked role', () => Response.json({
     data: { domain_records_by_pk: { id, title: 'Protected content' } },
     errors: [{ message: 'Protected content', extensions: { code: 'access-denied' } }],
-  }), 'This role cannot view this record.'],
-  ['expired session', () => new Response('Protected content', { status: 401 }), 'Sign in again to view this record.'],
+  }), 'Vai trò hiện tại không được xem hồ sơ này. Hãy chọn vai trò khác hoặc liên hệ quản trị viên.'],
+  ['expired session', () => new Response('Protected content', { status: 401 }), 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.'],
 ] as const)('safely reports a %s result', async (_scenario, respond, message) => {
   open();
   mockFetch(respond);
@@ -130,7 +130,7 @@ it.each([
 
   await screen.findByText(message);
   expect(screen.queryByText('Protected content')).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Edit record' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Sửa hồ sơ' })).toBeNull();
 });
 
 it('does not query a malformed record ID', async () => {
@@ -138,7 +138,7 @@ it('does not query a malformed record ID', async () => {
   const fetch = mockFetch(() => recordResponse(null));
   render(<App initialSession={session} />);
 
-  await screen.findByText('Record not found.');
+  await screen.findByText('Không tìm thấy hồ sơ.');
   expect(fetch).not.toHaveBeenCalled();
 });
 
@@ -152,7 +152,7 @@ it('does not query a by-PK detail when the role lacks a published ID selection',
   };
   render(<App initialSession={{ ...session, apps: [{ ...app, tables: [restrictedTable] }] }} />);
 
-  await screen.findByText('This role cannot view this record.');
+  await screen.findByText('Vai trò hiện tại không được xem hồ sơ này. Hãy chọn vai trò khác hoặc liên hệ quản trị viên.');
   expect(fetch).not.toHaveBeenCalled();
 });
 
@@ -164,7 +164,7 @@ it('discards an older response after navigating to a different record in the sam
     : recordResponse({ id: otherID, title: 'Current record', vendor_id: null, status: 'draft', version: 1 }));
   render(<App initialSession={session} />);
 
-  await screen.findByText('Loading record…');
+  await screen.findByText('Đang tải hồ sơ…');
   act(() => open(otherID));
   await screen.findByText('Current record');
   await act(async () => {
@@ -182,9 +182,9 @@ it('discards the displayed record immediately when refreshing and the current ro
   await screen.findByText('Previously visible');
 
   fetch.mockResolvedValueOnce(new Response('Protected content', { status: 403 }));
-  fireEvent.click(screen.getByRole('button', { name: 'Refresh record' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Tải lại hồ sơ' }));
   expect(screen.queryByText('Previously visible')).toBeNull();
-  await screen.findByText('This role cannot view this record.');
+  await screen.findByText('Vai trò hiện tại không được xem hồ sơ này. Hãy chọn vai trò khác hoặc liên hệ quản trị viên.');
   expect(screen.queryByText('Protected content')).toBeNull();
 });
 
@@ -219,6 +219,6 @@ it('rejects a response for a different ID without showing the accompanying data'
   mockFetch(() => recordResponse({ id: otherID, title: 'Different record' }));
   render(<App initialSession={session} />);
 
-  await screen.findByText('Record is unavailable.');
+  await screen.findByText('Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.');
   expect(screen.queryByText('Different record')).toBeNull();
 });

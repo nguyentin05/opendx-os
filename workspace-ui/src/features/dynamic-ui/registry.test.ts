@@ -2,6 +2,7 @@
 // Copyright 2026 DX-OS Open-Core Contributors
 
 import { describe, expect, it } from 'vitest';
+import { columnLabel } from './registry';
 import type { InstalledApp, InstalledTable } from '../../types/registry';
 import { allowedFields, tableGraphQLName, topLevelTables, writableFormFields } from './registry';
 
@@ -111,5 +112,25 @@ describe('tableGraphQLName', () => {
     'core.files',
   ])('rejects %j as a domain table name', name => {
     expect(() => tableGraphQLName(name)).toThrow();
+  });
+});
+
+describe('columnLabel', () => {
+  const table = {
+    columns: [{ name: 'quoted_amount', type: 'numeric(14,2)', nullable: false }],
+    access: { select: [], insert: [] },
+    ui: { listColumns: [], formFields: [{ name: 'quoted_amount', label: 'Số tiền báo giá', type: 'number', required: true }] },
+  } as unknown as InstalledTable;
+
+  it('uses the manifest label when the column has one', () => {
+    expect(columnLabel(table, { name: 'quoted_amount' })).toBe('Số tiền báo giá');
+  });
+
+  it('humanizes a column without a label', () => {
+    expect(columnLabel(table, { name: 'vendor_name' })).toBe('Vendor name');
+  });
+
+  it('names platform columns in Vietnamese', () => {
+    expect(columnLabel(table, { name: 'updated_at' })).toBe('Cập nhật lúc');
   });
 });

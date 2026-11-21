@@ -23,3 +23,17 @@ tasks:
           Idempotency-Key: "{{ trigger.body.event_id }}:create_review"
         body: |
           {"event_id":"{{ trigger.body.event_id }}","step_name":"create_review"}
+  - id: close_review_only
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ trigger.body.app_id == 'procurement' and (trigger.body.payload.command == 'approve' or trigger.body.payload.command == 'reject' or trigger.body.payload.command == 'cancel') }}"
+    then:
+      - id: close_review
+        type: io.kestra.plugin.core.http.Request
+        uri: "{{ secret('DXOS_PROCESS_URL') }}/api/cap/process/effects/work-item"
+        method: POST
+        contentType: application/json
+        headers:
+          Authorization: "Bearer {{ secret('DXOS_WORKFLOW_TOKEN') }}"
+          Idempotency-Key: "{{ trigger.body.event_id }}:close_review"
+        body: |
+          {"event_id":"{{ trigger.body.event_id }}","step_name":"close_review"}

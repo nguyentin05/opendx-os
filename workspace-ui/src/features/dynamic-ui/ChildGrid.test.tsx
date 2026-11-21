@@ -125,7 +125,7 @@ it('shows a child only on its declared parent and reads the nested rows with cur
   open();
   const fetch = setup();
   render(<App initialSession={session} />);
-  const views = screen.getByRole('navigation', { name: 'Application views' });
+  const views = screen.getByRole('navigation', { name: 'Các màn hình của ứng dụng' });
   expect(within(views).queryByRole('link', { name: child.name })).toBeNull();
 
   act(() => open(unrelated.name, id));
@@ -150,10 +150,10 @@ it('stamps the visible request ID on insert and refreshes the parent version aft
 
   const grid = await screen.findByRole('region', { name: child.name });
   await within(grid).findByText('Initial item');
-  fireEvent.click(within(grid).getByRole('button', { name: 'Add child record' }));
+  fireEvent.click(within(grid).getByRole('button', { name: 'Thêm dòng con' }));
   expect(within(grid).queryByLabelText('Request ID')).toBeNull();
   fireEvent.change(within(grid).getByLabelText('Item'), { target: { value: 'New item' } });
-  fireEvent.click(within(grid).getByRole('button', { name: 'Save record' }));
+  fireEvent.click(within(grid).getByRole('button', { name: 'Lưu hồ sơ' }));
 
   await screen.findByText('New item');
   expect(screen.getByText('2')).toBeTruthy();
@@ -168,11 +168,11 @@ it('updates a child with its readable form data and preserves the parent link', 
   render(<App initialSession={session} />);
 
   const grid = await screen.findByRole('region', { name: child.name });
-  fireEvent.click(await within(grid).findByRole('button', { name: 'Edit child record' }));
+  fireEvent.click(await within(grid).findByRole('button', { name: 'Sửa dòng con' }));
   expect((within(grid).getByLabelText('Notes') as HTMLInputElement).value).toBe('Visible notes');
   expect(within(grid).queryByLabelText('Request ID')).toBeNull();
   fireEvent.change(within(grid).getByLabelText('Item'), { target: { value: 'Edited item' } });
-  fireEvent.click(within(grid).getByRole('button', { name: 'Save record' }));
+  fireEvent.click(within(grid).getByRole('button', { name: 'Lưu hồ sơ' }));
 
   await screen.findByText('Edited item');
   expect(screen.getByText('2')).toBeTruthy();
@@ -198,10 +198,10 @@ it.each([
 
     const grid = await screen.findByRole('region', { name: child.name });
     await within(grid).findByText('Initial item');
-    expect(within(grid).queryByRole('button', { name: 'Remove child record' })).toBeNull();
+    expect(within(grid).queryByRole('button', { name: 'Xoá dòng con' })).toBeNull();
     const canEdit = role === editor && status === 'draft' && parentUpdate;
-    expect(Boolean(within(grid).queryByRole('button', { name: 'Add child record' }))).toBe(canEdit);
-    expect(Boolean(within(grid).queryByRole('button', { name: 'Edit child record' }))).toBe(canEdit);
+    expect(Boolean(within(grid).queryByRole('button', { name: 'Thêm dòng con' }))).toBe(canEdit);
+    expect(Boolean(within(grid).queryByRole('button', { name: 'Sửa dòng con' }))).toBe(canEdit);
   },
 );
 
@@ -211,13 +211,13 @@ it.each([false, true])('refreshes the parent only when child deletion succeeds (
   render(<App initialSession={session} />);
 
   const grid = await screen.findByRole('region', { name: child.name });
-  fireEvent.click(await within(grid).findByRole('button', { name: 'Remove child record' }));
-  fireEvent.click(within(grid).getByRole('button', { name: 'Confirm removal' }));
+  fireEvent.click(await within(grid).findByRole('button', { name: 'Xoá dòng con' }));
+  fireEvent.click(within(grid).getByRole('button', { name: 'Xác nhận xoá' }));
   if (denyDelete) {
     await within(grid).findByRole('alert');
     expect(within(grid).getByText('Initial item')).toBeTruthy();
     expect(screen.getByText('1')).toBeTruthy();
-    expect((screen.getByRole('button', { name: 'Refresh record' }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole('button', { name: 'Tải lại hồ sơ' }) as HTMLButtonElement).disabled).toBe(false);
   } else {
     await screen.findByText('2');
     expect(screen.queryByText('Initial item')).toBeNull();
@@ -242,7 +242,7 @@ it.each([{ wrongParent: true }, { denyParent: true }])('hides child rows and act
   const grid = await screen.findByRole('region', { name: child.name });
   await within(grid).findByRole('alert');
   expect(within(grid).queryByText('Initial item')).toBeNull();
-  expect(within(grid).queryByRole('button', { name: 'Add child record' })).toBeNull();
+  expect(within(grid).queryByRole('button', { name: 'Thêm dòng con' })).toBeNull();
 });
 
 
@@ -328,12 +328,12 @@ it('discards a pending child write result after switching to a different acting 
   render(<App initialSession={session} />);
 
   const grid = await screen.findByRole('region', { name: child.name });
-  fireEvent.click(await within(grid).findByRole('button', { name: 'Edit child record' }));
+  fireEvent.click(await within(grid).findByRole('button', { name: 'Sửa dòng con' }));
   fireEvent.change(within(grid).getByLabelText('Item'), { target: { value: 'Pending old-role edit' } });
   let complete: (value: Response) => void = () => {};
   const pending = new Promise<Response>(resolve => { complete = resolve; });
   fetch.mockImplementationOnce(() => pending);
-  fireEvent.click(within(grid).getByRole('button', { name: 'Save record' }));
+  fireEvent.click(within(grid).getByRole('button', { name: 'Lưu hồ sơ' }));
   const update = fetch.mock.calls[fetch.mock.calls.length - 1]?.[1];
   expect(JSON.parse(String(update?.body)).variables.changes).toEqual({ item: 'Pending old-role edit' });
 
@@ -347,7 +347,7 @@ it('discards a pending child write result after switching to a different acting 
   const readerRequests = fetch.mock.calls.filter(([, init]) => new Headers(init.headers).get('X-Hasura-Role') === reader);
   expect(readerRequests).toHaveLength(2);
   expect(screen.queryByText('Pending old-role edit')).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Edit child record' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Sửa dòng con' })).toBeNull();
 });
 
 function deferNextResponse(fetch: ReturnType<typeof setup>) {
@@ -368,12 +368,12 @@ it('keeps a pending child write mounted when a manual parent refresh is attempte
   render(<App initialSession={session} />);
 
   const grid = await screen.findByRole('region', { name: child.name });
-  fireEvent.click(await within(grid).findByRole('button', { name: 'Edit child record' }));
+  fireEvent.click(await within(grid).findByRole('button', { name: 'Sửa dòng con' }));
   fireEvent.change(within(grid).getByLabelText('Item'), { target: { value: 'Committed item' } });
   const complete = deferNextResponse(fetch);
-  fireEvent.click(within(grid).getByRole('button', { name: 'Save record' }));
+  fireEvent.click(within(grid).getByRole('button', { name: 'Lưu hồ sơ' }));
   const update = fetch.mock.lastCall?.[1];
-  fireEvent.click(screen.getByRole('button', { name: 'Refresh record' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Tải lại hồ sơ' }));
 
   expect(update?.signal?.aborted).toBe(false);
   await act(async () => complete());
@@ -402,13 +402,13 @@ it('serializes writes on two child grids that share the same parent version', as
 
   const grid = await screen.findByRole('region', { name: child.name });
   const otherGrid = screen.getByRole('region', { name: sibling.name });
-  fireEvent.click(await within(grid).findByRole('button', { name: 'Edit child record' }));
-  fireEvent.click(await within(otherGrid).findByRole('button', { name: 'Edit child record' }));
+  fireEvent.click(await within(grid).findByRole('button', { name: 'Sửa dòng con' }));
+  fireEvent.click(await within(otherGrid).findByRole('button', { name: 'Sửa dòng con' }));
   fireEvent.change(within(grid).getByLabelText('Item'), { target: { value: 'First change' } });
   fireEvent.change(within(otherGrid).getByLabelText('Item'), { target: { value: 'Second change' } });
 
   const complete = deferNextResponse(fetch);
-  fireEvent.click(within(grid).getByRole('button', { name: 'Save record' }));
+  fireEvent.click(within(grid).getByRole('button', { name: 'Lưu hồ sơ' }));
   fireEvent.submit(within(otherGrid).getByLabelText('Item').closest('form')!);
 
   const writes = fetch.mock.calls.filter(([, init]) => JSON.parse(String(init.body)).query.startsWith('mutation'));
