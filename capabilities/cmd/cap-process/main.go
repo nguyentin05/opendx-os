@@ -180,6 +180,7 @@ func main() {
 
 	registerFileRoutes(mux, fileService.AuthenticatedHandler(fileAuthority))
 	mux.Handle("POST /api/cap/process/commands/{app_id}/{command}", engine.AuthenticatedHandler(verifier))
+	mux.Handle("GET /api/cap/process/records/{app_id}/{table}/{entity_id}/history", engine.AuthenticatedHistoryHandler(verifier))
 	mux.Handle("POST /api/cap/process/effects/work-item", effects)
 
 	log.Printf("[cap-process] Listening on port %s", port)
