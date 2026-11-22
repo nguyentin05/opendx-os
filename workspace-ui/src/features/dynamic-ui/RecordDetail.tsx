@@ -13,6 +13,7 @@ import type { CommandAttempts, CommandFeedback } from './CommandPanel';
 import { FileField } from './FileField';
 import { GraphQLRequestError, isRecordID, loadRecord } from './graphql';
 import { allowedFields, canEditRecord, columnLabel, isAttachmentColumn, tableLabel } from './registry';
+import { RecordHistory } from './RecordHistory';
 
 export interface RecordDetailProps {
   table: InstalledTable;
@@ -162,6 +163,8 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
               })}
             </dl>
           ) : <p>Vai trò này chưa có trường nào để hiển thị.</p>}
+          <RecordHistory table={table} app={app} context={context} recordID={recordID}
+            version={typeof record.version === 'number' ? record.version : 0} />
           <CommandPanel table={table} appID={app.app_id} context={context} record={record}
             attempts={props.commandAttempts ?? localAttempts}
             writeGuard={{ pending: writePending, begin: beginRecordWrite }}
