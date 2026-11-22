@@ -211,7 +211,8 @@ function RecordActions({
     const { command, fields, retry } = decision;
     const missing = (table.attachments ?? []).filter(attachment =>
       attachment.requireCleanOnCommands.includes(command.name)
-      && (record[attachment.column] === null || record[attachment.column] === undefined || record[attachment.column] === ''));
+      // Absent means unreadable for this role: leave the decision to cap-process.
+      && (record[attachment.column] === null || record[attachment.column] === ''));
     if (missing.length) {
       setMessage(missing.map(attachment =>
         `Cần đính kèm ${columnLabel(table, { name: attachment.column })} trước khi ${commandLabel(table, command.name)}.`,

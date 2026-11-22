@@ -357,9 +357,11 @@ it('says which attachment is missing before sending the command', async () => {
   server.publish({
     ...table,
     columns: [...table.columns, { name: 'quote_file_id', type: 'uuid', nullable: true }],
+    access: { ...table.access, select: table.access.select.map(rule => ({ ...rule, columns: [...rule.columns, 'quote_file_id'] })) },
     ui: { ...table.ui, formFields: [{ name: 'quote_file_id', label: 'Báo giá', type: 'file', required: true }] },
     attachments: [{ column: 'quote_file_id', requireCleanOnCommands: ['reject'] }],
   });
+  server.update({ ...viewed, quote_file_id: null } as typeof viewed);
   fireEvent.click(button('Làm mới quyền'));
   await screen.findByRole('button', { name: 'Từ chối' });
   await openReject('Incorrect total');
@@ -367,6 +369,24 @@ it('says which attachment is missing before sending the command', async () => {
 
   expect((await screen.findByRole('alert')).textContent).toBe('Cần đính kèm Báo giá trước khi Từ chối.');
   expect(server.posts).toEqual([]);
+});
+
+it('leaves an attachment the role cannot read to the server', async () => {
+  open();
+  const server = serve();
+  render(<App initialSession={session} />);
+  await screen.findByRole('button', { name: 'Từ chối' });
+  server.publish({
+    ...table,
+    columns: [...table.columns, { name: 'quote_file_id', type: 'uuid', nullable: true }],
+    attachments: [{ column: 'quote_file_id', requireCleanOnCommands: ['reject'] }],
+  });
+  fireEvent.click(button('Làm mới quyền'));
+  await screen.findByRole('button', { name: 'Từ chối' });
+  await openReject('Incorrect total');
+  fireEvent.click(button('Xác nhận Từ chối'));
+
+  await waitFor(() => expect(server.posts).toHaveLength(1));
 });
 
 it.each([
