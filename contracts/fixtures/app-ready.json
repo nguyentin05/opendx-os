@@ -32,8 +32,7 @@
         ],
         "columns": [
           "id",
-          "display_name",
-          "email"
+          "display_name"
         ]
       },
       {
@@ -352,6 +351,12 @@
               "name": "quote_file_id",
               "label": "Tệp báo giá của nhà cung cấp",
               "type": "file",
+              "required": false
+            },
+            {
+              "name": "vendor_id",
+              "label": "Nhà cung cấp",
+              "type": "uuid",
               "required": false
             }
           ],

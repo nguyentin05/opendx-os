@@ -30,7 +30,6 @@ spec:
     columns:
     - id
     - display_name
-    - email
   - table: cap_hr.org_units
     roles:
     - role_procurement_requester
@@ -227,6 +226,10 @@ spec:
       - name: quote_file_id
         label: Tệp báo giá của nhà cung cấp
         type: file
+        required: false
+      - name: vendor_id
+        label: Nhà cung cấp
+        type: uuid
         required: false
       actions:
       - submit

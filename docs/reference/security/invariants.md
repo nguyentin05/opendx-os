@@ -5,14 +5,14 @@ diataxis: reference
 audience: [security-reviewer, platform-developer]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-22
 ---
 
 ## Security invariants
 
 - The backend authenticates identity and effective permissions; the UI or a role in the request does not grant permissions by itself. Use least privilege for users and service identities.
 - Keycloak tokens carry identity only. The roles a caller may act as are read from `core.user_roles` on each request ([ADR 0007](../../adr/0007-keycloak-authenticates-platform-authorizes.md)); a role named in a header or token claim is a request, never a grant.
-- Runtime database connections use least-privilege roles, not `superuser` or `BYPASSRLS`.
+- Runtime database connections use least-privilege roles, not `superuser` or `BYPASSRLS`. The operator is the one control-plane exception: it creates schemas, tables, triggers and grants, so in Compose it connects as `POSTGRES_USER`. No request-serving service or Hasura uses that account (#116).
 - Enforce application, record-owner and department scopes in rows and links through both CRUD and service paths. Current DB membership is authoritative; Keycloak verifies identity and JWT role claims cannot override a DB revoke.
 - State transitions, version checks, and audit must be atomic. Every record edit participates in the version mechanism; an insert must not bypass the initial state.
 - Only clean files with the correct permissions may be used. Ordinary roles may not confirm `CLEAN` themselves; a scan error does not open access.

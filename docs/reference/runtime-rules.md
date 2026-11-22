@@ -5,7 +5,7 @@ diataxis: reference
 audience: [platform-developer, security-reviewer]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-22
 ---
 
 # Runtime rules
@@ -75,6 +75,13 @@ A command is accepted when:
 6. every attachment the command requires is `CLEAN`.
 
 A record outside the role's scope answers 404, so its existence is not revealed.
+
+Record filters compare columns of the record, so they cannot require that two
+steps are taken by different people. In `apps/procurement`, someone who holds
+both `role_procurement_manager` and `role_procurement_finance` may approve both
+steps of another person's request. Separation of duties between steps is the
+responsibility of role administration: do not grant both roles to one person
+(#114).
 
 Rows of a child table (the lines of a request) are written through GraphQL. Each
 change increments the parent record's version, so a command carrying a version read

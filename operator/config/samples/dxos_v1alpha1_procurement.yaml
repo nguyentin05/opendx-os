@@ -33,7 +33,6 @@ spec:
   - columns:
     - id
     - display_name
-    - email
     roles:
     - role_procurement_requester
     - role_procurement_manager
@@ -262,6 +261,10 @@ spec:
         name: quote_file_id
         required: false
         type: file
+      - label: Nhà cung cấp
+        name: vendor_id
+        required: false
+        type: uuid
       inboxActions:
       - submit
       - approve
