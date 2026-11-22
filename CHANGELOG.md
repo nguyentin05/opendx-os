@@ -63,6 +63,10 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Fixed
 
+- Attachments: attaching another user's file now returns a readable refusal
+  (SQLSTATE `23514`, `permission-error` in GraphQL) instead of a generic
+  "database query error", and a failed `core.files` write deletes the object it
+  just stored (#112, #33).
 - Compose: the default stack enables the `cap-ai` schema, so the sample
   `personal_library` application installs `Ready` instead of `Failed` (#110).
   The `cap-ai` service itself still runs from the opt-in overlay.

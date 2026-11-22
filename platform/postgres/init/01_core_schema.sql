@@ -441,7 +441,7 @@ BEGIN
              WHERE f.id = v_file::uuid AND f.app_id = TG_ARGV[0] AND f.uploaded_by = v_actor
         ) THEN
             RAISE EXCEPTION 'attachment %: only a file you uploaded to this application can be attached', v_column
-                USING ERRCODE = 'insufficient_privilege';
+                USING ERRCODE = 'check_violation';
         END IF;
     END LOOP;
     RETURN NEW;
