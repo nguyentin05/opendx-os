@@ -152,3 +152,21 @@ it('returns an empty inbox without querying when no role can act', async () => {
   expect(await loadInbox(session([app([table()], [])], []), new AbortController().signal)).toEqual({ items: [], partial: false });
   expect(fetch).not.toHaveBeenCalled();
 });
+
+it('counts only the inbox actions a table declares', async () => {
+  const calls: ReturnType<typeof request>[] = [];
+  vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+    calls.push(request(init));
+    return Response.json({ data: { domain_requests: [] } });
+  });
+  const declared = table([
+    { name: 'approve', from: ['SUBMITTED'], to: 'APPROVED', allowedRoles: ['role_a'] },
+    { name: 'cancel', from: ['DRAFT', 'SUBMITTED'], to: 'CANCELLED', allowedRoles: ['role_a'] },
+  ]);
+  declared.ui.inboxActions = ['approve'];
+
+  await loadInbox(session([app([declared])]), new AbortController().signal);
+
+  expect(calls).toHaveLength(1);
+  expect(calls[0].variables.where).toEqual({ _and: [{ status: { _in: ['SUBMITTED'] } }] });
+});

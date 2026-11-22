@@ -611,6 +611,13 @@
               "ui": {
                 "description": "UI configures the table's list and form in the App Shell.",
                 "properties": {
+                  "actionLabels": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "ActionLabels names the table's actions in the App Shell, keyed by action.",
+                    "type": "object"
+                  },
                   "actions": {
                     "description": "Actions lists the commands of a process table; other tables have none.",
                     "items": {
@@ -656,12 +663,32 @@
                     "minItems": 1,
                     "type": "array"
                   },
+                  "inboxActions": {
+                    "description": "InboxActions are the actions that put a record in a user's inbox; all\nactions count when absent. Each must also be listed in actions.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
                   "listColumns": {
                     "items": {
                       "type": "string"
                     },
                     "minItems": 1,
                     "type": "array"
+                  },
+                  "stateLabels": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "StateLabels names the table's states in the App Shell, keyed by state.",
+                    "type": "object"
+                  },
+                  "title": {
+                    "description": "Title names the table in the App Shell; the table name is used when absent.",
+                    "minLength": 1,
+                    "type": "string"
                   }
                 },
                 "required": [

@@ -6,7 +6,7 @@ import { stateLabel } from '../../core/labels';
 import type { AppRoleContext } from '../../core/session-context';
 import type { InstalledTable } from '../../types/registry';
 import { executeGraphQL, GraphQLRequestError, isRecord } from './graphql';
-import { allowedFields, columnLabel, tableGraphQLName } from './registry';
+import { allowedFields, columnLabel, tableGraphQLName, tableLabel } from './registry';
 
 export interface TableListProps {
   table: InstalledTable;
@@ -64,7 +64,7 @@ function describeList({ table, context }: TableListProps) {
   }`;
 
   const labels = new Map(columns.map(column => [column.name, columnLabel(table, column)]));
-  return { root, columns, labels, selected, query, canOpen, canCreate, filterColumn };
+  return { table, root, columns, labels, selected, query, canOpen, canCreate, filterColumn };
 }
 
 function validCell(value: unknown, column: Column): value is Cell {
@@ -107,7 +107,7 @@ export function TableList(props: TableListProps) {
 
   return (
     <section className="workspace-table">
-      <h2>{table.name}</h2>
+      <h2>{tableLabel(table)}</h2>
       {description.canCreate && <button type="button" onClick={props.onCreate}>Tạo mới</button>}
       {description.columns.length > 0
         ? <PaginatedTable key={scope} context={context} onOpen={props.onOpen} description={description} />
@@ -137,7 +137,7 @@ function PaginatedTable({ context, onOpen, description }: Pick<TableListProps, '
   description: ReturnType<typeof describeList>;
 }) {
   // The parent remounts this page whenever its description or scope changes.
-  const [{ root, columns, labels, selected, query, canOpen, canCreate, filterColumn }] = useState(description);
+  const [{ table, root, columns, labels, selected, query, canOpen, canCreate, filterColumn }] = useState(description);
   const [options, setOptions] = useState<PageOptions>({ offset: 0, sort: columns[0].name, direction: 'asc', filter: '' });
   const [filterDraft, setFilterDraft] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -221,7 +221,7 @@ function PaginatedTable({ context, onOpen, description }: Pick<TableListProps, '
                 <tr key={id ?? index}>
                   {columns.map(column => {
                     const cell = row[column.name];
-                    return <td key={column.name}>{column.name === 'status' && typeof cell === 'string' ? stateLabel(cell) : cell}</td>;
+                    return <td key={column.name}>{column.name === 'status' && typeof cell === 'string' ? stateLabel(table, cell) : cell}</td>;
                   })}
                   {id && <td><button type="button" onClick={() => onOpen(id)}>Mở</button></td>}
                 </tr>

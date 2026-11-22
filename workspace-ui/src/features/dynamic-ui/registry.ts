@@ -25,6 +25,11 @@ export function columnLabel(table: InstalledTable, column: { name: string }): st
   return label || platformColumnLabel(column.name);
 }
 
+// The manifest title names a table; the table name stays as the fallback.
+export function tableLabel(table: InstalledTable): string {
+  return table.ui.title || table.name;
+}
+
 export function isParentColumn(name: string): boolean {
   return fieldIdentifier.test(name) && !serverManagedFields.has(name);
 }

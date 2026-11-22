@@ -12,7 +12,7 @@ import { CommandPanel } from './CommandPanel';
 import type { CommandAttempts, CommandFeedback } from './CommandPanel';
 import { FileField } from './FileField';
 import { GraphQLRequestError, isRecordID, loadRecord } from './graphql';
-import { allowedFields, canEditRecord, columnLabel, isAttachmentColumn } from './registry';
+import { allowedFields, canEditRecord, columnLabel, isAttachmentColumn, tableLabel } from './registry';
 
 export interface RecordDetailProps {
   table: InstalledTable;
@@ -39,7 +39,7 @@ export function RecordDetail(props: RecordDetailProps) {
   return (
     <section aria-label="Chi tiết hồ sơ">
       <button type="button" onClick={onBack}>Quay lại danh sách</button>
-      <h2>{table.name}</h2>
+      <h2>{tableLabel(table)}</h2>
       {!readable.has('id')
         ? <p role="alert">{failureMessages.forbidden}</p>
         : !validID
@@ -154,7 +154,7 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
                           ? <WorkspaceLink href={toTableURL(app.app_id, target, value, role)} onNavigate={navigate}>
                             {value}
                           </WorkspaceLink>
-                          : value === null ? '—' : name === 'status' ? stateLabel(String(value)) : String(value)}
+                          : value === null ? '—' : name === 'status' ? stateLabel(table, String(value)) : String(value)}
                     </dd>
                   </div>
                 );

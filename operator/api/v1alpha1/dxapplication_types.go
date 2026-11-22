@@ -329,6 +329,21 @@ type UISchema struct {
 	// Actions lists the commands of a process table; other tables have none.
 	// +optional
 	Actions []string `json:"actions,omitempty"`
+	// Title names the table in the App Shell; the table name is used when absent.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	Title string `json:"title,omitempty"`
+	// InboxActions are the actions that put a record in a user's inbox; all
+	// actions count when absent. Each must also be listed in actions.
+	// +optional
+	// +kubebuilder:validation:MinItems=1
+	InboxActions []string `json:"inboxActions,omitempty"`
+	// StateLabels names the table's states in the App Shell, keyed by state.
+	// +optional
+	StateLabels map[string]string `json:"stateLabels,omitempty"`
+	// ActionLabels names the table's actions in the App Shell, keyed by action.
+	// +optional
+	ActionLabels map[string]string `json:"actionLabels,omitempty"`
 }
 
 // FormField is one input of the generated form.
