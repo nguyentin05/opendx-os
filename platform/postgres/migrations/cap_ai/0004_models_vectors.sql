@@ -403,7 +403,7 @@ AS $$
 DECLARE
   existing cap_ai.model_operations;
   target text := state;
-  v_provider text := provider_request_id;
+  v_provider text;
   v_input bigint := input_tokens;
   v_output bigint := output_tokens;
   v_error text := error_code;
@@ -415,34 +415,39 @@ BEGIN
   IF key IS NULL OR length(key) NOT BETWEEN 1 AND 200 OR fingerprint IS NULL OR fingerprint !~ '^[0-9a-f]{64}$' THEN
     RAISE EXCEPTION 'operation conflict' USING ERRCODE = 'P0409';
   END IF;
-  -- A rejected call changes nothing: validate the supplied shape before the lock.
-  IF target IS NULL OR target NOT IN('SUCCEEDED', 'FAILED_UNSENT', 'UNCERTAIN')
-    OR (input_tokens IS NULL) <> (output_tokens IS NULL) OR coalesce(input_tokens, 0) < 0 OR coalesce(output_tokens, 0) < 0
-    OR coalesce(latency_ms, 0) < 0 OR length(coalesce(provider_request_id, '')) > 200
-    OR length(coalesce(error_code, '')) > 64
-    THEN
-    RETURN false;
-  END IF;
+  -- Resolve and verify the binding before looking at the payload, exactly like
+  -- begin: a missing or mismatched binding always raises the generic conflict.
   SELECT m.* INTO existing
     FROM cap_ai.model_operations m
     WHERE m.operation_key = key FOR UPDATE;
   IF NOT FOUND OR existing.fingerprint <> fingerprint THEN
     RAISE EXCEPTION 'operation conflict' USING ERRCODE = 'P0409';
   END IF;
+  -- A rejected call changes nothing: normalise and validate the same predicates
+  -- the table CHECKs enforce, so no constraint violation can escape as an error.
+  v_provider := nullif(provider_request_id, '');
+  IF target IS NULL OR target NOT IN('SUCCEEDED', 'FAILED_UNSENT', 'UNCERTAIN')
+    OR (input_tokens IS NULL) <> (output_tokens IS NULL) OR coalesce(input_tokens, 0) < 0 OR coalesce(output_tokens, 0) < 0
+    OR (v_latency IS NOT NULL AND (v_latency < 0 OR v_latency > 86400000))
+    OR (v_provider IS NOT NULL AND (length(v_provider) < 1 OR length(v_provider) > 200))
+    OR (v_error IS NOT NULL AND v_error !~ '^[A-Z][A-Z0-9_]{0,63}$')
+    THEN
+    RETURN false;
+  END IF;
   -- Terminal rows are immutable: only an exact finalization replay succeeds.
   IF existing.state IN('SUCCEEDED', 'FAILED_UNSENT', 'UNCERTAIN') THEN
     RETURN existing.state = target
       AND existing.dispatch_token IS NOT DISTINCT FROM dispatch_token
-      AND existing.provider_request_id IS NOT DISTINCT FROM provider_request_id
-      AND existing.input_tokens IS NOT DISTINCT FROM input_tokens
-      AND existing.output_tokens IS NOT DISTINCT FROM output_tokens
-      AND existing.error_code IS NOT DISTINCT FROM error_code
-      AND existing.latency_ms IS NOT DISTINCT FROM latency_ms;
+      AND existing.provider_request_id IS NOT DISTINCT FROM v_provider
+      AND existing.input_tokens IS NOT DISTINCT FROM v_input
+      AND existing.output_tokens IS NOT DISTINCT FROM v_output
+      AND existing.error_code IS NOT DISTINCT FROM v_error
+      AND existing.latency_ms IS NOT DISTINCT FROM v_latency;
   END IF;
   -- A definite pre-intent rejection is the only CLAIMED exit, with no token.
   IF existing.state = 'CLAIMED' THEN
-    IF target <> 'FAILED_UNSENT' OR dispatch_token IS NOT NULL OR provider_request_id IS NOT NULL
-      OR input_tokens IS NOT NULL OR output_tokens IS NOT NULL OR error_code IS NULL
+    IF target <> 'FAILED_UNSENT' OR dispatch_token IS NOT NULL OR v_provider IS NOT NULL
+      OR v_input IS NOT NULL OR v_output IS NOT NULL OR v_error IS NULL
       THEN
       RETURN false;
     END IF;
@@ -455,16 +460,16 @@ BEGIN
   IF existing.dispatch_token IS NULL OR dispatch_token IS NULL OR existing.dispatch_token <> dispatch_token THEN
     RETURN false;
   END IF;
-  IF target = 'SUCCEEDED' AND error_code IS NOT NULL THEN
+  IF target = 'SUCCEEDED' AND v_error IS NOT NULL THEN
     RETURN false;
   END IF;
-  IF target IN('FAILED_UNSENT', 'UNCERTAIN') AND error_code IS NULL THEN
+  IF target IN('FAILED_UNSENT', 'UNCERTAIN') AND v_error IS NULL THEN
     RETURN false;
   END IF;
-  IF target = 'FAILED_UNSENT' AND provider_request_id IS NOT NULL THEN
+  IF target = 'FAILED_UNSENT' AND v_provider IS NOT NULL THEN
     RETURN false;
   END IF;
-  IF target <> 'SUCCEEDED' AND (input_tokens IS NOT NULL OR output_tokens IS NOT NULL) THEN
+  IF target <> 'SUCCEEDED' AND (v_input IS NOT NULL OR v_output IS NOT NULL) THEN
     RETURN false;
   END IF;
   UPDATE cap_ai.model_operations m SET state = target, provider_request_id = v_provider,

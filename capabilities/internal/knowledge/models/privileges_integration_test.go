@@ -178,6 +178,45 @@ func TestModelOperationPrivileges(t *testing.T) {
 	if applied, e := finish("matrix-invalid", invalid, invalidToken.String, "FAILED_UNSENT", "req-1", nil, nil, "PROVIDER_ERROR", nil); e != nil || applied {
 		t.Fatal("FAILED_UNSENT accepted a provider id", applied, e)
 	}
+	// Payloads that only violate the table CHECKs are rejected as false, never as
+	// a constraint error: error-code shape, provider-id bounds and latency bounds.
+	before = snapshot("matrix-invalid")
+	for _, bad := range []struct {
+		state, provider, code, latency any
+	}{
+		{"UNCERTAIN", nil, "PROVIDER-TIMEOUT", nil},
+		{"UNCERTAIN", nil, "provider_timeout", nil},
+		{"FAILED_UNSENT", nil, strings.Repeat("A", 65), nil},
+		{"SUCCEEDED", nil, nil, int64(86400001)},
+		{"UNCERTAIN", nil, "PROVIDER_TIMEOUT", int64(-1)},
+		{"UNCERTAIN", strings.Repeat("r", 201), "PROVIDER_TIMEOUT", nil},
+	} {
+		if applied, e := finish("matrix-invalid", invalid, invalidToken.String, bad.state, bad.provider, nil, nil, bad.code, bad.latency); e != nil || applied {
+			t.Fatal("invalid finalization metadata was not a plain rejection", bad, applied, e)
+		}
+	}
+	if after := snapshot("matrix-invalid"); after != before {
+		t.Fatal("rejected finalization mutated the row", after)
+	}
+	// An empty provider id is normalised to NULL instead of tripping the CHECK.
+	empty := strings.Repeat("7", 64)
+	if state, e := claim("matrix-empty-provider", empty, "GENERATE"); e != nil || state != "CLAIMED" {
+		t.Fatal("claim empty provider", state, e)
+	}
+	emptyToken, e := begin("matrix-empty-provider", empty)
+	if e != nil || !emptyToken.Valid {
+		t.Fatal("begin empty provider", e)
+	}
+	if applied, e := finish("matrix-empty-provider", empty, emptyToken.String, "UNCERTAIN", "", nil, nil, "PROVIDER_TIMEOUT", nil); e != nil || !applied {
+		t.Fatal("empty provider id rejected", applied, e)
+	}
+	var providerNull bool
+	if e := db.QueryRow(`SELECT provider_request_id IS NULL FROM cap_ai.model_operations WHERE operation_key='matrix-empty-provider'`).Scan(&providerNull); e != nil || !providerNull {
+		t.Fatal("empty provider id was not normalised to NULL", providerNull, e)
+	}
+	if applied, e := finish("matrix-empty-provider", empty, emptyToken.String, "UNCERTAIN", "", nil, nil, "PROVIDER_TIMEOUT", nil); e != nil || !applied {
+		t.Fatal("normalised replay rejected", applied, e)
+	}
 	// SQL constraints enforce the same state-specific data outside the functions.
 	for _, bad := range []string{
 		`INSERT INTO cap_ai.model_operations(operation_key,actor_id,app_id,profile_id,profile_revision,purpose,fingerprint,state,dispatch_token) VALUES('constraint-token',$1,'app','gen',1,'GENERATE',repeat('6',64),'CLAIMED',gen_random_uuid())`,
@@ -205,6 +244,52 @@ func TestModelOperationPrivileges(t *testing.T) {
 		if _, e := other.Exec(`SELECT cap_ai.finish_model_operation('matrix-invalid',$1,NULL,'FAILED_UNSENT',NULL,NULL,NULL,'X',NULL)`, invalid); e == nil {
 			t.Fatal("unrelated session can finish operations")
 		}
+	}
+}
+
+func TestModelOperationConflicts(t *testing.T) {
+	db, dsn := modelOperationFixture(t)
+	gateway := testutil.As(t, dsn, "dxos_ai_gateway")
+	const otherActor = "22222222-2222-4222-8222-222222222222"
+	if _, e := db.Exec(`INSERT INTO core.apps(app_id,display_name,version,status,spec) VALUES('other_app','Other','1','Ready','{}');
+INSERT INTO core.users(id,email,display_name) VALUES('22222222-2222-4222-8222-222222222222','other@test.invalid','Other');
+INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,enabled) VALUES('gen',2,'GENERATE','HOSTED','fake','fake','{"max_input_tokens":100,"max_output_tokens":20,"max_bytes":4096,"timeout_ms":1000}',true);`); e != nil {
+		t.Fatal(e)
+	}
+	fingerprint := strings.Repeat("8", 64)
+	conflict := func(label string, e error) {
+		t.Helper()
+		if e == nil || !strings.Contains(e.Error(), "operation conflict") {
+			t.Fatal(label, e)
+		}
+	}
+	var state string
+	if e := gateway.QueryRow(`SELECT cap_ai.claim_model_operation('conflict-op',$1,'app','gen',1,'GENERATE',$2)`, actorID, fingerprint).Scan(&state); e != nil || state != "CLAIMED" {
+		t.Fatal("claim", state, e)
+	}
+	// Actor, app and profile revision are part of the binding, like fingerprint.
+	for _, binding := range []struct{ actor, app, revision any }{
+		{otherActor, "app", 1},
+		{actorID, "other_app", 1},
+		{actorID, "app", 2},
+	} {
+		var ignored string
+		conflict("claim binding mismatch", gateway.QueryRow(`SELECT cap_ai.claim_model_operation('conflict-op',$1,$2,'gen',$3,'GENERATE',$4)`, binding.actor, binding.app, binding.revision, fingerprint).Scan(&ignored))
+	}
+	// An unknown key conflicts on both transitions, and a malformed payload cannot
+	// turn that conflict into a false return.
+	var token sql.NullString
+	conflict("begin unknown key", gateway.QueryRow(`SELECT cap_ai.begin_model_operation('missing-op',$1)`, fingerprint).Scan(&token))
+	conflict("finish unknown key", gateway.QueryRow(`SELECT cap_ai.finish_model_operation('missing-op',$1,NULL,'FAILED_UNSENT',NULL,NULL,NULL,'PROVIDER_REJECTED',NULL)`, fingerprint).Scan(new(bool)))
+	conflict("finish unknown key with malformed payload", gateway.QueryRow(`SELECT cap_ai.finish_model_operation('missing-op',$1,NULL,'NOT_A_STATE',NULL,1,NULL,'lower-case',-1)`, fingerprint).Scan(new(bool)))
+	conflict("finish mismatched fingerprint with malformed payload", gateway.QueryRow(`SELECT cap_ai.finish_model_operation('conflict-op',$1,NULL,'NOT_A_STATE',NULL,1,NULL,'lower-case',-1)`, strings.Repeat("9", 64)).Scan(new(bool)))
+	// A conflict never inserts or changes a row.
+	var rows int
+	if e := db.QueryRow(`SELECT count(*) FROM cap_ai.model_operations`).Scan(&rows); e != nil || rows != 1 {
+		t.Fatal("conflict path mutated the table", rows, e)
+	}
+	if e := gateway.QueryRow(`SELECT cap_ai.claim_model_operation('conflict-op',$1,'app','gen',1,'GENERATE',$2)`, actorID, fingerprint).Scan(&state); e != nil || state != "CLAIMED" {
+		t.Fatal("conflict path changed the row state", state, e)
 	}
 }
 
