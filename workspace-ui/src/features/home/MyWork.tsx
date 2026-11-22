@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { Session } from '../../auth';
-import { commandLabel, stateLabel } from '../../core/labels';
+import { commandLabel, roleLabel, stateLabel } from '../../core/labels';
 import { useWorkspaceRoute } from '../../core/routes';
 import { WorkspaceLink } from '../../shell/AppShell';
 import { loadInbox } from './inbox';
@@ -38,7 +38,7 @@ export function WorkItemList({ session, onOpenWorkItem, items }: MyWorkProps & {
               ? <WorkspaceLink href={href} onNavigate={() => onOpenWorkItem(item)}>{item.title}</WorkspaceLink>
               : <span>{item.title}</span>}
             <div className="workspace-work-meta">
-              <span>{app?.display_name} · <span>{item.role}</span></span>
+              <span>{app?.display_name} · <span>{roleLabel(app, item.role)}</span></span>
               <span className="workspace-work-status">{item.priority ? label(priorities, item.priority) : 'Chưa có mức ưu tiên'}</span>
               <span className="workspace-work-status">{item.boardColumn ? label(boardColumns, item.boardColumn) : 'Chưa có trạng thái'}</span>
               {!href && <span>Không mở được hồ sơ nguồn.</span>}

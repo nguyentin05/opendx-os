@@ -4,6 +4,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { MouseEvent, ReactNode } from 'react';
 import type { Session } from '../auth';
+import { roleLabel } from '../core/labels';
 import type { WorkspaceRoute } from '../core/routes';
 import { resolveAppRole } from '../core/session-context';
 import type { AppRoleContext } from '../core/session-context';
@@ -179,7 +180,7 @@ export function AppShell({
                 }
               }}
             >
-              Vai trò đang dùng{context && ' · ' + context.role}
+              Vai trò đang dùng{context && ' · ' + roleLabel(context.app, context.role)}
             </button>
             <div id="workspace-role-options" hidden={!roleMenuOpen}>
               {roleMenuOpen && roles.map(grant => (
@@ -192,7 +193,7 @@ export function AppShell({
                     onChangeRole(grant.name);
                   }}
                 >
-                  {grant.name}
+                  {roleLabel(activeApp, grant.name)}
                 </button>
               ))}
             </div>

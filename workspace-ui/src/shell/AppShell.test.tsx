@@ -114,21 +114,21 @@ it('keeps the role switcher open during permission refresh and offers only fresh
   render(<App initialSession={alice} />);
   await screen.findByText('Private dispatch');
 
-  const switcher = screen.getByRole('button', { name: /Vai trò đang dùng.*role_dispatcher/ });
+  const switcher = screen.getByRole('button', { name: /Vai trò đang dùng.*Role dispatcher/ });
   fireEvent.click(switcher);
   expect(switcher.getAttribute('aria-expanded')).toBe('true');
   expect(screen.queryByText('Private dispatch')).toBeNull();
-  expect(screen.queryByRole('button', { name: 'role_dispatcher' })).toBeNull();
-  expect(screen.queryByRole('button', { name: 'role_supervisor' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Role dispatcher' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Role supervisor' })).toBeNull();
   await act(async () => finishApps(Response.json({
     apps: [{ ...dispatch, roles: [{ name: 'role_supervisor' }] }],
   })));
 
   expect(requests.slice(1, 3)).toEqual(['/api/auth/me', '/api/auth/apps']);
-  expect(screen.getByRole('button', { name: /Vai trò đang dùng.*role_supervisor/ })).toBe(switcher);
+  expect(screen.getByRole('button', { name: /Vai trò đang dùng.*Role supervisor/ })).toBe(switcher);
   expect(switcher.getAttribute('aria-expanded')).toBe('true');
-  expect(screen.queryByRole('button', { name: 'role_dispatcher' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'role_supervisor' }));
+  expect(screen.queryByRole('button', { name: 'Role dispatcher' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Role supervisor' }));
   expect(window.location.search).toBe('?role=role_supervisor');
   await screen.findByText('Review record');
 });
@@ -144,20 +144,20 @@ it('announces the current role and returns focus after keyboard dismissal or sel
   render(<App initialSession={alice} />);
   await screen.findByText('Private dispatch');
 
-  const switcher = screen.getByRole('button', { name: /Vai trò đang dùng.*role_dispatcher/ });
+  const switcher = screen.getByRole('button', { name: /Vai trò đang dùng.*Role dispatcher/ });
   fireEvent.click(switcher);
-  const supervisor = await screen.findByRole('button', { name: 'role_supervisor' });
+  const supervisor = await screen.findByRole('button', { name: 'Role supervisor' });
   supervisor.focus();
   fireEvent.keyDown(supervisor, { key: 'Escape' });
   expect(switcher.getAttribute('aria-expanded')).toBe('false');
   expect(document.activeElement).toBe(switcher);
 
   fireEvent.click(switcher);
-  const currentSupervisor = await screen.findByRole('button', { name: 'role_supervisor' });
+  const currentSupervisor = await screen.findByRole('button', { name: 'Role supervisor' });
   currentSupervisor.focus();
   fireEvent.click(currentSupervisor, { detail: 0 });
   await screen.findByText('Review record');
-  expect(screen.getByRole('button', { name: /Vai trò đang dùng.*role_supervisor/ })).toBe(switcher);
+  expect(screen.getByRole('button', { name: /Vai trò đang dùng.*Role supervisor/ })).toBe(switcher);
   expect(document.activeElement).toBe(switcher);
 });
 

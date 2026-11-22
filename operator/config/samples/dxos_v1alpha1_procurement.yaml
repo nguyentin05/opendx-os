@@ -70,7 +70,6 @@ spec:
     - created_at
     roles:
     - role_procurement_manager
-    - role_procurement_finance
     table: cap_work.work_items
   tables:
   - access:

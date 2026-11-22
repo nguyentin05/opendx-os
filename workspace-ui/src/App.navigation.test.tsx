@@ -86,7 +86,7 @@ it('keeps the open record and acting role usable while the drawer reports an AI 
  const drawer = within(screen.getByRole('dialog', {name: 'Trợ lý'}));
  await drawer.findByText('Trợ lý tạm thời không khả dụng.');
  expect(record.getByText('Available record')).toBeTruthy();
- expect(screen.getByRole('button', {name: /Vai trò đang dùng.*role_sample/})).toBeTruthy();
+ expect(screen.getByRole('button', {name: /Vai trò đang dùng.*Role sample/})).toBeTruthy();
  expect(window.location.pathname).toBe('/apps/sample/tables/domain.records/' + id);
  fireEvent.keyDown(drawer.getByRole('button', {name: 'Đóng trợ lý'}), {key: 'Escape'});
  expect(screen.queryByRole('dialog', {name: 'Trợ lý'})).toBeNull();
@@ -303,7 +303,7 @@ it('honors a personal-library app URL only for its permitted acting role', async
 
  openApplication('Library app');
  expect(screen.getByLabelText('Tải tài liệu lên')).toBeTruthy();
- expect(screen.getByRole('button', {name: /Vai trò đang dùng.*role_library_user/})).toBeTruthy();
+ expect(screen.getByRole('button', {name: /Vai trò đang dùng.*Role library user/})).toBeTruthy();
  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
  expect(new Headers(fetcher.mock.calls[0][1]?.headers).get('X-Hasura-Role')).toBe(role);
 });

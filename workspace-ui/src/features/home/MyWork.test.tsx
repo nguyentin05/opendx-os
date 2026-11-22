@@ -11,7 +11,7 @@ import type { InstalledApp } from '../../types/registry';
 function app(appID: string, displayName: string): InstalledApp {
   return {
     app_id: appID, display_name: displayName, version: '1', capabilities: ['cap-work'],
-    roles: [{ name: 'role_' + appID, app_id: appID }], tables: [], knowledge: null,
+    roles: [{ name: 'role_' + appID, app_id: appID, description: 'Vai trò ' + appID }], tables: [], knowledge: null,
     work_item_roles: ['role_' + appID],
   };
 }
@@ -51,6 +51,8 @@ it('filters loaded results by app and priority, and loads more per eligible gran
   render(<App initialSession={session} />);
   await screen.findByText('Alpha high');
   expect(screen.getByRole('heading', { name: 'Việc của tôi' })).toBeTruthy();
+  expect(screen.getAllByText('Vai trò alpha').length).toBeGreaterThan(0);
+  expect(screen.queryByText('role_alpha')).toBeNull();
   expect(screen.getByText('Beta low')).toBeTruthy();
   fireEvent.change(screen.getByLabelText('Ứng dụng'), { target: { value: 'alpha' } });
   expect(screen.queryByText('Beta low')).toBeNull();
