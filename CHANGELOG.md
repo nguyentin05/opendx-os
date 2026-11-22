@@ -47,6 +47,10 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Changed
 
+- Procurement: finance no longer receives the manager's review work item; its
+  own budget step stays available through the record inbox (#27).
+- Workspace UI: My Work and the acting-role switcher show the role's manifest
+  description instead of its identifier.
 - Procurement: the request form picks a vendor from the application's vendor
   list, labelled "Nhà cung cấp" instead of "Vendor id".
 - Demo seed: the five business accounts also hold `role_library_user` when
@@ -81,6 +85,8 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Security
 
+- Work items are no longer readable app-wide: a role reads one only when it may
+  read the source record, and items without a source remain app-wide (#27).
 - Procurement roles no longer read every account's email through the shared
   `core.users` table; they see `id` and `display_name` only (#115).
 - Keycloak access tokens last five minutes again now that the Workspace UI

@@ -206,16 +206,17 @@ query { cap_work_work_items(order_by: {created_at: desc}) {
 ```
 
 `source_type` is the table and `source_id` the record the item is about, so an
-inbox entry links to the record's detail. Only the application's own items are
-returned; they are not narrowed by department yet. The item appears a few
-seconds after the command, once the workflow has run.
+inbox entry links to the record's detail. A role reads only the work items whose
+source record it may read; items without a source stay visible to the whole
+application. The item appears a few seconds after the command, once the workflow
+has run.
 
 **Needs your attention** previews up to five recent work items across eligible
 app roles. **Việc của tôi** (My Work) loads more items, hides items whose
-`board_column` is `DONE`, and filters the loaded results by application and
-priority. Failed role queries show partial or unavailable results. When you open
-a work item or recent link, the portal refreshes permissions before reading the
-source record.
+`board_column` is `DONE`, shows the role description from the app manifest, and
+filters the loaded results by application and priority. Failed role queries show
+partial or unavailable results. When you open a work item or recent link, the
+portal refreshes permissions before reading the source record.
 
 ### Chờ tôi xử lý (the record inbox)
 
