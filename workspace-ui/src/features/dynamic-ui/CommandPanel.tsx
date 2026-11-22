@@ -153,7 +153,7 @@ export function CommandPanel(props: CommandPanelProps) {
 }
 
 function RecordActions({
-  table, appID, context, onChanged, attempts, writeGuard, scope, id, status, version,
+  table, appID, context, record, onChanged, attempts, writeGuard, scope, id, status, version,
 }: CommandPanelProps & { scope: string; id: string; status: string; version: number }) {
   const localAttempts = useRef<CommandAttempts>(new Map());
   const store = attempts ?? localAttempts.current;
@@ -209,6 +209,16 @@ function RecordActions({
     event.preventDefault();
     if (!decision || request.current) return;
     const { command, fields, retry } = decision;
+    const missing = (table.attachments ?? []).filter(attachment =>
+      attachment.requireCleanOnCommands.includes(command.name)
+      // Absent means unreadable for this role: leave the decision to cap-process.
+      && (record[attachment.column] === null || record[attachment.column] === ''));
+    if (missing.length) {
+      setMessage(missing.map(attachment =>
+        `Cần đính kèm ${columnLabel(table, { name: attachment.column })} trước khi ${commandLabel(table, command.name)}.`,
+      ).join(' '));
+      return;
+    }
     let payload: CommandAttempt['payload'];
     try {
       payload = retry?.payload ?? readPayload(fields, new FormData(event.currentTarget));

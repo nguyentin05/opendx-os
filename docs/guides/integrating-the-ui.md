@@ -183,7 +183,9 @@ body and idempotency key.
    and `file` (PDF, PNG or JPEG, at most 20 MiB). The answer is `file_id` with
    `scan_status: QUARANTINED`.
 2. Store `file_id` in the record's attachment column through GraphQL. Only a
-   file the same user uploaded to the same application can be attached.
+   file the same user uploaded to the same application can be attached. A
+   refusal is a `permission-error` whose message starts with `Check constraint
+   violation. attachment `; show a fixed explanation, not the server message.
 3. Poll `core_files(where: {id: {_eq: $id}}) { scan_status }` until it is
    `CLEAN` or `INFECTED`. Commands that require the attachment answer 422 until
    it is `CLEAN`.

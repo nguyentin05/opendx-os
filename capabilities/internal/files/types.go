@@ -37,6 +37,7 @@ var (
 type Storage interface {
 	Put(context.Context, string, io.Reader) error
 	Get(context.Context, string) (io.ReadCloser, error)
+	Delete(context.Context, string) error
 }
 type ScanResult string
 

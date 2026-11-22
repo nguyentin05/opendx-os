@@ -44,6 +44,17 @@ it.each([
   await expect(executeGraphQL(context, query, variables, signal)).rejects.toMatchObject({ kind });
 });
 
+it('maps an attachment refusal to its own kind', async () => {
+  vi.stubGlobal('fetch', async () => Response.json({
+    errors: [{
+      message: 'Check constraint violation. attachment quote_file_id: only a file you uploaded to this application can be attached',
+      extensions: { code: 'permission-error' },
+    }],
+  }));
+
+  await expect(executeGraphQL(context, query, variables, signal)).rejects.toMatchObject({ kind: 'attachment' });
+});
+
 it('rejects a response with an invalid JSON body', async () => {
   vi.stubGlobal('fetch', async () => new Response('<html>Gateway</html>'));
 

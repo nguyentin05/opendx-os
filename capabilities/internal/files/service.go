@@ -23,9 +23,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
@@ -100,6 +102,13 @@ func (s *Service) upload(ctx context.Context, actor *auth.Identity, appID, fileN
 	}
 	_, e = s.db.ExecContext(ctx, `INSERT INTO core.files(id,app_id,bucket,object_key,file_name,scan_status,sha256_hash,uploaded_by,mime_type,size_bytes,read_policy) VALUES($1,$2,$3,$4,$5,'QUARANTINED',$6,$7,$8,$9,$10)`, id, appID, s.bucket, key, fileName, digest(b), actor.UserID, m, len(b), policy)
 	if e != nil {
+		// The row is what makes the object reachable; remove the object when the
+		// row is not written. Cleanup is best-effort and never hides the cause.
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+		defer cancel()
+		if cleanupErr := s.storage.Delete(cleanupCtx, key); cleanupErr != nil {
+			log.Printf("file upload cleanup failed: %v", cleanupErr)
+		}
 		return nil, e
 	}
 	return &FileObject{ID: id, ScanStatus: "QUARANTINED"}, nil

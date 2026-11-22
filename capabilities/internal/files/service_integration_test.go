@@ -22,6 +22,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
 	"github.com/opendx-os/opendx-os/capabilities/internal/testutil"
@@ -54,6 +55,12 @@ func (m *memoryStorage) Get(_ context.Context, k string) (io.ReadCloser, error) 
 		return nil, os.ErrNotExist
 	}
 	return io.NopCloser(bytes.NewReader(append([]byte(nil), b...))), nil
+}
+func (m *memoryStorage) Delete(_ context.Context, k string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.objects, k)
+	return nil
 }
 
 type controlledScanner struct {
@@ -410,5 +417,48 @@ func TestAttachedReadableAccessOnAnotherTable(t *testing.T) {
 	p.SetStatusIn(t, twins, entity, id.UserID, "SUBMITTED")
 	if !can(carol) || can(dan) {
 		t.Fatalf("submitted: carol %v, dan %v; want true, false", can(carol), can(dan))
+	}
+}
+
+func TestUploadRemovesObjectWhenTheFileRowIsNotWritten(t *testing.T) {
+	s, db, id, store, _ := fileFixture(t)
+	if _, e := db.Exec(`CREATE FUNCTION core.test_refuse_file_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'file row refused'; END $$;
+		CREATE TRIGGER test_refuse_file_insert BEFORE INSERT ON core.files FOR EACH ROW EXECUTE FUNCTION core.test_refuse_file_insert();`); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := s.Upload(context.Background(), id, "procurement", "quote.pdf", bytes.NewBufferString("%PDF-1.7\ncleanup")); e == nil {
+		t.Fatal("upload succeeded without a file row")
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if len(store.objects) != 0 {
+		t.Fatalf("stored objects = %d, want 0", len(store.objects))
+	}
+}
+
+func TestAttachmentRefusalIsACheckViolation(t *testing.T) {
+	_, _, id, _, _ := fileFixture(t)
+	p := platforms[id]
+	otherFile := p.File(t, id.UserID, "CLEAN")
+	bob := p.User(t, "bob", p.OrgUnit(t, "B"), "role_procurement_requester")
+
+	tx, e := p.Process.Begin()
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, e = tx.Exec(`SELECT set_config('dxos.actor_id',$1,true),set_config('dxos.role',$2,true)`, bob, "role_procurement_requester"); e != nil {
+		t.Fatal(e)
+	}
+	_, e = tx.Exec(`INSERT INTO `+p.Table+` (vendor_name,item_description,quoted_amount,quote_file_id) VALUES ('Acme','Laptop',1200,$1)`, otherFile)
+	var pqErr *pq.Error
+	if !errors.As(e, &pqErr) {
+		t.Fatalf("attach error = %v, want a PostgreSQL error", e)
+	}
+	if pqErr.Code != "23514" {
+		t.Fatalf("SQLSTATE = %s, want 23514", pqErr.Code)
+	}
+	if !strings.Contains(pqErr.Message, "attachment quote_file_id: only a file you uploaded to this application can be attached") {
+		t.Fatalf("message = %q", pqErr.Message)
 	}
 }

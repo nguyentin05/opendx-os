@@ -113,3 +113,13 @@ func (s *S3Storage) Get(ctx context.Context, key string) (io.ReadCloser, error) 
 	}
 	return resp.Body, nil
 }
+
+func (s *S3Storage) Delete(ctx context.Context, key string) error {
+	resp, e := s.request(ctx, "DELETE", key, nil)
+	if e != nil {
+		return e
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, e = io.Copy(io.Discard, io.LimitReader(resp.Body, 65536))
+	return e
+}

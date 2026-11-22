@@ -39,7 +39,9 @@ re-checks what reaches SQL or decides access, failing closed on a corrupted row.
 
 An attachment may point only at a file of the same application that the acting user
 uploaded (`core.enforce_attachments`, a trigger on every generated domain table). A
-role reads a file's metadata only if its user uploaded it or it is attached to a
+refused attachment raises SQLSTATE `23514` (`check_violation`) with the message
+`attachment <column>: only a file you uploaded to this application can be attached`.
+A role reads a file's metadata only if its user uploaded it or it is attached to a
 record the role may read.
 
 ## Identity, roles, and commands

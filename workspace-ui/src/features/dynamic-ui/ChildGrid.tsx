@@ -27,6 +27,7 @@ const maxOffset = Math.floor(2147483647 / childPageSize) * childPageSize;
 const readErrors = {
   unauthenticated: 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.',
   forbidden: 'Vai trò hiện tại không được xem các dòng con này. Hãy chọn vai trò khác hoặc liên hệ quản trị viên.',
+  attachment: 'Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.',
   unavailable: 'Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.',
 };
 
