@@ -6,6 +6,7 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"time"
 
@@ -81,15 +82,18 @@ func (g *Gateway) Call(ctx context.Context, actor *auth.Identity, op Operation, 
 	// once the database has serialized concurrent callers.
 	fresh, err := g.Policy.Check(ctx, actor, op)
 	if err != nil || fresh.Fingerprint != approval.Fingerprint {
-		// The outcome is "definitely unsent" only once the store records it.
-		// Without that write the row stays CLAIMED, so a later authorized attempt
-		// can still begin: report retryable unavailability instead of a policy
-		// block the database never stored. The shared leased-EMBED path records
-		// nothing by design and keeps the claim for the next fence.
-		if !shared && !g.record(ctx, op.Key, fingerprint, "", Finalization{State: OperationFailedUnsent, ErrorCode: codeAuthorityChanged}) {
+		// An authority outage says nothing about this caller's approval, so it is
+		// never reported or stored as a policy denial: the outcome is retryable
+		// unavailability under its own bounded code. The outcome is "definitely
+		// unsent" only once the store records it. Without that write the row stays
+		// CLAIMED, so a later authorized attempt can still begin. The shared
+		// leased-EMBED path records nothing by design and keeps the claim for the
+		// next fence.
+		code, outcome := authorityFailure(err)
+		if !shared && !g.record(ctx, op.Key, fingerprint, "", Finalization{State: OperationFailedUnsent, ErrorCode: code}) {
 			return Result{}, ErrUnavailable
 		}
-		return Result{}, ErrPolicy
+		return Result{}, outcome
 	}
 	token, err := g.Operations.Begin(ctx, op.Key, fingerprint)
 	if err != nil {
@@ -103,14 +107,16 @@ func (g *Gateway) Call(ctx context.Context, actor *auth.Identity, op Operation, 
 	// side effect, so a revocation during the intent write still blocks egress.
 	fresh, err = g.Policy.Check(ctx, actor, op)
 	if err != nil || fresh.Fingerprint != approval.Fingerprint {
-		// Nothing was sent, but persisted intent already committed: only this
-		// caller's token can terminalize the row. If that write cannot be applied
-		// the operation stays MAY_HAVE_SENT, which the claim path maps to
-		// uncertainty, so the caller must not be told "definitely unsent".
-		if !g.record(ctx, op.Key, fingerprint, token, Finalization{State: OperationFailedUnsent, ErrorCode: codeAuthorityChanged}) {
+		// As above, an outage is retryable unavailability, not a denial. Nothing
+		// was sent, but persisted intent already committed: only this caller's
+		// token can terminalize the row. If that write cannot be applied the
+		// operation stays MAY_HAVE_SENT, which the claim path maps to uncertainty,
+		// so the caller must not be told "definitely unsent".
+		code, outcome := authorityFailure(err)
+		if !g.record(ctx, op.Key, fingerprint, token, Finalization{State: OperationFailedUnsent, ErrorCode: code}) {
 			return Result{}, ErrUncertain
 		}
-		return Result{}, ErrPolicy
+		return Result{}, outcome
 	}
 	// Persisted intent precedes the possible network side effect. A crash or
 	// timeout leaves an ambiguous operation that is never redispatched.
@@ -154,6 +160,18 @@ func (g *Gateway) Call(ctx context.Context, actor *auth.Identity, op Operation, 
 	}
 	result.ProviderRequestID = ""
 	return result, nil
+}
+
+// authorityFailure classifies a post-claim authority read that no longer
+// authorizes the dispatch. An authority outage leaves the caller's approval
+// unknown, so it is retryable unavailability with its own bounded code; only a
+// genuine fingerprint change or denial is recorded as AUTHORITY_CHANGED and
+// reported as a policy block.
+func authorityFailure(err error) (string, error) {
+	if errors.Is(err, ErrUnavailable) {
+		return codeAuthorityUnavailable, ErrUnavailable
+	}
+	return codeAuthorityChanged, ErrPolicy
 }
 
 // record finalizes under a bounded detached context so a canceled or

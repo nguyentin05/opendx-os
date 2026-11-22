@@ -79,6 +79,7 @@ class RegistryMigrationSelection(unittest.TestCase):
 
     def test_checksum_preflight_precedes_selection(self):
         hashes = model_hashes()
+        anchor = 'docs/operations/installation.md#rebuilding-an-existing-model-installation'
         disabled = {'RAG_MODELS_SCHEMA_ENABLED': 'false', 'RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED': 'false', 'RAG_AGENT_MODELS_SCHEMA_ENABLED': 'false'}
         cases = (
             (['sh', 'platform/postgres/init/09_rag_migrations.sh'], '\\i :migration_dir/core/0001'),
@@ -94,6 +95,10 @@ class RegistryMigrationSelection(unittest.TestCase):
                 for guard in guards:
                     self.assertIn(guard, sql)
                     self.assertLess(sql.index(guard), applied_at)
+                # The refusal points at tracked published documentation, never at
+                # the excluded internal plan tree that bootstrap lacks.
+                self.assertIn(anchor, sql)
+                self.assertNotIn('docs/superpowers/', sql)
                 self.assertNotIn('/0004_models_vectors.sql', sql)
                 self.assertNotIn('/0005_model_registry.sql', sql)
                 self.assertNotIn('CREATE TABLE cap_ai.model_profiles', sql)

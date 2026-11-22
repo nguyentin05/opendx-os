@@ -463,6 +463,26 @@ provider request ID and latency, only for a succeeded operation; `UNCERTAIN` and
 or settlement adapter in this baseline, and no public usage-admin endpoint. No
 content READ is conferred by an operation row.
 
+A stuck operation is an owner-run review, not an automatic transition. The
+`model_operations_stuck` index on `(state, intent_at)` gives the oldest ambiguous
+rows per attributed app; the gateway, API and worker roles cannot read the table,
+so the owner runs the query with owner credentials:
+
+```sql
+SELECT app_id,
+       state,
+       count(*) AS operations,
+       min(intent_at) AS oldest_intent
+FROM cap_ai.model_operations
+WHERE state IN ('MAY_HAVE_SENT', 'UNCERTAIN')
+GROUP BY app_id, state
+ORDER BY oldest_intent;
+```
+
+`intent_at` is null only for a `CLAIMED` row, so every listed row has already
+committed intent. The oldest rows are resolved by the owner against the provider
+agreement; the platform neither resends nor settles them.
+
 ## Answer API
 
 `POST /api/cap/ai/answers` accepts `{scope,query,max_citations?,require_generation?}`.

@@ -170,6 +170,10 @@ CREATE TABLE cap_ai.model_operations (
     CHECK (state IN ('CLAIMED', 'MAY_HAVE_SENT') OR finished_at IS NOT NULL)
 );
 
+-- Owner visibility for stuck operations: the oldest ambiguous rows per
+-- attributed app are found without a full scan of settled history.
+CREATE INDEX model_operations_stuck ON cap_ai.model_operations (state, intent_at);
+
 CREATE FUNCTION cap_ai.guard_model_history()
 RETURNS trigger
 LANGUAGE plpgsql

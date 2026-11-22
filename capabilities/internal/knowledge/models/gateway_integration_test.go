@@ -7,6 +7,8 @@ package models
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
@@ -75,6 +77,72 @@ func TestGatewayRechecksAfterCallIntent(t *testing.T) {
 	stored := readOperation(t, env.db, env.op.Key)
 	if stored.State != "FAILED_UNSENT" || stored.ErrorCode.String != "AUTHORITY_CHANGED" || stored.Input.Valid {
 		t.Fatalf("unsent operation not recorded as definitely unsent: %+v", stored)
+	}
+}
+
+// outageAfter fails every current-authority read from the given check onwards
+// with the driver-level outage the policy maps to ErrUnavailable, without ever
+// producing a decision. A post-claim recheck must treat that as retryable
+// unavailability, never as a policy denial or a fingerprint change.
+type outageAfter struct {
+	base   CurrentAuthority
+	after  int
+	checks int
+}
+
+func (a *outageAfter) Current(ctx context.Context, id *auth.Identity, op Operation) (Decision, error) {
+	a.checks++
+	if a.checks > a.after {
+		return Decision{}, ErrUnavailable
+	}
+	return a.base.Current(ctx, id, op)
+}
+
+func TestGatewayAuthorityOutageIsRetryable(t *testing.T) {
+	payload := Payload{Query: "approved query"}
+	for _, test := range []struct {
+		name  string
+		after int
+	}{
+		// The first post-claim recheck and the post-intent recheck.
+		{"post-claim recheck", 1},
+		{"post-intent recheck", 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			env := newOperationEnv(t)
+			env.approve(t)
+			env.op.Key = "authority-outage-" + strings.ReplaceAll(test.name, " ", "-")
+			provider := &countingProvider{result: Result{Text: "must not be sent"}}
+			gateway := env.gateway(provider)
+			gateway.Policy = &Policy{Authority: &outageAfter{base: env.policy.Authority, after: test.after}, Enabled: true}
+			_, err := gateway.Call(context.Background(), env.actor, env.op, payload)
+			if !errors.Is(err, ErrUnavailable) || errors.Is(err, ErrPolicy) || provider.count() != 0 {
+				t.Fatalf("authority outage: err=%v calls=%d", err, provider.count())
+			}
+			stored := readOperation(t, env.db, env.op.Key)
+			if stored.State != OperationFailedUnsent || stored.ErrorCode.String != codeAuthorityUnavailable || stored.Input.Valid {
+				t.Fatalf("authority outage not recorded as retryable unsent: %+v", stored)
+			}
+			if stored.ErrorCode.String == codeAuthorityChanged {
+				t.Fatal("authority outage recorded as a fingerprint change")
+			}
+		})
+	}
+}
+
+// A genuine fingerprint change at the same recheck still blocks as policy.
+func TestGatewayAuthorityChangeIsPolicy(t *testing.T) {
+	env := newOperationEnv(t)
+	env.approve(t)
+	env.op.Key = "authority-change-still-policy"
+	provider := &countingProvider{result: Result{Text: "must not be sent"}}
+	gateway := env.gateway(provider)
+	gateway.Policy = &Policy{Authority: &denyAfter{base: env.policy.Authority, after: 1}, Enabled: true}
+	if _, err := gateway.Call(context.Background(), env.actor, env.op, Payload{Query: "approved query"}); !errors.Is(err, ErrPolicy) || provider.count() != 0 {
+		t.Fatalf("authority change: %v calls=%d", err, provider.count())
+	}
+	if stored := readOperation(t, env.db, env.op.Key); stored.State != OperationFailedUnsent || stored.ErrorCode.String != codeAuthorityChanged {
+		t.Fatalf("authority change not recorded as such: %+v", stored)
 	}
 }
 

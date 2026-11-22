@@ -31,10 +31,11 @@ const (
 // Sanitized error codes persisted with a terminal operation. They describe the
 // gateway's own decision, never provider diagnostics.
 const (
-	codeAuthorityChanged  = "AUTHORITY_CHANGED"
-	codeProviderUncertain = "PROVIDER_UNCERTAIN"
-	codeInvalidUsage      = "INVALID_USAGE"
-	codeInvalidResult     = "INVALID_RESULT"
+	codeAuthorityChanged     = "AUTHORITY_CHANGED"
+	codeAuthorityUnavailable = "AUTHORITY_UNAVAILABLE"
+	codeProviderUncertain    = "PROVIDER_UNCERTAIN"
+	codeInvalidUsage         = "INVALID_USAGE"
+	codeInvalidResult        = "INVALID_RESULT"
 )
 
 // OperationBinding is the complete identity of one durable operation.
@@ -139,10 +140,11 @@ func operationError(err error) error {
 		switch pg.Code {
 		case "P0409":
 			return ErrConflict
-		case "P0403":
-			return ErrPolicy
 		case "42501":
-			return ErrPolicy
+			// A missing privilege on a cap_ai interface is a deployment or
+			// configuration failure of the gateway role, never the caller's
+			// policy decision.
+			return ErrUnavailable
 		}
 	}
 	return ErrUnavailable

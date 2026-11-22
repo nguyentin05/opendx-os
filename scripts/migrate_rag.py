@@ -51,7 +51,7 @@ sql = ["BEGIN; SELECT pg_advisory_xact_lock(782634901);", (root / "platform/post
 for f in files:
     v = f.name[:4]
     checksum = hashlib.sha256(f.read_bytes()).hexdigest()
-    sql.append(f"DO $$ BEGIN IF EXISTS (SELECT 1 FROM core.schema_migrations WHERE scope='{a.scope}' AND version='{v}' AND checksum<>'{checksum}') THEN RAISE EXCEPTION 'migration checksum conflict: scope={a.scope} version={v}; recreate the coordinated development database (see docs/superpowers/plans/2026-11-22-model-budget-clean-slate.md)'; END IF; END $$;")
+    sql.append(f"DO $$ BEGIN IF EXISTS (SELECT 1 FROM core.schema_migrations WHERE scope='{a.scope}' AND version='{v}' AND checksum<>'{checksum}') THEN RAISE EXCEPTION 'migration checksum conflict: scope={a.scope} version={v}; recreate the coordinated development database (see docs/operations/installation.md#rebuilding-an-existing-model-installation)'; END IF; END $$;")
 for f in selected:
     v = f.name[:4]
     checksum = hashlib.sha256(f.read_bytes()).hexdigest()

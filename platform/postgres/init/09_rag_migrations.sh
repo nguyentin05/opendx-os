@@ -36,7 +36,7 @@ for folder in core cap_ai; do
   cat >> "$migration_script" <<SQL
 SELECT EXISTS(SELECT FROM core.schema_migrations WHERE scope='$scope' AND version='$version' AND checksum<>'$checksum') AS conflict \\gset
 \\if :conflict
-\\warn 'migration checksum conflict: scope=$scope version=$version; recreate the coordinated development database (see docs/superpowers/plans/2026-11-22-model-budget-clean-slate.md)'
+\\warn 'migration checksum conflict: scope=$scope version=$version; recreate the coordinated development database (see docs/operations/installation.md#rebuilding-an-existing-model-installation)'
 DO \$\$ BEGIN RAISE EXCEPTION 'migration checksum conflict'; END \$\$;
 \\endif
 SQL
