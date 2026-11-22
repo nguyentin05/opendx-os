@@ -67,6 +67,9 @@ is published; see [Releasing](docs/contribute/releasing.md).
   (SQLSTATE `23514`, `permission-error` in GraphQL) instead of a generic
   "database query error", and a failed `core.files` write deletes the object it
   just stored (#112, #33).
+- Commands: when a required attachment is still missing, the portal names the
+  field before sending the command instead of showing the not-yet-`CLEAN` 422
+  message.
 - Compose: the default stack enables the `cap-ai` schema, so the sample
   `personal_library` application installs `Ready` instead of `Failed` (#110).
   The `cap-ai` service itself still runs from the opt-in overlay.

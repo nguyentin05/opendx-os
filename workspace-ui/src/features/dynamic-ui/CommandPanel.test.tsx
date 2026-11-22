@@ -349,6 +349,26 @@ it('guards concurrent detail writes and retains a posted attempt if the record i
   expect(server.posts).toHaveLength(1);
 });
 
+it('says which attachment is missing before sending the command', async () => {
+  open();
+  const server = serve();
+  render(<App initialSession={session} />);
+  await screen.findByRole('button', { name: 'Từ chối' });
+  server.publish({
+    ...table,
+    columns: [...table.columns, { name: 'quote_file_id', type: 'uuid', nullable: true }],
+    ui: { ...table.ui, formFields: [{ name: 'quote_file_id', label: 'Báo giá', type: 'file', required: true }] },
+    attachments: [{ column: 'quote_file_id', requireCleanOnCommands: ['reject'] }],
+  });
+  fireEvent.click(button('Làm mới quyền'));
+  await screen.findByRole('button', { name: 'Từ chối' });
+  await openReject('Incorrect total');
+  fireEvent.click(button('Xác nhận Từ chối'));
+
+  expect((await screen.findByRole('alert')).textContent).toBe('Cần đính kèm Báo giá trước khi Từ chối.');
+  expect(server.posts).toEqual([]);
+});
+
 it.each([
   [401, /Phiên đăng nhập đã hết hạn/], [403, /không được thực hiện/],
   [404, /không khả dụng/i], [422, /Tệp đính kèm/i],
