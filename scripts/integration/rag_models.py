@@ -79,6 +79,11 @@ def main():
     embed, generate = os.environ['RAG_TEST_EMBED_PROFILE'], os.environ['RAG_TEST_GENERATE_PROFILE']
     profiles = source.db("SELECT count(*) FROM cap_ai.model_profiles WHERE id IN ("+literal(embed)+','+literal(generate)+") AND revision=1 AND execution='HOSTED' AND provider_id='rag-test-fake' AND enabled")
     source.require(profiles == '2', 'NOT_RUN: explicit test-only fake model profiles required')
+    # Admission is durable operation state, not a monetary reservation. The
+    # retired budget/ledger relations must be absent and this gate must need no
+    # account provisioning before it can observe a send.
+    retired = source.db("SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='cap_ai' AND c.relkind='r' AND c.relname IN('budget_accounts','model_reservations','reservation_allocations','usage_ledger','model_calls')")
+    source.require(retired == '0', 'FAIL: retired monetary relations present in the model schema')
     fake('/control', {'mode': 'normal'})
     fake('/control', {'mode': 'normal'}, worker=True)
     actors = {who: str(uuid.UUID(json.loads(base64.urlsafe_b64decode(os.environ['RAG_TEST_OIDC_TOKEN_'+who].split('.')[1]+'==='))['sub'])) for who in ('A','B','ADMIN')}
@@ -127,10 +132,16 @@ def main():
         source.require(ready == '2', 'FAIL: complete profile-pinned embeddings did not activate')
         scope = {'kind':'APP','app_id':app}
         started = time.monotonic()
+        sends = fake()['counts']['GENERATE']
         status, reply = answer('A',read,scope,'Director')
         elapsed = time.monotonic()-started
         source.require(status == 200 and reply['status']=='ANSWERED' and len(reply['citations'])>0 and 'Director' in reply['answer'], 'FAIL: grounded answer missing')
         source.require(reply['model_profile']=={'id':generate,'revision':1}, 'FAIL: profile not pinned')
+        # One request, one visible send. The spy reports 20/20 tokens; the durable
+        # operation, not a monetary ledger, is the accounting observation.
+        source.require(fake()['counts']['GENERATE']==sends+1, 'FAIL: grounded answer did not send exactly once')
+        source.require(reply.get('usage')=={'input_tokens':20,'output_tokens':20}, 'FAIL: successful token observation missing from the answer')
+        source.require(source.db("SELECT state||'|'||input_tokens||'|'||output_tokens FROM cap_ai.model_operations WHERE app_id="+literal(app)+" AND purpose='GENERATE'")=='SUCCEEDED|20|20', 'FAIL: successful token observation missing from the durable operation')
         for who,role in [('B',read),('ADMIN',manager),('ADMIN',admin)]:
             status,data=package.api('POST','/search',who,role,{'scope':scope,'query':'unmatched','retrieval':'HYBRID','limit':1})
             source.require(status==200 and marker not in data.decode() and documents['restricted'] not in data.decode(), 'FAIL: hidden nearest vector leaked')
@@ -183,9 +194,13 @@ def main():
             thread.join(10)
         fake('/control',{'mode':'timeout'})
         before=int(source.db("SELECT count(*) FROM cap_ai.model_operations WHERE state='UNCERTAIN'"))
+        sends=fake()['counts']['GENERATE']
         status,reply=answer('A',read,scope,'Director')
-        source.require(status==200 and reply['status']=='SEARCH_ONLY' and reply.get('reason')=='MODEL_CHARGE_UNCERTAIN','FAIL: timeout not conservative')
+        source.require(status==200 and reply['status']=='SEARCH_ONLY' and reply.get('reason')=='MODEL_CALL_UNCERTAIN','FAIL: timeout not conservative')
+        source.require('usage' not in reply and reply['answer'] is None and not reply['citations'],'FAIL: uncertain answer disclosed content or usage')
+        source.require(fake()['counts']['GENERATE']==sends+1,'FAIL: uncertain request sent more than once')
         source.require(int(source.db("SELECT count(*) FROM cap_ai.model_operations WHERE state='UNCERTAIN'"))==before+1,'FAIL: uncertain operation missing')
+        source.require(source.db("SELECT state||'|'||coalesce(error_code,'')||'|'||coalesce(input_tokens::text,'')||'|'||coalesce(output_tokens::text,'') FROM cap_ai.model_operations WHERE app_id="+literal(app)+" AND purpose='GENERATE' AND state='UNCERTAIN'")=='UNCERTAIN|PROVIDER_UNCERTAIN||','FAIL: uncertain operation facts missing')
         source.require(source.db("SELECT coalesce(bool_and(input_tokens IS NULL AND output_tokens IS NULL),true) FROM cap_ai.model_operations WHERE state='UNCERTAIN'")=='t','FAIL: uncertain operation recorded usage')
         count=fake()['counts']['GENERATE'];time.sleep(1.2)
         source.require(fake()['counts']['GENERATE']==count,'FAIL: automatic billed retry')

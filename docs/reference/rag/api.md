@@ -5,7 +5,7 @@ diataxis: reference
 audience: [app-author, security-reviewer]
 status: active
 owner: platform
-last_reviewed: 2026-11-20
+last_reviewed: 2026-11-23
 ---
 
 # Native RAG canonical contracts
@@ -47,7 +47,7 @@ All objects below belong to `cap_ai`. IDs are UUID unless indicated; app/role re
 | elements / assets | immutable version ID, parent/sequence/type/page/bbox/text/structured content/confidence; opaque protected asset reference and checksum |
 | chunks / chunk_elements | version/ordinal/text/content hash/element links; unique version+ordinal; lexical index independent of embedding readiness |
 | jobs | unique version+processing-profile identity, lease token/deadline, attempts, checkpoint, safe error and durable state |
-| profiles / usage / reservations | allowlisted model purpose/classifications/dimension, credential_ref only, actor/app/installation budgets; idempotent reservation/settlement |
+| profiles / operations | allowlisted model purpose/classifications/dimension, credential_ref only, immutable profile ID/revision; one durable operation row per operation key with state, provider ID and token counters, no monetary account |
 | processing approvals | audited Platform Admin approval binding exact provider/profile revision, purpose, source/query classifications, retention/training-use review and enabled state; see authorization |
 | conversations / messages | owner-only snapshots and source provenance; historical READ survives ordinary source revoke, but retained evidence is reauthorized before reuse |
 
@@ -57,7 +57,7 @@ An active_version_id must reference a complete eligible version of the same docu
 
 ## Public Knowledge API
 
-All paths are under `/api/cap/ai`. Identity derives from verified context and current DB authority. Resource denial is concealed 404 without title/excerpt/version. Unauthenticated is 401; explicit policy mutation/egress denial is 403; malformed input 400; conflicting replay/revision 409; oversized request 413; unsupported media 415; unclean source 422; quota 429. Unexpected internals return safe 5xx without SQL, paths or secrets.
+All paths are under `/api/cap/ai`. Identity derives from verified context and current DB authority. Resource denial is concealed 404 without title/excerpt/version. Unauthenticated is 401; explicit policy mutation/egress denial is 403; malformed input 400; conflicting replay/revision 409; oversized request 413; unsupported media 415; unclean source 422. There is no quota response: the platform enforces no monetary quota. Unexpected internals return safe 5xx without SQL, paths or secrets. A model call that may have been sent returns 200 `SEARCH_ONLY` with reason `MODEL_CALL_UNCERTAIN`, or 503 `MODEL_CALL_UNCERTAIN` when generation is required, distinct from 503 `MODEL_UNAVAILABLE`.
 
 | Method/path | Input and output |
 | --- | --- |
@@ -73,7 +73,7 @@ All paths are under `/api/cap/ai`. Identity derives from verified context and cu
 | POST /answers | scope/query/max_citations/require_generation; see the answer contract for implemented response fields and target extensions |
 | GET /documents/{id}/citations/{chunkId} | reauthorized active-version source/asset preview; never raw object keys |
 | GET /ingestions/{jobId} | source owner or authorized manager sees safe progress |
-| GET /admin/model-usage | explicit operations permission, aggregated metering without private content |
+| GET /admin/model-usage | explicit operations permission, aggregated operation/token observations without private content |
 
 POST registration is CLEAN-only: do not create WAITING_SCAN documents in this MVP contract. Upload itself may remain quarantined until scanner completes. A successful registration commits document/version/job/audit and idempotency receipt together; 202 is never emitted before commit. Receipt uniqueness is actor+app+action+key with normalized payload fingerprint; replay rechecks current access, returns original result for equal payload, 409 for mismatch. Request body cannot set owner, allowed-role claims or scan state. Changed content is a new immutable file/version.
 
@@ -152,12 +152,15 @@ and adapters are deployment-allowlisted, never request-selected. Hosted APIs are
 the first supported adapters; local serving in Tier 1 is future work, with no
 bundled local model.
 
-Retain `cap_ai.model_profiles`, policy allowlists, the usage ledger, conservative
-uncertain-charge accounting and exact profile revision identity. Embedding
+Retain `cap_ai.model_profiles`, policy allowlists, exact profile revision identity
+and the durable `cap_ai.model_operations` rows. Embedding
 query/index generations must agree on that identity and dimensions; a slot change
 does not relabel or silently mix existing vectors. Registry migrations are
 additive after optional `0004_models_vectors.sql`; applied migration checksums
-must never change. `dxos_ai_gateway` retains its scoped policy/accounting rights
+must never change, except for the one-time coordinated rebase recorded in
+[ADR 0010](../../adr/0010-model-operations-without-monetary-admission.md), which
+requires the checksum preflight and a named database rebuild. `dxos_ai_gateway`
+retains its scoped policy rights and the gateway-only operation interfaces,
 and gains only read-only slot-resolution and fenced embedding lease-profile
 execution. Both reads return the stored immutable declaration digest. Runtime
 checks it against normalized profile, adapter and validated provider metadata
@@ -192,6 +195,6 @@ approval and future lifecycle routes remain separate work.
 
 ## Model Gateway
 
-Configured generation/embedding profiles only; no caller keys, provider URLs or credential refs. Gateway independently verifies processing policy, current authority and user/app/installation quotas before every external operation. Reserve estimated spend before dispatch, settle idempotently with actual/estimated usage after response. Unknown provider outcome retains conservative reservation for bounded reconciliation; retries cannot release all reserved spend or double-settle one successful request. Budget/policy outage fails closed. Kill switch keeps authorized FTS available.
+Configured generation/embedding profiles only; no caller keys, provider URLs or credential refs. The Gateway independently verifies processing policy and current authority before every external operation, then claims a durable operation row, rechecks after the database wait, records dispatch intent and checks authority once more immediately before invoking the bound adapter. The adapter is invoked at most once per operation key. An unknown provider outcome records `UNCERTAIN`; the stored intent prevents any later resend. Policy/authority outage fails closed. Kill switch keeps authorized FTS available.
 
-Usage stores operation/model/actor/app/tokens/estimated cost/outcome/latency, never prompt bodies/source bytes/keys. Each real provider/data-class/purpose approval and operational qualification must be provisioned explicitly; this contract approves no provider. Existing conservative token/cost limits and uncertain-charge handling remain required. [Billing attribution](authorization.md#model-operation-billing-attribution) assigns PERSONAL-only calls to the library app and cross-app AGENT calls to the genuine Ready app configured by `AI_AGENT_BILLING_APP_ID`, plus the existing installation/user accounts. That billing app never substitutes for source authorization or classification.
+The operation row stores the actor, attributed app, profile ID/revision, purpose, fingerprint, lifecycle state, optional bounded provider request ID, input/output token counters, a sanitized bounded error code and latency. It never stores prompt bodies, source bytes, responses or keys. Token counts are observational evidence, not a charge; they are recorded only for `SUCCEEDED`. Each real provider/data-class/purpose approval and operational qualification must be provisioned explicitly; this contract approves no provider. [Attribution and durable state](authorization.md#model-operation-attribution-and-durable-state) assigns PERSONAL-only operations to the library app and cross-app AGENT operations to the genuine Ready app configured by `AI_AGENT_PROCESSING_APP_ID`. That app never substitutes for source authorization or classification.

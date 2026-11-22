@@ -13,6 +13,9 @@ last_reviewed: 2026-11-20
 - **Status:** Accepted; implemented in part. Package and personal knowledge
   ingestion, scoped retrieval, citations, and owner conversations shipped in
   #70 (v0.2.0) and #103. The register below lists the gates that remain open.
+  D10, the reservation/settlement requirements and the applied-migration rule
+  are superseded by [ADR 0010](0010-model-operations-without-monetary-admission.md);
+  every other decision, including the security decisions, stands.
 - **Date:** 2026-11-13
 - **Decision owner:** repository/product owner; issue owner `nguyentin05` is the proposed responsible owner, pending identity/assignment confirmation.
 

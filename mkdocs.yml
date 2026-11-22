@@ -285,6 +285,7 @@ nav:
       - ADR 0007: adr/0007-keycloak-authenticates-platform-authorizes.md
       - ADR 0008: adr/0008-an-application-declares-several-tables.md
       - ADR 0009: adr/0009-native-rag-identity-and-source-boundaries.md
+      - ADR 0010: adr/0010-model-operations-without-monetary-admission.md
   - Operate:
       - Overview: operations/index.md
       - Installation: operations/installation.md

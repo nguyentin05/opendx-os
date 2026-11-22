@@ -5,7 +5,7 @@ diataxis: reference
 audience: [platform-developer, security-reviewer]
 status: active
 owner: platform
-last_reviewed: 2026-11-18
+last_reviewed: 2026-11-23
 ---
 
 # Optional model Gateway and answers
@@ -33,7 +33,7 @@ Hosted processing requires independent current query and per-source approval.
 The [canonical processing policy](authorization.md#model-processing-policy)
 permits PERSONAL EMBED/GENERATE only through audited Platform Admin approval
 binding purpose, provider/profile revision, enabled state, source/query
-classification and retention/training-use review. No active slot, budget or
+classification and retention/training-use review. No active slot or
 per-user opt-in supplies that approval. Unapproved PERSONAL source/query egress
 denies; no fallback may route it to another provider. Deployments without a current matching review retain authorized lexical search.
 
@@ -43,18 +43,21 @@ Each actual source app and every supplied evidence item is independently checked
 a client role list, JWT business-role claim or model-suggested app cannot widen
 access. Existing Hasura/capability selected-role APIs retain ADR 0007 semantics.
 
-Gateway reservations charge installation/app/user accounts atomically under the
-[billing policy](authorization.md#model-operation-billing-attribution).
+Gateway admissions record one durable `cap_ai.model_operations` row per
+operation key under the
+[attribution and durable-state contract](authorization.md#model-operation-attribution-and-durable-state).
 PERSONAL-only calls retain library-app attribution; cross-app AGENT operations
-use the server-configured genuine Ready `AI_AGENT_BILLING_APP_ID` account.
-That account grants no source access or egress permission. Possible billed
-timeouts retain UNCERTAIN funds and never resend the same operation automatically.
-Model unavailability preserves authorized FTS; optional generation returns
-SEARCH_ONLY, while required generation with evidence distinguishes 403
-POLICY_BLOCKED, 429 QUOTA_EXCEEDED and 503 MODEL_UNAVAILABLE. Semantic generations
-and dimensions remain independent from lexical readiness. APP and PERSONAL
-bounded hybrid retrieval must retain current source/role/policy checks before
-ranking and final response.
+use the server-configured genuine Ready `AI_AGENT_PROCESSING_APP_ID` app. That
+app grants no source access or egress permission. An operation that may have been
+sent, including a timeout, is recorded as `UNCERTAIN` with no token counters and
+is never resent automatically; the optional path returns `SEARCH_ONLY` with
+reason `MODEL_CALL_UNCERTAIN` and no usage. Model unavailability preserves
+authorized FTS; optional generation returns SEARCH_ONLY, while required
+generation with evidence distinguishes 403 POLICY_BLOCKED and 503
+`MODEL_UNAVAILABLE`, and 503 `MODEL_CALL_UNCERTAIN` when the operation may have
+been sent. Semantic generations and dimensions remain independent from lexical
+readiness. APP and PERSONAL bounded hybrid retrieval must retain current
+source/role/policy checks before ranking and final response.
 
 Persisted chat message/answer snapshots are owner-only and survive ordinary
 source/role revoke. Linked originals and citation previews require current source
