@@ -24,8 +24,11 @@ type HistoryEntry struct {
 	Action     string       `json:"action"`
 	Actor      HistoryActor `json:"actor"`
 	ActingRole string       `json:"acting_role"`
-	Version    *int64       `json:"version,omitempty"`
-	Status     *string      `json:"status,omitempty"`
+	// RoleDescription is the role's registry description, so the screen can
+	// name roles the viewer does not hold.
+	RoleDescription string  `json:"acting_role_description,omitempty"`
+	Version         *int64  `json:"version,omitempty"`
+	Status          *string `json:"status,omitempty"`
 }
 
 type HistoryActor struct {
@@ -58,7 +61,9 @@ func (e *Engine) History(ctx context.Context, id *auth.Identity, app, tableName,
 		return fail(503)
 	}
 	table := a.Table(tableName)
-	if table == nil {
+	// A child row's select rules carry no scope of their own (rows follow the
+	// parent), so CanSee cannot decide them here; their history is not served.
+	if table == nil || table.BelongsTo != nil {
 		return fail(404)
 	}
 	tx, err := e.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
@@ -93,10 +98,13 @@ func (e *Engine) History(ctx context.Context, id *auth.Identity, app, tableName,
 		return fail(404)
 	}
 
-	rows, err := tx.QueryContext(ctx, `SELECT a.created_at,a.action,a.actor_id::text,u.display_name,a.acting_role,a.entity_version,a.payload->>'status'
-		FROM core.audit_logs a JOIN core.users u ON u.id = a.actor_id
-		WHERE a.app_id=$1 AND a.entity_type=$2 AND a.entity_id=$3
-		ORDER BY a.created_at ASC, a.seq ASC LIMIT 200`, app, tableName, entity)
+	// The newest 200 entries, oldest first.
+	rows, err := tx.QueryContext(ctx, `SELECT at,action,actor_id,display_name,acting_role,entity_version,status,role_description FROM (
+		SELECT a.created_at AS at,a.seq,a.action,a.actor_id::text AS actor_id,u.display_name,a.acting_role,a.entity_version,
+		       a.payload->>'status' AS status,coalesce(r.description,'') AS role_description
+		  FROM core.audit_logs a JOIN core.users u ON u.id = a.actor_id LEFT JOIN core.roles r ON r.name = a.acting_role
+		 WHERE a.app_id=$1 AND a.entity_type=$2 AND a.entity_id=$3
+		 ORDER BY a.created_at DESC, a.seq DESC LIMIT 200) h ORDER BY at, seq`, app, tableName, entity)
 	if err != nil {
 		return fail(503)
 	}
@@ -109,7 +117,7 @@ func (e *Engine) History(ctx context.Context, id *auth.Identity, app, tableName,
 			version    sql.NullInt64
 			status     sql.NullString
 		)
-		if err := rows.Scan(&entry.At, &entry.Action, &entry.Actor.ID, &entry.Actor.DisplayName, &actingRole, &version, &status); err != nil {
+		if err := rows.Scan(&entry.At, &entry.Action, &entry.Actor.ID, &entry.Actor.DisplayName, &actingRole, &version, &status, &entry.RoleDescription); err != nil {
 			return fail(503)
 		}
 		entry.ActingRole = actingRole.String

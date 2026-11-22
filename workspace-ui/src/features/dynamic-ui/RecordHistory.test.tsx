@@ -49,6 +49,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it('names a role the viewer does not hold from the server description', async () => {
+  serve([{ ...entry('approve', 'APPROVED', '2026-11-22T10:00:00Z'), acting_role: 'role_manager', acting_role_description: 'Quản lý phòng ban' }]);
+  render(<RecordHistory table={table} app={app} context={context} recordID={id} version={2} />);
+
+  expect(await screen.findByText('Quản lý phòng ban')).toBeTruthy();
+  expect(screen.queryByText('Role manager')).toBeNull();
+});
+
 it('shows the fixed projection with Vietnamese action, state and role labels', async () => {
   const fetch = serve([
     entry('INSERT', 'DRAFT', '2026-11-22T08:00:00Z'),

@@ -71,7 +71,7 @@ export function RecordHistory({ table, app, context, recordID, version }: {
               {' · '}<span>{entry.actor.display_name}</span>
               {' · '}<span>{actionLabel(table, entry.action)}</span>
               {entry.status && <>{' · '}<span>{stateLabel(table, entry.status)}</span></>}
-              {entry.acting_role && <>{' · '}<span>{roleLabel(app, entry.acting_role)}</span></>}
+              {entry.acting_role && <>{' · '}<span>{entry.acting_role_description || roleLabel(app, entry.acting_role)}</span></>}
             </li>
           ))}
         </ol>

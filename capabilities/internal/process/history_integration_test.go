@@ -36,6 +36,10 @@ func TestRecordHistoryFollowsAccessAndProjectsOnlyStatus(t *testing.T) {
 		}
 	}
 
+	// The operator stores manifest role descriptions; the test platform does not.
+	if _, err := o.p.Admin.Exec(`UPDATE core.roles SET description='Duyệt của phòng ban' WHERE name='role_procurement_manager'`); err != nil {
+		t.Fatal(err)
+	}
 	owner := &auth.Identity{UserID: o.alice, Role: "role_procurement_requester"}
 	resp, status, err := o.engine.History(context.Background(), owner, testutil.AppID, o.p.Table, id)
 	if err != nil || status != 200 {
@@ -53,7 +57,7 @@ func TestRecordHistoryFollowsAccessAndProjectsOnlyStatus(t *testing.T) {
 	if entry := byAction["submit"]; entry.Status == nil || *entry.Status != "SUBMITTED" || entry.Version == nil || *entry.Version != 2 {
 		t.Fatalf("submit entry = %+v", entry)
 	}
-	if entry := byAction["approve"]; entry.Status == nil || *entry.Status != "BUDGET_REVIEW" {
+	if entry := byAction["approve"]; entry.Status == nil || *entry.Status != "BUDGET_REVIEW" || entry.RoleDescription != "Duyệt của phòng ban" {
 		t.Fatalf("approve entry = %+v", entry)
 	}
 	for i := 1; i < len(resp.Entries); i++ {
@@ -84,7 +88,7 @@ func TestRecordHistoryFollowsAccessAndProjectsOnlyStatus(t *testing.T) {
 		}
 		for key := range entry {
 			switch key {
-			case "at", "action", "actor", "acting_role", "version", "status":
+			case "at", "action", "actor", "acting_role", "acting_role_description", "version", "status":
 			default:
 				t.Fatalf("unexpected entry field %q", key)
 			}
@@ -116,6 +120,12 @@ func TestRecordHistoryFollowsAccessAndProjectsOnlyStatus(t *testing.T) {
 		if entry.Status != nil {
 			t.Fatalf("a plain table must omit status: %+v", entry)
 		}
+	}
+
+	line := o.p.InsertInto(t, "domain.procurement_items", o.alice, "role_procurement_requester",
+		map[string]any{"request_id": draft, "item": "Laptop", "quantity": 1, "unit_price": 1})
+	if _, status, _ := o.engine.History(context.Background(), owner, testutil.AppID, "domain.procurement_items", line); status != 404 {
+		t.Fatalf("child row history: %d, want 404", status)
 	}
 
 	handler := o.engine.HistoryHandler()

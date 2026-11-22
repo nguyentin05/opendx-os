@@ -26,6 +26,7 @@ export interface HistoryEntry {
   action: string;
   actor: { id: string; display_name: string };
   acting_role: string;
+  acting_role_description?: string;
   version?: number;
   status?: string;
 }
@@ -39,11 +40,14 @@ function historyEntry(value: unknown): HistoryEntry | undefined {
   const version = value.version;
   if (version !== undefined && (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1)) return;
   if (value.status !== undefined && typeof value.status !== 'string') return;
+  const description = value.acting_role_description;
+  if (description !== undefined && typeof description !== 'string') return;
   return {
     at: value.at,
     action: value.action,
     actor: { id: value.actor.id, display_name: value.actor.display_name },
     acting_role: value.acting_role,
+    acting_role_description: description,
     version: version as number | undefined,
     status: value.status as string | undefined,
   };

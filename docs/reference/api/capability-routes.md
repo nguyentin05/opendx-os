@@ -29,11 +29,12 @@ receives it, `schema.table`. Send a bearer token and the acting role in
 `X-Hasura-Role`, like a command.
 
 The record is checked with the same viewer and select rules as a command before
-its audit rows are read. An unknown table, a missing record and a record outside
-the caller's scope all return 404, so the route does not reveal existence; a
-malformed application, table or record id returns 400. The response is
-`{"entries":[{"at","action","actor":{"id","display_name"},"acting_role","version","status"}]}`,
-ordered oldest first and capped at 200 entries. `status` is present only for a
+its audit rows are read. An unknown table, a child table, a missing record and a
+record outside the caller's scope all return 404, so the route does not reveal
+existence; a malformed application, table or record id returns 400. The response is
+`{"entries":[{"at","action","actor":{"id","display_name"},"acting_role","acting_role_description","version","status"}]}`:
+the newest 200 entries, oldest first. `acting_role_description` is the role's
+registry description, omitted when empty. `status` is present only for a
 state-machine table. Audit payloads, chain/sequence and hash columns are never
 returned.
 
