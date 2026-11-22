@@ -9,7 +9,7 @@ import type { Session } from '../../auth';
 import type { InstalledTable } from '../../types/registry';
 
 const sourceID = 'b21e978e-4a77-4d62-85bb-72270ddfbf79';
-const role = { name: 'role_reviewer', app_id: 'records' };
+const role = { name: 'role_reviewer', app_id: 'records', description: 'Người duyệt hồ sơ' };
 const defaultRole = { name: 'role_reader', app_id: 'records' };
 const table: InstalledTable = {
   name: 'domain.records', columns: [{ name: 'title', type: 'text', nullable: false }],
@@ -116,7 +116,7 @@ it('refreshes permissions before opening work under its originating role and kee
   const work = await screen.findByRole('link', { name: 'Review request' });
   expect(work.getAttribute('href')).toBe('/apps/records/tables/domain.records/' + sourceID + '?role=role_reviewer');
   expect(screen.getByText('Đang làm')).toBeTruthy();
-  expect(screen.getByText(role.name)).toBeTruthy();
+  expect(screen.getByText(role.description)).toBeTruthy();
   fireEvent.click(work);
 
   await screen.findByText('Confidential record title');

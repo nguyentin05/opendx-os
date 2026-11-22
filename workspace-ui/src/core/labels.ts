@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 DX-OS Open-Core Contributors
 
-import type { InstalledTable } from '../types/registry';
+import type { InstalledApp, InstalledTable } from '../types/registry';
 
 // Manifest ui.stateLabels and ui.actionLabels name an application's states and
 // actions. This fallback holds only words common to any approval workflow; the
@@ -42,6 +42,10 @@ export function stateLabel(table: InstalledTable | undefined, name: string): str
 
 export function commandLabel(table: InstalledTable | undefined, name: string): string {
   return table?.ui.actionLabels?.[name] || commands[name] || humanizeName(name);
+}
+
+export function roleLabel(app: Pick<InstalledApp, 'roles'> | undefined, name: string): string {
+  return app?.roles.find(role => role.name === name)?.description || humanizeName(name);
 }
 
 export function platformColumnLabel(name: string): string {
