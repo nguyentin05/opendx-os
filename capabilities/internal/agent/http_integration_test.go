@@ -328,8 +328,30 @@ func TestChatHTTPUncertainTurnReturns200AndReplay(t *testing.T) {
 	if replay.Body.String() != raw || sends.Load() != 1 {
 		t.Fatalf("owner replay changed the persisted completion or sent again: %q -> %q (%d sends)", raw, replay.Body.String(), sends.Load())
 	}
+	// A client-supplied app or model profile is rejected, never accepted as an
+	// override of the server-configured processing app: no operation row and no
+	// changed attribution results from it.
+	for _, override := range []string{
+		`{"query":"laptop","app_id":"other"}`,
+		`{"query":"laptop","profile":"other"}`,
+		`{"query":"laptop","model_profile":"other"}`,
+	} {
+		w := chatRequest(h, "POST", path+"/messages", alice, "override-key", override)
+		requireChatStatus(t, w, http.StatusBadRequest)
+		if strings.Contains(w.Body.String(), "other") || strings.Contains(w.Body.String(), "laptop") {
+			t.Fatalf("override request echoed its input: %s", w.Body.String())
+		}
+	}
 	var state, app string
 	var input, output sql.NullInt64
+	var operations, foreign int
+	if err := f.db.QueryRow(`SELECT count(*),count(*) FILTER (WHERE app_id<>'agent_processing')
+		FROM cap_ai.model_operations`).Scan(&operations, &foreign); err != nil {
+		t.Fatal(err)
+	}
+	if operations != 1 || foreign != 0 {
+		t.Fatalf("client override changed operation attribution: %d operations, %d foreign app(s)", operations, foreign)
+	}
 	if err := f.db.QueryRow(`SELECT state,app_id,input_tokens,output_tokens FROM cap_ai.model_operations`).Scan(&state, &app, &input, &output); err != nil ||
 		state != "UNCERTAIN" || app != "agent_processing" || input.Valid || output.Valid {
 		t.Fatalf("uncertain operation: state=%s app=%s usage=%+v/%+v err=%v", state, app, input, output, err)

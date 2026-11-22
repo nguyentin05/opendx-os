@@ -96,7 +96,7 @@ func newAgentFixture(t *testing.T, purpose string) agentFixture {
 		agentExec(t, db, string(raw))
 	}
 	agentExec(t, db, `INSERT INTO core.apps(app_id,display_name,version,status,spec)
-	VALUES('agent_billing','Agent Billing','1','Ready','{}');
+	VALUES('agent_processing','Agent Processing','1','Ready','{}');
 	INSERT INTO core.app_capabilities(app_id,cap_id) VALUES('library','cap-ai')`)
 	api := personalLogin(t, db, "dxos_ai_api")
 	proofs := []AgentSourceProof{
@@ -105,7 +105,7 @@ func newAgentFixture(t *testing.T, purpose string) agentFixture {
 		{ScopeKind: "PERSONAL", AppID: "library", ActingRole: "role_library_user", ReadScope: personal.Sources[0]},
 	}
 	provider := &agentProvider{}
-	op := Operation{Key: "agent-call", AppID: "agent_billing", ScopeKind: "AGENT", Purpose: purpose, ProfileID: "personal", ProfileRevision: 1}
+	op := Operation{Key: "agent-call", AppID: "agent_processing", ScopeKind: "AGENT", Purpose: purpose, ProfileID: "personal", ProfileRevision: 1}
 	if purpose == "GENERATE" {
 		agentExec(t, db, `UPDATE cap_ai.global_model_slots SET profile_id='personal',
 			profile_revision=1,slot_revision=1 WHERE capability='LLM'`)
@@ -149,7 +149,7 @@ func (f agentFixture) generate(t *testing.T, op Operation, proofs []AgentSourceP
 
 func TestAgentModelPolicyChecksEverySource(t *testing.T) {
 	f := newAgentFixture(t, "GENERATE")
-	agentReview(t, f.admin, "GENERATE", "agent_billing")
+	agentReview(t, f.admin, "GENERATE", "agent_processing")
 	libraryReview := agentReview(t, f.admin, "GENERATE", "library")
 	if err := f.generate(t, f.op, f.proofs); err != nil || f.provider.calls != 1 {
 		t.Fatalf("mixed sources should send once: calls=%d err=%v", f.provider.calls, err)
@@ -179,24 +179,24 @@ func TestAgentModelPolicyChecksEverySource(t *testing.T) {
 	}
 }
 
-func TestAgentModelPolicyRequiresReadyBillingApp(t *testing.T) {
+func TestAgentModelPolicyRequiresReadyProcessingApp(t *testing.T) {
 	f := newAgentFixture(t, "GENERATE")
-	agentReview(t, f.admin, "GENERATE", "agent_billing")
+	agentReview(t, f.admin, "GENERATE", "agent_processing")
 	agentReview(t, f.admin, "GENERATE", "library")
 	op := f.op
 	op.AppID = "invented_consumer"
 	if err := f.generate(t, op, f.proofs); !errors.Is(err, ErrPolicy) {
 		t.Fatalf("unregistered consumer: %v", err)
 	}
-	agentExec(t, f.db, `UPDATE core.apps SET status='Removed' WHERE app_id='agent_billing'`)
+	agentExec(t, f.db, `UPDATE core.apps SET status='Removed' WHERE app_id='agent_processing'`)
 	if err := f.generate(t, f.op, f.proofs); !errors.Is(err, ErrPolicy) || f.provider.calls != 0 {
-		t.Fatalf("unready billing consumer sent: calls=%d err=%v", f.provider.calls, err)
+		t.Fatalf("unready processing consumer sent: calls=%d err=%v", f.provider.calls, err)
 	}
 }
 
 func TestAgentModelPolicyRejectsForgedRole(t *testing.T) {
 	f := newAgentFixture(t, "GENERATE")
-	agentReview(t, f.admin, "GENERATE", "agent_billing")
+	agentReview(t, f.admin, "GENERATE", "agent_processing")
 	agentReview(t, f.admin, "GENERATE", "library")
 	for _, tc := range []struct {
 		name  string
@@ -205,7 +205,7 @@ func TestAgentModelPolicyRejectsForgedRole(t *testing.T) {
 		{"other app's current role", func(p *AgentSourceProof) { p.ActingRole = "role_hr_reader" }},
 		{"unheld role", func(p *AgentSourceProof) { p.ActingRole = "invented-role" }},
 		{"mislabelled kind", func(p *AgentSourceProof) { p.ScopeKind = "PERSONAL" }},
-		{"mislabelled app", func(p *AgentSourceProof) { p.AppID = "agent_billing" }},
+		{"mislabelled app", func(p *AgentSourceProof) { p.AppID = "agent_processing" }},
 		{"stale scope", func(p *AgentSourceProof) { p.ReadScope.PolicyRevision++ }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -220,7 +220,7 @@ func TestAgentModelPolicyRejectsForgedRole(t *testing.T) {
 
 func TestAgentModelPolicyBindsActualSourceKind(t *testing.T) {
 	f := newAgentFixture(t, "GENERATE")
-	agentReview(t, f.admin, "GENERATE", "agent_billing")
+	agentReview(t, f.admin, "GENERATE", "agent_processing")
 	agentReview(t, f.admin, "GENERATE", "library")
 	proofs := append([]AgentSourceProof(nil), f.proofs...)
 	// The user's library role is eligible for both the APP and PERSONAL tuples.
@@ -230,9 +230,9 @@ func TestAgentModelPolicyBindsActualSourceKind(t *testing.T) {
 	}
 }
 
-func TestAgentBillingChargesOnlyConfiguredApp(t *testing.T) {
+func TestAgentProcessingChargesOnlyConfiguredApp(t *testing.T) {
 	f := newAgentFixture(t, "GENERATE")
-	agentReview(t, f.admin, "GENERATE", "agent_billing")
+	agentReview(t, f.admin, "GENERATE", "agent_processing")
 	agentReview(t, f.admin, "GENERATE", "library")
 	if err := f.generate(t, f.op, f.proofs); err != nil {
 		t.Fatal(err)
@@ -240,7 +240,7 @@ func TestAgentBillingChargesOnlyConfiguredApp(t *testing.T) {
 	if err := f.generate(t, f.op, f.proofs); !errors.Is(err, ErrUncertain) || f.provider.calls != 1 {
 		t.Fatalf("same operation replayed: calls=%d err=%v", f.provider.calls, err)
 	}
-	// The billing consumer, actor and provider-usage counters are recorded once.
+	// The processing consumer, actor and provider-usage counters are recorded once.
 	var operations int
 	var app, actor, state string
 	var input, output int64
@@ -248,26 +248,26 @@ func TestAgentBillingChargesOnlyConfiguredApp(t *testing.T) {
 		FROM cap_ai.model_operations WHERE operation_key=$1`, f.op.Key).Scan(&operations, &app, &actor, &state, &input, &output); err != nil {
 		t.Fatal(err)
 	}
-	if operations != 1 || app != "agent_billing" || actor != personalActor || state != "SUCCEEDED" || input != 3 || output != 2 {
+	if operations != 1 || app != "agent_processing" || actor != personalActor || state != "SUCCEEDED" || input != 3 || output != 2 {
 		t.Fatalf("operation binding %d %q %q %q %d/%d", operations, app, actor, state, input, output)
 	}
 }
 
-func TestAgentModelPolicyRequiresIndependentBillingQueryReview(t *testing.T) {
+func TestAgentModelPolicyRequiresIndependentProcessingQueryReview(t *testing.T) {
 	f := newAgentFixture(t, "GENERATE")
 	agentReview(t, f.admin, "GENERATE", "hr")
 	f.op.QueryClassification = "NON_PERSONAL"
 	if err := f.generate(t, f.op, f.proofs[:2]); !errors.Is(err, ErrPolicy) || f.provider.calls != 0 {
-		t.Fatalf("APP-only generation bypassed billing consumer query review: calls=%d err=%v", f.provider.calls, err)
+		t.Fatalf("APP-only generation bypassed processing consumer query review: calls=%d err=%v", f.provider.calls, err)
 	}
-	review := agentReview(t, f.admin, "GENERATE", "agent_billing")
+	review := agentReview(t, f.admin, "GENERATE", "agent_processing")
 	if err := f.generate(t, f.op, f.proofs[:2]); err != nil || f.provider.calls != 1 {
 		t.Fatalf("reviewed APP-only generation denied: calls=%d err=%v", f.provider.calls, err)
 	}
 	agentExec(t, f.admin, `SELECT cap_ai.disable_agent_processing($1,$2,'review withdrawn')`, personalActor, review)
-	f.op.Key = "billing-review-withdrawn"
+	f.op.Key = "processing-review-withdrawn"
 	if err := f.generate(t, f.op, f.proofs[:2]); !errors.Is(err, ErrPolicy) || f.provider.calls != 1 {
-		t.Fatalf("withdrawn billing query review accepted: calls=%d err=%v", f.provider.calls, err)
+		t.Fatalf("withdrawn processing query review accepted: calls=%d err=%v", f.provider.calls, err)
 	}
 }
 
@@ -307,7 +307,7 @@ func TestAgentModelPolicyGlobalQueryEmbedRequiresPersonalReview(t *testing.T) {
 
 func TestAgentModelPolicyRejectsMalformedSQLProofs(t *testing.T) {
 	f := newAgentFixture(t, "GENERATE")
-	agentReview(t, f.admin, "GENERATE", "agent_billing")
+	agentReview(t, f.admin, "GENERATE", "agent_processing")
 	agentReview(t, f.admin, "GENERATE", "library")
 	gateway := f.gateway.Policy.Authority.(DatabaseAuthority).DB
 	valid, err := json.Marshal(f.proofs)
@@ -343,7 +343,7 @@ func TestAgentModelPolicyRejectsMalformedSQLProofs(t *testing.T) {
 
 func TestAgentModelPolicyRequiresGroundedGeneration(t *testing.T) {
 	f := newAgentFixture(t, "GENERATE")
-	agentReview(t, f.admin, "GENERATE", "agent_billing")
+	agentReview(t, f.admin, "GENERATE", "agent_processing")
 	agentReview(t, f.admin, "GENERATE", "library")
 	op := f.op
 	op.AgentSources = f.proofs
@@ -391,7 +391,7 @@ func TestAgentModelPolicyRechecksReviewAfterIntent(t *testing.T) {
 	if err := f.admin.QueryRow(`SELECT cap_ai.approve_agent_processing($1,$2::jsonb)`, personalActor, revisedEvidence).Scan(&changedReview); err != nil {
 		t.Fatal(err)
 	}
-	agentReview(t, f.admin, "GENERATE", "agent_billing")
+	agentReview(t, f.admin, "GENERATE", "agent_processing")
 	f.gateway.Policy.Authority = &disableBeforeSend{authority: f.gateway.Policy.Authority, admin: f.admin, approval: changedReview}
 	if err := f.generate(t, f.op, f.proofs); !errors.Is(err, ErrPolicy) || f.provider.calls != 0 {
 		t.Fatalf("changed authority fingerprint sent: calls=%d err=%v", f.provider.calls, err)
