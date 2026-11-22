@@ -141,7 +141,11 @@ def main():
         # operation, not a monetary ledger, is the accounting observation.
         source.require(fake()['counts']['GENERATE']==sends+1, 'FAIL: grounded answer did not send exactly once')
         source.require(reply.get('usage')=={'input_tokens':20,'output_tokens':20}, 'FAIL: successful token observation missing from the answer')
-        source.require(source.db("SELECT state||'|'||input_tokens||'|'||output_tokens FROM cap_ai.model_operations WHERE app_id="+literal(app)+" AND purpose='GENERATE'")=='SUCCEEDED|20|20', 'FAIL: successful token observation missing from the durable operation')
+        # Exactly one terminal SUCCEEDED GENERATE row is expected for this fresh
+        # app. Assert the row count first so a replayed/extra operation fails as a
+        # duplicate rather than silently winning a scalar subquery.
+        source.require(source.db("SELECT count(*) FROM cap_ai.model_operations WHERE app_id="+literal(app)+" AND purpose='GENERATE' AND state='SUCCEEDED'")=='1','FAIL: grounded answer did not record exactly one SUCCEEDED GENERATE operation')
+        source.require(source.db("SELECT state||'|'||input_tokens||'|'||output_tokens FROM cap_ai.model_operations WHERE app_id="+literal(app)+" AND purpose='GENERATE' AND state='SUCCEEDED' ORDER BY finished_at DESC, operation_key DESC LIMIT 1")=='SUCCEEDED|20|20', 'FAIL: successful token observation missing from the durable operation')
         for who,role in [('B',read),('ADMIN',manager),('ADMIN',admin)]:
             status,data=package.api('POST','/search',who,role,{'scope':scope,'query':'unmatched','retrieval':'HYBRID','limit':1})
             source.require(status==200 and marker not in data.decode() and documents['restricted'] not in data.decode(), 'FAIL: hidden nearest vector leaked')
@@ -200,7 +204,10 @@ def main():
         source.require('usage' not in reply and reply['answer'] is None and not reply['citations'],'FAIL: uncertain answer disclosed content or usage')
         source.require(fake()['counts']['GENERATE']==sends+1,'FAIL: uncertain request sent more than once')
         source.require(int(source.db("SELECT count(*) FROM cap_ai.model_operations WHERE state='UNCERTAIN'"))==before+1,'FAIL: uncertain operation missing')
-        source.require(source.db("SELECT state||'|'||coalesce(error_code,'')||'|'||coalesce(input_tokens::text,'')||'|'||coalesce(output_tokens::text,'') FROM cap_ai.model_operations WHERE app_id="+literal(app)+" AND purpose='GENERATE' AND state='UNCERTAIN'")=='UNCERTAIN|PROVIDER_UNCERTAIN||','FAIL: uncertain operation facts missing')
+        # The timeout must leave exactly one durable UNCERTAIN GENERATE row for
+        # this app; count it first so a resent/duplicated operation fails loudly.
+        source.require(source.db("SELECT count(*) FROM cap_ai.model_operations WHERE app_id="+literal(app)+" AND purpose='GENERATE' AND state='UNCERTAIN'")=='1','FAIL: timeout did not record exactly one uncertain operation')
+        source.require(source.db("SELECT state||'|'||coalesce(error_code,'')||'|'||coalesce(input_tokens::text,'')||'|'||coalesce(output_tokens::text,'') FROM cap_ai.model_operations WHERE app_id="+literal(app)+" AND purpose='GENERATE' AND state='UNCERTAIN' ORDER BY finished_at DESC, operation_key DESC LIMIT 1")=='UNCERTAIN|PROVIDER_UNCERTAIN||','FAIL: uncertain operation facts missing')
         source.require(source.db("SELECT coalesce(bool_and(input_tokens IS NULL AND output_tokens IS NULL),true) FROM cap_ai.model_operations WHERE state='UNCERTAIN'")=='t','FAIL: uncertain operation recorded usage')
         count=fake()['counts']['GENERATE'];time.sleep(1.2)
         source.require(fake()['counts']['GENERATE']==count,'FAIL: automatic billed retry')
