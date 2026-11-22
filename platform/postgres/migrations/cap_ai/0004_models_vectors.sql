@@ -40,19 +40,15 @@ CREATE TABLE cap_ai.model_profiles (
             'max_input_tokens',
             'max_output_tokens',
             'max_bytes',
-            'input_unit_price',
-            'output_unit_price',
             'timeout_ms'
         ]
         AND jsonb_typeof(limits) = 'object'
         AND (limits ->> 'max_input_tokens')::integer > 0
         AND (limits ->> 'max_output_tokens')::integer > 0
         AND (limits ->> 'max_bytes')::integer BETWEEN 1 AND 1048576
-        AND (limits ->> 'input_unit_price')::bigint >= 0
-        AND (limits ->> 'output_unit_price')::bigint >= 0
         AND (limits ->> 'timeout_ms')::integer BETWEEN 1 AND 120000
+        AND limits - ARRAY['max_input_tokens', 'max_output_tokens', 'max_bytes', 'timeout_ms'] = '{}'::jsonb
     ),
-    pricing_revision text NOT NULL,
     enabled boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (id, revision),
@@ -118,83 +114,60 @@ CREATE TABLE cap_ai.chunk_embeddings (
     )
 );
 
-CREATE TABLE cap_ai.budget_accounts (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    scope text NOT NULL CHECK (scope IN ('INSTALLATION', 'APP', 'USER')),
-    scope_key text NOT NULL,
-    period_start timestamptz NOT NULL,
-    period_end timestamptz NOT NULL,
-    limit_units bigint NOT NULL CHECK (limit_units >= 0),
-    reserved_units bigint NOT NULL DEFAULT 0 CHECK (reserved_units >= 0),
-    spent_units bigint NOT NULL DEFAULT 0 CHECK (spent_units >= 0),
-    pricing_revision text NOT NULL,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (scope, scope_key, period_start),
-    CHECK (period_end > period_start)
-);
-
-CREATE TABLE cap_ai.model_reservations (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    operation_key text NOT NULL UNIQUE CHECK (
+-- One durable operation per operation key. No model response or source data is
+-- stored: only bindings, lifecycle facts and bounded counters/codes.
+CREATE TABLE cap_ai.model_operations (
+    operation_key text PRIMARY KEY CHECK (
         length(operation_key) BETWEEN 1 AND 200
     ),
-    actor_id uuid REFERENCES core.users (id),
-    app_id text NOT NULL REFERENCES core.apps (app_id),
-    profile_id text NOT NULL,
-    profile_revision bigint NOT NULL,
-    fingerprint text NOT NULL CHECK (fingerprint ~ '^[0-9a-f]{64}$'),
-    state text NOT NULL DEFAULT 'RESERVED' CHECK (
-        state IN ('RESERVED', 'IN_FLIGHT', 'UNCERTAIN', 'SETTLED', 'CANCELLED')
+    actor_id uuid NOT NULL REFERENCES core.users (id),
+    app_id text NOT NULL REFERENCES core.apps (app_id) CHECK (
+        length(app_id) BETWEEN 1 AND 200
     ),
-    expires_at timestamptz NOT NULL,
-    estimated_units bigint NOT NULL CHECK (estimated_units > 0),
-    created_at timestamptz NOT NULL DEFAULT now(),
+    profile_id text NOT NULL CHECK (
+        length(profile_id) BETWEEN 1 AND 200
+    ),
+    profile_revision bigint NOT NULL CHECK (profile_revision > 0),
+    purpose text NOT NULL CHECK (
+        purpose IN ('EMBED', 'RERANK', 'GENERATE', 'OCR')
+    ),
+    fingerprint text NOT NULL CHECK (fingerprint ~ '^[0-9a-f]{64}$'),
+    state text NOT NULL DEFAULT 'CLAIMED' CHECK (
+        state IN ('CLAIMED', 'MAY_HAVE_SENT', 'SUCCEEDED', 'FAILED_UNSENT', 'UNCERTAIN')
+    ),
+    -- Dispatch proof is private to the row and never returned after begin.
+    dispatch_token uuid,
+    provider_request_id text CHECK (
+        provider_request_id IS NULL OR length(provider_request_id) BETWEEN 1 AND 200
+    ),
+    input_tokens bigint,
+    output_tokens bigint,
+    error_code text CHECK (
+        error_code IS NULL OR error_code ~ '^[A-Z][A-Z0-9_]{0,63}$'
+    ),
+    latency_ms bigint CHECK (
+        latency_ms IS NULL OR latency_ms BETWEEN 0 AND 86400000
+    ),
+    claimed_at timestamptz NOT NULL DEFAULT now(),
+    intent_at timestamptz,
+    finished_at timestamptz,
     updated_at timestamptz NOT NULL DEFAULT now(),
     FOREIGN KEY (
         profile_id, profile_revision
-    ) REFERENCES cap_ai.model_profiles (id, revision)
-);
-
-CREATE TABLE cap_ai.reservation_allocations (
-    reservation_id uuid NOT NULL REFERENCES cap_ai.model_reservations (id),
-    budget_account_id uuid NOT NULL REFERENCES cap_ai.budget_accounts (id),
-    reserved_units bigint NOT NULL CHECK (reserved_units > 0),
-    settled_units bigint CHECK (settled_units >= 0),
-    created_at timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (reservation_id, budget_account_id)
-);
-
-CREATE TABLE cap_ai.model_calls (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    reservation_id uuid NOT NULL REFERENCES cap_ai.model_reservations (id),
-    attempt_no integer NOT NULL CHECK (attempt_no > 0),
-    provider_request_id text,
-    state text NOT NULL DEFAULT 'PREPARED' CHECK (
-        state IN ('PREPARED', 'SENT', 'SUCCEEDED', 'FAILED', 'UNCERTAIN')
-    ),
-    input_tokens bigint CHECK (input_tokens >= 0),
-    output_tokens bigint CHECK (output_tokens >= 0),
-    latency_ms bigint CHECK (latency_ms >= 0),
-    error_code text,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (reservation_id, attempt_no)
-);
-
-CREATE TABLE cap_ai.usage_ledger (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    reservation_id uuid NOT NULL REFERENCES cap_ai.model_reservations (id),
-    call_id uuid REFERENCES cap_ai.model_calls (id),
-    account_id uuid NOT NULL REFERENCES cap_ai.budget_accounts (id),
-    event_key text NOT NULL UNIQUE,
-    kind text NOT NULL CHECK (
-        kind IN ('RESERVE', 'RELEASE', 'CHARGE', 'ADJUST')
-    ),
-    units bigint NOT NULL CHECK (units >= 0),
-    pricing_revision text NOT NULL,
-    occurred_at timestamptz NOT NULL DEFAULT now(),
-    created_at timestamptz NOT NULL DEFAULT now()
+    ) REFERENCES cap_ai.model_profiles (id, revision),
+    CHECK ((input_tokens IS NULL) = (output_tokens IS NULL)),
+    CHECK (coalesce(input_tokens, 0) >= 0 AND coalesce(output_tokens, 0) >= 0),
+    CHECK (state = 'SUCCEEDED' OR (input_tokens IS NULL AND output_tokens IS NULL)),
+    CHECK (state <> 'SUCCEEDED' OR error_code IS NULL),
+    CHECK (state NOT IN ('FAILED_UNSENT', 'UNCERTAIN') OR error_code IS NOT NULL),
+    CHECK (state <> 'FAILED_UNSENT' OR provider_request_id IS NULL),
+    CHECK (state <> 'CLAIMED' OR dispatch_token IS NULL),
+    CHECK (state IN ('CLAIMED', 'FAILED_UNSENT') OR dispatch_token IS NOT NULL),
+    CHECK (state NOT IN ('CLAIMED', 'MAY_HAVE_SENT') OR (
+        provider_request_id IS NULL AND error_code IS NULL AND latency_ms IS NULL AND finished_at IS NULL
+    )),
+    CHECK (state IN ('CLAIMED', 'FAILED_UNSENT') OR intent_at IS NOT NULL),
+    CHECK (state IN ('CLAIMED', 'MAY_HAVE_SENT') OR finished_at IS NOT NULL)
 );
 
 CREATE FUNCTION cap_ai.guard_model_history()
@@ -203,7 +176,7 @@ LANGUAGE plpgsql
 SET search_path = pg_catalog, cap_ai, public
 AS $$
 BEGIN
-  IF TG_OP = 'DELETE' OR TG_TABLE_NAME IN('usage_ledger', 'processing_policy_profiles') OR(to_jsonb(NEW) - 'enabled') IS DISTINCT FROM(to_jsonb(OLD) - 'enabled')
+  IF TG_OP = 'DELETE' OR TG_TABLE_NAME = 'processing_policy_profiles' OR(to_jsonb(NEW) - 'enabled') IS DISTINCT FROM(to_jsonb(OLD) - 'enabled')
     THEN
     RAISE EXCEPTION 'immutable model policy or history';
   END IF;
@@ -216,8 +189,6 @@ CREATE TRIGGER profile_history BEFORE UPDATE OR DELETE ON cap_ai.model_profiles 
 CREATE TRIGGER policy_history BEFORE UPDATE OR DELETE ON cap_ai.processing_policies FOR EACH ROW EXECUTE FUNCTION cap_ai.guard_model_history();
 
 CREATE TRIGGER policy_profile_history BEFORE UPDATE OR DELETE ON cap_ai.processing_policy_profiles FOR EACH ROW EXECUTE FUNCTION cap_ai.guard_model_history();
-
-CREATE TRIGGER ledger_history BEFORE UPDATE OR DELETE ON cap_ai.usage_ledger FOR EACH ROW EXECUTE FUNCTION cap_ai.guard_model_history();
 
 CREATE FUNCTION cap_ai.model_policy(
     actor uuid,
@@ -305,7 +276,7 @@ DECLARE
 BEGIN
   FOR r IN SELECT tablename
     FROM pg_tables
-    WHERE schemaname = 'cap_ai' AND tablename IN('model_profiles', 'processing_policy_profiles', 'embedding_generations', 'chunk_embeddings', 'budget_accounts', 'model_reservations', 'reservation_allocations', 'model_calls', 'usage_ledger') LOOP
+    WHERE schemaname = 'cap_ai' AND tablename IN('model_profiles', 'processing_policy_profiles', 'embedding_generations', 'chunk_embeddings', 'model_operations') LOOP
     EXECUTE format('ALTER TABLE cap_ai.%I OWNER TO dxos_ai_owner', r.tablename);
   END LOOP;
 END
@@ -329,162 +300,100 @@ GRANT EXECUTE ON FUNCTION cap_ai.model_policy(
 dxos_ai_api,
 dxos_ai_worker;
 
-CREATE FUNCTION cap_ai.reserve_model(req jsonb)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = pg_catalog, cap_ai, public
-AS $$
-DECLARE
-  r cap_ai.model_reservations;
-  a cap_ai.budget_accounts;
-  n integer := 0;
-  estimate bigint := (req->>'estimate')::bigint;
-BEGIN
-  IF estimate < 1 OR req->>'pricing_revision' IS NULL OR req->>'operation_key' IS NULL THEN
-    RAISE EXCEPTION 'invalid reservation' USING ERRCODE = 'P0409';
-  END IF;
-  PERFORM pg_advisory_xact_lock(hashtextextended(req->>'operation_key', 719));
-  SELECT * INTO r
-    FROM cap_ai.model_reservations
-    WHERE operation_key = req->>'operation_key';
-  IF FOUND THEN
-    IF r.actor_id IS DISTINCT FROM(req->>'actor_id')::uuid OR r.app_id <> req->>'app_id' OR r.profile_id <> req->>'profile_id'
-      OR r.profile_revision <> (req->>'profile_revision')::bigint OR r.estimated_units <> estimate OR r.fingerprint <> req->>'fingerprint'
-      THEN
-      RAISE EXCEPTION 'operation conflict' USING ERRCODE = 'P0409';
-    END IF;
-    RETURN jsonb_build_object('id', r.id, 'state', r.state);
-  END IF;
-  IF NOT EXISTS(SELECT FROM cap_ai.model_profiles
-    WHERE id = req->>'profile_id' AND revision = (req->>'profile_revision')::bigint AND enabled AND pricing_revision = req->>'pricing_revision')
-    THEN
-    RAISE EXCEPTION 'profile unavailable' USING ERRCODE = 'P0403';
-  END IF;
-  -- Lock every applicable original-period account in UUID order, before checking
-  -- any limit. Missing or overlapping accounts deny; no implicit unlimited scope.
-  FOR a IN SELECT *
-    FROM cap_ai.budget_accounts
-    WHERE period_start <= now() AND period_end > now() AND((scope = 'INSTALLATION' AND scope_key = 'installation')
-    OR(scope = 'APP' AND scope_key = req->>'app_id') OR(scope = 'USER' AND scope_key = req->>'actor_id'))
-    ORDER BY id FOR UPDATE LOOP
-    n := n + 1;
-    IF a.pricing_revision <> req->>'pricing_revision' OR a.limit_units - a.spent_units - a.reserved_units < estimate
-      THEN
-      RAISE EXCEPTION 'quota' USING ERRCODE = 'P0429';
-    END IF;
-  END LOOP;
-  IF n <> 3 OR(SELECT count(DISTINCT scope)
-    FROM cap_ai.budget_accounts
-    WHERE period_start <= now() AND period_end > now() AND((scope = 'INSTALLATION' AND scope_key = 'installation')
-    OR(scope = 'APP' AND scope_key = req->>'app_id') OR(scope = 'USER' AND scope_key = req->>'actor_id'))) <> 3
-    THEN
-    RAISE EXCEPTION 'budget accounts unavailable' USING ERRCODE = 'P0429';
-  END IF;
-  INSERT INTO cap_ai.model_reservations(operation_key, actor_id, app_id, profile_id, profile_revision, fingerprint, expires_at, estimated_units)
-    VALUES(req->>'operation_key', (req->>'actor_id')::uuid, req->>'app_id', req->>'profile_id', (req->>'profile_revision')::bigint, req->>'fingerprint', now() + interval '5 minutes', estimate)
-    RETURNING * INTO r;
-  FOR a IN SELECT *
-    FROM cap_ai.budget_accounts
-    WHERE period_start <= now() AND period_end > now() AND((scope = 'INSTALLATION' AND scope_key = 'installation')
-    OR(scope = 'APP' AND scope_key = req->>'app_id') OR(scope = 'USER' AND scope_key = req->>'actor_id'))
-    ORDER BY id LOOP
-    UPDATE cap_ai.budget_accounts SET reserved_units = reserved_units + estimate, updated_at = now()
-      WHERE id = a.id;
-    INSERT INTO cap_ai.reservation_allocations(reservation_id, budget_account_id, reserved_units)
-      VALUES(r.id, a.id, estimate);
-    INSERT INTO cap_ai.usage_ledger(reservation_id, account_id, event_key, kind, units, pricing_revision)
-      VALUES(r.id, a.id, r.id || ':reserve:' || a.id, 'RESERVE', estimate, a.pricing_revision);
-  END LOOP;
-  RETURN jsonb_build_object('id', r.id, 'state', r.state);
-END
-$$;
+-- The gateway is the only dispatch boundary. Each interface is security definer
+-- with a fixed search path, an explicit deployment-session check, and a generic
+-- operation conflict that never discloses or mutates another binding.
 
-CREATE FUNCTION cap_ai.settle_model(reservation uuid, event text, usage jsonb)
-RETURNS boolean
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = pg_catalog, cap_ai, public
-AS $$
-DECLARE
-  r cap_ai.model_reservations;
-  a record;
-  units bigint := (usage->>'units')::bigint;
-  existing cap_ai.usage_ledger;
-BEGIN
-  IF units IS NULL OR units < 0 OR event IS NULL OR length(event) NOT BETWEEN 1 AND 200 THEN
-    RAISE EXCEPTION 'invalid settlement' USING ERRCODE = 'P0409';
-  END IF;
-  SELECT * INTO STRICT r
-    FROM cap_ai.model_reservations
-    WHERE id = reservation FOR UPDATE;
-  IF r.state = 'CANCELLED' THEN
-    RAISE EXCEPTION 'cancelled reservation' USING ERRCODE = 'P0409';
-  END IF;
-  IF r.state = 'SETTLED' THEN
-    SELECT * INTO existing
-      FROM cap_ai.usage_ledger
-      WHERE reservation_id = r.id AND kind = 'CHARGE'
-      ORDER BY account_id
-      LIMIT 1;
-    IF NOT FOUND OR existing.units <> units OR existing.pricing_revision <> usage->>'pricing_revision' OR existing.event_key <> r.id || ':' || event || ':' || existing.account_id
-      THEN
-      RAISE EXCEPTION 'settlement conflict' USING ERRCODE = 'P0409';
-    END IF;
-    RETURN true;
-  END IF;
-  FOR a IN SELECT ba.*, ra.reserved_units allocation
-    FROM cap_ai.budget_accounts ba
-    JOIN cap_ai.reservation_allocations ra ON ra.budget_account_id = ba.id
-    WHERE ra.reservation_id = r.id
-    ORDER BY ba.id FOR UPDATE OF ba LOOP
-    IF a.pricing_revision IS DISTINCT FROM usage->>'pricing_revision' THEN
-      RAISE EXCEPTION 'pricing conflict' USING ERRCODE = 'P0409';
-    END IF;
-    -- Actual reconciliation may reveal overage: record the debt in the original
-    -- period; future reservations deny. Never discard a possibly billed charge.
-    UPDATE cap_ai.budget_accounts SET reserved_units = reserved_units - a.allocation, spent_units = spent_units + units, updated_at = now()
-      WHERE id = a.id;
-    UPDATE cap_ai.reservation_allocations SET settled_units = units
-      WHERE reservation_id = r.id AND budget_account_id = a.id;
-    INSERT INTO cap_ai.usage_ledger(reservation_id, account_id, event_key, kind, units, pricing_revision)
-      VALUES(r.id, a.id, r.id || ':release:' || a.id, 'RELEASE', a.allocation, a.pricing_revision), (r.id, a.id, r.id || ':' || event || ':' || a.id, 'CHARGE', units, a.pricing_revision);
-  END LOOP;
-  UPDATE cap_ai.model_calls SET input_tokens = (usage->>'input_tokens')::bigint, output_tokens = (usage->>'output_tokens')::bigint, updated_at = now()
-    WHERE reservation_id = r.id;
-  UPDATE cap_ai.model_reservations SET state = 'SETTLED', updated_at = now()
-    WHERE id = r.id;
-  RETURN true;
-END
-$$;
-
-CREATE FUNCTION cap_ai.begin_model_call(reservation uuid)
+CREATE FUNCTION cap_ai.claim_model_operation(
+    key text,
+    actor uuid,
+    app text,
+    profile text,
+    revision bigint,
+    purpose text,
+    fingerprint text
+)
 RETURNS text
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, cap_ai, public
 AS $$
 DECLARE
-  r cap_ai.model_reservations;
-  call uuid;
+  existing cap_ai.model_operations;
 BEGIN
-  SELECT * INTO STRICT r
-    FROM cap_ai.model_reservations
-    WHERE id = reservation FOR UPDATE;
-  IF r.state <> 'RESERVED' OR r.expires_at <= now() THEN
-    RETURN '';
+  IF session_user <> 'dxos_ai_gateway' OR current_setting('role') NOT IN('none', 'dxos_ai_gateway') THEN
+    RAISE EXCEPTION 'model gateway session required' USING ERRCODE = '42501';
   END IF;
-  INSERT INTO cap_ai.model_calls(reservation_id, attempt_no, state)
-    VALUES(r.id, 1, 'SENT')
-    RETURNING id INTO call;
-  UPDATE cap_ai.model_reservations SET state = 'IN_FLIGHT', updated_at = now()
-    WHERE id = r.id;
-  RETURN call::text;
+  IF key IS NULL OR length(key) NOT BETWEEN 1 AND 200 OR actor IS NULL OR app IS NULL OR length(app) NOT BETWEEN 1 AND 200
+    OR profile IS NULL OR length(profile) NOT BETWEEN 1 AND 200 OR revision IS NULL OR revision < 1 OR purpose IS NULL
+    OR purpose NOT IN('EMBED', 'RERANK', 'GENERATE', 'OCR') OR fingerprint IS NULL OR fingerprint !~ '^[0-9a-f]{64}$'
+    THEN
+    RAISE EXCEPTION 'operation conflict' USING ERRCODE = 'P0409';
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(key, 719));
+  SELECT m.* INTO existing
+    FROM cap_ai.model_operations m
+    WHERE m.operation_key = key FOR UPDATE;
+  IF FOUND THEN
+    IF existing.actor_id IS DISTINCT FROM actor OR existing.app_id IS DISTINCT FROM app
+      OR existing.profile_id IS DISTINCT FROM profile OR existing.profile_revision IS DISTINCT FROM revision
+      OR existing.purpose IS DISTINCT FROM purpose OR existing.fingerprint IS DISTINCT FROM fingerprint
+      THEN
+      RAISE EXCEPTION 'operation conflict' USING ERRCODE = 'P0409';
+    END IF;
+    RETURN existing.state;
+  END IF;
+  INSERT INTO cap_ai.model_operations(operation_key, actor_id, app_id, profile_id, profile_revision, purpose, fingerprint)
+    VALUES(key, actor, app, profile, revision, purpose, fingerprint);
+  RETURN 'CLAIMED';
 END
 $$;
 
-CREATE FUNCTION cap_ai.finish_model_call(
-    reservation uuid, outcome text, provider_request text
+CREATE FUNCTION cap_ai.begin_model_operation(key text, fingerprint text)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, cap_ai, public
+AS $$
+DECLARE
+  existing cap_ai.model_operations;
+  token uuid;
+BEGIN
+  IF session_user <> 'dxos_ai_gateway' OR current_setting('role') NOT IN('none', 'dxos_ai_gateway') THEN
+    RAISE EXCEPTION 'model gateway session required' USING ERRCODE = '42501';
+  END IF;
+  IF key IS NULL OR length(key) NOT BETWEEN 1 AND 200 OR fingerprint IS NULL OR fingerprint !~ '^[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'operation conflict' USING ERRCODE = 'P0409';
+  END IF;
+  SELECT m.* INTO existing
+    FROM cap_ai.model_operations m
+    WHERE m.operation_key = key FOR UPDATE;
+  IF NOT FOUND OR existing.fingerprint <> fingerprint THEN
+    RAISE EXCEPTION 'operation conflict' USING ERRCODE = 'P0409';
+  END IF;
+  -- Only the winning CLAIMED -> MAY_HAVE_SENT transition returns a token. Any
+  -- later call returns null: never query or resend an existing dispatch.
+  IF existing.state <> 'CLAIMED' THEN
+    RETURN NULL;
+  END IF;
+  token := gen_random_uuid();
+  UPDATE cap_ai.model_operations m SET state = 'MAY_HAVE_SENT', dispatch_token = token,
+    intent_at = now(), updated_at = now()
+    WHERE m.operation_key = key AND m.state = 'CLAIMED';
+  RETURN token;
+END
+$$;
+
+CREATE FUNCTION cap_ai.finish_model_operation(
+    key text,
+    fingerprint text,
+    dispatch_token uuid,
+    state text,
+    provider_request_id text,
+    input_tokens bigint,
+    output_tokens bigint,
+    error_code text,
+    latency_ms bigint
 )
 RETURNS boolean
 LANGUAGE plpgsql
@@ -492,39 +401,76 @@ SECURITY DEFINER
 SET search_path = pg_catalog, cap_ai, public
 AS $$
 DECLARE
-  r cap_ai.model_reservations;
-  a record;
+  existing cap_ai.model_operations;
+  target text := state;
+  v_provider text := provider_request_id;
+  v_input bigint := input_tokens;
+  v_output bigint := output_tokens;
+  v_error text := error_code;
+  v_latency bigint := latency_ms;
 BEGIN
-  SELECT * INTO STRICT r
-    FROM cap_ai.model_reservations
-    WHERE id = reservation FOR UPDATE;
-  IF(outcome = 'CANCELLED' AND r.state = 'RESERVED') OR(outcome = 'CANCELLED_UNSENT' AND r.state = 'IN_FLIGHT')
-    THEN
-    UPDATE cap_ai.model_calls SET state = 'FAILED', error_code = 'CANCELLED_UNSENT', updated_at = now()
-      WHERE reservation_id = r.id AND state = 'SENT';
-    FOR a IN SELECT ba.*, ra.reserved_units allocation
-      FROM cap_ai.budget_accounts ba
-      JOIN cap_ai.reservation_allocations ra ON ra.budget_account_id = ba.id
-      WHERE ra.reservation_id = r.id
-      ORDER BY ba.id FOR UPDATE OF ba LOOP
-      UPDATE cap_ai.budget_accounts SET reserved_units = reserved_units - a.allocation, updated_at = now()
-        WHERE id = a.id;
-      INSERT INTO cap_ai.usage_ledger(reservation_id, account_id, event_key, kind, units, pricing_revision)
-        VALUES(r.id, a.id, r.id || ':cancel:' || a.id, 'RELEASE', a.allocation, a.pricing_revision);
-    END LOOP;
-    UPDATE cap_ai.model_reservations SET state = 'CANCELLED', updated_at = now()
-      WHERE id = r.id;
-    RETURN true;
+  IF session_user <> 'dxos_ai_gateway' OR current_setting('role') NOT IN('none', 'dxos_ai_gateway') THEN
+    RAISE EXCEPTION 'model gateway session required' USING ERRCODE = '42501';
   END IF;
-  IF r.state NOT IN('IN_FLIGHT', 'UNCERTAIN') OR outcome NOT IN('UNCERTAIN', 'SUCCEEDED') OR length(coalesce(provider_request, '')) > 200
+  IF key IS NULL OR length(key) NOT BETWEEN 1 AND 200 OR fingerprint IS NULL OR fingerprint !~ '^[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'operation conflict' USING ERRCODE = 'P0409';
+  END IF;
+  -- A rejected call changes nothing: validate the supplied shape before the lock.
+  IF target IS NULL OR target NOT IN('SUCCEEDED', 'FAILED_UNSENT', 'UNCERTAIN')
+    OR (input_tokens IS NULL) <> (output_tokens IS NULL) OR coalesce(input_tokens, 0) < 0 OR coalesce(output_tokens, 0) < 0
+    OR coalesce(latency_ms, 0) < 0 OR length(coalesce(provider_request_id, '')) > 200
+    OR length(coalesce(error_code, '')) > 64
     THEN
     RETURN false;
   END IF;
-  UPDATE cap_ai.model_calls SET latency_ms = greatest(0, (extract(epoch FROM(clock_timestamp() - created_at)) * 1000)::bigint), state = outcome, provider_request_id = nullif(provider_request, ''), error_code = CASE
-    WHEN outcome = 'UNCERTAIN' THEN 'PROVIDER_UNCERTAIN' ELSE NULL END, updated_at = now()
-    WHERE reservation_id = r.id AND attempt_no = 1;
-  UPDATE cap_ai.model_reservations SET state = 'UNCERTAIN', updated_at = now()
-    WHERE id = r.id;
+  SELECT m.* INTO existing
+    FROM cap_ai.model_operations m
+    WHERE m.operation_key = key FOR UPDATE;
+  IF NOT FOUND OR existing.fingerprint <> fingerprint THEN
+    RAISE EXCEPTION 'operation conflict' USING ERRCODE = 'P0409';
+  END IF;
+  -- Terminal rows are immutable: only an exact finalization replay succeeds.
+  IF existing.state IN('SUCCEEDED', 'FAILED_UNSENT', 'UNCERTAIN') THEN
+    RETURN existing.state = target
+      AND existing.dispatch_token IS NOT DISTINCT FROM dispatch_token
+      AND existing.provider_request_id IS NOT DISTINCT FROM provider_request_id
+      AND existing.input_tokens IS NOT DISTINCT FROM input_tokens
+      AND existing.output_tokens IS NOT DISTINCT FROM output_tokens
+      AND existing.error_code IS NOT DISTINCT FROM error_code
+      AND existing.latency_ms IS NOT DISTINCT FROM latency_ms;
+  END IF;
+  -- A definite pre-intent rejection is the only CLAIMED exit, with no token.
+  IF existing.state = 'CLAIMED' THEN
+    IF target <> 'FAILED_UNSENT' OR dispatch_token IS NOT NULL OR provider_request_id IS NOT NULL
+      OR input_tokens IS NOT NULL OR output_tokens IS NOT NULL OR error_code IS NULL
+      THEN
+      RETURN false;
+    END IF;
+    UPDATE cap_ai.model_operations m SET state = target, error_code = v_error, latency_ms = v_latency,
+      finished_at = now(), updated_at = now()
+      WHERE m.operation_key = key AND m.state = 'CLAIMED';
+    RETURN true;
+  END IF;
+  -- MAY_HAVE_SENT requires the stored non-null dispatch proof and state-specific data.
+  IF existing.dispatch_token IS NULL OR dispatch_token IS NULL OR existing.dispatch_token <> dispatch_token THEN
+    RETURN false;
+  END IF;
+  IF target = 'SUCCEEDED' AND error_code IS NOT NULL THEN
+    RETURN false;
+  END IF;
+  IF target IN('FAILED_UNSENT', 'UNCERTAIN') AND error_code IS NULL THEN
+    RETURN false;
+  END IF;
+  IF target = 'FAILED_UNSENT' AND provider_request_id IS NOT NULL THEN
+    RETURN false;
+  END IF;
+  IF target <> 'SUCCEEDED' AND (input_tokens IS NOT NULL OR output_tokens IS NOT NULL) THEN
+    RETURN false;
+  END IF;
+  UPDATE cap_ai.model_operations m SET state = target, provider_request_id = v_provider,
+    input_tokens = v_input, output_tokens = v_output, error_code = v_error,
+    latency_ms = v_latency, finished_at = now(), updated_at = now()
+    WHERE m.operation_key = key AND m.state = 'MAY_HAVE_SENT';
   RETURN true;
 END
 $$;
@@ -536,7 +482,7 @@ BEGIN
   FOR r IN SELECT p.oid::regprocedure signature
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'cap_ai' AND p.proname IN('reserve_model', 'settle_model', 'begin_model_call', 'finish_model_call') LOOP
+    WHERE n.nspname = 'cap_ai' AND p.proname IN('claim_model_operation', 'begin_model_operation', 'finish_model_operation') LOOP
     EXECUTE format('ALTER FUNCTION %s OWNER TO dxos_ai_owner', r.signature);
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', r.signature);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO dxos_ai_gateway', r.signature);
@@ -544,33 +490,8 @@ BEGIN
 END
 $$;
 
-CREATE FUNCTION cap_ai.pending_model_charges()
-RETURNS TABLE (
-    reservation_id uuid,
-    provider_id text,
-    provider_request_id text,
-    pricing_revision text,
-    updated_at timestamptz
-)
-LANGUAGE sql STABLE
-SECURITY DEFINER
-SET search_path = pg_catalog, cap_ai, public
-AS $$
-SELECT r.id, p.provider_id, c.provider_request_id, p.pricing_revision, r.updated_at
-  FROM cap_ai.model_reservations r
-  JOIN cap_ai.model_profiles p ON p.id = r.profile_id AND p.revision = r.profile_revision
-  LEFT JOIN cap_ai.model_calls c ON c.reservation_id = r.id AND c.attempt_no = 1
-  WHERE r.state IN('IN_FLIGHT', 'UNCERTAIN') AND r.updated_at < now() - interval '2 minutes'
-  ORDER BY r.updated_at, r.id
-  LIMIT 100
-$$;
-
-ALTER FUNCTION cap_ai.pending_model_charges() OWNER TO dxos_ai_owner;
-
-REVOKE ALL ON FUNCTION cap_ai.pending_model_charges()
-FROM public;
-
-GRANT EXECUTE ON FUNCTION cap_ai.pending_model_charges() TO dxos_ai_gateway;
+-- Direct table and token access stay inside the owner boundary.
+REVOKE ALL ON TABLE cap_ai.model_operations FROM PUBLIC,dxos_ai_gateway,dxos_ai_model_catalog,dxos_ai_api,dxos_ai_worker;
 
 -- Reading approved sources remains independent from model availability. Egress
 -- is checked separately by model_policy/worker_model_policy.
