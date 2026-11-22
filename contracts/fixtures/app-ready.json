@@ -66,8 +66,7 @@
       {
         "table": "cap_work.work_items",
         "roles": [
-          "role_procurement_manager",
-          "role_procurement_finance"
+          "role_procurement_manager"
         ],
         "columns": [
           "id",

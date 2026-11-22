@@ -21,6 +21,30 @@ func TestWorkItemFilterFollowsSourceRecordScope(t *testing.T) {
 		`{"_and":[{"app_id":{"_eq":"procurement"}},{"_or":[{"source_type":{"_is_null":true}}]}]}`)
 }
 
+func TestGeneratedWorkItemPermissionsExcludeUnsharedRoles(t *testing.T) {
+	app := loadFixtureApp(t)
+	ops, err := GenerateHasuraOperations(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := false
+	for _, op := range ops {
+		args := op.Args.(map[string]any)
+		if op.Type != "pg_create_select_permission" || args["table"] != (TableRef{Schema: "cap_work", Name: "work_items"}) {
+			continue
+		}
+		switch args["role"] {
+		case "role_procurement_manager":
+			manager = true
+		case "role_procurement_finance":
+			t.Fatal("finance must not read procurement work items")
+		}
+	}
+	if !manager {
+		t.Fatal("the manager's work item select permission is missing")
+	}
+}
+
 func TestGeneratedWorkItemPermissionAndRelationships(t *testing.T) {
 	app := loadFixtureApp(t)
 	ops, err := GenerateHasuraOperations(app)
