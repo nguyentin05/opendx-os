@@ -22,24 +22,29 @@ type Notification struct {
 	SpecDigest string `json:"spec_digest"`
 }
 type Dispatcher struct {
-	DB              *sql.DB
-	Endpoint, Token string
-	Client          *http.Client
+	DB       *sql.DB
+	Endpoint string
+	Token    TokenGetter
+	Client   *http.Client
 }
 
 func (d *Dispatcher) Deliver(ctx context.Context, n Notification) error {
 	u, e := url.Parse(d.Endpoint)
-	if e != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "" && u.Path != "/" || (u.Scheme != "http" && u.Scheme != "https") || d.Token == "" {
+	if e != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "" && u.Path != "/" || (u.Scheme != "http" && u.Scheme != "https") || d.Token == nil {
 		return fmt.Errorf("invalid package delivery configuration")
 	}
 	body, _ := json.Marshal(map[string]any{"schema_version": 1, "app_id": n.AppID, "publication_generation": n.Generation, "spec_digest": n.SpecDigest})
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
+	token, e := d.Token(ctx)
+	if e != nil || strings.TrimSpace(token) == "" {
+		return fmt.Errorf("package delivery unavailable")
+	}
 	r, e := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(d.Endpoint, "/")+"/internal/v1/package-sources/reconcile", bytes.NewReader(body))
 	if e != nil {
 		return fmt.Errorf("invalid package delivery")
 	}
-	r.Header.Set("Authorization", "Bearer "+d.Token)
+	r.Header.Set("Authorization", "Bearer "+token)
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Idempotency-Key", n.EventID)
 	client := http.Client{Timeout: 20 * time.Second}

@@ -35,7 +35,7 @@ changes are in [CHANGELOG.md](CHANGELOG.md); open work is tracked in
 - [x] In-memory access-token refresh before expiry, without remounting open screens (#38).
 - [x] Action inbox derived from record state, with the review work item closed by `complete_work_item` (#42).
 - [x] Vietnamese Workspace UI copy and sample application labels (#45).
-- [ ] Run `cap-ai` from the default Compose stack without manual token setup.
+- [x] Run `cap-ai` from the default Compose stack without manual token setup.
 - [ ] README quickstart and screenshots (#47), documentation pass (#46), and the PoF checklist (#48).
 
 ## Later

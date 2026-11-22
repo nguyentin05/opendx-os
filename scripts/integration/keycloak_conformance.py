@@ -40,6 +40,11 @@ CLIENT_ID = "dxos-portal"
 USERNAME = "conformance-user"
 PASSWORD = "conformance-password"
 WORKSPACE_ID = "11111111-1111-4111-8111-111111111111"
+SERVICE_CLIENTS = [
+    ("dxos-rag-worker", "33333333-3333-4333-8333-000000000001"),
+    ("dxos-file-service", "33333333-3333-4333-8333-000000000002"),
+    ("dxos-rag-dispatcher", "33333333-3333-4333-8333-000000000003"),
+]
 
 
 def request(path, data=None, token=None, form=False, method=None):
@@ -109,6 +114,48 @@ def main():
             check(custom == "dxos-runtime", f"audience mapper targets {custom!r}, expected 'dxos-runtime'")
         client["directAccessGrantsEnabled"] = True
         request(f"/admin/realms/{REALM}/clients/{client['id']}", client, token=admin, method="PUT")
+
+    # Confidential service clients ship disabled with a generated secret, so a
+    # stack without the knowledge overlay cannot mint service tokens. rag-up
+    # enables them with its own secrets; the check below does the same.
+    for client_id, subject in SERVICE_CLIENTS:
+        clients = request(f"/admin/realms/{REALM}/clients?clientId={client_id}", token=admin)
+        check(len(clients) == 1, f"{client_id} client is missing")
+        if not clients:
+            continue
+        client = clients[0]
+        check(client.get("enabled") is False, f"{client_id} must be imported disabled")
+        check(client.get("publicClient") is False, f"{client_id} must be confidential")
+        check(client.get("serviceAccountsEnabled") is True, f"{client_id} has no service account")
+        check(client.get("standardFlowEnabled") is False, f"{client_id} must not use the browser flow")
+        check(client.get("directAccessGrantsEnabled") is False, f"{client_id} must not use the password grant")
+        installed = request(f"/admin/realms/{REALM}/clients/{client['id']}/client-secret", token=admin).get("value") or ""
+        check(len(installed) >= 16 and "${" not in installed, f"{client_id} imported without a generated secret")
+        for guess in ("", "${RAG_WORKER_CLIENT_SECRET}"):
+            try:
+                request(f"/realms/{REALM}/protocol/openid-connect/token",
+                        {"grant_type": "client_credentials", "client_id": client_id, "client_secret": guess}, form=True)
+                errors.append(f"{client_id} issued a token for a guessed secret")
+            except urllib.error.HTTPError:
+                pass
+        secret = f"conformance-{client_id}-secret"
+        # A partial representation recreates the service account; send it whole.
+        client.update(enabled=True, secret=secret)
+        request(f"/admin/realms/{REALM}/clients/{client['id']}", client, token=admin, method="PUT")
+        try:
+            token = request(
+                f"/realms/{REALM}/protocol/openid-connect/token",
+                {"grant_type": "client_credentials", "client_id": client_id, "client_secret": secret},
+                form=True,
+            )["access_token"]
+            claims = decode_claims(token)
+            check(claims.get("sub") == subject, f"{client_id} subject is {claims.get('sub')!r}, expected {subject!r}")
+            check(claims.get("azp") == client_id, f"{client_id} authorized party is {claims.get('azp')!r}")
+            audience = claims.get("aud")
+            audiences = audience if isinstance(audience, list) else [audience]
+            check("dxos-runtime" in audiences, f"{client_id} audience is {audience!r}, expected dxos-runtime")
+        except urllib.error.HTTPError as error:
+            errors.append(f"{client_id} client-credentials grant returned {error.code}")
 
     user_id = None
     try:
@@ -213,7 +260,7 @@ def main():
         return 1
 
     print(
-        "[keycloak-conformance] PASS: realm discovery, JWKS, audience mapper, token claims, "
+        "[keycloak-conformance] PASS: realm discovery, JWKS, audience mapper, portal and service-client token claims, "
         "brute-force and password policy, admin-only profile edits, and wrong-password rejection verified."
     )
     return 0

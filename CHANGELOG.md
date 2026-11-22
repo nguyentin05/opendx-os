@@ -13,6 +13,12 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Added
 
+- Compose: `make rag-up` starts the stack with cap-ai, the personal library and
+  the FTS-only Assistant, creating local secrets and renewing the worker, File
+  Service and dispatcher tokens with Keycloak client credentials. The realm
+  ships those service clients disabled until `rag-up` enables them, and
+  Keycloak's public hostname is fixed with `KEYCLOAK_HOSTNAME` so tokens carry
+  one issuer.
 - Manifest: tables gain an optional `ui.title`, shown in the portal instead of
   the table name, and an optional `ui.inboxActions`, so a record enters the
   "Chờ tôi xử lý" inbox only for the commands that move it forward rather than
