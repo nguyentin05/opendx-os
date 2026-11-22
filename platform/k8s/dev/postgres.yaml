@@ -117,6 +117,8 @@ spec:
                 path: migrations/core/0002_private_markdown.sql
               - key: core-0003_publication_generation.sql
                 path: migrations/core/0003_publication_generation.sql
+              - key: core-0004_attachment_refusal.sql
+                path: migrations/core/0004_attachment_refusal.sql
               - key: cap_ai-0001_metadata_jobs.sql
                 path: migrations/cap_ai/0001_metadata_jobs.sql
               - key: cap_ai-0002_docir_fts.sql
