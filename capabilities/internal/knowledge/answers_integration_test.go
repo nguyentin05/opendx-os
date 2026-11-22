@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -153,6 +154,64 @@ func TestAnswersUsageResponseShape(t *testing.T) {
 				t.Fatalf("usage shape lost in response: %s", body)
 			}
 		})
+	}
+}
+
+type uncertainAnswerProvider struct{ calls int }
+
+func (p *uncertainAnswerProvider) Invoke(context.Context, models.Profile, models.Payload) (models.Result, error) {
+	p.calls++
+	return models.Result{}, errors.New("provider timeout")
+}
+
+// A possibly sent answer generation is public uncertainty: optional generation
+// returns 200 SEARCH_ONLY with only the current authorized results, and
+// require_generation reaches the same sanitized 503 code.
+func TestAnswersUncertaintyPublicContract(t *testing.T) {
+	db, s, a, _ := semanticFixture(t)
+	if _, e := db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,enabled) SELECT 'local-gen',revision,'GENERATE','LOCAL',provider_id,model_id,limits,enabled FROM cap_ai.model_profiles WHERE id='embed';INSERT INTO cap_ai.processing_policy_profiles VALUES('reviewed',1,'local-gen',1,now());`); e != nil {
+		t.Fatal(e)
+	}
+	generate := models.Profile{ID: "local-gen", Revision: 1, Purpose: "GENERATE", Execution: "LOCAL",
+		ProviderID: "fake", ModelID: "fake", Enabled: true,
+		Limits: models.Limits{MaxInputTokens: 8192, MaxOutputTokens: 512, MaxBytes: 16384, TimeoutMS: 500}}
+	provider := &uncertainAnswerProvider{}
+	g := &models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}
+	s.ConfigureModels(g, models.Profile{}, generate)
+	for _, tc := range []struct {
+		name, body string
+		status     int
+	}{
+		{"optional generation", `{"scope":{"kind":"APP","app_id":"library"},"query":"Director"}`, 200},
+		{"required generation", `{"scope":{"kind":"APP","app_id":"library"},"query":"Director","require_generation":true}`, 503},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest("POST", "/api/cap/ai/answers", strings.NewReader(tc.body))
+			r = r.WithContext(auth.WithIdentity(r.Context(), a))
+			w := httptest.NewRecorder()
+			s.Handler().ServeHTTP(w, r)
+			body := w.Body.String()
+			if w.Code != tc.status || strings.Contains(body, "MODEL_UNAVAILABLE") {
+				t.Fatalf("status=%d body=%s", w.Code, body)
+			}
+			if tc.status == 503 {
+				if !strings.Contains(body, `"code":"MODEL_CALL_UNCERTAIN"`) {
+					t.Fatalf("sanitized uncertainty missing: %s", body)
+				}
+				return
+			}
+			for _, want := range []string{`"status":"SEARCH_ONLY"`, `"reason":"MODEL_CALL_UNCERTAIN"`, `"answer":null`, `"citations":[]`, `"chunk_id":"`} {
+				if !strings.Contains(body, want) {
+					t.Fatalf("missing %s in %s", want, body)
+				}
+			}
+			if strings.Contains(body, `"usage"`) {
+				t.Fatalf("uncertain answer exposed usage: %s", body)
+			}
+		})
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls=%d", provider.calls)
 	}
 }
 

@@ -53,17 +53,25 @@ func effectiveSourceKinds(getenv func(string) string) (packages, personal bool) 
 	return qualified && getenv("RAG_PACKAGE_ENABLED") == "true", qualified && getenv("RAG_PERSONAL_ENABLED") == "true"
 }
 
-func validateChatBillingApp(ctx context.Context, db *sql.DB, appID string) error {
+// processingAppID reads only the supported setting. The retired
+// AI_AGENT_BILLING_APP_ID name is deliberately not accepted as a fallback.
+func processingAppID(getenv func(string) string) string {
+	return strings.TrimSpace(getenv("AI_AGENT_PROCESSING_APP_ID"))
+}
+
+// validateChatProcessingApp requires a genuine registered Ready app. It is
+// checked independently from the apps that actually own the visible sources.
+func validateChatProcessingApp(ctx context.Context, db *sql.DB, appID string) error {
 	var ready bool
 	if strings.TrimSpace(appID) == "" || db == nil ||
 		db.QueryRowContext(ctx, `SELECT EXISTS (SELECT FROM core.apps WHERE app_id = $1 AND status = 'Ready')`, appID).Scan(&ready) != nil || !ready {
-		return errors.New("chat requires a Ready AI_AGENT_BILLING_APP_ID")
+		return errors.New("chat requires a Ready AI_AGENT_PROCESSING_APP_ID")
 	}
 	return nil
 }
 
 func newRuntimeChatHandler(authenticator agent.ChatAuthenticator, sources *knowledge.Store, modelsGateway *models.Gateway,
-	runtimeResolver *models.RuntimeResolver, billingAppID string, packages, personal bool,
+	runtimeResolver *models.RuntimeResolver, processingApp string, packages, personal bool,
 ) *agent.Handler {
 	db := authenticator.DB
 	store := &agent.PostgresConversationStore{DB: db}
@@ -85,9 +93,9 @@ func newRuntimeChatHandler(authenticator agent.ChatAuthenticator, sources *knowl
 	search.ConfigureModels(modelsGateway, models.Profile{}, models.Profile{})
 	search.ConfigureModelResolver(resolver)
 	retrieval := &agent.RetrievalCoordinator{Scopes: scopes, Search: &search, Reader: reader}
-	checker := agent.NewSourcePolicyChecker(reader, resolver, policy, billingAppID)
+	checker := agent.NewSourcePolicyChecker(reader, resolver, policy, processingApp)
 	memory := agent.NewWorkingMemory(scopes.FilterHistory(checker), 0)
-	reply := agent.NewOrchestrator(store, memory, retrieval, reader, resolver, modelsGateway, billingAppID)
+	reply := agent.NewOrchestrator(store, memory, retrieval, reader, resolver, modelsGateway, processingApp)
 	return agent.NewHandler(authenticator, store, reply, scopes, sources)
 }
 
@@ -117,14 +125,14 @@ func main() {
 		log.Fatal("package processing requires qualified predecessors")
 	}
 	var chatVerifier auth.SubjectVerifier
-	var billingAppID string
+	var processingApp string
 	if chatEnabled(os.Getenv) {
-		billingAppID = os.Getenv("AI_AGENT_BILLING_APP_ID")
-		billingCtx, billingCancel := context.WithTimeout(context.Background(), 3*time.Second)
-		billingErr := validateChatBillingApp(billingCtx, db, billingAppID)
-		billingCancel()
-		if billingErr != nil {
-			log.Fatal(billingErr)
+		processingApp = processingAppID(os.Getenv)
+		processingCtx, processingCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		processingErr := validateChatProcessingApp(processingCtx, db, processingApp)
+		processingCancel()
+		if processingErr != nil {
+			log.Fatal(processingErr)
 		}
 		chatVerifier, err = auth.NewSubjectVerifier(context.Background(), identityConfig)
 		if err != nil {
@@ -189,7 +197,7 @@ func main() {
 	}
 	var chat http.Handler
 	if chatVerifier != nil {
-		chat = newRuntimeChatHandler(agent.ChatAuthenticator{Verifier: chatVerifier, DB: db}, store, gateway, resolver, billingAppID, packageEnabled, personal)
+		chat = newRuntimeChatHandler(agent.ChatAuthenticator{Verifier: chatVerifier, DB: db}, store, gateway, resolver, processingApp, packageEnabled, personal)
 	}
 	nativeAuthority := access.Authenticator{Authority: knowledge.NewAuthority(verifier, db)}
 	nativeEnabled := os.Getenv("RAG_METADATA_ENABLED") == "true" && os.Getenv("RAG_SOURCE_QUALIFIED") == "true"

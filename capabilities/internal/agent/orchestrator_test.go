@@ -122,15 +122,15 @@ func unitTurn(t *testing.T, store *turnStore, evidence ...Evidence) (*Orchestrat
 		return RetrievalResult{Evidence: evidence, SearchStatus: "HYBRID", Warnings: []string{"SEMANTIC_UNAVAILABLE"}}, nil
 	})
 	policy := turnPolicyFunc(func(_ context.Context, actor *auth.Identity, op models.Operation) (models.Approval, error) {
-		if actor.UserID != retrievalActor.UserID || actor.Role != "" || op.Key == "" || op.AppID != "agent_billing" ||
+		if actor.UserID != retrievalActor.UserID || actor.Role != "" || op.Key == "" || op.AppID != "agent_processing" ||
 			op.ScopeKind != "AGENT" || op.Purpose != "GENERATE" || op.ProfileID != binding.Profile.ID ||
 			op.ProfileRevision != binding.Profile.Revision || op.LLMSlotRevision != binding.SlotRevision || len(op.AgentSources) == 0 {
 			t.Fatalf("operation lacks server authority: %+v, actor=%+v", op, actor)
 		}
 		return models.Approval{Profile: binding.Profile, Fingerprint: "approved"}, nil
 	})
-	o := NewOrchestrator(store, NewWorkingMemory(NewSourcePolicyChecker(reader, resolver, policy, "agent_billing"), 0),
-		retriever, reader, resolver, nil, "agent_billing")
+	o := NewOrchestrator(store, NewWorkingMemory(NewSourcePolicyChecker(reader, resolver, policy, "agent_processing"), 0),
+		retriever, reader, resolver, nil, "agent_processing")
 	o.policy = policy
 	o.gateway = turnCallerFunc(func(_ context.Context, _ *auth.Identity, _ models.Operation, _ models.Payload) (models.Result, error) {
 		return models.Result{Text: "Use the standard laptop request.", CitationIDs: []string{"E1"}, Usage: &models.Usage{InputTokens: 4, OutputTokens: 1}}, nil
@@ -334,7 +334,8 @@ func TestOrchestratorTreatsDispatchConflictAsAmbiguous(t *testing.T) {
 		return models.Result{}, models.ErrConflict
 	})
 	reply, err := o.Reply(t.Context(), retrievalActor, TurnRequest{turnConversation, "conflict", "Laptop"})
-	if err != nil || reply.Status != "SEARCH_ONLY" || reply.Answer != nil || reply.Reason != models.ErrUncertain.Error() || len(reply.Citations) != 0 {
+	if err != nil || reply.Status != "SEARCH_ONLY" || reply.Answer != nil || reply.Reason != "MODEL_CALL_UNCERTAIN" ||
+		len(reply.Citations) != 0 || reply.Usage != nil || len(s.finished.Sources) != 0 {
 		t.Fatalf("ambiguous conflict escaped: %+v, err=%v", reply, err)
 	}
 }
@@ -365,9 +366,9 @@ func TestOrchestratorRetainsUncertainOutcome(t *testing.T) {
 				return models.Result{}, models.ErrUncertain
 			})
 			reply, err := o.Reply(ctx, retrievalActor, TurnRequest{turnConversation, "uncertain", "Laptop"})
-			if err != nil || !sent || reply.Answer != nil || reply.Reason != models.ErrUncertain.Error() ||
+			if err != nil || !sent || reply.Answer != nil || reply.Reason != "MODEL_CALL_UNCERTAIN" ||
 				len(reply.Citations) != 0 || reply.Usage != nil || len(s.finished.Sources) != 0 || s.finishErr != nil {
-				t.Fatalf("uncertain billing outcome lost: %+v, err=%v", reply, err)
+				t.Fatalf("uncertain call outcome lost: %+v, err=%v", reply, err)
 			}
 		})
 	}

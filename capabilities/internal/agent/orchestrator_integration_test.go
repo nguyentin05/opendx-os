@@ -69,7 +69,7 @@ func newAgentTurnFixture(t *testing.T, provider models.Provider) agentTurnFixtur
 	admin := testutil.As(t, u.String(), "dxos_authz")
 	turnSQL(t, db, `INSERT INTO core.user_roles(user_id,role_name) VALUES
 		('11111111-1111-1111-1111-111111111111','role_operator');
-		INSERT INTO core.apps(app_id,display_name,version,status,spec) VALUES('agent_billing','Agent Billing','1','Ready','{}');
+		INSERT INTO core.apps(app_id,display_name,version,status,spec) VALUES('agent_processing','Agent Processing','1','Ready','{}');
 		INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,enabled)
 		VALUES('fixture-llm',1,'GENERATE','HOSTED','fixture-adapter','fixture-llm',
 		'{"max_input_tokens":4096,"max_output_tokens":64,"max_bytes":8192,"timeout_ms":1500}',true);
@@ -167,11 +167,11 @@ func (f agentTurnFixture) addChunk(t *testing.T, run, text string) {
 }
 
 func (f agentTurnFixture) orchestrator(retriever Retriever) *Orchestrator {
-	memory := NewWorkingMemory(NewSourcePolicyChecker(f.reader, f.resolver, f.gateway.Policy, "agent_billing"), 0)
-	return NewOrchestrator(f.store, memory, retriever, f.reader, f.resolver, f.gateway, "agent_billing")
+	memory := NewWorkingMemory(NewSourcePolicyChecker(f.reader, f.resolver, f.gateway.Policy, "agent_processing"), 0)
+	return NewOrchestrator(f.store, memory, retriever, f.reader, f.resolver, f.gateway, "agent_processing")
 }
 
-func TestAgentTurnIdempotencyAndUncertainCharge(t *testing.T) {
+func TestAgentTurnIdempotencyAndUncertainCall(t *testing.T) {
 	for _, uncertain := range []bool{false, true} {
 		name := "settled"
 		if uncertain {
@@ -221,7 +221,7 @@ func TestAgentTurnIdempotencyAndUncertainCharge(t *testing.T) {
 			}
 			f := newAgentTurnFixture(t, provider)
 			f.addPackage(t, "procurement", "role_procurement", "New hires can request a laptop.")
-			f.approveGeneration(t, "agent_billing", "reviewed fixture")
+			f.approveGeneration(t, "agent_processing", "reviewed fixture")
 			o := f.orchestrator(turnRetrieverFunc(func(ctx context.Context, actor Actor, query string) (RetrievalResult, error) {
 				searches.Add(1)
 				return f.retrieval.Retrieve(ctx, actor, query)
@@ -256,8 +256,11 @@ func TestAgentTurnIdempotencyAndUncertainCharge(t *testing.T) {
 			state := "SUCCEEDED"
 			if uncertain {
 				state = "UNCERTAIN"
-				if first.err != nil || first.result.Reason != models.ErrUncertain.Error() || first.result.Answer != nil || first.result.Usage != nil {
-					t.Fatalf("possible billed error escaped: %+v err=%v", first.result, first.err)
+				raw, _ := json.Marshal(first.result)
+				if first.err != nil || first.result.Status != "SEARCH_ONLY" || first.result.Reason != "MODEL_CALL_UNCERTAIN" ||
+					first.result.Answer != nil || first.result.Usage != nil || len(first.result.Citations) != 0 ||
+					len(first.result.Sources) != 0 || strings.Contains(string(raw), `"usage"`) || !strings.Contains(string(raw), `"citations":[]`) {
+					t.Fatalf("possible sent error escaped: %+v err=%v body=%s", first.result, first.err, raw)
 				}
 			} else if first.err != nil || first.result.Status != "ANSWERED" || first.result.Answer == nil || len(first.result.Citations) != 1 ||
 				first.result.Usage == nil || first.result.Usage.InputTokens != 3 || first.result.Usage.OutputTokens != 2 ||
@@ -272,6 +275,11 @@ func TestAgentTurnIdempotencyAndUncertainCharge(t *testing.T) {
 			if err != nil || !reflect.DeepEqual(replay, first.result) || sends.Load() != 1 || searches.Load() != 1 {
 				t.Fatalf("completed replay repeated work or changed snapshot: %+v err=%v sends=%d searches=%d", replay, err, sends.Load(), searches.Load())
 			}
+			if raw, _ := json.Marshal(replay); uncertain && (strings.Contains(string(raw), `"usage"`) || !strings.Contains(string(raw), `"answer":null`)) {
+				t.Fatalf("uncertain replay invented usage or an answer: %s", raw)
+			} else if !uncertain && !strings.Contains(string(raw), `"usage":{"input_tokens":3,"output_tokens":2}`) {
+				t.Fatalf("settled replay lost reported usage: %s", raw)
+			}
 			if _, err = o.Reply(t.Context(), Actor{bob}, request); !errors.Is(err, knowledge.ErrNotFound) {
 				t.Fatalf("foreign owner replay: %v", err)
 			}
@@ -285,7 +293,7 @@ func TestAgentTurnIdempotencyAndUncertainCharge(t *testing.T) {
 			err = f.db.QueryRow(`SELECT count(*),coalesce(min(state),''),coalesce(min(app_id),''),
 				min(input_tokens),min(output_tokens) FROM cap_ai.model_operations`).
 				Scan(&operations, &gotState, &app, &input, &output)
-			if err != nil || operations != 1 || gotState != state || app != "agent_billing" {
+			if err != nil || operations != 1 || gotState != state || app != "agent_processing" {
 				t.Fatalf("operations=%d state=%s app=%s err=%v", operations, gotState, app, err)
 			}
 			if uncertain && (input.Valid || output.Valid) {
@@ -299,7 +307,7 @@ func TestAgentTurnIdempotencyAndUncertainCharge(t *testing.T) {
 }
 
 func TestAgentTurnRechecksCurrentAuthorityAfterProvider(t *testing.T) {
-	for _, revoke := range []string{"uncited prior role", "billing review replaced"} {
+	for _, revoke := range []string{"uncited prior role", "cited source READ revoked", "processing review replaced"} {
 		t.Run(revoke, func(t *testing.T) {
 			var f agentTurnFixture
 			var latestReview string
@@ -325,6 +333,12 @@ func TestAgentTurnRechecksCurrentAuthorityAfterProvider(t *testing.T) {
 					change := func() error {
 						if revoke == "uncited prior role" {
 							_, err := f.db.ExecContext(req.Context(), `DELETE FROM core.user_roles WHERE user_id=$1 AND role_name='role_hr'`, f.actor.UserID)
+							return err
+						}
+						if revoke == "cited source READ revoked" {
+							// The Ready processing app keeps its query review; only the
+							// READ ceiling of one cited source is withdrawn.
+							_, err := f.db.ExecContext(req.Context(), `DELETE FROM core.user_roles WHERE user_id=$1 AND role_name='role_procurement'`, f.actor.UserID)
 							return err
 						}
 						var disabled bool
@@ -354,8 +368,8 @@ func TestAgentTurnRechecksCurrentAuthorityAfterProvider(t *testing.T) {
 			f = newAgentTurnFixture(t, model)
 			f.addPackage(t, "hr", "role_hr", "Benefits details are available through Human Resources.")
 			f.addPackage(t, "procurement", "role_procurement", "New hires can request a laptop.")
-			f.approveGeneration(t, "agent_billing", "first valid billing review")
-			latestReview = f.approveGeneration(t, "agent_billing", "independently reviewed replacement")
+			f.approveGeneration(t, "agent_processing", "first valid processing review")
+			latestReview = f.approveGeneration(t, "agent_processing", "independently reviewed replacement")
 			o := f.orchestrator(f.retrieval)
 			conversation, err := f.store.Create(t.Context(), f.actor, "Policies")
 			if err != nil {
@@ -398,7 +412,7 @@ func TestAgentTurnRequiresCurrentModelBinding(t *testing.T) {
 	}
 	f := newAgentTurnFixture(t, provider)
 	f.addPackage(t, "procurement", "role_procurement", "New hires can request a laptop.")
-	f.approveGeneration(t, "agent_billing", "reviewed fixture")
+	f.approveGeneration(t, "agent_processing", "reviewed fixture")
 	turnSQL(t, f.db, `UPDATE cap_ai.global_model_slots SET profile_id=NULL,profile_revision=NULL,slot_revision=slot_revision+1 WHERE capability='LLM'`)
 	o := f.orchestrator(f.retrieval)
 	conversation, err := f.store.Create(t.Context(), f.actor, "Laptop policy")
@@ -430,7 +444,7 @@ func TestAgentTurnSlotWithdrawalWhileReserving(t *testing.T) {
 	}
 	f := newAgentTurnFixture(t, provider)
 	f.addPackage(t, "procurement", "role_procurement", "New hires can request a laptop.")
-	f.approveGeneration(t, "agent_billing", "reviewed fixture")
+	f.approveGeneration(t, "agent_processing", "reviewed fixture")
 	conversation, err := f.store.Create(t.Context(), f.actor, "Laptop policy")
 	if err != nil {
 		t.Fatal(err)

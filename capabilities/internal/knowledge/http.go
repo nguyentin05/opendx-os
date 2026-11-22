@@ -50,8 +50,12 @@ func httpError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, models.ErrPolicy):
 		status, code = 403, "POLICY_BLOCKED"
-	case errors.Is(err, models.ErrUnavailable), errors.Is(err, models.ErrUncertain):
+	case errors.Is(err, models.ErrUnavailable):
 		status, code = 503, "MODEL_UNAVAILABLE"
+	case errors.Is(err, models.ErrUncertain), errors.Is(err, models.ErrConflict):
+		// A model operation conflict means an earlier send may exist. It shares
+		// the uncertainty response rather than exposing operation details.
+		status, code = 503, "MODEL_CALL_UNCERTAIN"
 	case errors.Is(err, ErrInvalid):
 		status, code = 400, "INVALID_REQUEST"
 	case errors.Is(err, ErrNotFound):

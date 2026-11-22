@@ -16,7 +16,7 @@ var (
 	ErrPolicy      = errors.New("POLICY_BLOCKED")
 	ErrUnavailable = errors.New("MODEL_UNAVAILABLE")
 	ErrConflict    = errors.New("MODEL_OPERATION_CONFLICT")
-	ErrUncertain   = errors.New("MODEL_CHARGE_UNCERTAIN")
+	ErrUncertain   = errors.New("MODEL_CALL_UNCERTAIN")
 	// ErrCatalogVersion rejects declarations from any retired catalog schema
 	// before their body is interpreted.
 	ErrCatalogVersion = errors.New("UNSUPPORTED_CATALOG_VERSION")
@@ -62,7 +62,7 @@ type Operation struct {
 	LLMSlotRevision int64 `json:"llm_slot_revision,omitempty"`
 	// EmbeddingSlotRevision pins the active binding for a global query.
 	EmbeddingSlotRevision int64 `json:"embedding_slot_revision,omitempty"`
-	// AgentSources apply only to AGENT generation. AppID is its configured billing consumer.
+	// AgentSources apply only to AGENT generation. AppID is its configured processing consumer.
 	AgentSources []AgentSourceProof `json:"agent_sources,omitempty"`
 	// RequirePersonalQueryApproval narrows query-only global EMBED processing.
 	RequirePersonalQueryApproval bool `json:"require_personal_query_approval,omitempty"`

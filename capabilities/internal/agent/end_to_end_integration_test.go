@@ -109,7 +109,7 @@ func (c endToEndChat) call(t *testing.T) models.Payload {
 
 func TestAgentEndToEndCrossAppPersonalFollowup(t *testing.T) {
 	c := newEndToEndChat(t)
-	c.approveGeneration(t, "agent_billing", "reviewed billing question")
+	c.approveGeneration(t, "agent_processing", "reviewed processing question")
 	c.approveGeneration(t, "library", "reviewed personal journal")
 	first := c.turn(t, "first", "onboarding")
 	if first.Status != "ANSWERED" || first.Answer == nil || first.MessageSeq != 2 || len(first.Citations) != 3 {
@@ -134,7 +134,7 @@ func TestAgentEndToEndCrossAppPersonalFollowup(t *testing.T) {
 
 func TestAgentEndToEndRevocation(t *testing.T) {
 	c := newEndToEndChat(t)
-	c.approveGeneration(t, "agent_billing", "reviewed billing question")
+	c.approveGeneration(t, "agent_processing", "reviewed processing question")
 	personal := c.approveGeneration(t, "library", "reviewed personal journal")
 	first := c.turn(t, "first", "journal")
 	if first.Answer == nil || len(first.Citations) != 1 {
@@ -166,7 +166,7 @@ func TestAgentEndToEndRevocation(t *testing.T) {
 }
 
 func TestAgentEndToEndMissingApprovalDoesNotCallProvider(t *testing.T) {
-	for _, missing := range []string{"personal source", "billing query"} {
+	for _, missing := range []string{"personal source", "processing query"} {
 		t.Run(missing, func(t *testing.T) {
 			c := newEndToEndChat(t)
 			// Make ordinary selected-app query embedding available. The same
@@ -186,7 +186,7 @@ func TestAgentEndToEndMissingApprovalDoesNotCallProvider(t *testing.T) {
 				t.Fatalf("ordinary APP query control: %+v, %v", ordinary, err)
 			}
 			if missing == "personal source" {
-				c.approveGeneration(t, "agent_billing", "reviewed billing question")
+				c.approveGeneration(t, "agent_processing", "reviewed processing question")
 			} else {
 				c.approveGeneration(t, "library", "reviewed personal journal")
 			}

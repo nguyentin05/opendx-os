@@ -99,8 +99,13 @@ func TestProviderFailureRequireGeneration(t *testing.T) {
 		s, f := answerSetup()
 		f.err = err
 		r, e := s.Answer(context.Background(), answerActor, answerRequest)
-		if e != nil || r.Status != "SEARCH_ONLY" || r.Answer != nil {
-			t.Fatal(r, e)
+		reason := err.Error()
+		if errors.Is(err, models.ErrUncertain) || errors.Is(err, models.ErrConflict) {
+			reason = "MODEL_CALL_UNCERTAIN"
+		}
+		if e != nil || r.Status != "SEARCH_ONLY" || r.Answer != nil || r.Reason != reason ||
+			r.Usage != nil || len(r.Citations) != 0 || len(r.Results) != 1 {
+			t.Fatalf("optional generation reason %q: %+v %v", err, r, e)
 		}
 		req := answerRequest
 		req.RequireGeneration = true

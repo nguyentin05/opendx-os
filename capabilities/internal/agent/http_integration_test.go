@@ -7,6 +7,7 @@ package agent
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -194,7 +195,7 @@ func TestChatHTTPProtectedCrossAppCitation(t *testing.T) {
 	f.addPackage(t, "facilities", "role_facilities", "Laptop storage requires a locked cabinet.")
 	scopes := f.retrieval.Scopes
 	sourceStore := f.retrieval.Search.(*knowledge.Store)
-	reply := NewOrchestrator(f.store, NewWorkingMemory(nil, 0), f.retrieval, f.reader, nil, nil, "agent_billing")
+	reply := NewOrchestrator(f.store, NewWorkingMemory(nil, 0), f.retrieval, f.reader, nil, nil, "agent_processing")
 	h := NewHandler(ChatAuthenticator{Verifier: chatSubjectVerifier{}, DB: f.store.DB}, f.store, reply, scopes, sourceStore)
 	conv := createChatConversation(t, h, "Cross-app")
 	path := testChatPath + "/" + conv.ID
@@ -290,6 +291,64 @@ func (f agentTurnFixture) addPersonal(t *testing.T, text string) {
 	f.addChunk(t, run, text)
 }
 
+// A potentially sent generation is persisted as SEARCH_ONLY /
+// MODEL_CALL_UNCERTAIN. The normal turn handler returns HTTP 200, the same turn
+// replays the persisted owner-only completion, and no second model call happens.
+func TestChatHTTPUncertainTurnReturns200AndReplay(t *testing.T) {
+	var sends atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sends.Add(1)
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer server.Close()
+	provider, err := models.NewHTTPProvider(server.URL, "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newAgentTurnFixture(t, provider)
+	f.addPackage(t, "procurement", "role_procurement", "New hires can request a laptop.")
+	f.approveGeneration(t, "agent_processing", "reviewed processing fixture")
+	checker := NewSourcePolicyChecker(f.reader, f.resolver, f.gateway.Policy, "agent_processing")
+	reply := NewOrchestrator(f.store, NewWorkingMemory(checker, 0), f.retrieval, f.reader, f.resolver, f.gateway, "agent_processing")
+	h := NewHandler(ChatAuthenticator{Verifier: chatSubjectVerifier{}, DB: f.store.DB}, f.store, reply, f.retrieval.Scopes, f.retrieval.Search.(*knowledge.Store))
+	conv := createChatConversation(t, h, "Uncertain turn")
+	path := testChatPath + "/" + conv.ID
+	body := `{"query":"laptop"}`
+	first := chatRequest(h, "POST", path+"/messages", alice, "uncertain-key", body)
+	requireChatStatus(t, first, http.StatusOK)
+	raw := first.Body.String()
+	result := chatJSON[TurnResult](t, raw)
+	if result.Status != "SEARCH_ONLY" || result.Reason != "MODEL_CALL_UNCERTAIN" || result.Answer != nil ||
+		result.Usage != nil || len(result.Citations) != 0 || len(result.Sources) != 0 ||
+		strings.Contains(raw, `"usage"`) || !strings.Contains(raw, `"citations":[]`) {
+		t.Fatalf("uncertain completion escaped: %s", raw)
+	}
+	replay := chatRequest(h, "POST", path+"/messages", alice, "uncertain-key", body)
+	requireChatStatus(t, replay, http.StatusOK)
+	if replay.Body.String() != raw || sends.Load() != 1 {
+		t.Fatalf("owner replay changed the persisted completion or sent again: %q -> %q (%d sends)", raw, replay.Body.String(), sends.Load())
+	}
+	var state, app string
+	var input, output sql.NullInt64
+	if err := f.db.QueryRow(`SELECT state,app_id,input_tokens,output_tokens FROM cap_ai.model_operations`).Scan(&state, &app, &input, &output); err != nil ||
+		state != "UNCERTAIN" || app != "agent_processing" || input.Valid || output.Valid {
+		t.Fatalf("uncertain operation: state=%s app=%s usage=%+v/%+v err=%v", state, app, input, output, err)
+	}
+}
+
+// A raw uncertainty error reaching chatError is the public 503 code, never the
+// generic authority body and never the existing MODEL_UNAVAILABLE.
+func TestChatHTTPRawUncertaintyError(t *testing.T) {
+	h := NewHandler(requestAuthFunc(httpActor), &PostgresConversationStore{}, replyFunc(func(context.Context, Actor, TurnRequest) (TurnResult, error) {
+		return TurnResult{}, models.ErrUncertain
+	}), &PostgresScopeResolver{}, knowledge.NewStore(nil))
+	w := chatRequest(h, "POST", testChatPath+"/"+testConversationID+"/messages", "owner", "key", `{"query":"question"}`)
+	requireChatStatus(t, w, http.StatusServiceUnavailable)
+	if !strings.Contains(w.Body.String(), `"code":"MODEL_CALL_UNCERTAIN"`) || strings.Contains(w.Body.String(), "MODEL_UNAVAILABLE") {
+		t.Fatalf("raw uncertainty mapping: %s", w.Body.String())
+	}
+}
+
 func TestChatHTTPDisabledPersonalHistoryStaysOutOfGeneration(t *testing.T) {
 	const privateAnswer = "Personal journal answer"
 	var sends atomic.Int64
@@ -324,14 +383,14 @@ func TestChatHTTPDisabledPersonalHistoryStaysOutOfGeneration(t *testing.T) {
 	f.addPackage(t, "procurement", "role_procurement", "Laptop purchase requires approval.")
 	f.addPersonal(t, "Journal notes from my private collection.")
 	f.approveGeneration(t, "library", "approved private source")
-	f.approveGeneration(t, "agent_billing", "approved billing app query")
+	f.approveGeneration(t, "agent_processing", "approved processing app query")
 	build := func(personal bool) http.Handler {
 		scopes := SourceKindGate{ScopeResolver: f.retrieval.Scopes, AppEnabled: true, PersonalEnabled: personal}
 		retrieval := *f.retrieval
 		retrieval.Scopes = scopes
-		checker := NewSourcePolicyChecker(f.reader, f.resolver, f.gateway.Policy, "agent_billing")
+		checker := NewSourcePolicyChecker(f.reader, f.resolver, f.gateway.Policy, "agent_processing")
 		memory := NewWorkingMemory(scopes.FilterHistory(checker), 0)
-		reply := NewOrchestrator(f.store, memory, &retrieval, f.reader, f.resolver, f.gateway, "agent_billing")
+		reply := NewOrchestrator(f.store, memory, &retrieval, f.reader, f.resolver, f.gateway, "agent_processing")
 		return NewHandler(ChatAuthenticator{Verifier: chatSubjectVerifier{}, DB: f.store.DB},
 			f.store, reply, scopes, f.retrieval.Search.(*knowledge.Store))
 	}

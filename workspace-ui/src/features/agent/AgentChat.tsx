@@ -25,8 +25,8 @@ function mergeMessages(messages: Message[], incoming: Message[]): Message[] {
 
 function emptyResultMessage(result: Result, incomplete: boolean) {
   switch (result.reason) {
-    case "MODEL_CHARGE_UNCERTAIN":
-      return "Chưa xác định: chưa xác nhận được chi phí mô hình.";
+    case "MODEL_CALL_UNCERTAIN":
+      return "Chưa xác định: chưa xác nhận được kết quả gọi mô hình.";
     case "TURN_PENDING":
       return "Lượt hỏi đang chờ";
     case "SEARCH_UNAVAILABLE":

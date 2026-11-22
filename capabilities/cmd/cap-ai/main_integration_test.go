@@ -19,7 +19,7 @@ import (
 	"github.com/opendx-os/opendx-os/capabilities/internal/testutil"
 )
 
-func TestChatHTTPRuntimeWithReadyBillingAppAndNoModels(t *testing.T) {
+func TestChatHTTPRuntimeWithReadyProcessingAppAndNoModels(t *testing.T) {
 	db := testutil.Database(t)
 	for _, path := range []string{
 		"init/01_core_schema.sql",
@@ -57,12 +57,12 @@ func TestChatHTTPRuntimeWithReadyBillingAppAndNoModels(t *testing.T) {
 	}
 	dsn.Path = "/" + name
 	api := testutil.As(t, dsn.String(), "dxos_ai_api")
-	if err := validateChatBillingApp(t.Context(), api, "ready_app"); err != nil {
+	if err := validateChatProcessingApp(t.Context(), api, "ready_app"); err != nil {
 		t.Fatal(err)
 	}
 	for _, appID := range []string{"", "pending_app", "removed_app", "missing_app"} {
-		if err := validateChatBillingApp(t.Context(), api, appID); err == nil {
-			t.Fatalf("accepted unavailable billing app %q", appID)
+		if err := validateChatProcessingApp(t.Context(), api, appID); err == nil {
+			t.Fatalf("accepted unavailable processing app %q", appID)
 		}
 	}
 

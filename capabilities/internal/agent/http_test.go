@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
 )
 
 const testChatPath = "/api/cap/ai/conversations"
@@ -140,6 +142,31 @@ func TestChatHTTPReturnsSafeUnavailable(t *testing.T) {
 	requireChatStatus(t, w, http.StatusServiceUnavailable)
 	if strings.Contains(w.Body.String(), "SECRET") {
 		t.Fatal(w.Body.String())
+	}
+}
+
+func TestChatErrorUncertaintyMapping(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    error
+		status int
+		code   string
+	}{
+		{"uncertain", models.ErrUncertain, http.StatusServiceUnavailable, "MODEL_CALL_UNCERTAIN"},
+		{"operation binding conflict", models.ErrConflict, http.StatusServiceUnavailable, "MODEL_CALL_UNCERTAIN"},
+		{"resource conflict", knowledge.ErrConflict, http.StatusConflict, "CONFLICT"},
+		{"authority", knowledge.ErrAuthorityUnavailable, http.StatusServiceUnavailable, "AUTHORITY_UNAVAILABLE"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			chatError(w, tc.err)
+			var body struct {
+				Error struct{ Code string }
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || w.Code != tc.status || body.Error.Code != tc.code {
+				t.Fatalf("status=%d body=%s want %d/%s", w.Code, w.Body.String(), tc.status, tc.code)
+			}
+		})
 	}
 }
 
