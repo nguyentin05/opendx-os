@@ -138,7 +138,7 @@ func (c *ClientCredentials) fetch() (string, time.Duration, error) {
 	if err != nil {
 		return "", 0, errors.New("token endpoint unavailable")
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
 		return "", 0, fmt.Errorf("token endpoint returned %d", response.StatusCode)
 	}
