@@ -117,14 +117,19 @@ func GenerateHasuraOperations(app *manifest.DXApplication) ([]HasuraMetadataPayl
 	}
 
 	// A work item follows the record it was opened for. One object relationship
-	// per application table lets the shared select filter traverse the source
-	// row; the source id is not a foreign key because it can name any table.
+	// per top-level application table lets the shared select filter traverse the
+	// source row; the source id is not a foreign key because it can name any
+	// table. The "source_" prefix cannot clash with the "<table>_by_<column>"
+	// array relationships that foreign keys to work items add.
 	if slices.Contains(SharedTablesRead(app), "cap_work.work_items") {
 		workItems := ParseTableRef("cap_work.work_items")
 		for i := range app.Spec.Tables {
 			tbl := &app.Spec.Tables[i]
+			if tbl.IsChild() {
+				continue
+			}
 			ops = append(ops, relationship("pg_create_object_relationship", workItems,
-				ParseTableRef(tbl.Name).Name+"_by_source_id", ParseTableRef(tbl.Name),
+				workSourceRelationship(tbl), ParseTableRef(tbl.Name),
 				map[string]string{"source_id": "id"}))
 		}
 	}
@@ -291,13 +296,18 @@ func sharedFilter(app *manifest.DXApplication, table, role string) map[string]an
 		visible := []any{map[string]any{"source_type": map[string]any{"_is_null": true}}}
 		for i := range app.Spec.Tables {
 			tbl := &app.Spec.Tables[i]
+			// A child row's select rule names no scope of its own (it follows the
+			// parent), so a work item sourced from one stays hidden.
+			if tbl.IsChild() {
+				continue
+			}
 			for _, sel := range tbl.Access.Select {
 				if sel.Role != role {
 					continue
 				}
 				visible = append(visible, map[string]any{
-					"source_type": map[string]any{"_eq": tbl.Name},
-					ParseTableRef(tbl.Name).Name + "_by_source_id": nonNil(selectFilter(sel)),
+					"source_type":               map[string]any{"_eq": tbl.Name},
+					workSourceRelationship(tbl): nonNil(selectFilter(sel)),
 				})
 			}
 		}
@@ -345,6 +355,10 @@ func sharedFilter(app *manifest.DXApplication, table, role string) map[string]an
 		branches = append(branches, private)
 	}
 	return conjoinFilters(filter, map[string]any{"_or": branches})
+}
+
+func workSourceRelationship(tbl *manifest.TableDef) string {
+	return "source_" + ParseTableRef(tbl.Name).Name
 }
 
 func relationship(kind string, table TableRef, name string, remote TableRef, mapping map[string]string) HasuraMetadataPayload {

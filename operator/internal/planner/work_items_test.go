@@ -14,9 +14,9 @@ func TestWorkItemFilterFollowsSourceRecordScope(t *testing.T) {
 	prefix := `{"_and":[{"app_id":{"_eq":"procurement"}},{"_or":[{"source_type":{"_is_null":true}},`
 
 	assertJSON(t, "department-scoped work items", sharedFilter(app, "cap_work.work_items", "role_procurement_manager"),
-		prefix+`{"procurement_requests_by_source_id":{"_and":[{"org_unit":{"staff":{"user_id":{"_eq":"X-Hasura-User-Id"}}}},{"status":{"_neq":"DRAFT"}}]},"source_type":{"_eq":"domain.procurement_requests"}},{"procurement_vendors_by_source_id":{},"source_type":{"_eq":"domain.procurement_vendors"}},{"procurement_items_by_source_id":{},"source_type":{"_eq":"domain.procurement_items"}}]}]}`)
+		prefix+`{"source_procurement_requests":{"_and":[{"org_unit":{"staff":{"user_id":{"_eq":"X-Hasura-User-Id"}}}},{"status":{"_neq":"DRAFT"}}]},"source_type":{"_eq":"domain.procurement_requests"}},{"source_procurement_vendors":{},"source_type":{"_eq":"domain.procurement_vendors"}}]}]}`)
 	assertJSON(t, "organization work items with a record filter", sharedFilter(app, "cap_work.work_items", "role_procurement_finance"),
-		prefix+`{"procurement_requests_by_source_id":{"status":{"_neq":"DRAFT"}},"source_type":{"_eq":"domain.procurement_requests"}},{"procurement_vendors_by_source_id":{},"source_type":{"_eq":"domain.procurement_vendors"}},{"procurement_items_by_source_id":{},"source_type":{"_eq":"domain.procurement_items"}}]}]}`)
+		prefix+`{"source_procurement_requests":{"status":{"_neq":"DRAFT"}},"source_type":{"_eq":"domain.procurement_requests"}},{"source_procurement_vendors":{},"source_type":{"_eq":"domain.procurement_vendors"}}]}]}`)
 	assertJSON(t, "role without a table rule", sharedFilter(app, "cap_work.work_items", "role_no_table_rule"),
 		`{"_and":[{"app_id":{"_eq":"procurement"}},{"_or":[{"source_type":{"_is_null":true}}]}]}`)
 }
@@ -66,9 +66,9 @@ func TestGeneratedWorkItemPermissionAndRelationships(t *testing.T) {
 		}
 	}
 	assertJSON(t, "generated work item permission", workItemsFilter,
-		`{"_and":[{"app_id":{"_eq":"procurement"}},{"_or":[{"source_type":{"_is_null":true}},{"procurement_requests_by_source_id":{"_and":[{"org_unit":{"staff":{"user_id":{"_eq":"X-Hasura-User-Id"}}}},{"status":{"_neq":"DRAFT"}}]},"source_type":{"_eq":"domain.procurement_requests"}},{"procurement_vendors_by_source_id":{},"source_type":{"_eq":"domain.procurement_vendors"}},{"procurement_items_by_source_id":{},"source_type":{"_eq":"domain.procurement_items"}}]}]}`)
+		`{"_and":[{"app_id":{"_eq":"procurement"}},{"_or":[{"source_type":{"_is_null":true}},{"source_procurement_requests":{"_and":[{"org_unit":{"staff":{"user_id":{"_eq":"X-Hasura-User-Id"}}}},{"status":{"_neq":"DRAFT"}}]},"source_type":{"_eq":"domain.procurement_requests"}},{"source_procurement_vendors":{},"source_type":{"_eq":"domain.procurement_vendors"}}]}]}`)
 
-	link, ok := relationships["procurement_requests_by_source_id"]
+	link, ok := relationships["source_procurement_requests"]
 	if !ok {
 		t.Fatalf("work item source relationship is missing: %v", relationships)
 	}
@@ -77,6 +77,9 @@ func TestGeneratedWorkItemPermissionAndRelationships(t *testing.T) {
 	}
 	if !reflect.DeepEqual(link["column_mapping"], map[string]string{"source_id": "id"}) {
 		t.Errorf("column mapping = %v", link["column_mapping"])
+	}
+	if _, ok := relationships["source_procurement_items"]; ok {
+		t.Error("a child table must not be a work item source: its rows follow the parent's scope")
 	}
 
 	other := loadApp(t, "process-fixture")
