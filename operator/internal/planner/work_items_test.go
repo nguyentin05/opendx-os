@@ -1,0 +1,69 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 DX-OS Open-Core Contributors
+
+package planner
+
+import (
+	"reflect"
+	"strings"
+	"testing"
+)
+
+func TestWorkItemFilterFollowsSourceRecordScope(t *testing.T) {
+	app := loadFixtureApp(t)
+	prefix := `{"_and":[{"app_id":{"_eq":"procurement"}},{"_or":[{"source_type":{"_is_null":true}},`
+
+	assertJSON(t, "department-scoped work items", sharedFilter(app, "cap_work.work_items", "role_procurement_manager"),
+		prefix+`{"procurement_requests_by_source_id":{"_and":[{"org_unit":{"staff":{"user_id":{"_eq":"X-Hasura-User-Id"}}}},{"status":{"_neq":"DRAFT"}}]},"source_type":{"_eq":"domain.procurement_requests"}},{"procurement_vendors_by_source_id":{},"source_type":{"_eq":"domain.procurement_vendors"}},{"procurement_items_by_source_id":{},"source_type":{"_eq":"domain.procurement_items"}}]}]}`)
+	assertJSON(t, "organization work items with a record filter", sharedFilter(app, "cap_work.work_items", "role_procurement_finance"),
+		prefix+`{"procurement_requests_by_source_id":{"status":{"_neq":"DRAFT"}},"source_type":{"_eq":"domain.procurement_requests"}},{"procurement_vendors_by_source_id":{},"source_type":{"_eq":"domain.procurement_vendors"}},{"procurement_items_by_source_id":{},"source_type":{"_eq":"domain.procurement_items"}}]}]}`)
+	assertJSON(t, "role without a table rule", sharedFilter(app, "cap_work.work_items", "role_no_table_rule"),
+		`{"_and":[{"app_id":{"_eq":"procurement"}},{"_or":[{"source_type":{"_is_null":true}}]}]}`)
+}
+
+func TestGeneratedWorkItemPermissionAndRelationships(t *testing.T) {
+	app := loadFixtureApp(t)
+	ops, err := GenerateHasuraOperations(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var workItemsFilter any
+	relationships := map[string]map[string]any{}
+	for _, op := range ops {
+		args := op.Args.(map[string]any)
+		table := args["table"].(TableRef)
+		if op.Type == "pg_create_select_permission" && table == (TableRef{Schema: "cap_work", Name: "work_items"}) &&
+			args["role"] == "role_procurement_manager" {
+			workItemsFilter = args["permission"].(map[string]any)["filter"]
+		}
+		if strings.HasSuffix(op.Type, "_relationship") && table == (TableRef{Schema: "cap_work", Name: "work_items"}) {
+			relationships[args["name"].(string)] = args["using"].(map[string]any)["manual_configuration"].(map[string]any)
+		}
+	}
+	assertJSON(t, "generated work item permission", workItemsFilter,
+		`{"_and":[{"app_id":{"_eq":"procurement"}},{"_or":[{"source_type":{"_is_null":true}},{"procurement_requests_by_source_id":{"_and":[{"org_unit":{"staff":{"user_id":{"_eq":"X-Hasura-User-Id"}}}},{"status":{"_neq":"DRAFT"}}]},"source_type":{"_eq":"domain.procurement_requests"}},{"procurement_vendors_by_source_id":{},"source_type":{"_eq":"domain.procurement_vendors"}},{"procurement_items_by_source_id":{},"source_type":{"_eq":"domain.procurement_items"}}]}]}`)
+
+	link, ok := relationships["procurement_requests_by_source_id"]
+	if !ok {
+		t.Fatalf("work item source relationship is missing: %v", relationships)
+	}
+	if link["remote_table"] != (TableRef{Schema: "domain", Name: "procurement_requests"}) {
+		t.Errorf("remote table = %v", link["remote_table"])
+	}
+	if !reflect.DeepEqual(link["column_mapping"], map[string]string{"source_id": "id"}) {
+		t.Errorf("column mapping = %v", link["column_mapping"])
+	}
+
+	other := loadApp(t, "process-fixture")
+	otherOps, err := GenerateHasuraOperations(other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, op := range otherOps {
+		args := op.Args.(map[string]any)
+		if strings.HasSuffix(op.Type, "_relationship") && args["table"] == (TableRef{Schema: "cap_work", Name: "work_items"}) {
+			t.Fatalf("an app that does not share work items gets a relationship: %v", op)
+		}
+	}
+}

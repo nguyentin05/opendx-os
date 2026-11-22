@@ -116,6 +116,19 @@ func GenerateHasuraOperations(app *manifest.DXApplication) ([]HasuraMetadataPayl
 		}
 	}
 
+	// A work item follows the record it was opened for. One object relationship
+	// per application table lets the shared select filter traverse the source
+	// row; the source id is not a foreign key because it can name any table.
+	if slices.Contains(SharedTablesRead(app), "cap_work.work_items") {
+		workItems := ParseTableRef("cap_work.work_items")
+		for i := range app.Spec.Tables {
+			tbl := &app.Spec.Tables[i]
+			ops = append(ops, relationship("pg_create_object_relationship", workItems,
+				ParseTableRef(tbl.Name).Name+"_by_source_id", ParseTableRef(tbl.Name),
+				map[string]string{"source_id": "id"}))
+		}
+	}
+
 	for i := range app.Spec.Tables {
 		tbl := &app.Spec.Tables[i]
 		ref := ParseTableRef(tbl.Name)
@@ -262,7 +275,10 @@ func selectFilter(rule manifest.AccessRule) map[string]any {
 }
 
 // sharedFilter limits what role reads of a shared table. App-scoped tables
-// show only the application's rows. Files are narrower still: a role sees the
+// show only the application's rows. Work items are narrower: one is visible
+// when its source record is visible to the role (through the object
+// relationships from cap_work.work_items to the domain tables), and only
+// sourceless items stay app-wide. Files are narrower still: a role sees the
 // files its user uploaded, and files attached to domain records the role may
 // read (through the array relationships from core.files to the domain tables),
 // so knowing the application is not enough to list other people's files.
@@ -271,6 +287,22 @@ func sharedFilter(app *manifest.DXApplication, table, role string) map[string]an
 		return nil
 	}
 	filter := map[string]any{"app_id": map[string]any{"_eq": app.Metadata.Name}}
+	if table == "cap_work.work_items" {
+		visible := []any{map[string]any{"source_type": map[string]any{"_is_null": true}}}
+		for i := range app.Spec.Tables {
+			tbl := &app.Spec.Tables[i]
+			for _, sel := range tbl.Access.Select {
+				if sel.Role != role {
+					continue
+				}
+				visible = append(visible, map[string]any{
+					"source_type": map[string]any{"_eq": tbl.Name},
+					ParseTableRef(tbl.Name).Name + "_by_source_id": nonNil(selectFilter(sel)),
+				})
+			}
+		}
+		return conjoinFilters(filter, map[string]any{"_or": visible})
+	}
 	if table != "core.files" {
 		return filter
 	}
