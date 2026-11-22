@@ -77,9 +77,13 @@ the header never grants anything.
 
 | Kind of table | Tell it by | Screen |
 | --- | --- | --- |
-| Process table | has `stateMachine` | List, form, and one button per command in `ui.actions` |
-| Plain table | no `stateMachine`, no `belongsTo` | List and form |
+| Process table | has `stateMachine` | List, form, one button per command in `ui.actions`, and a `Lịch sử` section on the detail |
+| Plain table | no `stateMachine`, no `belongsTo` | List, form, and the `Lịch sử` section on the detail |
 | Child table | has `belongsTo` | A grid inside its parent record's detail; not a menu entry |
+
+The record detail lists the record's audit history with the time, actor,
+action, resulting state and acting role. It reloads when the record version
+changes; a role that cannot read the record sees no history.
 
 Name each table with `ui.title` when the manifest declares it, and fall back to
 the table name. Name states and actions with `ui.stateLabels` and

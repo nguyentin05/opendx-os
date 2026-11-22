@@ -21,6 +21,22 @@ Inspect actual handlers and agree on request/response schemas and service
 identity before connecting callers. This logical route inventory includes work
 still to implement; it is not an assertion that every endpoint is running.
 
+## Record history
+
+`GET /api/cap/process/records/{app_id}/{table}/{entity_id}/history` returns the
+audit history of one record. `{table}` is the registry table name as the portal
+receives it, `schema.table`. Send a bearer token and the acting role in
+`X-Hasura-Role`, like a command.
+
+The record is checked with the same viewer and select rules as a command before
+its audit rows are read. An unknown table, a missing record and a record outside
+the caller's scope all return 404, so the route does not reveal existence; a
+malformed application, table or record id returns 400. The response is
+`{"entries":[{"at","action","actor":{"id","display_name"},"acting_role","version","status"}]}`,
+ordered oldest first and capped at 200 entries. `status` is present only for a
+state-machine table. Audit payloads, chain/sequence and hash columns are never
+returned.
+
 ## Owner conversations
 
 Send a bearer access token. The server resolves the active Core user and current

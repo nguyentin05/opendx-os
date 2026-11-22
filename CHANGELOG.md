@@ -13,6 +13,10 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Added
 
+- Record history: `GET /api/cap/process/records/{app_id}/{table}/{entity_id}/history`
+  returns a fixed audit projection for a record the caller may read, and the
+  Workspace UI shows it as a `Lịch sử` section on the detail page. Audit
+  payloads and hash-chain columns never leave the server (#41).
 - Compose: `make rag-up` starts the stack with cap-ai, the personal library and
   the FTS-only Assistant, creating local secrets and renewing the worker, File
   Service and dispatcher tokens with Keycloak client credentials. The realm
