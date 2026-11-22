@@ -10,7 +10,7 @@ import { resolveAppRole, useSessionContext } from './core/session-context';
 import { AgentDrawer, agentDrawerID } from './features/agent/AgentDrawer';
 import type { Pending } from './features/agent/AgentChat';
 import type { CommandAttempts } from './features/dynamic-ui/CommandPanel';
-import { topLevelTables } from './features/dynamic-ui/registry';
+import { tableLabel, topLevelTables } from './features/dynamic-ui/registry';
 import { RecordDetail } from './features/dynamic-ui/RecordDetail';
 import { EditRecord, RecordForm } from './features/dynamic-ui/RecordForm';
 import { TableList } from './features/dynamic-ui/TableList';
@@ -280,7 +280,7 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
                 href={toTableURL(context.app.app_id, entry.name, undefined, context.role)}
                 onNavigate={go}
               >
-                {entry.name}
+                {tableLabel(entry)}
               </WorkspaceLink>
             ))}
           </nav>

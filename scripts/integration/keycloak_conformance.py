@@ -99,6 +99,8 @@ def main():
     realm = request(f"/admin/realms/{REALM}", token=admin)
     check(realm.get("bruteForceProtected") is True, "brute-force protection is off")
     check("length(" in (realm.get("passwordPolicy") or ""), "the realm has no password length policy")
+    # The Workspace UI refreshes tokens, so access tokens stay short-lived.
+    check(realm.get("accessTokenLifespan") == 300, "access tokens must last 300 seconds")
 
     clients = request(f"/admin/realms/{REALM}/clients?clientId={CLIENT_ID}", token=admin)
     check(len(clients) == 1, f"{CLIENT_ID} client is missing")

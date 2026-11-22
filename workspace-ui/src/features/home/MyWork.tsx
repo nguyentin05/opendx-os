@@ -56,14 +56,15 @@ export function InboxList({ session, items }: { session: Session; items: InboxIt
     <ul className="workspace-work-list workspace-inbox" role="list">
       {items.map(item => {
         const app = session.apps.find(app => app.app_id === item.appID);
+        const table = app?.tables?.find(entry => entry.name === item.table);
         const href = targetURL(session, { appID: item.appID, role: item.role, tableName: item.table, recordID: item.recordID });
         return (
           <li key={item.appID + ':' + item.table + ':' + item.recordID}>
             {href ? <WorkspaceLink href={href} onNavigate={navigate}>{item.title}</WorkspaceLink> : <span>{item.title}</span>}
             <div className="workspace-work-meta">
               <span>{app?.display_name}</span>
-              <span className="workspace-work-status">{stateLabel(item.status)}</span>
-              <span className="workspace-work-status">{item.commands.map(commandLabel).join(', ')}</span>
+              <span className="workspace-work-status">{stateLabel(table, item.status)}</span>
+              <span className="workspace-work-status">{item.commands.map(name => commandLabel(table, name)).join(', ')}</span>
             </div>
           </li>
         );

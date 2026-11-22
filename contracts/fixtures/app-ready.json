@@ -361,7 +361,28 @@
             "approve_budget",
             "reject",
             "cancel"
-          ]
+          ],
+          "title": "Yêu cầu mua sắm",
+          "inboxActions": [
+            "submit",
+            "approve",
+            "approve_budget"
+          ],
+          "stateLabels": {
+            "DRAFT": "Nháp",
+            "SUBMITTED": "Chờ quản lý duyệt",
+            "BUDGET_REVIEW": "Chờ duyệt ngân sách",
+            "APPROVED": "Đã duyệt",
+            "REJECTED": "Bị từ chối",
+            "CANCELLED": "Đã huỷ"
+          },
+          "actionLabels": {
+            "submit": "Gửi duyệt",
+            "approve": "Duyệt",
+            "approve_budget": "Duyệt ngân sách",
+            "reject": "Từ chối",
+            "cancel": "Huỷ yêu cầu"
+          }
         }
       },
       {
@@ -453,7 +474,8 @@
               "type": "text",
               "required": false
             }
-          ]
+          ],
+          "title": "Nhà cung cấp"
         }
       },
       {
@@ -572,7 +594,8 @@
               "type": "number",
               "required": true
             }
-          ]
+          ],
+          "title": "Hàng hoá trong yêu cầu"
         }
       }
     ],

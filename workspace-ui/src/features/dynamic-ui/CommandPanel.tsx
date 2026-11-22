@@ -8,7 +8,7 @@ import type { AppRoleContext } from '../../core/session-context';
 import type { InstalledTable } from '../../types/registry';
 import { GraphQLRequestError, isRecord, isRecordID, loadRecord } from './graphql';
 import { executeCommand, ProcessCommandError } from './process';
-import { allowedFields, columnLabel, isParentColumn } from './registry';
+import { allowedFields, columnLabel, isParentColumn, tableLabel } from './registry';
 
 type Command = NonNullable<InstalledTable['stateMachine']>['commands'][number];
 
@@ -255,7 +255,7 @@ function RecordActions({
       store.set(scope, sent);
       await executeCommand(context, appID, sent.command, sent.entityID, sent.version, sent.payload, sent.key, signal);
       store.delete(scope);
-      feedback = { message: commandLabel(command.name) + ' đã hoàn tất.' };
+      feedback = { message: commandLabel(table, command.name) + ' đã hoàn tất.' };
     } catch (error) {
       if (signal.aborted) return;
       if (!sent) {
@@ -319,7 +319,7 @@ function RecordActions({
           trigger.current = event.currentTarget;
           setDecision({ command, fields, definition, status, version, retry: attempt });
         }}>
-          {attempt ? 'Thử lại: ' + commandLabel(command.name) : commandLabel(command.name)}
+          {attempt ? 'Thử lại: ' + commandLabel(table, command.name) : commandLabel(table, command.name)}
         </button>
       ))}
       {!decision && message && <p ref={errorMessage} tabIndex={-1} role="alert">{message}</p>}
@@ -335,12 +335,12 @@ function RecordActions({
         }}>
           <h3 id={dialogTitle}>
             {decision.retry
-              ? 'Thử lại: ' + commandLabel(decision.command.name)
-              : commandLabel(decision.command.name) + ' hồ sơ'}
+              ? 'Thử lại: ' + commandLabel(table, decision.command.name)
+              : commandLabel(table, decision.command.name) + ' hồ sơ'}
           </h3>
           <p id={dialogDescription}>
-            {decision.retry ? 'Kiểm tra yêu cầu gốc cho' : 'Cập nhật'} hồ sơ {table.name} {decision.retry?.entityID ?? id}
-            {' từ '}{stateLabel(description.status)} phiên bản {description.version} sang {stateLabel(decision.retry?.to ?? decision.command.to)}.
+            {decision.retry ? 'Kiểm tra yêu cầu gốc cho' : 'Cập nhật'} hồ sơ {tableLabel(table)} {decision.retry?.entityID ?? id}
+            {' từ '}{stateLabel(table, description.status)} phiên bản {description.version} sang {stateLabel(table, decision.retry?.to ?? decision.command.to)}.
           </p>
           <form noValidate onSubmit={confirm}>
             <fieldset disabled={busy || writeGuard?.pending}>
@@ -357,7 +357,7 @@ function RecordActions({
               <div>
                 <button ref={cancel} type="button" onClick={close}>Huỷ</button>
                 <button type="submit">
-                  {decision.retry ? 'Xác nhận thử lại' : 'Xác nhận ' + commandLabel(decision.command.name)}
+                  {decision.retry ? 'Xác nhận thử lại' : 'Xác nhận ' + commandLabel(table, decision.command.name)}
                 </button>
               </div>
             </fieldset>

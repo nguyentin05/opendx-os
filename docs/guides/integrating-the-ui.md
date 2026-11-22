@@ -81,6 +81,12 @@ the header never grants anything.
 | Plain table | no `stateMachine`, no `belongsTo` | List and form |
 | Child table | has `belongsTo` | A grid inside its parent record's detail; not a menu entry |
 
+Name each table with `ui.title` when the manifest declares it, and fall back to
+the table name. Name states and actions with `ui.stateLabels` and
+`ui.actionLabels`; without a label, use a generic word for common workflow names
+(such as `DRAFT` or `approve`) or a humanized name. The shell holds no
+application-specific labels.
+
 - `ui.listColumns` are the list's columns; `ui.formFields` are the form's inputs
   (`name`, `label`, `type` of `text`, `number`, `date`, `uuid` or `file`,
   `required`).
@@ -212,7 +218,8 @@ source record.
 ### Chờ tôi xử lý (the record inbox)
 
 The inbox is derived from record state, not from work items. For every command
-the acting role may run (the command is in `ui.actions` and the role is in
+the acting role may run (the command is in `ui.inboxActions`, or in `ui.actions`
+when the table declares no `ui.inboxActions`, and the role is in
 `allowedRoles`), query the table as that role with
 `where: {_and: [{status: {_in: <the command's from states>}}, <recordFilter>]}`,
 ordered by `updated_at` desc and limited to 20 rows. Hasura row permissions apply

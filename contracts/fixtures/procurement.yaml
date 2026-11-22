@@ -200,6 +200,7 @@ spec:
       - approve
       - approve_budget
     ui:
+      title: Yêu cầu mua sắm
       listColumns:
       - vendor_name
       - item_description
@@ -231,6 +232,23 @@ spec:
       - approve_budget
       - reject
       - cancel
+      inboxActions:
+      - submit
+      - approve
+      - approve_budget
+      stateLabels:
+        DRAFT: Nháp
+        SUBMITTED: Chờ quản lý duyệt
+        BUDGET_REVIEW: Chờ duyệt ngân sách
+        APPROVED: Đã duyệt
+        REJECTED: Bị từ chối
+        CANCELLED: Đã huỷ
+      actionLabels:
+        submit: Gửi duyệt
+        approve: Duyệt
+        approve_budget: Duyệt ngân sách
+        reject: Từ chối
+        cancel: Huỷ yêu cầu
   # A list the application maintains: finance keeps it, everyone reads it.
   - name: domain.procurement_vendors
     columns:
@@ -269,6 +287,7 @@ spec:
         - name
         - tax_code
     ui:
+      title: Nhà cung cấp
       listColumns:
       - name
       - tax_code
@@ -327,6 +346,7 @@ spec:
       delete:
       - role: role_procurement_requester
     ui:
+      title: Hàng hoá trong yêu cầu
       listColumns:
       - item
       - quantity
