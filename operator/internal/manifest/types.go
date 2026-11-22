@@ -253,6 +253,9 @@ type UISchemaDef struct {
 	// InboxActions are the actions that put a record in a user's inbox; all
 	// actions count when absent.
 	InboxActions []string `yaml:"inboxActions,omitempty" json:"inboxActions,omitempty"`
+	// StateLabels and ActionLabels name states and actions in the App Shell.
+	StateLabels  map[string]string `yaml:"stateLabels,omitempty" json:"stateLabels,omitempty"`
+	ActionLabels map[string]string `yaml:"actionLabels,omitempty" json:"actionLabels,omitempty"`
 }
 
 // FormFieldDef defines a form input field in the dynamic UI shell.

@@ -367,7 +367,22 @@
             "submit",
             "approve",
             "approve_budget"
-          ]
+          ],
+          "stateLabels": {
+            "DRAFT": "Nháp",
+            "SUBMITTED": "Chờ quản lý duyệt",
+            "BUDGET_REVIEW": "Chờ duyệt ngân sách",
+            "APPROVED": "Đã duyệt",
+            "REJECTED": "Bị từ chối",
+            "CANCELLED": "Đã huỷ"
+          },
+          "actionLabels": {
+            "submit": "Gửi duyệt",
+            "approve": "Duyệt",
+            "approve_budget": "Duyệt ngân sách",
+            "reject": "Từ chối",
+            "cancel": "Huỷ yêu cầu"
+          }
         }
       },
       {

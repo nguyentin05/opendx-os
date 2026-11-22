@@ -143,7 +143,7 @@ function ChildGridContents({ parent, parentRecord, child, context, onParentChang
             <tr key={isRecordID(row.id) ? row.id : index}>
               {columns.map(name => (
                 <td key={name}>
-                  {row[name] === null ? '—' : name === 'status' ? stateLabel(String(row[name])) : String(row[name])}
+                  {row[name] === null ? '—' : name === 'status' ? stateLabel(child, String(row[name])) : String(row[name])}
                 </td>
               ))}
               {showRowActions && <td>

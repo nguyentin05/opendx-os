@@ -81,3 +81,5 @@ spec:
         - { name: resolution_note, label: "Ghi chú xử lý", type: text, required: false }
       actions: [submit, close, cancel]
       inboxActions: [submit, close]
+      stateLabels: { OPEN: "Mới tạo", IN_PROGRESS: "Đang xử lý", CLOSED: "Đã đóng", CANCELLED: "Đã huỷ" }
+      actionLabels: { submit: "Nhận xử lý", close: "Đóng phiếu", cancel: "Huỷ phiếu" }

@@ -82,7 +82,10 @@ the header never grants anything.
 | Child table | has `belongsTo` | A grid inside its parent record's detail; not a menu entry |
 
 Name each table with `ui.title` when the manifest declares it, and fall back to
-the table name.
+the table name. Name states and actions with `ui.stateLabels` and
+`ui.actionLabels`; without a label, use a generic word for common workflow names
+(such as `DRAFT` or `approve`) or a humanized name. The shell holds no
+application-specific labels.
 
 - `ui.listColumns` are the list's columns; `ui.formFields` are the form's inputs
   (`name`, `label`, `type` of `text`, `number`, `date`, `uuid` or `file`,

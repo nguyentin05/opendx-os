@@ -154,7 +154,7 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
                           ? <WorkspaceLink href={toTableURL(app.app_id, target, value, role)} onNavigate={navigate}>
                             {value}
                           </WorkspaceLink>
-                          : value === null ? '—' : name === 'status' ? stateLabel(String(value)) : String(value)}
+                          : value === null ? '—' : name === 'status' ? stateLabel(table, String(value)) : String(value)}
                     </dd>
                   </div>
                 );

@@ -505,6 +505,16 @@ func validateTable(app *DXApplication, t *TableDef, tables, commands map[string]
 			return fmt.Errorf("ui.inboxActions command %q is not in ui.actions", c)
 		}
 	}
+	for st, label := range ui.StateLabels {
+		if t.StateMachine == nil || !slices.Contains(States(*t.StateMachine), st) || strings.TrimSpace(label) == "" {
+			return fmt.Errorf("invalid ui.stateLabels entry %q", st)
+		}
+	}
+	for c, label := range ui.ActionLabels {
+		if !slices.Contains(ui.Actions, c) || strings.TrimSpace(label) == "" {
+			return fmt.Errorf("invalid ui.actionLabels entry %q", c)
+		}
+	}
 	fields := map[string]bool{}
 	for _, f := range ui.FormFields {
 		if cols[f.Name] == "" || system[f.Name] != "" || fields[f.Name] || strings.TrimSpace(f.Label) == "" || !oneOf(f.Type, "uuid", "text", "number", "file", "date") || (f.Type == "file" && !attachments[f.Name]) {

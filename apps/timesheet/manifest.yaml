@@ -66,3 +66,5 @@ spec:
         - { name: logged_hours, label: "Số giờ đã ghi (0-24)", type: number, required: true }
       actions: [approve, reject]
       inboxActions: [approve]
+      stateLabels: { SUBMITTED: "Chờ duyệt", APPROVED: "Đã duyệt", REJECTED: "Bị từ chối" }
+      actionLabels: { approve: "Duyệt", reject: "Từ chối" }

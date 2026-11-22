@@ -33,7 +33,7 @@ func TestValidateAcceptsTableTitleAndInboxActions(t *testing.T) {
 		t.Fatalf("fixture rejected: %v", err)
 	}
 	ui := app.Spec.Tables[0].UI
-	if ui.Title == "" || len(ui.InboxActions) == 0 {
+	if ui.Title == "" || len(ui.InboxActions) == 0 || ui.StateLabels["BUDGET_REVIEW"] == "" || ui.ActionLabels["approve_budget"] == "" {
 		t.Fatalf("fixture ui lost title or inboxActions: %+v", ui)
 	}
 }
@@ -150,6 +150,10 @@ func TestValidateRolesScopesAndCapabilities(t *testing.T) {
 		{"inbox action outside ui.actions", func(a *DXApplication) { a.Spec.Tables[0].UI.InboxActions = []string{"close"} }},
 		{"empty inbox actions", func(a *DXApplication) { a.Spec.Tables[0].UI.InboxActions = []string{} }},
 		{"duplicate inbox action", func(a *DXApplication) { a.Spec.Tables[0].UI.InboxActions = []string{"submit", "submit"} }},
+		{"label for an unknown state", func(a *DXApplication) { a.Spec.Tables[0].UI.StateLabels = map[string]string{"ARCHIVED": "Lưu trữ"} }},
+		{"blank state label", func(a *DXApplication) { a.Spec.Tables[0].UI.StateLabels = map[string]string{"DRAFT": " "} }},
+		{"label for an action outside ui.actions", func(a *DXApplication) { a.Spec.Tables[0].UI.ActionLabels = map[string]string{"archive": "Lưu trữ"} }},
+		{"state labels on a plain table", func(a *DXApplication) { a.Spec.Tables[1].UI.StateLabels = map[string]string{"DRAFT": "Nháp"} }},
 		{"blank table title", func(a *DXApplication) { a.Spec.Tables[0].UI.Title = "  " }},
 		{"unknown effect kind", func(a *DXApplication) { a.Spec.Workflows[0].Effects[1].Kind = "send_email" }},
 		{"complete work item with fields", func(a *DXApplication) {
