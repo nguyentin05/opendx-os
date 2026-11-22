@@ -83,8 +83,8 @@ readiness remain open.
 
    For a demo organization, run `scripts/seed-demo.py seed`. It creates three
    departments and six Keycloak accounts (password `DEMO_PASSWORD`, default
-   `Demo@2026`) with procurement, maintenance and timesheet roles, and is safe to
-   re-run. `scripts/seed-demo.py scopes` then files sample purchase requests (each
+   `Demo@2026`) with procurement, maintenance and timesheet roles (and the
+   personal library role when `cap-ai` is enabled), and is safe to re-run. `scripts/seed-demo.py scopes` then files sample purchase requests (each
    with a quote uploaded to cap-process and scanned by ClamAV) and prints what each
    person sees through the gateway; `scripts/seed-demo.py flow` takes one request
    through submit, department approval and budget approval with cap-process

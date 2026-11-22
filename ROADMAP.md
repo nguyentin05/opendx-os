@@ -30,7 +30,7 @@ changes are in [CHANGELOG.md](CHANGELOG.md); open work is tracked in
 - [x] Workspace Assistant across application and personal knowledge (#103).
 - [x] Controller split into the `dxos-controller` binary and image (#106).
 - [x] Required CI checks, security scans, image builds, and an attested release workflow (#84, #87, #101).
-- [ ] Workspace UI MVP: app discovery, schema-driven lists and forms, record actions, attachments, and My Work (#104).
+- [x] Workspace UI MVP: app discovery, schema-driven lists and forms, record actions, attachments, and My Work (#104).
 - [ ] Workspace UI follow-ups: audit history (#41), department-scoped work items (#27).
 - [x] In-memory access-token refresh before expiry, without remounting open screens (#38).
 - [x] Action inbox derived from record state, with the review work item closed by `complete_work_item` (#42).
@@ -38,11 +38,14 @@ changes are in [CHANGELOG.md](CHANGELOG.md); open work is tracked in
 - [x] Run `cap-ai` from the default Compose stack without manual token setup.
 - [ ] README quickstart and screenshots (#47), documentation pass (#46), and the PoF checklist (#48).
 
+## v1.1.0: Data capability
+
+- [ ] `cap-data` service in the Compose stack: OT ingestion (`S02`), Parquet export (`S07`), and BI lineage (`S08`). The service is not deployed, and its handlers still write the retired `core` tables (`core.ot_events`, `core.devices`, `core.work_items`, `core.export_batches`, `core.data_lineage`) instead of the `cap_data` schema, so they must be ported first (#111).
+
 ## Later
 
-- [ ] `cap-data` service in the Compose stack: OT ingestion (`S02`), Parquet export (`S07`), and BI lineage (`S08`). The service is not deployed, and its handlers still write the retired `core` tables (`core.ot_events`, `core.devices`, `core.work_items`, `core.export_batches`, `core.data_lineage`) instead of the `cap_data` schema, so they must be ported first.
 - [ ] `cap-work` service and Kanban board (#27, #44).
 - [ ] Semantic concept ownership from [ADR 0002](docs/adr/0002-semantic-schema-governance-and-cross-app-data-sync.md).
-- [ ] Atomic Hasura metadata apply (#24) and Keycloak account sync (#23).
+- [ ] Keycloak account sync (#23).
 - [ ] Argo CD GitOps example (#28).
 - [ ] Audit hash-chain verification anchored outside the database.

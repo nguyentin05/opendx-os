@@ -109,6 +109,11 @@ def load_env() -> dict[str, str]:
 
 
 ENV = load_env()
+# The personal library is installed only when cap-ai is enabled.
+if "cap-ai" in ENV.get("ENABLED_CAPABILITIES", "cap-ai").split(","):
+    for username, *_, roles in PEOPLE:
+        if username != "quan.tri":
+            roles.append("role_library_user")
 KEYCLOAK = f"http://localhost:{ENV.get('KEYCLOAK_PORT', '8085')}"
 GATEWAY = f"http://localhost:{ENV.get('APISIX_GATEWAY_PORT', '9080')}"
 PASSWORD = ENV.get("DEMO_PASSWORD", "Demo@2026")

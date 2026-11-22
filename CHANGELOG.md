@@ -47,6 +47,13 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Changed
 
+- Procurement: the request form picks a vendor from the application's vendor
+  list, labelled "Nhà cung cấp" instead of "Vendor id".
+- Demo seed: the five business accounts also hold `role_library_user` when
+  `cap-ai` is enabled, so they can open the personal library.
+- Docs: one person holding both procurement approval roles may approve both
+  steps; role administration keeps the roles apart (#114). The operator is the
+  documented control-plane exception to least-privilege database roles (#116).
 - The Workspace UI copy and the sample application labels are Vietnamese; table
   headers come from manifest labels, and My Work hides `DONE` items (#45).
 - The Kubernetes controller moves from `dxos-operator controller` to a separate
@@ -67,6 +74,8 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Security
 
+- Procurement roles no longer read every account's email through the shared
+  `core.users` table; they see `id` and `display_name` only (#115).
 - Keycloak access tokens last five minutes again now that the Workspace UI
   refreshes them, so a leaked token is usable for a shorter time (#38).
   Existing installations set Access Token Lifespan in the admin console.
