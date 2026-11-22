@@ -302,15 +302,18 @@ func TestChatHTTPDisabledPersonalHistoryStaysOutOfGeneration(t *testing.T) {
 			return
 		}
 		answer := privateAnswer
+		// The PERSONAL turn reports no usage, the APP turn reports a zero pair;
+		// the public turn bodies must keep that distinction.
+		var usage *models.Usage
 		if req.Input.Query == "laptop" {
 			if strings.Contains(strings.Join(req.Input.Texts, " "), privateAnswer) {
 				t.Errorf("disabled PERSONAL assistant content reached generation: %v", req.Input.Texts)
 			}
 			answer = "Laptop purchase policy"
+			usage = &models.Usage{}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(models.Result{Text: answer, CitationIDs: []string{"E1"},
-			Usage: &models.Usage{InputTokens: 3, OutputTokens: 2}})
+		_ = json.NewEncoder(w).Encode(models.Result{Text: answer, CitationIDs: []string{"E1"}, Usage: usage})
 	}))
 	defer server.Close()
 	provider, err := models.NewHTTPProvider(server.URL, "", true)
@@ -341,12 +344,18 @@ func TestChatHTTPDisabledPersonalHistoryStaysOutOfGeneration(t *testing.T) {
 	if prior.Status != "ANSWERED" || prior.Answer == nil || *prior.Answer != privateAnswer || len(prior.Citations) != 1 {
 		t.Fatalf("PERSONAL fixture is not generation-eligible: %s", first.Body.String())
 	}
+	if prior.Usage != nil || strings.Contains(first.Body.String(), `"usage"`) {
+		t.Fatalf("absent usage serialized in the turn body: %s", first.Body.String())
+	}
 
 	appOnly := build(false)
 	next := chatRequest(appOnly, "POST", path+"/messages", alice, "app", `{"query":"laptop"}`)
 	requireChatStatus(t, next, http.StatusOK)
 	if result := chatJSON[TurnResult](t, next.Body.String()); result.Status != "ANSWERED" {
 		t.Fatalf("enabled APP did not generate: %s", next.Body.String())
+	}
+	if !strings.Contains(next.Body.String(), `"usage":{"input_tokens":0,"output_tokens":0}`) {
+		t.Fatalf("reported zero usage did not survive the turn response: %s", next.Body.String())
 	}
 	rows, err := f.store.Messages(t.Context(), f.actor, conv.ID, 2, 2)
 	if err != nil || len(rows) != 2 || len(rows[1].Sources) != 1 || rows[1].Sources[0].ScopeKind != "APP" {

@@ -77,3 +77,78 @@ func TestGatewayRechecksAfterCallIntent(t *testing.T) {
 		t.Fatalf("unsent operation not recorded as definitely unsent: %+v", stored)
 	}
 }
+
+// denyAfter denies every current-authority read from the given check onwards.
+type denyAfter struct {
+	base   CurrentAuthority
+	after  int
+	checks int
+}
+
+func (a *denyAfter) Current(ctx context.Context, id *auth.Identity, op Operation) (Decision, error) {
+	a.checks++
+	if a.checks > a.after {
+		return Decision{PolicyRevision: 1}, nil
+	}
+	return a.base.Current(ctx, id, op)
+}
+
+// failingFinish refuses the terminal record the way a lost connection or a
+// cleanup timeout does, without changing the real claim/intent rows.
+type failingFinish struct {
+	OperationLog
+}
+
+func (f *failingFinish) Finish(context.Context, string, string, string, Finalization) (bool, error) {
+	return false, ErrUnavailable
+}
+
+// The caller's classification must match what the store actually holds: an
+// unrecordable unsent outcome is never reported as a recorded one.
+func TestGatewayRecordFailureClassification(t *testing.T) {
+	payload := Payload{Query: "approved query"}
+
+	t.Run("pre-begin record failure stays retryable", func(t *testing.T) {
+		env := newOperationEnv(t)
+		env.approve(t)
+		env.op.Key = "record-fail-pre-begin"
+		provider := &countingProvider{result: Result{Text: "retry answer"}}
+		gateway := env.gateway(provider)
+		gateway.Policy = &Policy{Authority: &denyAfter{base: env.policy.Authority, after: 1}, Enabled: true}
+		gateway.Operations = &failingFinish{OperationLog: &OperationStore{DB: env.gatewayDB}}
+		if _, err := gateway.Call(context.Background(), env.actor, env.op, payload); err != ErrUnavailable || provider.count() != 0 {
+			t.Fatalf("unrecorded pre-begin outcome not reported as unavailable: %v calls=%d", err, provider.count())
+		}
+		if stored := readOperation(t, env.db, env.op.Key); stored.State != "CLAIMED" || stored.ErrorCode.Valid {
+			t.Fatalf("store does not match the reported classification: %+v", stored)
+		}
+		// The row is still CLAIMED, so the same caller can retry and dispatch once.
+		result, err := env.gateway(provider).Call(context.Background(), env.actor, env.op, payload)
+		if err != nil || result.Text != "retry answer" || provider.count() != 1 {
+			t.Fatalf("retry after unrecorded pre-begin failure: %v calls=%d", err, provider.count())
+		}
+		if stored := readOperation(t, env.db, env.op.Key); stored.State != "SUCCEEDED" {
+			t.Fatalf("retry did not finalize: %+v", stored)
+		}
+	})
+
+	t.Run("post-begin record failure is uncertain", func(t *testing.T) {
+		env := newOperationEnv(t)
+		env.approve(t)
+		env.op.Key = "record-fail-post-begin"
+		provider := &countingProvider{result: Result{Text: "must not be sent"}}
+		gateway := env.gateway(provider)
+		gateway.Policy = &Policy{Authority: &denyAfter{base: env.policy.Authority, after: 2}, Enabled: true}
+		gateway.Operations = &failingFinish{OperationLog: &OperationStore{DB: env.gatewayDB}}
+		if _, err := gateway.Call(context.Background(), env.actor, env.op, payload); err != ErrUncertain || provider.count() != 0 {
+			t.Fatalf("unrecorded post-begin outcome not reported as uncertain: %v calls=%d", err, provider.count())
+		}
+		if stored := readOperation(t, env.db, env.op.Key); stored.State != "MAY_HAVE_SENT" || stored.ErrorCode.Valid || stored.Input.Valid {
+			t.Fatalf("store does not match the reported classification: %+v", stored)
+		}
+		// Persisted intent keeps the operation ambiguous for any later attempt.
+		if _, err := env.gateway(provider).Call(context.Background(), env.actor, env.op, payload); err != ErrUncertain || provider.count() != 0 {
+			t.Fatalf("unrecorded post-begin outcome was redispatched: %v calls=%d", err, provider.count())
+		}
+	})
+}

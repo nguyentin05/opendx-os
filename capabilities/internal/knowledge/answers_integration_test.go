@@ -98,6 +98,64 @@ func TestAnswersHTTPContractAndPolicyErrors(t *testing.T) {
 	}
 }
 
+// usageAnswerProvider reports exactly the usage presence the test asks for.
+type usageAnswerProvider struct {
+	usage *models.Usage
+	calls int
+}
+
+func (p *usageAnswerProvider) Invoke(context.Context, models.Profile, models.Payload) (models.Result, error) {
+	p.calls++
+	return models.Result{Text: "Director approval", CitationIDs: []string{"E1"}, Usage: p.usage}, nil
+}
+
+// The live HTTP answer path must keep the zero-versus-nil usage distinction the
+// provider boundary decodes: a reported zero pair is serialized, absent usage is
+// omitted from the public response body.
+func TestAnswersUsageResponseShape(t *testing.T) {
+	db, s, a, _ := semanticFixture(t)
+	if _, e := db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,enabled) SELECT 'local-gen',revision,'GENERATE','LOCAL',provider_id,model_id,limits,enabled FROM cap_ai.model_profiles WHERE id='embed';INSERT INTO cap_ai.processing_policy_profiles VALUES('reviewed',1,'local-gen',1,now());`); e != nil {
+		t.Fatal(e)
+	}
+	generate := models.Profile{ID: "local-gen", Revision: 1, Purpose: "GENERATE", Execution: "LOCAL",
+		ProviderID: "fake", ModelID: "fake", Enabled: true,
+		Limits: models.Limits{MaxInputTokens: 8192, MaxOutputTokens: 512, MaxBytes: 16384, TimeoutMS: 500}}
+	for _, test := range []struct {
+		name     string
+		usage    *models.Usage
+		contains string
+	}{
+		{name: "reported zero", usage: &models.Usage{}, contains: `"usage":{"input_tokens":0,"output_tokens":0}`},
+		{name: "no usage", usage: nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			provider := &usageAnswerProvider{usage: test.usage}
+			g := &models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}
+			s.ConfigureModels(g, models.Profile{}, generate)
+			r := httptest.NewRequest("POST", "/api/cap/ai/answers", strings.NewReader(`{"scope":{"kind":"APP","app_id":"library"},"query":"Director"}`))
+			r = r.WithContext(auth.WithIdentity(r.Context(), a))
+			w := httptest.NewRecorder()
+			s.Handler().ServeHTTP(w, r)
+			body := w.Body.String()
+			if w.Code != 200 || provider.calls != 1 {
+				t.Fatalf("live answer: code=%d calls=%d body=%s", w.Code, provider.calls, body)
+			}
+			if !strings.Contains(body, `"status":"ANSWERED"`) {
+				t.Fatalf("answer not generated: %s", body)
+			}
+			if test.contains == "" {
+				if strings.Contains(body, `"usage"`) {
+					t.Fatalf("absent usage serialized: %s", body)
+				}
+				return
+			}
+			if !strings.Contains(body, test.contains) {
+				t.Fatalf("usage shape lost in response: %s", body)
+			}
+		})
+	}
+}
+
 type localAnswerProvider struct{ calls int }
 
 func (p *localAnswerProvider) Invoke(context.Context, models.Profile, models.Payload) (models.Result, error) {

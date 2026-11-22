@@ -81,8 +81,13 @@ func (g *Gateway) Call(ctx context.Context, actor *auth.Identity, op Operation, 
 	// once the database has serialized concurrent callers.
 	fresh, err := g.Policy.Check(ctx, actor, op)
 	if err != nil || fresh.Fingerprint != approval.Fingerprint {
-		if !shared {
-			g.record(ctx, op.Key, fingerprint, "", Finalization{State: OperationFailedUnsent, ErrorCode: codeAuthorityChanged})
+		// The outcome is "definitely unsent" only once the store records it.
+		// Without that write the row stays CLAIMED, so a later authorized attempt
+		// can still begin: report retryable unavailability instead of a policy
+		// block the database never stored. The shared leased-EMBED path records
+		// nothing by design and keeps the claim for the next fence.
+		if !shared && !g.record(ctx, op.Key, fingerprint, "", Finalization{State: OperationFailedUnsent, ErrorCode: codeAuthorityChanged}) {
+			return Result{}, ErrUnavailable
 		}
 		return Result{}, ErrPolicy
 	}
@@ -98,7 +103,13 @@ func (g *Gateway) Call(ctx context.Context, actor *auth.Identity, op Operation, 
 	// side effect, so a revocation during the intent write still blocks egress.
 	fresh, err = g.Policy.Check(ctx, actor, op)
 	if err != nil || fresh.Fingerprint != approval.Fingerprint {
-		g.record(ctx, op.Key, fingerprint, token, Finalization{State: OperationFailedUnsent, ErrorCode: codeAuthorityChanged})
+		// Nothing was sent, but persisted intent already committed: only this
+		// caller's token can terminalize the row. If that write cannot be applied
+		// the operation stays MAY_HAVE_SENT, which the claim path maps to
+		// uncertainty, so the caller must not be told "definitely unsent".
+		if !g.record(ctx, op.Key, fingerprint, token, Finalization{State: OperationFailedUnsent, ErrorCode: codeAuthorityChanged}) {
+			return Result{}, ErrUncertain
+		}
 		return Result{}, ErrPolicy
 	}
 	// Persisted intent precedes the possible network side effect. A crash or
