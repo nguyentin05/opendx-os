@@ -5,8 +5,6 @@ package models
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"math"
 	"time"
@@ -17,13 +15,19 @@ import (
 type Provider interface {
 	Invoke(context.Context, Profile, Payload) (Result, error)
 }
+
+// Gateway owns the only dispatch transition: policy, claim, recheck, persisted
+// intent, final authority check, one adapter invocation, validated finish.
 type Gateway struct {
-	Policy    *Policy
-	Budget    *Budget
-	Providers map[string]Provider
+	Policy     *Policy
+	Operations OperationLog
+	Providers  map[string]Provider
 }
 
 func (g *Gateway) Call(ctx context.Context, actor *auth.Identity, op Operation, payload Payload) (Result, error) {
+	if g == nil || g.Policy == nil || actor == nil {
+		return Result{}, ErrUnavailable
+	}
 	if op.ScopeKind == "AGENT" && (payload.Query == "" || len(payload.Evidence) == 0) {
 		return Result{}, ErrPolicy
 	}
@@ -36,7 +40,7 @@ func (g *Gateway) Call(ctx context.Context, actor *auth.Identity, op Operation, 
 	}
 	profile := approval.Profile
 	provider := g.Providers[profile.ProviderID]
-	if provider == nil || g.Budget == nil {
+	if provider == nil || g.Operations == nil {
 		return Result{}, ErrUnavailable
 	}
 	raw, err := json.Marshal(payload)
@@ -45,92 +49,134 @@ func (g *Gateway) Call(ctx context.Context, actor *auth.Identity, op Operation, 
 	if err != nil || len(raw) > profile.Limits.MaxBytes || len(raw)+512 > profile.Limits.MaxInputTokens || len(payload.Evidence) > 8 || len(payload.Texts) > 1 {
 		return Result{}, ErrPolicy
 	}
-	if profile.Limits.InputUnitPrice < 0 || profile.Limits.OutputUnitPrice < 0 || profile.Limits.MaxInputTokens > 1000000 || profile.Limits.MaxOutputTokens > 1000000 {
+	if profile.Limits.MaxInputTokens > 1000000 || profile.Limits.MaxOutputTokens > 1000000 {
 		return Result{}, ErrPolicy
 	}
-	in, out := int64(profile.Limits.MaxInputTokens), int64(profile.Limits.MaxOutputTokens)
-	if profile.Limits.InputUnitPrice > math.MaxInt64/in || profile.Limits.OutputUnitPrice > math.MaxInt64/out {
-		return Result{}, ErrPolicy
-	}
-	estimate := in * profile.Limits.InputUnitPrice
-	outputCost := out * profile.Limits.OutputUnitPrice
-	if estimate > math.MaxInt64-outputCost {
-		return Result{}, ErrPolicy
-	}
-	estimate += outputCost
-	if estimate < 1 {
-		estimate = 1
-	}
-	hash := sha256.Sum256(append([]byte(approval.Fingerprint), raw...))
-	r, err := g.Budget.Reserve(ctx, ReservationRequest{OperationKey: op.Key, ActorID: actor.UserID, AppID: op.AppID, ProfileID: profile.ID, ProfileRevision: profile.Revision, Estimate: estimate, PricingRevision: profile.PricingRevision, Fingerprint: hex.EncodeToString(hash[:])})
+	fingerprint, err := operationFingerprint(actor, approval, op, payload)
 	if err != nil {
 		return Result{}, err
 	}
-	if r.State != "RESERVED" {
+	state, err := g.Operations.Claim(ctx, OperationBinding{
+		Key: op.Key, ActorID: actor.UserID, AppID: op.AppID, ProfileID: profile.ID,
+		Revision: profile.Revision, Purpose: op.Purpose, Fingerprint: fingerprint,
+	})
+	if err != nil {
+		return Result{}, err
+	}
+	switch state {
+	case OperationClaimed:
+		// A fresh or resumed claim is the only state that may start a dispatch.
+	case OperationMayHaveSent, OperationSucceeded, OperationUncertain:
+		return Result{}, ErrUncertain
+	case OperationFailedUnsent:
+		return Result{}, ErrPolicy
+	default:
 		return Result{}, ErrUncertain
 	}
-	// Recheck after the reservation wait. Never reuse the first authority snapshot.
+	// A leased worker EMBED claim is shared by whichever fence currently holds
+	// the lease: a stale attempt leaves it for the next authorized one instead of
+	// terminalizing it without a token.
+	shared := op.Lease != nil && op.Purpose == "EMBED"
+	// Recheck after the claim write. The first authority snapshot is never reused
+	// once the database has serialized concurrent callers.
 	fresh, err := g.Policy.Check(ctx, actor, op)
 	if err != nil || fresh.Fingerprint != approval.Fingerprint {
-		cleanup, stop := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-		defer stop()
-		_ = g.Budget.finish(cleanup, r.ID, "CANCELLED", "")
+		if !shared {
+			g.record(ctx, op.Key, fingerprint, "", Finalization{State: OperationFailedUnsent, ErrorCode: codeAuthorityChanged})
+		}
 		return Result{}, ErrPolicy
 	}
-	_, err = g.Budget.begin(ctx, r.ID)
+	token, err := g.Operations.Begin(ctx, op.Key, fingerprint)
 	if err != nil {
 		return Result{}, err
 	}
+	if token == "" {
+		// A matching caller lost the begin race; its outcome is ambiguous.
+		return Result{}, ErrUncertain
+	}
+	// The current authority is verified immediately before the possible network
+	// side effect, so a revocation during the intent write still blocks egress.
 	fresh, err = g.Policy.Check(ctx, actor, op)
 	if err != nil || fresh.Fingerprint != approval.Fingerprint {
-		cleanup, stop := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-		defer stop()
-		_ = g.Budget.finish(cleanup, r.ID, "CANCELLED_UNSENT", "")
+		g.record(ctx, op.Key, fingerprint, token, Finalization{State: OperationFailedUnsent, ErrorCode: codeAuthorityChanged})
 		return Result{}, ErrPolicy
 	}
-	// Persisted intent precedes the possible network side effect. Crash/timeout
-	// leaves conservative funds; there is no automatic retry or expiration release.
+	// Persisted intent precedes the possible network side effect. A crash or
+	// timeout leaves an ambiguous operation that is never redispatched.
 	timeout := time.Duration(profile.Limits.TimeoutMS) * time.Millisecond
 	if timeout <= 0 || timeout > 120*time.Second {
 		timeout = 30 * time.Second
 	}
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	result, err := provider.Invoke(callCtx, profile, payload)
-	finishCtx, stop := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-	defer stop()
-	if err != nil || callCtx.Err() != nil {
-		_ = g.Budget.finish(finishCtx, r.ID, "UNCERTAIN", result.ProviderRequestID)
+	started := time.Now()
+	result, callErr := provider.Invoke(callCtx, profile, payload)
+	latency := time.Since(started).Milliseconds()
+	if latency < 0 {
+		latency = 0
+	}
+	if latency > 86400000 {
+		latency = 86400000
+	}
+	if callErr != nil || callCtx.Err() != nil {
+		g.record(ctx, op.Key, fingerprint, token, Finalization{State: OperationUncertain, ProviderRequestID: result.ProviderRequestID, ErrorCode: codeProviderUncertain, LatencyMS: latency})
 		return Result{}, ErrUncertain
 	}
-	u := result.Usage
-	if u.InputTokens < 0 || u.OutputTokens < 0 || u.InputTokens > in || u.OutputTokens > out || len(result.Text) > profile.Limits.MaxBytes || len(result.Vector) > 16000 || profile.Purpose == "EMBED" && len(result.Vector) != profile.Dimension {
-		_ = g.Budget.finish(finishCtx, r.ID, "UNCERTAIN", result.ProviderRequestID)
+	if !withinLimits(result.Usage, profile) {
+		g.record(ctx, op.Key, fingerprint, token, Finalization{State: OperationUncertain, ProviderRequestID: result.ProviderRequestID, ErrorCode: codeInvalidUsage, LatencyMS: latency})
 		return Result{}, ErrUncertain
 	}
-	for _, v := range result.Vector {
-		if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
-			_ = g.Budget.finish(finishCtx, r.ID, "UNCERTAIN", result.ProviderRequestID)
-			return Result{}, ErrUncertain
-		}
-	}
-	u.Units = u.InputTokens*profile.Limits.InputUnitPrice + u.OutputTokens*profile.Limits.OutputUnitPrice
-	u.PricingRevision = profile.PricingRevision
-	if err = g.Budget.finish(finishCtx, r.ID, "SUCCEEDED", result.ProviderRequestID); err != nil {
+	if !validResult(profile, result) {
+		g.record(ctx, op.Key, fingerprint, token, Finalization{State: OperationUncertain, ProviderRequestID: result.ProviderRequestID, ErrorCode: codeInvalidResult, LatencyMS: latency})
 		return Result{}, ErrUncertain
 	}
-	if err = g.Budget.Settle(finishCtx, r.ID, "provider-complete", u); err != nil {
+	if !g.record(ctx, op.Key, fingerprint, token, Finalization{State: OperationSucceeded, ProviderRequestID: result.ProviderRequestID, Usage: result.Usage, LatencyMS: latency}) {
 		return Result{}, ErrUncertain
 	}
 	// A global query vector is usable only while its dispatch approval remains
-	// current. The completed provider call is still settled if approval changed.
+	// current. The completed operation is still recorded if approval changed.
 	if op.RequirePersonalQueryApproval {
 		fresh, err := g.Policy.Check(ctx, actor, op)
 		if err != nil || fresh.Fingerprint != approval.Fingerprint {
 			return Result{}, ErrPolicy
 		}
 	}
-	result.Usage = u
 	result.ProviderRequestID = ""
 	return result, nil
+}
+
+// record finalizes under a bounded detached context so a canceled or
+// disconnected caller can still record a known outcome.
+func (g *Gateway) record(ctx context.Context, key, fingerprint, token string, f Finalization) bool {
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer cancel()
+	applied, err := g.Operations.Finish(cleanup, key, fingerprint, token, f)
+	return err == nil && applied
+}
+
+func withinLimits(usage *Usage, profile Profile) bool {
+	if usage == nil {
+		return true
+	}
+	return usage.InputTokens >= 0 && usage.OutputTokens >= 0 &&
+		usage.InputTokens <= int64(profile.Limits.MaxInputTokens) &&
+		usage.OutputTokens <= int64(profile.Limits.MaxOutputTokens)
+}
+
+func validResult(profile Profile, result Result) bool {
+	if len(result.Text) > profile.Limits.MaxBytes || len(result.Vector) > 16000 {
+		return false
+	}
+	if profile.Purpose != "EMBED" {
+		return true
+	}
+	if len(result.Vector) != profile.Dimension {
+		return false
+	}
+	for _, value := range result.Vector {
+		if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
+			return false
+		}
+	}
+	return true
 }

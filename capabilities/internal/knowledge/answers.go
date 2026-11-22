@@ -212,5 +212,5 @@ func (s *AnswerService) Answer(ctx context.Context, actor *auth.Identity, req An
 	}
 	// Results outside the context were not checked after generation. Return only
 	// the freshly checked evidence. IDs validate provenance, not semantic truth.
-	return AnswerResponse{Status: "ANSWERED", Answer: &generated.Text, Results: evidence, Citations: citations, ModelProfile: &AnswerProfile{ID: profile.ID, Revision: profile.Revision}, Usage: &generated.Usage}, nil
+	return AnswerResponse{Status: "ANSWERED", Answer: &generated.Text, Results: evidence, Citations: citations, ModelProfile: &AnswerProfile{ID: profile.ID, Revision: profile.Revision}, Usage: generated.Usage}, nil
 }

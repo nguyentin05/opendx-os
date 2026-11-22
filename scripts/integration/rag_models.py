@@ -119,9 +119,6 @@ def main():
         # Successful parse jobs clear lease_owner; the actual service subject is
         # recorded in job_attempts, never invented from the end-user identity.
         worker = source.db("SELECT worker_id FROM cap_ai.job_attempts WHERE job_id IN(SELECT id FROM cap_ai.ingestion_jobs WHERE version_id IN(SELECT active_version_id FROM cap_ai.knowledge_documents WHERE id IN("+','.join(literal(d) for d in documents.values())+"))) ORDER BY started_at DESC LIMIT 1")
-        keys = [('INSTALLATION','installation'),('APP',app)]+[('USER',a) for a in set([actors['A'],actors['B'],worker])]
-        for scope,key in keys:
-            source.db("INSERT INTO cap_ai.budget_accounts(scope,scope_key,period_start,period_end,limit_units,pricing_revision) SELECT "+literal(scope)+','+literal(key)+",date_trunc('month',now()),date_trunc('month',now())+interval '1 month',10000000,'test-price-1' WHERE NOT EXISTS(SELECT FROM cap_ai.budget_accounts WHERE scope="+literal(scope)+' AND scope_key='+literal(key)+" AND period_start<=now() AND period_end>now())")
         for _ in range(120):
             ready = source.db("SELECT count(*) FROM cap_ai.embedding_generations g JOIN cap_ai.processing_runs r ON r.id=g.run_id JOIN cap_ai.document_versions v ON v.id=r.version_id WHERE v.document_id IN("+','.join(literal(d) for d in documents.values())+") AND g.state='READY'")
             if ready == '2':
@@ -185,10 +182,11 @@ def main():
             source.db('INSERT INTO core.user_roles(user_id,role_name) VALUES('+literal(actors['A'])+','+literal(read)+') ON CONFLICT DO NOTHING')
             thread.join(10)
         fake('/control',{'mode':'timeout'})
-        before=int(source.db("SELECT count(*) FROM cap_ai.model_reservations WHERE state='UNCERTAIN'"))
+        before=int(source.db("SELECT count(*) FROM cap_ai.model_operations WHERE state='UNCERTAIN'"))
         status,reply=answer('A',read,scope,'Director')
         source.require(status==200 and reply['status']=='SEARCH_ONLY' and reply.get('reason')=='MODEL_CHARGE_UNCERTAIN','FAIL: timeout not conservative')
-        source.require(int(source.db("SELECT count(*) FROM cap_ai.model_reservations WHERE state='UNCERTAIN'"))==before+1,'FAIL: uncertain charge missing')
+        source.require(int(source.db("SELECT count(*) FROM cap_ai.model_operations WHERE state='UNCERTAIN'"))==before+1,'FAIL: uncertain operation missing')
+        source.require(source.db("SELECT coalesce(bool_and(input_tokens IS NULL AND output_tokens IS NULL),true) FROM cap_ai.model_operations WHERE state='UNCERTAIN'")=='t','FAIL: uncertain operation recorded usage')
         count=fake()['counts']['GENERATE'];time.sleep(1.2)
         source.require(fake()['counts']['GENERATE']==count,'FAIL: automatic billed retry')
         fake('/control',{'mode':'normal'})

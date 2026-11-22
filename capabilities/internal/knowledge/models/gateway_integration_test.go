@@ -7,11 +7,7 @@ package models
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
@@ -25,77 +21,59 @@ func (a *gatewayAuthority) Current(context.Context, *auth.Identity, Operation) (
 	return Decision{Profile: a.profile, Allowed: !a.denied, PolicyRevision: 1, QueryClassification: "NON_PERSONAL"}, nil
 }
 
-func TestTimeoutAfterSendUncertain(t *testing.T) {
-	db, b, _ := budgetFixture(t)
-	if _, err := db.Exec(`UPDATE cap_ai.budget_accounts SET limit_units=100000`); err != nil {
-		t.Fatal(err)
-	}
-	var calls atomic.Int64
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); time.Sleep(100 * time.Millisecond) }))
-	defer server.Close()
-	a := &gatewayAuthority{profile: Profile{ID: "gen", Revision: 1, Purpose: "GENERATE", Execution: "HOSTED", ProviderID: "fake", Enabled: true, PricingRevision: "price-1", Limits: Limits{MaxInputTokens: 2048, MaxOutputTokens: 20, MaxBytes: 4096, InputUnitPrice: 1, OutputUnitPrice: 1, TimeoutMS: 50}}}
-	provider, err := NewHTTPProvider(server.URL, "", true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	g := Gateway{Policy: &Policy{Authority: a, Enabled: true}, Budget: b, Providers: map[string]Provider{"fake": provider}}
-	actor := &auth.Identity{UserID: "11111111-1111-4111-8111-111111111111"}
-	op := Operation{Key: "timeout", AppID: "app", ScopeKind: "APP", Purpose: "GENERATE", ProfileID: "gen", ProfileRevision: 1}
+func TestGatewayTimeoutAfterSendUncertain(t *testing.T) {
+	env := newOperationEnv(t)
+	env.approve(t)
+	env.setTimeout(t, 50)
+	provider := &countingProvider{before: func(ctx context.Context) {
+		// The gateway's own call deadline must interrupt the provider.
+		<-ctx.Done()
+	}}
+	gateway := env.gateway(provider)
+	env.op.Key = "timeout"
 	for i := 0; i < 2; i++ {
-		if _, err = g.Call(context.Background(), actor, op, Payload{Query: "approved query"}); err != ErrUncertain {
+		if _, err := gateway.Call(context.Background(), env.actor, env.op, Payload{Query: "approved query"}); err != ErrUncertain {
 			t.Fatal(err)
 		}
 	}
-	if calls.Load() != 1 {
-		t.Fatal("possible billed retry repeated", calls.Load())
+	if provider.count() != 1 {
+		t.Fatal("possible billed retry repeated", provider.count())
 	}
-	var state string
-	var reserved int
-	if err = db.QueryRow(`SELECT state,(SELECT reserved_units FROM cap_ai.budget_accounts WHERE scope='USER') FROM cap_ai.model_reservations WHERE operation_key='timeout'`).Scan(&state, &reserved); err != nil {
-		t.Fatal(err)
-	}
-	if state != "UNCERTAIN" || reserved != 2068 {
-		t.Fatal("uncertain charge released", state, reserved)
+	stored := readOperation(t, env.db, env.op.Key)
+	if stored.State != "UNCERTAIN" || stored.Input.Valid || stored.Output.Valid || !stored.ErrorCode.Valid {
+		t.Fatalf("uncertain operation released or recorded usage: %+v", stored)
 	}
 }
 
+// revokeAuthority denies the third current-authority read: the check that runs
+// immediately before the adapter would be invoked.
 type revokeAuthority struct {
-	base   gatewayAuthority
+	base   CurrentAuthority
 	checks int
 }
 
 func (a *revokeAuthority) Current(ctx context.Context, id *auth.Identity, op Operation) (Decision, error) {
 	a.checks++
-	d, e := a.base.Current(ctx, id, op)
 	if a.checks >= 3 {
-		d.Allowed = false
+		return Decision{PolicyRevision: 1}, nil
 	}
-	return d, e
+	return a.base.Current(ctx, id, op)
 }
 
 func TestGatewayRechecksAfterCallIntent(t *testing.T) {
-	db, b, _ := budgetFixture(t)
-	if _, err := db.Exec(`UPDATE cap_ai.budget_accounts SET limit_units=100000`); err != nil {
-		t.Fatal(err)
+	env := newOperationEnv(t)
+	env.approve(t)
+	provider := &countingProvider{result: Result{Text: "should not be sent"}}
+	authority := &revokeAuthority{base: env.policy.Authority}
+	gateway := env.gateway(provider)
+	gateway.Policy = &Policy{Authority: authority, Enabled: true}
+	env.op.Key = "revoke-intent"
+	_, err := gateway.Call(context.Background(), env.actor, env.op, Payload{Query: "approved"})
+	if err != ErrPolicy || provider.count() != 0 {
+		t.Fatal("authority revoked at intent was sent", err, provider.count())
 	}
-	var calls atomic.Int64
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		w.Write([]byte(`{"text":"should not be sent","usage":{"input_tokens":1,"output_tokens":1}}`))
-	}))
-	defer server.Close()
-	provider, err := NewHTTPProvider(server.URL, "", true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	a := &revokeAuthority{base: gatewayAuthority{profile: Profile{ID: "gen", Revision: 1, Purpose: "GENERATE", Execution: "HOSTED", ProviderID: "fake", Enabled: true, PricingRevision: "price-1", Limits: Limits{MaxInputTokens: 2048, MaxOutputTokens: 20, MaxBytes: 4096, InputUnitPrice: 1, OutputUnitPrice: 1, TimeoutMS: 500}}}}
-	g := Gateway{Policy: &Policy{Authority: a, Enabled: true}, Budget: b, Providers: map[string]Provider{"fake": provider}}
-	_, err = g.Call(context.Background(), &auth.Identity{UserID: "11111111-1111-4111-8111-111111111111"}, Operation{Key: "revoke-intent", AppID: "app", ScopeKind: "APP", Purpose: "GENERATE", ProfileID: "gen", ProfileRevision: 1}, Payload{Query: "approved"})
-	if err != ErrPolicy || calls.Load() != 0 {
-		t.Fatal("source revoked at intent was sent", err, calls.Load())
-	}
-	var reserved int
-	if err = db.QueryRow(`SELECT reserved_units FROM cap_ai.budget_accounts WHERE scope='USER'`).Scan(&reserved); err != nil || reserved != 0 {
-		t.Fatal("unsent call retained funds", err, reserved)
+	stored := readOperation(t, env.db, env.op.Key)
+	if stored.State != "FAILED_UNSENT" || stored.ErrorCode.String != "AUTHORITY_CHANGED" || stored.Input.Valid {
+		t.Fatalf("unsent operation not recorded as definitely unsent: %+v", stored)
 	}
 }

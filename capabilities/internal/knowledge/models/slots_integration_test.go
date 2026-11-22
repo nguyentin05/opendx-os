@@ -27,7 +27,7 @@ func TestRegistrySlotUniqueness(t *testing.T) {
 	}
 }
 
-const registryCandidate = `{"candidates":[{"adapter_key":"hosted-test","declaration_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","profile":{"id":"registry-test","revision":1,"purpose":"GENERATE","execution":"HOSTED","provider_id":"test","model_id":"model-test","credential_ref":"TEST_KEY","limits":{"max_input_tokens":100,"max_output_tokens":100,"max_bytes":1024,"input_unit_price":1,"output_unit_price":1,"timeout_ms":1000},"pricing_revision":"p1"}}]}`
+const registryCandidate = `{"candidates":[{"adapter_key":"hosted-test","declaration_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","profile":{"id":"registry-test","revision":1,"purpose":"GENERATE","execution":"HOSTED","provider_id":"test","model_id":"model-test","credential_ref":"TEST_KEY","limits":{"max_input_tokens":100,"max_output_tokens":100,"max_bytes":1024,"timeout_ms":1000}}}]}`
 
 func resolverFixture(t *testing.T) (*sql.DB, *Registry) {
 	t.Helper()
@@ -148,7 +148,7 @@ func TestRegistryRuntimeCatalogWithoutCandidates(t *testing.T) {
 	u.Path = "/" + database
 	u.User = url.User("dxos_ai_gateway")
 	file := t.TempDir() + "/catalog.json"
-	if err = os.WriteFile(file, []byte(`{"schema_version":1,"providers":[{"id":"test","adapter":"bounded-http-v1","endpoint":"https://example.invalid"}],"models":[]}`), 0600); err != nil {
+	if err = os.WriteFile(file, []byte(`{"schema_version":2,"providers":[{"id":"test","adapter":"bounded-http-v1","endpoint":"https://example.invalid"}],"models":[]}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	env := map[string]string{"RAG_MODELS_ENABLED": "true", "RAG_MODELS_QUALIFIED": "true", "RAG_SOURCE_QUALIFIED": "true", "RAG_METADATA_QUALIFIED": "true", "RAG_PARSER_QUALIFIED": "true", "RAG_GLOBAL_MODEL_REGISTRY_ENABLED": "true", "AI_GATEWAY_DATABASE_URL": u.String(), "RAG_MODEL_DEPLOYMENT_FILE": file}

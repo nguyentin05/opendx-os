@@ -15,31 +15,30 @@ import (
 var (
 	ErrPolicy      = errors.New("POLICY_BLOCKED")
 	ErrUnavailable = errors.New("MODEL_UNAVAILABLE")
-	ErrQuota       = errors.New("QUOTA_EXCEEDED")
 	ErrConflict    = errors.New("MODEL_OPERATION_CONFLICT")
 	ErrUncertain   = errors.New("MODEL_CHARGE_UNCERTAIN")
+	// ErrCatalogVersion rejects declarations from any retired catalog schema
+	// before their body is interpreted.
+	ErrCatalogVersion = errors.New("UNSUPPORTED_CATALOG_VERSION")
 )
 
 type Limits struct {
-	MaxInputTokens  int   `json:"max_input_tokens"`
-	MaxOutputTokens int   `json:"max_output_tokens"`
-	MaxBytes        int   `json:"max_bytes"`
-	InputUnitPrice  int64 `json:"input_unit_price"`
-	OutputUnitPrice int64 `json:"output_unit_price"`
-	TimeoutMS       int   `json:"timeout_ms"`
+	MaxInputTokens  int `json:"max_input_tokens"`
+	MaxOutputTokens int `json:"max_output_tokens"`
+	MaxBytes        int `json:"max_bytes"`
+	TimeoutMS       int `json:"timeout_ms"`
 }
 type Profile struct {
-	ID              string `json:"id"`
-	Purpose         string `json:"purpose"`
-	Execution       string `json:"execution"`
-	ProviderID      string `json:"provider_id"`
-	ModelID         string `json:"model_id"`
-	CredentialRef   string `json:"credential_ref"`
-	Revision        int64  `json:"revision"`
-	Dimension       int    `json:"dimension"`
-	Limits          Limits `json:"limits"`
-	PricingRevision string `json:"pricing_revision"`
-	Enabled         bool   `json:"enabled"`
+	ID            string `json:"id"`
+	Purpose       string `json:"purpose"`
+	Execution     string `json:"execution"`
+	ProviderID    string `json:"provider_id"`
+	ModelID       string `json:"model_id"`
+	CredentialRef string `json:"credential_ref"`
+	Revision      int64  `json:"revision"`
+	Dimension     int    `json:"dimension"`
+	Limits        Limits `json:"limits"`
+	Enabled       bool   `json:"enabled"`
 }
 type LeaseRef struct {
 	JobID, WorkerID, RunID string
@@ -100,17 +99,18 @@ type Evidence struct {
 	Text        string   `json:"text"`
 	Provenance  []string `json:"provenance"`
 }
+
+// Usage carries only the provider-reported counters. Presence is meaningful:
+// nil means the provider returned no usage at all.
 type Usage struct {
-	InputTokens     int64  `json:"input_tokens"`
-	OutputTokens    int64  `json:"output_tokens"`
-	Units           int64  `json:"units"`
-	PricingRevision string `json:"pricing_revision"`
+	InputTokens  int64 `json:"input_tokens"`
+	OutputTokens int64 `json:"output_tokens"`
 }
 type Result struct {
 	Text              string    `json:"text"`
 	Vector            []float32 `json:"vector"`
 	CitationIDs       []string  `json:"citation_ids"`
-	Usage             Usage     `json:"usage"`
+	Usage             *Usage    `json:"usage"`
 	Status            string    `json:"status"`
 	ProviderRequestID string    `json:"-"`
 }

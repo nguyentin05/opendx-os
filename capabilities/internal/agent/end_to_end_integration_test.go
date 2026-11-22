@@ -50,7 +50,7 @@ func newEndToEndChat(t *testing.T) endToEndChat {
 			t.Error("unexpected extra calls")
 		}
 		if req.Purpose == "EMBED" {
-			_ = json.NewEncoder(w).Encode(models.Result{Vector: []float32{1, 0, 0}, Usage: models.Usage{InputTokens: 3}})
+			_ = json.NewEncoder(w).Encode(models.Result{Vector: []float32{1, 0, 0}, Usage: &models.Usage{InputTokens: 3}})
 			return
 		}
 		if req.Purpose != "GENERATE" {
@@ -60,7 +60,7 @@ func newEndToEndChat(t *testing.T) endToEndChat {
 		for _, evidence := range req.Input.Evidence {
 			ids = append(ids, evidence.ID)
 		}
-		_ = json.NewEncoder(w).Encode(models.Result{Text: "Response about " + req.Input.Query, CitationIDs: ids, Usage: models.Usage{InputTokens: 3, OutputTokens: 2}})
+		_ = json.NewEncoder(w).Encode(models.Result{Text: "Response about " + req.Input.Query, CitationIDs: ids, Usage: &models.Usage{InputTokens: 3, OutputTokens: 2}})
 	}))
 	t.Cleanup(spy.Close)
 	provider, err := models.NewHTTPProvider(spy.URL, "", true)
@@ -171,16 +171,15 @@ func TestAgentEndToEndMissingApprovalDoesNotCallProvider(t *testing.T) {
 			c := newEndToEndChat(t)
 			// Make ordinary selected-app query embedding available. The same
 			// question in global chat needs its own PERSONAL query review.
-			turnSQL(t, c.db, `INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,dimension,limits,pricing_revision,enabled)
-                SELECT 'fixture-embed',1,'EMBED',execution,provider_id,'fixture-embed',3,limits,pricing_revision,true
+			turnSQL(t, c.db, `INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,dimension,limits,enabled)
+                SELECT 'fixture-embed',1,'EMBED',execution,provider_id,'fixture-embed',3,limits,true
                 FROM cap_ai.model_profiles WHERE id='fixture-llm';
                 INSERT INTO cap_ai.model_candidates(profile_id,revision,adapter_key,declaration_digest,declaration)
                 VALUES('fixture-embed',1,'bounded-http-v1',repeat('b',64),'{}');
                 UPDATE cap_ai.global_model_slots SET profile_id='fixture-embed',profile_revision=1,slot_revision=1 WHERE capability='EMBEDDING';
                 INSERT INTO cap_ai.processing_policy_profiles(policy_id,policy_version,model_profile_id,profile_revision)
                 VALUES('procurement',1,'fixture-embed',1);
-                INSERT INTO cap_ai.budget_accounts(scope,scope_key,period_start,period_end,limit_units,pricing_revision)
-                VALUES('APP','procurement',now()-interval '1 day',now()+interval '1 day',50000,'fixture-price');`)
+`)
 			ordinary, err := c.retrieval.Search.Search(t.Context(), &auth.Identity{UserID: c.actor.UserID, Role: "role_procurement"},
 				knowledge.SearchRequest{Scope: knowledge.Scope{Kind: "APP", AppID: "procurement"}, Query: "onboarding", Retrieval: "HYBRID"})
 			if err != nil || ordinary.Status != "HYBRID" || c.call(t).Query != "onboarding" {

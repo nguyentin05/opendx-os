@@ -194,7 +194,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, actor Actor, user Message) T
 	if err != nil || fresh.Fingerprint != approval.Fingerprint {
 		return emptyTurn("SEARCH_ONLY", authorizationChanged, search)
 	}
-	if errors.Is(callErr, models.ErrUnavailable) || errors.Is(callErr, models.ErrQuota) {
+	if errors.Is(callErr, models.ErrUnavailable) {
 		return fallback(safeModelReason(callErr))
 	}
 	if callErr != nil {
@@ -206,7 +206,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, actor Actor, user Message) T
 		return emptyTurn("SEARCH_ONLY", "UNSUPPORTED_ANSWER", search)
 	}
 	out := emptyTurn("ANSWERED", "", search)
-	out.Answer, out.Citations, out.Sources, out.Usage = &generated.Text, citations, sources, &generated.Usage
+	out.Answer, out.Citations, out.Sources, out.Usage = &generated.Text, citations, sources, generated.Usage
 	return out
 }
 
@@ -218,8 +218,6 @@ func safeModelReason(err error) string {
 	switch {
 	case errors.Is(err, models.ErrPolicy):
 		return models.ErrPolicy.Error()
-	case errors.Is(err, models.ErrQuota):
-		return models.ErrQuota.Error()
 	case errors.Is(err, models.ErrUncertain), errors.Is(err, models.ErrConflict):
 		return models.ErrUncertain.Error()
 	default:

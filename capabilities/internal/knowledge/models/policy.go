@@ -26,7 +26,7 @@ func (p *Policy) Check(ctx context.Context, actor *auth.Identity, req Operation)
 		return Approval{}, ErrUnavailable
 	}
 	profile := d.Profile
-	if !d.Allowed || !profile.Enabled || profile.ID != req.ProfileID || profile.Revision != req.ProfileRevision || profile.Purpose != req.Purpose || profile.Limits.MaxInputTokens < 1 || profile.Limits.MaxOutputTokens < 1 || profile.Limits.MaxBytes < 1 || profile.PricingRevision == "" {
+	if !d.Allowed || !profile.Enabled || profile.ID != req.ProfileID || profile.Revision != req.ProfileRevision || profile.Purpose != req.Purpose || profile.Limits.MaxInputTokens < 1 || profile.Limits.MaxOutputTokens < 1 || profile.Limits.MaxBytes < 1 {
 		return Approval{}, ErrPolicy
 	}
 	if profile.Execution != "LOCAL" && profile.Execution != "HOSTED" {

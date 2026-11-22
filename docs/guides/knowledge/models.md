@@ -488,7 +488,7 @@ Registry mode reads a strict catalog from `RAG_MODEL_DEPLOYMENT_FILE`:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "providers": [
     {
       "id": "hosted",
@@ -504,8 +504,9 @@ Registry mode reads a strict catalog from `RAG_MODEL_DEPLOYMENT_FILE`:
 An empty `models` array supports runtime startup after deployment provisioning.
 To provision candidates, each model entry has `adapter: "bounded-http-v1"` and
 a `profile` with `id`, `revision`, `purpose`, `execution`, `provider_id`,
-`model_id`, `credential_ref`, `pricing_revision`, and `limits`; EMBED also
-requires `dimension`. Follow the linked canonical contract for validation.
+`model_id`, `credential_ref`, and resource-only `limits`
+(`max_input_tokens`, `max_output_tokens`, `max_bytes`, `timeout_ms`); EMBED also
+requires `dimension`. Monetary fields are not part of schema version 2. Follow the linked canonical contract for validation.
 Startup never imports candidates. Runtime verifies the immutable declaration
 digest against provider metadata; endpoint or loopback changes require a new
 profile revision and provisioning. Slot reads and fenced embedding lease profile

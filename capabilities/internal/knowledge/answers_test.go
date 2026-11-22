@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
@@ -94,7 +95,7 @@ func TestPersonalSearchOnly(t *testing.T) {
 	}
 }
 func TestProviderFailureRequireGeneration(t *testing.T) {
-	for _, err := range []error{models.ErrPolicy, models.ErrQuota, models.ErrUnavailable, models.ErrUncertain} {
+	for _, err := range []error{models.ErrPolicy, models.ErrConflict, models.ErrUnavailable, models.ErrUncertain} {
 		s, f := answerSetup()
 		f.err = err
 		r, e := s.Answer(context.Background(), answerActor, answerRequest)
@@ -136,7 +137,6 @@ type personalAnswerAuthority struct{ approved bool }
 func (a *personalAnswerAuthority) Current(_ context.Context, _ *auth.Identity, op models.Operation) (models.Decision, error) {
 	p := answerProfile()
 	p.Enabled = true
-	p.PricingRevision = "price-1"
 	raw := []byte(`{"personal_approved":false}`)
 	if a.approved {
 		raw = []byte(`{"personal_approved":true}`)
@@ -191,6 +191,36 @@ func TestAnswerSearchOnlyDiscardsRetiredReadScope(t *testing.T) {
 			out, err := service.Answer(t.Context(), answerActor, answerRequest)
 			if err != nil || out.Reason != "AUTHORIZATION_CHANGED" || len(out.Results) != 0 || len(out.Citations) != 0 {
 				t.Fatalf("search-only returned stale evidence: %+v err=%v", out, err)
+			}
+		})
+	}
+}
+
+// Usage presence survives Answer marshaling: nil is omitted, a reported zero
+// pair is serialized.
+func TestAnswerUsageMarshaling(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		usage *models.Usage
+		want  string
+	}{
+		{name: "no usage", usage: nil, want: ""},
+		{name: "reported zero", usage: &models.Usage{}, want: `"usage":{"input_tokens":0,"output_tokens":0}`},
+		{name: "reported counts", usage: &models.Usage{InputTokens: 3, OutputTokens: 2}, want: `"usage":{"input_tokens":3,"output_tokens":2}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := json.Marshal(AnswerResponse{Status: "ANSWERED", Usage: tc.usage})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.want == "" {
+				if strings.Contains(string(raw), "usage") {
+					t.Fatalf("nil usage serialized: %s", raw)
+				}
+				return
+			}
+			if !strings.Contains(string(raw), tc.want) {
+				t.Fatalf("%s missing %s", raw, tc.want)
 			}
 		})
 	}

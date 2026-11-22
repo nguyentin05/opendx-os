@@ -71,10 +71,51 @@ func (p *HTTPProvider) Invoke(ctx context.Context, profile Profile, payload Payl
 	if err != nil || len(data) > profile.Limits.MaxBytes+65536 {
 		return out, ErrUnavailable
 	}
+	// Usage presence is decoded explicitly: an absent or JSON-null object is "no
+	// usage", while a present object must carry both counters as integers.
+	var decoded struct {
+		Text        string          `json:"text"`
+		Vector      []float32       `json:"vector"`
+		CitationIDs []string        `json:"citation_ids"`
+		Usage       json.RawMessage `json:"usage"`
+		Status      string          `json:"status"`
+	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
-	if dec.Decode(&out) != nil || dec.Decode(new(any)) != io.EOF {
+	if dec.Decode(&decoded) != nil || dec.Decode(new(any)) != io.EOF {
 		return Result{ProviderRequestID: out.ProviderRequestID}, ErrUnavailable
 	}
+	usage, err := decodeProviderUsage(decoded.Usage)
+	if err != nil {
+		return Result{ProviderRequestID: out.ProviderRequestID}, ErrUnavailable
+	}
+	out.Text, out.Vector, out.CitationIDs, out.Status, out.Usage = decoded.Text, decoded.Vector, decoded.CitationIDs, decoded.Status, usage
 	return out, nil
+}
+
+// decodeProviderUsage distinguishes "no usage" from "zero usage". Partial,
+// fractional, negative or non-numeric counters are malformed.
+func decodeProviderUsage(raw json.RawMessage) (*Usage, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return nil, nil
+	}
+	var counters struct {
+		InputTokens  *json.Number `json:"input_tokens"`
+		OutputTokens *json.Number `json:"output_tokens"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(trimmed))
+	dec.DisallowUnknownFields()
+	if dec.Decode(&counters) != nil || dec.Decode(new(any)) != io.EOF || counters.InputTokens == nil || counters.OutputTokens == nil {
+		return nil, ErrUnavailable
+	}
+	input, err := counters.InputTokens.Int64()
+	if err != nil {
+		return nil, ErrUnavailable
+	}
+	output, err := counters.OutputTokens.Int64()
+	if err != nil || input < 0 || output < 0 {
+		return nil, ErrUnavailable
+	}
+	return &Usage{InputTokens: input, OutputTokens: output}, nil
 }

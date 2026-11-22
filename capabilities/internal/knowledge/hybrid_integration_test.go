@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
@@ -52,13 +53,12 @@ func semanticFixture(t *testing.T) (*sql.DB, *Store, *auth.Identity, models.Prof
 	if _, e = db.Exec(string(raw)); e != nil {
 		t.Fatal(e)
 	}
-	profile := models.Profile{ID: "embed", Revision: 1, Purpose: "EMBED", Execution: "HOSTED", ProviderID: "fake", ModelID: "fake", Dimension: 3, Enabled: true, PricingRevision: "price-1", Limits: models.Limits{MaxInputTokens: 8192, MaxOutputTokens: 512, MaxBytes: 16384, InputUnitPrice: 1, OutputUnitPrice: 1, TimeoutMS: 500}}
+	profile := models.Profile{ID: "embed", Revision: 1, Purpose: "EMBED", Execution: "HOSTED", ProviderID: "fake", ModelID: "fake", Dimension: 3, Enabled: true, Limits: models.Limits{MaxInputTokens: 8192, MaxOutputTokens: 512, MaxBytes: 16384, TimeoutMS: 500}}
 	limits, _ := json.Marshal(profile.Limits)
-	_, e = db.Exec(strings.NewReplacer("$1", pq.QuoteLiteral(string(limits)), "$2", pq.QuoteLiteral(ownerID)).Replace(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,dimension,limits,pricing_revision,enabled) VALUES('embed',1,'EMBED','HOSTED','fake','fake',3,$1,'price-1',true);
+	_, e = db.Exec(strings.NewReplacer("$1", pq.QuoteLiteral(string(limits)), "$2", pq.QuoteLiteral(ownerID)).Replace(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,dimension,limits,enabled) VALUES('embed',1,'EMBED','HOSTED','fake','fake',3,$1,true);
  INSERT INTO cap_ai.processing_policies(id,version,execution,classification,approved_by,approved_at,enabled,query_app_id,provider_id,retention_approved) VALUES('reviewed',1,'APPROVED_PROVIDER','NON_PERSONAL',$2,now(),true,'library','fake',true);
  INSERT INTO cap_ai.processing_policy_profiles(policy_id,policy_version,model_profile_id,profile_revision) VALUES('reviewed',1,'embed',1);
- UPDATE cap_ai.knowledge_documents SET processing_policy_id='reviewed',processing_policy_version=1,policy_revision=policy_revision+1;
- INSERT INTO cap_ai.budget_accounts(scope,scope_key,period_start,period_end,limit_units,pricing_revision) VALUES('INSTALLATION','installation',now()-interval '1 day',now()+interval '1 day',1000000,'price-1'),('APP','library',now()-interval '1 day',now()+interval '1 day',1000000,'price-1'),('USER',$2::text,now()-interval '1 day',now()+interval '1 day',1000000,'price-1');`))
+ UPDATE cap_ai.knowledge_documents SET processing_policy_id='reviewed',processing_policy_version=1,policy_revision=policy_revision+1;`))
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -86,12 +86,12 @@ func (p *embeddingProvider) Invoke(ctx context.Context, profile models.Profile, 
 	if p.fail {
 		return models.Result{}, models.ErrUnavailable
 	}
-	return models.Result{Vector: []float32{1, 0, 0}, Usage: models.Usage{InputTokens: 10, OutputTokens: 0}}, nil
+	return models.Result{Vector: []float32{1, 0, 0}, Usage: &models.Usage{InputTokens: 10, OutputTokens: 0}}, nil
 }
 func TestEmbeddingReadinessIndependent(t *testing.T) {
 	db, s, a, profile := semanticFixture(t)
 	provider := &embeddingProvider{fail: true}
-	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Budget: &models.Budget{DB: db}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
+	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
 	if e := s.EnqueueEmbeddings(context.Background(), a, profile); e != nil {
 		t.Fatal(e)
 	}
@@ -114,7 +114,7 @@ func TestEmbeddingReadinessIndependent(t *testing.T) {
 func TestScopedExactVectorRanking(t *testing.T) {
 	db, s, a, profile := semanticFixture(t)
 	provider := &embeddingProvider{}
-	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Budget: &models.Budget{DB: db}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
+	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
 	if e := s.EnqueueEmbeddings(context.Background(), a, profile); e != nil {
 		t.Fatal(e)
 	}
@@ -141,7 +141,7 @@ func TestScopedExactVectorRanking(t *testing.T) {
 func TestPrivateQuestionNoHostedEmbedding(t *testing.T) {
 	db, s, a, profile := semanticFixture(t)
 	provider := &embeddingProvider{}
-	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Budget: &models.Budget{DB: db}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
+	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
 	_, _ = s.Search(context.Background(), a, SearchRequest{Scope: Scope{Kind: "PERSONAL"}, Query: "Director private query", Retrieval: "HYBRID"})
 	if provider.calls != 0 {
 		t.Fatal("personal question sent to provider")
@@ -150,7 +150,7 @@ func TestPrivateQuestionNoHostedEmbedding(t *testing.T) {
 func TestUncertainEmbeddingIsNotAutomaticallyRetried(t *testing.T) {
 	db, s, a, profile := semanticFixture(t)
 	provider := &embeddingProvider{fail: true}
-	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Budget: &models.Budget{DB: db}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
+	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
 	if e := s.EnqueueEmbeddings(context.Background(), a, profile); e != nil {
 		t.Fatal(e)
 	}
@@ -172,7 +172,7 @@ func TestUncertainEmbeddingIsNotAutomaticallyRetried(t *testing.T) {
 func TestEmbeddingCrashAfterSendDoesNotResend(t *testing.T) {
 	db, s, a, profile := semanticFixture(t)
 	provider := &embeddingProvider{before: func() { panic("simulated worker loss after provider accepted") }}
-	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Budget: &models.Budget{DB: db}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
+	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
 	if e := s.EnqueueEmbeddings(context.Background(), a, profile); e != nil {
 		t.Fatal(e)
 	}
@@ -205,7 +205,7 @@ func TestSlowSemanticFailurePreservesLexical(t *testing.T) {
 	db, s, a, profile := semanticFixture(t)
 	provider := &embeddingProvider{before: func() { time.Sleep(3100 * time.Millisecond) }, fail: true}
 	profile.Limits.TimeoutMS = 4000
-	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Budget: &models.Budget{DB: db}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
+	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
 	result, e := s.Search(context.Background(), a, SearchRequest{Scope: Scope{Kind: "APP", AppID: "library"}, Query: "Director", Retrieval: "HYBRID"})
 	if e != nil || len(result.Results) != 1 || result.Status != "LEXICAL_ONLY" {
 		t.Fatal("slow semantic failure destroyed lexical fallback", e, result)
@@ -215,7 +215,7 @@ func TestSlowSemanticFailurePreservesLexical(t *testing.T) {
 func TestRegistrySemanticFailurePreservesFTS(t *testing.T) {
 	db, s, actor, profile := semanticFixture(t)
 	provider := &embeddingProvider{fail: true}
-	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Budget: &models.Budget{DB: db}, Providers: map[string]models.Provider{"fake": provider}}, models.Profile{}, models.Profile{})
+	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}, models.Profile{}, models.Profile{})
 	s.ConfigureModelResolver(&fixedResolver{profile: profile})
 	if err := s.EnqueueEmbeddings(context.Background(), actor, models.Profile{ID: "request-cannot-select"}); err != nil {
 		t.Fatal("enqueue did not resolve global binding", err)
@@ -249,7 +249,7 @@ func TestRegistryEmbeddingLeaseRecoveryPinsOriginalRevision(t *testing.T) {
 			fixtureURL, _ := url.Parse(os.Getenv("TEST_DATABASE_URL"))
 			fixtureURL.Path = "/" + fixtureDB
 			importer := &models.Registry{DB: testutil.As(t, fixtureURL.String(), "dxos_ai_model_catalog")}
-			catalog := models.Catalog{SchemaVersion: 1, Providers: []models.ProviderConfig{{ID: "fake", Adapter: "bounded-http-v1", Endpoint: "https://example.invalid"}}, Models: []models.CandidateDeclaration{}}
+			catalog := models.Catalog{SchemaVersion: 2, Providers: []models.ProviderConfig{{ID: "fake", Adapter: "bounded-http-v1", Endpoint: "https://example.invalid"}}, Models: []models.CandidateDeclaration{}}
 			for _, revision := range []int64{2, 3} {
 				candidate := profile
 				candidate.Revision = revision
@@ -269,7 +269,7 @@ func TestRegistryEmbeddingLeaseRecoveryPinsOriginalRevision(t *testing.T) {
 			}
 			profile.Revision = 2
 			provider := &embeddingProvider{}
-			gateway := &models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Budget: &models.Budget{DB: db}, Providers: map[string]models.Provider{"fake": provider}}
+			gateway := &models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}
 			s.ConfigureModels(gateway, models.Profile{}, models.Profile{})
 			if err = s.EnqueueEmbeddings(context.Background(), actor, profile); err != nil {
 				t.Fatal(err)
@@ -390,4 +390,295 @@ func TestRegistryEmbeddingLeaseRecoveryPinsOriginalRevision(t *testing.T) {
 			}
 		})
 	}
+}
+
+// gatewayLogin opens the restricted deployment session the gateway uses for
+// durable operation dispatch.
+func gatewayLogin(t *testing.T, db *sql.DB) *sql.DB {
+	t.Helper()
+	var name string
+	if err := db.QueryRow(`SELECT current_database()`).Scan(&name); err != nil {
+		t.Fatal(err)
+	}
+	u, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.Path = "/" + name
+	return testutil.As(t, u.String(), "dxos_ai_gateway")
+}
+
+// operationRow reads durable dispatch facts through the privileged fixture.
+func operationRow(t *testing.T, db *sql.DB, like string) (key, fingerprint, state string, inputs sql.NullInt64, outputs sql.NullInt64, intentSet bool) {
+	t.Helper()
+	err := db.QueryRow(`SELECT operation_key,fingerprint,state,input_tokens,output_tokens,intent_at IS NOT NULL
+		FROM cap_ai.model_operations WHERE operation_key LIKE $1 ORDER BY claimed_at LIMIT 1`, like).
+		Scan(&key, &fingerprint, &state, &inputs, &outputs, &intentSet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return
+}
+
+// TestEmbeddingClaimedOperationLeaseRecovery proves a claim recorded at fence 1
+// is resumed by fence 2 as the same durable operation.
+func TestEmbeddingClaimedOperationLeaseRecovery(t *testing.T) {
+	t.Run("reclaim after claim", func(t *testing.T) {
+		db, s, actor, profile := semanticFixture(t)
+		provider := &embeddingProvider{}
+		store := &models.OperationStore{DB: gatewayLogin(t, db)}
+		s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}},
+			Operations: store, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
+		if e := s.EnqueueEmbeddings(context.Background(), actor, profile); e != nil {
+			t.Fatal(e)
+		}
+		first, e := s.ClaimEmbedding(context.Background(), ownerID)
+		if e != nil || first == nil {
+			t.Fatal(first, e)
+		}
+		// Stop after the claim: the begin write fails, so the row stays CLAIMED.
+		s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}},
+			Operations: &failingBeginStore{OperationStore: store}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
+		if e = s.BuildEmbeddings(context.Background(), *first, profile); e == nil {
+			t.Fatal("begin failure ignored")
+		}
+		claimedKey, claimedFingerprint, state, _, _, intent := operationRow(t, db, "embed:"+first.JobID+":%")
+		if state != "CLAIMED" || intent || provider.calls != 0 {
+			t.Fatal("claim not left for recovery", state, intent, provider.calls)
+		}
+		// Reclaim the same job under the same service identity at a fresh fence.
+		if _, e = db.Exec(`UPDATE cap_ai.ingestion_jobs SET lease_until=now()-interval '1 second',next_attempt_at=now()-interval '1 second' WHERE id=$1`, first.JobID); e != nil {
+			t.Fatal(e)
+		}
+		second, e := s.ClaimEmbedding(context.Background(), ownerID)
+		if e != nil || second == nil || second.JobID != first.JobID || second.Fence <= first.Fence {
+			t.Fatal("reclaim", second, e)
+		}
+		s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}},
+			Operations: store, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
+		if e = s.BuildEmbeddings(context.Background(), *second, profile); e != nil {
+			t.Fatal("recovery", e)
+		}
+		if provider.calls != 1 {
+			t.Fatal("recovery sent", provider.calls)
+		}
+		recoveredKey, recoveredFingerprint, state, inputs, _, _ := operationRow(t, db, "embed:"+first.JobID+":%")
+		if recoveredKey != claimedKey || recoveredFingerprint != claimedFingerprint || state != "SUCCEEDED" || inputs.Int64 != 10 {
+			t.Fatal("recovered binding changed", recoveredKey, recoveredFingerprint, state, inputs)
+		}
+		var revision int
+		var readyFence int64
+		var generationState string
+		if e = db.QueryRow(`SELECT g.profile_revision,j.fencing_token,g.state FROM cap_ai.embedding_generations g
+			JOIN cap_ai.ingestion_jobs j ON j.id=g.job_id WHERE j.id=$1`, first.JobID).Scan(&revision, &readyFence, &generationState); e != nil ||
+			revision != 1 || readyFence != second.Fence || generationState != "READY" {
+			t.Fatal("generation not published by the recovering fence", revision, readyFence, generationState, e)
+		}
+	})
+
+	t.Run("stale caller after claim", func(t *testing.T) {
+		db, s, actor, profile := semanticFixture(t)
+		provider := &embeddingProvider{}
+		store := &models.OperationStore{DB: gatewayLogin(t, db)}
+		s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}},
+			Operations: store, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
+		if e := s.EnqueueEmbeddings(context.Background(), actor, profile); e != nil {
+			t.Fatal(e)
+		}
+		first, e := s.ClaimEmbedding(context.Background(), ownerID)
+		if e != nil || first == nil {
+			t.Fatal(first, e)
+		}
+		// The lease rotates between the claim and the next policy check.
+		hook := &claimHookStore{OperationStore: store}
+		gateway := &models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}},
+			Operations: hook, Providers: map[string]models.Provider{"fake": provider}}
+		hook.afterClaim = func() {
+			if _, e := db.Exec(`UPDATE cap_ai.ingestion_jobs SET lease_until=now()-interval '1 second' WHERE id=$1`, first.JobID); e != nil {
+				t.Error(e)
+				return
+			}
+			hook.next, hook.nextErr = s.ClaimEmbedding(context.Background(), ownerID)
+		}
+		s.ConfigureModels(gateway, profile, models.Profile{})
+		if e = s.BuildEmbeddings(context.Background(), *first, profile); e == nil {
+			t.Fatal("stale fence survived the policy recheck")
+		}
+		if provider.calls != 0 {
+			t.Fatal("stale caller invoked the provider", provider.calls)
+		}
+		_, _, state, _, _, _ := operationRow(t, db, "embed:"+first.JobID+":%")
+		if state != "CLAIMED" {
+			t.Fatal("stale caller terminalized the shared claim", state)
+		}
+		if hook.nextErr != nil || hook.next == nil {
+			t.Fatal("reclaim", hook.next, hook.nextErr)
+		}
+		s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}},
+			Operations: store, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
+		if e = s.BuildEmbeddings(context.Background(), *hook.next, profile); e != nil {
+			t.Fatal("fence 2 recovery", e)
+		}
+		if provider.calls != 1 {
+			t.Fatal("fence 2 did not dispatch exactly once", provider.calls)
+		}
+		if _, _, state, _, _, _ = operationRow(t, db, "embed:"+first.JobID+":%"); state != "SUCCEEDED" {
+			t.Fatal("state", state)
+		}
+	})
+}
+
+// TestEmbeddingIntentBlocksLeaseRecovery proves persisted intent blocks any
+// later fence from redispatching the same operation.
+func TestEmbeddingIntentBlocksLeaseRecovery(t *testing.T) {
+	t.Run("rotated after intent", func(t *testing.T) {
+		db, s, actor, profile := semanticFixture(t)
+		provider := &embeddingProvider{}
+		store := &models.OperationStore{DB: gatewayLogin(t, db)}
+		s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}},
+			Operations: store, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
+		if e := s.EnqueueEmbeddings(context.Background(), actor, profile); e != nil {
+			t.Fatal(e)
+		}
+		first, e := s.ClaimEmbedding(context.Background(), ownerID)
+		if e != nil || first == nil {
+			t.Fatal(first, e)
+		}
+		hook := &claimHookStore{OperationStore: store}
+		hook.afterBegin = func() {
+			if _, e := db.Exec(`UPDATE cap_ai.ingestion_jobs SET lease_until=now()-interval '1 second' WHERE id=$1`, first.JobID); e != nil {
+				t.Error(e)
+				return
+			}
+			hook.next, hook.nextErr = s.ClaimEmbedding(context.Background(), ownerID)
+		}
+		s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}},
+			Operations: hook, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
+		if e = s.BuildEmbeddings(context.Background(), *first, profile); e == nil {
+			t.Fatal("rotated lease escaped the final check")
+		}
+		if provider.calls != 0 {
+			t.Fatal("stale fence invoked the provider", provider.calls)
+		}
+		_, _, state, _, _, intent := operationRow(t, db, "embed:"+first.JobID+":%")
+		if state != "FAILED_UNSENT" || !intent {
+			t.Fatal("state", state, intent)
+		}
+		if hook.nextErr != nil || hook.next == nil {
+			t.Fatal("reclaim", hook.next, hook.nextErr)
+		}
+		s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}},
+			Operations: store, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
+		if e = s.BuildEmbeddings(context.Background(), *hook.next, profile); !errors.Is(e, models.ErrPolicy) {
+			t.Fatalf("terminal intent allowed redispatch: %v", e)
+		}
+		if provider.calls != 0 {
+			t.Fatal("fence 2 redispatch", provider.calls)
+		}
+		// Stale save and publish attempts are refused by SQL.
+		var generation string
+		if e = db.QueryRow(`SELECT id FROM cap_ai.embedding_generations WHERE job_id=$1`, first.JobID).Scan(&generation); e != nil {
+			t.Fatal(e)
+		}
+		if _, e = db.Exec(`SELECT cap_ai.save_embedding($1,$2,$3,$4,$5,gen_random_uuid(),repeat('a',64),'[1,0,0]'::public.vector)`,
+			first.JobID, first.WorkerID, first.Fence, first.RunID, generation); e == nil {
+			t.Fatal("stale save accepted")
+		}
+		if _, e = db.Exec(`SELECT cap_ai.finish_embedding($1,$2,$3,$4,$5,true)`, first.JobID, first.WorkerID, first.Fence, first.RunID, generation); e == nil {
+			t.Fatal("stale publish accepted")
+		}
+	})
+
+	t.Run("lost begin acknowledgment", func(t *testing.T) {
+		db, s, actor, profile := semanticFixture(t)
+		provider := &embeddingProvider{}
+		store := &models.OperationStore{DB: gatewayLogin(t, db)}
+		s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}},
+			Operations: store, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
+		if e := s.EnqueueEmbeddings(context.Background(), actor, profile); e != nil {
+			t.Fatal(e)
+		}
+		first, e := s.ClaimEmbedding(context.Background(), ownerID)
+		if e != nil || first == nil {
+			t.Fatal(first, e)
+		}
+		s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}},
+			Operations: &lostAckStore{OperationStore: store}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("lost acknowledgment was not injected")
+				}
+			}()
+			_ = s.BuildEmbeddings(context.Background(), *first, profile)
+		}()
+		key, fingerprint, state, _, _, intent := operationRow(t, db, "embed:"+first.JobID+":%")
+		if state != "MAY_HAVE_SENT" || !intent || provider.calls != 0 {
+			t.Fatal("state", state, intent, provider.calls)
+		}
+		if _, e = db.Exec(`UPDATE cap_ai.ingestion_jobs SET lease_until=now()-interval '1 second',next_attempt_at=now()-interval '1 second' WHERE id=$1`, first.JobID); e != nil {
+			t.Fatal(e)
+		}
+		second, e := s.ClaimEmbedding(context.Background(), ownerID)
+		if e != nil || second == nil {
+			t.Fatal(second, e)
+		}
+		s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}},
+			Operations: store, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
+		if e = s.BuildEmbeddings(context.Background(), *second, profile); !errors.Is(e, models.ErrUncertain) {
+			t.Fatalf("fence 2 dispatched ambiguous intent: %v", e)
+		}
+		if provider.calls != 0 {
+			t.Fatal("ambiguous intent redispatched", provider.calls)
+		}
+		recoveredKey, recoveredFingerprint, state, _, _, _ := operationRow(t, db, "embed:"+first.JobID+":%")
+		if recoveredKey != key || recoveredFingerprint != fingerprint || state != "MAY_HAVE_SENT" {
+			t.Fatal("fence 2 reissued or changed the operation", recoveredKey, recoveredFingerprint, state)
+		}
+		if token, e := store.Begin(context.Background(), key, fingerprint); e != nil || token != "" {
+			t.Fatal("a second dispatch token was issued", token, e)
+		}
+	})
+}
+
+// failingBeginStore refuses the intent write so the claim is left CLAIMED.
+type failingBeginStore struct{ *models.OperationStore }
+
+func (s *failingBeginStore) Begin(context.Context, string, string) (string, error) {
+	return "", models.ErrUnavailable
+}
+
+// claimHookStore runs a hook after the claim or after the intent write.
+type claimHookStore struct {
+	*models.OperationStore
+	afterClaim, afterBegin func()
+	next                   *Lease
+	nextErr                error
+}
+
+func (s *claimHookStore) Claim(ctx context.Context, binding models.OperationBinding) (string, error) {
+	state, err := s.OperationStore.Claim(ctx, binding)
+	if s.afterClaim != nil {
+		s.afterClaim()
+	}
+	return state, err
+}
+
+func (s *claimHookStore) Begin(ctx context.Context, key, fingerprint string) (string, error) {
+	token, err := s.OperationStore.Begin(ctx, key, fingerprint)
+	if s.afterBegin != nil {
+		s.afterBegin()
+	}
+	return token, err
+}
+
+// lostAckStore simulates a worker that dies after its begin committed: the
+// dispatch intent is durable but the caller never observes the token.
+type lostAckStore struct{ *models.OperationStore }
+
+func (s *lostAckStore) Begin(ctx context.Context, key, fingerprint string) (string, error) {
+	if _, err := s.OperationStore.Begin(ctx, key, fingerprint); err != nil {
+		return "", err
+	}
+	panic("lost begin acknowledgment")
 }

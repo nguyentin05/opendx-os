@@ -29,7 +29,7 @@ type Deployment struct {
 }
 
 // FromEnvironment returns no Gateway unless explicitly qualified. The separate
-// connection role can operate only model policy and accounting functions.
+// connection role can operate only model policy and durable operation functions.
 func FromEnvironment(ctx context.Context, getenv func(string) string) (*Gateway, Profile, Profile, func(), error) {
 	fail := func() (*Gateway, Profile, Profile, func(), error) {
 		return nil, Profile{}, Profile{}, func() {}, ErrPolicy
@@ -152,7 +152,7 @@ func FromEnvironment(ctx context.Context, getenv func(string) string) (*Gateway,
 			return fail()
 		}
 	}
-	return &Gateway{Policy: &Policy{Authority: DatabaseAuthority{DB: db}, Enabled: true}, Budget: &Budget{DB: db}, Providers: providers}, profiles[0], profiles[1], closeDB, nil
+	return &Gateway{Policy: &Policy{Authority: DatabaseAuthority{DB: db}, Enabled: true}, Operations: &OperationStore{DB: db}, Providers: providers}, profiles[0], profiles[1], closeDB, nil
 }
 
 // RuntimeFromEnvironment preserves the legacy configuration contract while wiring

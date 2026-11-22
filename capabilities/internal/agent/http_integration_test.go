@@ -310,7 +310,7 @@ func TestChatHTTPDisabledPersonalHistoryStaysOutOfGeneration(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(models.Result{Text: answer, CitationIDs: []string{"E1"},
-			Usage: models.Usage{InputTokens: 3, OutputTokens: 2}})
+			Usage: &models.Usage{InputTokens: 3, OutputTokens: 2}})
 	}))
 	defer server.Close()
 	provider, err := models.NewHTTPProvider(server.URL, "", true)
