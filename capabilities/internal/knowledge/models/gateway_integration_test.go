@@ -123,8 +123,9 @@ func TestGatewayAuthorityOutageIsRetryable(t *testing.T) {
 			if stored.State != OperationFailedUnsent || stored.ErrorCode.String != codeAuthorityUnavailable || stored.Input.Valid {
 				t.Fatalf("authority outage not recorded as retryable unsent: %+v", stored)
 			}
-			if stored.ErrorCode.String == codeAuthorityChanged {
-				t.Fatal("authority outage recorded as a fingerprint change")
+			_, err = env.gateway(provider).Call(context.Background(), env.actor, env.op, payload)
+			if !errors.Is(err, ErrUnavailable) || provider.count() != 0 {
+				t.Fatalf("replay after recovery: err=%v calls=%d", err, provider.count())
 			}
 		})
 	}

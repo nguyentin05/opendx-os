@@ -345,6 +345,9 @@ BEGIN
       THEN
       RAISE EXCEPTION 'operation conflict' USING ERRCODE = 'P0409';
     END IF;
+    IF existing.state = 'FAILED_UNSENT' AND existing.error_code = 'AUTHORITY_UNAVAILABLE' THEN
+      RETURN 'AUTHORITY_UNAVAILABLE';
+    END IF;
     RETURN existing.state;
   END IF;
   INSERT INTO cap_ai.model_operations(operation_key, actor_id, app_id, profile_id, profile_revision, purpose, fingerprint)

@@ -62,6 +62,12 @@ def answer(who, role, scope, query, require=False):
     return status, json.loads(data)
 
 
+def browser_request_allowed(url, fake_ports):
+    parsed = urlsplit(url)
+    port = parsed.port if parsed.port is not None else {'http': 80, 'https': 443}.get(parsed.scheme)
+    return parsed.hostname in ('localhost', '127.0.0.1') and port not in fake_ports
+
+
 def browser(app, role):
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
@@ -91,7 +97,9 @@ def browser(app, role):
             region.get_by_text('Director approval is required for amounts of at least 10,000,000 VND.', exact=True).wait_for(timeout=15000)
             region.get_by_role('button', name='Xem trích dẫn 1', exact=True).click()
             page.get_by_role('dialog', name='Trích dẫn được bảo vệ', exact=True).wait_for()
-            source.require(all(urlsplit(url).hostname in ('localhost', '127.0.0.1') for url in requests),
+            fake_ports = {urlsplit(os.environ[key]).port or 80 for key in
+                          ('RAG_TEST_MODEL_FAKE_URL', 'RAG_TEST_MODEL_WORKER_FAKE_URL')}
+            source.require(all(browser_request_allowed(url, fake_ports) for url in requests),
                            'FAIL: browser contacted a model/provider endpoint')
             context.close()
         finally:

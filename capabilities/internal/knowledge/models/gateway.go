@@ -69,6 +69,8 @@ func (g *Gateway) Call(ctx context.Context, actor *auth.Identity, op Operation, 
 		// A fresh or resumed claim is the only state that may start a dispatch.
 	case OperationMayHaveSent, OperationSucceeded, OperationUncertain:
 		return Result{}, ErrUncertain
+	case codeAuthorityUnavailable:
+		return Result{}, ErrUnavailable
 	case OperationFailedUnsent:
 		return Result{}, ErrPolicy
 	default:
