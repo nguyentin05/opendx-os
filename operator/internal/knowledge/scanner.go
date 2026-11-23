@@ -31,10 +31,10 @@ func (s *ClamAV) Scan(ctx context.Context, r io.Reader) error {
 	if e != nil {
 		return fmt.Errorf("scanner unavailable")
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	deadline, _ := ctx.Deadline()
-	c.SetDeadline(deadline)
-	stop := context.AfterFunc(ctx, func() { c.Close() })
+	_ = c.SetDeadline(deadline)
+	stop := context.AfterFunc(ctx, func() { _ = c.Close() })
 	defer stop()
 	if _, e = io.WriteString(c, "zINSTREAM\x00"); e != nil {
 		return fmt.Errorf("scanner unavailable")

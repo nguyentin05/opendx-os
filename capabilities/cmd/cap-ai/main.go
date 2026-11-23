@@ -139,7 +139,7 @@ func main() {
 		if err != nil {
 			log.Fatal("invalid worker database configuration")
 		}
-		defer workerDB.Close()
+		defer func() { _ = workerDB.Close() }()
 		serviceVerifier, err := auth.NewSubjectVerifier(context.Background(), auth.VerifierConfig{IssuerURL: c.IssuerURL, JWKSURL: c.JWKSURL, Audience: c.Audience})
 		if err != nil {
 			log.Fatal("service verification unavailable")
@@ -155,7 +155,7 @@ func main() {
 			if e != nil {
 				log.Fatal("dispatcher database unavailable")
 			}
-			defer dispatcherDB.Close()
+			defer func() { _ = dispatcherDB.Close() }()
 			dispatcherStore := knowledge.NewStore(dispatcherDB)
 			if e = dispatcherStore.ConfigurePackages(true, os.Getenv("RAG_PACKAGE_ARTIFACT_ROOT")); e != nil {
 				log.Fatal("invalid package reconcile configuration")

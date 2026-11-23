@@ -37,14 +37,14 @@ func (r *Reconciler) Once(ctx context.Context) (int, error) {
 		var p PendingCharge
 		var request sql.NullString
 		if err = rows.Scan(&p.ReservationID, &p.ProviderID, &request, &p.PricingRevision, &p.UpdatedAt); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return 0, ErrUnavailable
 		}
 		p.ProviderRequestID = request.String
 		pending = append(pending, p)
 	}
 	err = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 	if err != nil {
 		return 0, ErrUnavailable
 	}

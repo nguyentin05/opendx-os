@@ -20,15 +20,15 @@ func TestSafetyScannerRejectsInfectedAndUnavailable(t *testing.T) {
 			if e != nil {
 				t.Fatal(e)
 			}
-			defer listener.Close()
+			defer func() { _ = listener.Close() }()
 			got := make(chan string, 1)
 			go func() {
 				c, e := listener.Accept()
 				if e != nil {
 					return
 				}
-				defer c.Close()
-				c.SetDeadline(time.Now().Add(2 * time.Second))
+				defer func() { _ = c.Close() }()
+				_ = c.SetDeadline(time.Now().Add(2 * time.Second))
 				r := bufio.NewReader(c)
 				command, _ := r.ReadString(0)
 				var b strings.Builder
@@ -40,10 +40,10 @@ func TestSafetyScannerRejectsInfectedAndUnavailable(t *testing.T) {
 					if size == 0 {
 						break
 					}
-					io.CopyN(&b, r, int64(size))
+					_, _ = io.CopyN(&b, r, int64(size))
 				}
 				got <- command + b.String()
-				io.WriteString(c, reply)
+				_, _ = io.WriteString(c, reply)
 			}()
 			s, e := NewClamAV(listener.Addr().String(), time.Second)
 			if e != nil {

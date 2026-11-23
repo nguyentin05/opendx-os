@@ -70,7 +70,7 @@ func (s *Store) Original(ctx context.Context, actor *auth.Identity, doc, token s
 	if err != nil {
 		return nil, ErrAuthorityUnavailable
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != 200 {
 		return nil, ErrNotFound
 	}
@@ -112,12 +112,12 @@ func (s *Store) Asset(ctx context.Context, actor *auth.Identity, doc, assetID st
 	if err != nil {
 		return nil, ErrAuthorityUnavailable
 	}
-	defer root.Close()
+	defer func() { _ = root.Close() }()
 	file, err := root.Open(ref.Artifact)
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	data, err := io.ReadAll(io.LimitReader(file, ref.Size+1))
 	if err != nil || int64(len(data)) != ref.Size {
 		return nil, ErrNotFound

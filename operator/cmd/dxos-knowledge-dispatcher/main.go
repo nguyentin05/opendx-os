@@ -34,7 +34,7 @@ func main() {
 	if e != nil {
 		log.Fatal("dispatcher database unavailable")
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer cancel()
 	d := knowledge.Dispatcher{DB: db, Endpoint: os.Getenv("RAG_INTERNAL_AI_URL"), Token: serviceToken}

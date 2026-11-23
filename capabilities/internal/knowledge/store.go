@@ -4,7 +4,6 @@
 package knowledge
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -63,11 +62,4 @@ func dbError(err error) error {
 		}
 	}
 	return ErrAuthorityUnavailable
-}
-
-func (s *Store) ping(ctx context.Context) error {
-	if s == nil || s.db == nil {
-		return ErrAuthorityUnavailable
-	}
-	return s.db.PingContext(ctx)
 }
