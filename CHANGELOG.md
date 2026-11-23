@@ -11,6 +11,8 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-23
+
 ### Added
 
 - Record history: `GET /api/cap/process/records/{app_id}/{table}/{entity_id}/history`
@@ -51,6 +53,8 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Changed
 
+- Releases start only from a pushed `vX.Y.Z` tag: the release workflow has no
+  manual dispatch and still only drafts the release (#137).
 - Compose and the kind manifests run `hasura/graphql-engine:v2.45.1-ce`, the image
   with only the open-source engine; the default image bundles proprietary
   components.
@@ -229,6 +233,7 @@ is published; see [Releasing](docs/contribute/releasing.md).
 - Apache-2.0 SPDX headers, LF line endings, tier boundary checks, and file
   quarantine for non-`CLEAN` uploads.
 
-[Unreleased]: https://github.com/nguyentin05/opendx-os/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/nguyentin05/opendx-os/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/nguyentin05/opendx-os/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/nguyentin05/opendx-os/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/nguyentin05/opendx-os/releases/tag/v0.1.0
