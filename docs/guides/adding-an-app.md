@@ -39,8 +39,9 @@ parsers or app packages.
 The `operator/cmd/dxos-operator` CLI offers `validate`, `plan`,
 `apply` (install or upgrade one app), `reconcile` (install exactly the apps of a
 directory; with `--interval` it keeps doing so, which is how the Compose
-`operator` service runs), `export-crd` and `controller`. Under Compose, copying
-a package into `apps/` is enough to install it.
+`operator` service runs) and `export-crd`. The Kubernetes controller is a
+separate binary, `operator/cmd/dxos-controller`. Under Compose, copying a package
+into `apps/` is enough to install it.
 
 Use an app beyond maintenance, procurement, and timesheet to test pluggability.
 A useful scenario combines user reads, file bindings, department scope,

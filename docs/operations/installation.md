@@ -128,9 +128,10 @@ readiness remain open.
 
 ## Kubernetes Operator (development cluster)
 
-The operator also runs as a Kubernetes controller for the cluster-scoped
-`DXApplication` resource ([ADR 0004](../adr/0004-kubernetes-crd-operator.md)).
-The CLI above keeps working without a cluster.
+The `dxos-controller` binary (`operator/cmd/dxos-controller`) runs the operator
+as a Kubernetes controller for the cluster-scoped `DXApplication` resource
+([ADR 0004](../adr/0004-kubernetes-crd-operator.md)). The `dxos-operator` CLI
+above keeps working without a cluster.
 
 1. Create a disposable kind cluster with PostgreSQL, Hasura and the operator:
    ```bash
