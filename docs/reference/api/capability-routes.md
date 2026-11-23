@@ -5,21 +5,23 @@ diataxis: reference
 audience: [app-author, platform-developer]
 status: active
 owner: platform
-last_reviewed: 2026-11-18
+last_reviewed: 2026-11-23
 ---
 
-## 9. Capability interfaces
+# Capability routes
 
-| Capability | Intended interface |
-| --- | --- |
-| `cap-hr` | `GET /api/cap/hr/me`, `GET /api/cap/hr/org-units`, `GET /api/cap/hr/staff`; for `role_hr_admin`: `POST /api/cap/hr/org-units`, `PATCH /api/cap/hr/org-units/{id}`, `PUT` and `DELETE /api/cap/hr/staff/{user_id}` ([UI integration](../../guides/integrating-the-ui.md#8-administration)) |
-| `cap-process` | `POST /api/cap/process/files/upload`, `POST /api/cap/process/commands/{app_id}/{command}` |
-| `cap-data` | `POST /api/cap/data/ot/events`, `POST /api/cap/data/lakehouse/export`, `GET /api/cap/data/lakehouse/analytics` |
-| `cap-ai` | [Knowledge and source APIs](../rag/api.md), [optional model answers](../rag/answers.md) and owner conversations below. Legacy `/rag` and extraction remain unavailable. |
+Every route is reached through the gateway with a Keycloak bearer token and, for
+role-scoped calls, the acting role in `X-Hasura-Role`.
+`contracts/runtime-v1.openapi.yaml` describes the cap-process routes.
 
-Inspect actual handlers and agree on request/response schemas and service
-identity before connecting callers. This logical route inventory includes work
-still to implement; it is not an assertion that every endpoint is running.
+| Capability | Routes | Status |
+| --- | --- | --- |
+| `dxos-authz` | `GET /api/auth/me`, `GET /api/auth/apps`; for `role_operator`: `GET /api/auth/users`, `GET /api/auth/roles`, `PUT` and `DELETE /api/auth/users/{user_id}/roles/{role}` ([UI integration](../../guides/integrating-the-ui.md#2-who-am-i-and-what-can-i-open)) | Implemented |
+| `cap-hr` | `GET /api/cap/hr/me`, `GET /api/cap/hr/org-units`, `GET /api/cap/hr/staff`; for `role_hr_admin`: `POST /api/cap/hr/org-units`, `PATCH /api/cap/hr/org-units/{id}`, `PUT` and `DELETE /api/cap/hr/staff/{user_id}` ([UI integration](../../guides/integrating-the-ui.md#8-administration)) | Implemented |
+| `cap-process` | `POST /api/cap/process/commands/{app_id}/{command}`, `POST /api/cap/process/files/upload`, `GET /api/cap/process/files/{file_id}`, `GET /api/cap/process/records/{app_id}/{table}/{entity_id}/history` (below); `POST /api/cap/process/files/private/upload` for personal library sources ([knowledge contract](../rag/knowledge-contract.md)) | Implemented |
+| `cap-process` effects | `POST /api/cap/process/effects/work-item`, for the workflow service only; the gateway does not route it ([events](events.md#workflow-deployment)) | Implemented |
+| `cap-data` | `POST /api/cap/data/ot/events`, `POST /api/cap/data/lakehouse/export` | Not in service: the handlers target retired core tables and are not deployed by Compose or routed by the gateway; v1.1.0 (#111) |
+| `cap-ai` | [Knowledge and source APIs](../rag/api.md), [optional model answers](../rag/answers.md) and the owner conversations below, under `/api/cap/ai/` | Implemented in the `compose.rag.yaml` overlay. The legacy `/rag` and extraction routes are not available |
 
 ## Record history
 

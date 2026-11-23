@@ -5,7 +5,7 @@ diataxis: reference
 audience: [security-reviewer, platform-developer]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-23
 ---
 
 # Security and acceptance
@@ -16,10 +16,9 @@ live in the [data contracts](../data-contracts/index.md). They describe the targ
 system; passing static checks alone does not establish runtime enforcement.
 
 [ADR 0005](../../adr/0005-department-and-application-data-model.md) defines one
-organization per installation. App/department/resource isolation replaces
-workspace tenancy. The scope changes below are target acceptance requirements, not
-passing runtime evidence. Existing workspace-based fixtures and consumers must be
-migrated and tested before they qualify.
+organization per installation: application, department and owner isolation
+replaced workspace tenancy, and the code, fixtures and tests follow it. A
+requirement here is met only when a recorded runtime check shows it.
 
 | Page | Covers |
 | --- | --- |

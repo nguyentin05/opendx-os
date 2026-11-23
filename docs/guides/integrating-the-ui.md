@@ -5,7 +5,7 @@ diataxis: how-to
 audience: [app-author]
 status: active
 owner: platform
-last_reviewed: 2026-11-19
+last_reviewed: 2026-11-23
 ---
 
 # Integrating the UI
@@ -82,8 +82,11 @@ the header never grants anything.
 | Child table | has `belongsTo` | A grid inside its parent record's detail; not a menu entry |
 
 The record detail lists the record's audit history with the time, actor,
-action, resulting state and acting role. It reloads when the record version
-changes; a role that cannot read the record sees no history.
+action, resulting state and acting role, from
+`GET /api/cap/process/records/{app_id}/{table}/{entity_id}/history` with the
+acting role ([record history](../reference/api/capability-routes.md#record-history)).
+It reloads when the record version changes; a role that cannot read the record
+gets `404` and sees no history.
 
 Name each table with `ui.title` when the manifest declares it, and fall back to
 the table name. Name states and actions with `ui.stateLabels` and
@@ -314,5 +317,9 @@ is interrupted.
 
 - Changing work items (assign, move between columns): `cap_work.work_items` has
   no service route yet. See [Work items](#7-work-items) for reads.
-- Accounts that have never signed in are not listed for role assignment.
+- Accounts that have never signed in are not listed for role assignment
+  (account sync, #23).
+- The portal has no screens for role administration or departments; use the
+  calls in [Administration](#8-administration), or `scripts/seed-demo.py admin`
+  and `org` on a demo stack.
 - Custom dashboards, board and calendar views, and an Assistant model picker.

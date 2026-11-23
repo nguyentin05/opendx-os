@@ -5,10 +5,12 @@ diataxis: reference
 audience: [app-author, platform-developer, security-reviewer]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-23
 ---
 
-## 4. Write matrix and field ownership
+# Writes, versions, and audit
+
+## Write matrix and field ownership
 
 | Operation | User role | Server responsibility |
 | --- | --- | --- |
@@ -20,13 +22,13 @@ last_reviewed: 2026-11-16
 
 Remove `status`, `version`, `created_by`, `org_unit_id` and timestamps from the columns a client may insert/update. Use server-side triggers and presets, not merely a declared SQL `DEFAULT`. For `core.files`, clients do not write `scan_status`, the verification hash, or scan results; the scanner/file service holds that permission.
 
-Read permissions are declared per table, role, and column. For example, `role_maintenance` reads the employee columns needed for maintenance and the relationship to maintenance; `role_timesheet` reads the timesheet area and the relationship to timesheet. Grant a relationship only when the target table is also readable. Manager roles must have explicit grants per app; the name `role_manager` does not imply system-wide permissions.
+Read permissions are declared per table, role, and column. For example, `role_maintenance_technician` reads the maintenance record columns its `select` rule lists and, through `sharedAccess`, only the `core.users` columns it needs. A relationship is generated only when the target table is also readable. A role belongs to one application, so a manager role grants nothing outside that application; the name alone (`role_procurement_manager`, `role_timesheet_manager`) implies no system-wide permission.
 
 Hasura enforces permissions per table, operation, role, row, and column;
 PostgreSQL `GRANT` does not replace its metadata. Domain tables keep independent
 state and version even when they share an employee or work item.
 
-## 5. Version, command, audit, and retry
+## Version, command, audit, and retry
 
 **Chosen mechanism:** a `BEFORE UPDATE` trigger on the domain table sets `NEW.version = OLD.version + 1` and `updated_at` for every successful UPDATE. The client and the Command API do not increment the version themselves; the Operator generates the trigger together with the table. A retry that has been recognized does not perform another UPDATE.
 
@@ -44,6 +46,6 @@ empty one.
 
 Each command carries an idempotency key. The lock scope includes actor, app, entity, command and key; the server stores the payload fingerprint and result in the same transaction. Retrying the same key/payload returns the recorded result after checking current permissions, before re-evaluating the old version; the same key with a different payload returns `409`. The receipt schema and its consumers must implement this full scope; storing the result only in memory is insufficient.
 
-Write the change, audit, and durable event in the same transaction. Use Hasura Event Triggers or an equivalently durable outbox to deliver to Kestra; do not rely on an HTTP call to Kestra after commit as the sole delivery mechanism. The workflow deduplicates each effect by event identity and step; a retry after a crash does not create duplicate business effects.
+Write the change, audit, and durable event in the same transaction. cap-process writes the event to `core.outbox_events` in the command's transaction, and its publisher delivers it afterwards to the flow the operator deployed for the application (`core.app_workflows`); an HTTP call to Kestra after commit is never the only delivery. The workflow deduplicates each effect by event identity and step (`cap_process.processed_workflow_steps`); a retry after a crash does not create duplicate business effects.
 
-Audit serializes per chain (one per application, plus `core`) before reading the chain head and computing the hash, with `pg_advisory_xact_lock(hashtext('dxos.audit:' || chain))` within the transaction. Checkpoints are signed and stored outside PostgreSQL in OpenBao. Integrity is proven up to the anchored checkpoint; do not claim that the unanchored tail resists history rewriting by a DB superuser.
+Audit serializes per chain (one per application, plus `core`) before reading the chain head and computing the hash, with `pg_advisory_xact_lock(hashtext('dxos.audit:' || chain))` within the transaction. The chain detects a changed or removed row only against a known head: anchoring signed checkpoints outside PostgreSQL is a requirement that is not implemented yet, so the chain does not resist history rewriting by a database superuser.

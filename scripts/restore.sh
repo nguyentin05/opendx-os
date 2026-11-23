@@ -41,7 +41,7 @@ cp -R "${BACKUP_DIR}/objects/." "${OBJECTS_DIR}/"
 psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f "${BACKUP_DIR}/database.sql" >/dev/null
 
 # Verify every core.file_objects row has matching object bytes and SHA-256 digest on disk
-psql -v ON_ERROR_STOP=1 -At "$DATABASE_URL" -c "SELECT object_key || '|' || sha256_hash FROM core.file_objects" | while IFS='|' read -r obj_key expected_hash; do
+psql -v ON_ERROR_STOP=1 -At "$DATABASE_URL" -c "SELECT object_key || '|' || sha256_hash FROM core.files" | while IFS='|' read -r obj_key expected_hash; do
     [ -z "$obj_key" ] && continue
     target_file="${OBJECTS_DIR}/${obj_key}"
     if [ ! -f "$target_file" ]; then

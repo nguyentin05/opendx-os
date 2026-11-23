@@ -291,6 +291,70 @@ paths:
               schema:
                 type: string
                 format: binary
+  /api/cap/process/records/{app_id}/{table}/{entity_id}/history:
+    get:
+      operationId: readRecordHistory
+      description: The audit history of one record of a top-level table, checked
+        with the same viewer and select rules as a command before any audit row is
+        read. An unknown table, a child table, a missing record and a record
+        outside the acting role's scope are all 404. Audit payloads, chain,
+        sequence and hash columns are never returned.
+      parameters:
+      - name: app_id
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-z][a-z0-9_]*$
+      - name: table
+        in: path
+        required: true
+        description: The registry table name, schema.table.
+        schema:
+          type: string
+      - name: entity_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: X-Hasura-Role
+        in: header
+        required: false
+        description: The acting role; the server accepts it only when core.user_roles grants it.
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The newest 200 entries, oldest first
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordHistory'
+        '400':
+          description: Malformed application, table or record id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Unknown or child table, absent record, or outside the role's scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Unavailable dependency
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
   securitySchemes:
     bearerAuth:
@@ -302,6 +366,51 @@ components:
       scheme: bearer
       description: The workflow service credential (WORKFLOW_SERVICE_TOKEN).
   schemas:
+    RecordHistory:
+      type: object
+      required:
+      - entries
+      additionalProperties: false
+      properties:
+        entries:
+          type: array
+          items:
+            type: object
+            required:
+            - at
+            - action
+            - actor
+            - acting_role
+            additionalProperties: false
+            properties:
+              at:
+                type: string
+                format: date-time
+              action:
+                type: string
+                description: The command name, or INSERT, UPDATE or DELETE for a GraphQL write.
+              actor:
+                type: object
+                required:
+                - id
+                - display_name
+                additionalProperties: false
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  display_name:
+                    type: string
+              acting_role:
+                type: string
+              acting_role_description:
+                type: string
+                description: The role's registry description; omitted when empty.
+              version:
+                type: integer
+              status:
+                type: string
+                description: The state after the change; only for a state-machine table.
     CommandRequest:
       type: object
       properties:

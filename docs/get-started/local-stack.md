@@ -5,7 +5,7 @@ diataxis: tutorial
 audience: [evaluator, operator]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-23
 ---
 
 # Run the local stack
@@ -27,11 +27,17 @@ changing them, recreate the volume with `docker compose down -v`.
 
 | Service | Local address |
 | --- | --- |
-| App Shell | <http://localhost:5173> |
-| API gateway | <http://localhost:9080> |
-| Hasura console | <http://localhost:8080> |
+| Workspace UI (App Shell) | <http://localhost:5173> |
+| API gateway (APISIX) | <http://localhost:9080> |
+| Hasura GraphQL API (the console is disabled) | <http://localhost:8080> |
 | Keycloak admin | <http://localhost:8085/admin> |
+| Kestra | <http://localhost:8082> |
+| cap-process (direct; clients go through the gateway) | <http://localhost:8091> |
 | PostgreSQL | `localhost:5432` |
+
+The knowledge services (cap-ai, the personal library and the Assistant) are not
+in this stack; start them with `make rag-up`
+([installation](../operations/installation.md)).
 
 The `operator` service reconciles `apps/` every 30 seconds. It installs new or
 changed packages, deploys their workflows to Kestra, and repairs Hasura metadata

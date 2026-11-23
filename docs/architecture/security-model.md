@@ -5,7 +5,7 @@ diataxis: explanation
 audience: [security-reviewer, platform-developer]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-23
 ---
 
 # Security model
@@ -17,8 +17,9 @@ identity; the platform decides what that identity may do on each request.
 
 Keycloak issues OIDC tokens. Tokens carry identity only (`sub`, email, name,
 audience) and never create permissions. A user appears in `core.users` on first
-request; this is a one-way mirror written only by the identity service and account
-sync.
+request; this is a one-way mirror written only by `dxos-authz`, and an account
+marked `DISABLED` there is refused. Mirroring accounts disabled or deleted in
+Keycloak needs the account sync (#23), which is not implemented.
 
 ## Authorization
 
@@ -50,8 +51,9 @@ An optional `recordFilter` narrows a scope. The server stamps `created_by` and
 
 State transitions, version checks, audit rows, events, and idempotency receipts
 commit atomically. A stale `expected_version` returns `409` without writing state,
-audit, or an event. Audit chains serialize per application and are anchored by
-signed checkpoints stored outside PostgreSQL.
+audit, or an event. Audit chains serialize per application. Anchoring them with
+signed checkpoints stored outside PostgreSQL is required but not implemented, so
+the chains do not yet resist rewriting by a database superuser.
 
 The required properties and acceptance scenarios are in
 [Security and acceptance](../reference/security/index.md).

@@ -5,7 +5,7 @@ diataxis: explanation
 audience: [platform-developer, operator]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-23
 ---
 
 # Control plane
@@ -13,13 +13,16 @@ last_reviewed: 2026-11-16
 The `dxos-operator` is the control plane. It plans and applies application
 configuration out of band; it is not on the synchronous request path.
 
-The intended interface includes `plan`, `apply`, `reconcile`, `uninstall`, and
-`verify-audit`. `plan` has no side effects. Configuration progresses through
+The `dxos-operator` CLI offers `validate`, `plan`, `apply`, `reconcile`,
+`export-crd` and `version` ([CLI reference](../reference/cli/dxos-operator.md)).
+`validate` and `plan` have no side effects. Under Compose, the `operator`
+service runs `reconcile --dir /apps --interval 30s`; a package removed from the
+directory is uninstalled by the next pass. An audit verification command is not
+implemented. Configuration progresses through
 `Pending -> Applying -> Ready | Failed`, with manifest versions and structured
-errors. Publish only ready configuration; a failed update must keep desired and
-active state distinguishable. Runtime consumers read published configuration
-without calling the Operator for each request. The CLI is not fully implemented;
-check the actual command set before use.
+errors. Only ready configuration is published; a failed update keeps the
+previous version serving. Runtime consumers read published configuration
+without calling the Operator for each request.
 
 ## Reconcile
 
@@ -36,8 +39,9 @@ grants.
 Before applying, the Operator compares each live domain table with its manifest.
 Adding a nullable column is converged automatically; a type or nullability change,
 a new required column, or an undeclared live column blocks publication with a
-structured error while the previous version keeps serving. CHECK constraints are
-not compared yet.
+structured error while the previous version keeps serving. A removed state
+still used by records is refused the same way. CHECK constraints are not
+compared yet.
 
 ## Install, upgrade, and uninstall
 
@@ -52,9 +56,10 @@ longer declared loses its Hasura permissions and keeps its rows. A changed type
 or nullability, a new required column, a column that is no longer declared, or a
 removed state still used by records refuses the upgrade.
 
-Uninstall marks the row `Removed`, drops Hasura permissions and routes, releases
-capabilities, and deletes the application's flows. Domain tables, data, roles, and
-role assignments are kept. Deleting domain data is a separate operation requiring
+Uninstall marks the row `Removed`, drops Hasura permissions, retires packaged
+knowledge, releases capabilities, and deletes the application's flows. Domain
+tables, data, roles, and role assignments are kept. Gateway routes are static
+(`platform/apisix/apisix.yaml`) and are not changed per application. Deleting domain data is a separate operation requiring
 an explicit retention policy and authorized scope.
 
 ## Kubernetes controller
