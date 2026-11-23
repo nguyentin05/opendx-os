@@ -131,7 +131,9 @@ Comment:
  3. Container images built and published by this project
  .
  The project's images (ghcr.io/nguyentin05/opendx-*) add the binaries or the UI
- bundle above to these upstream base images, which keep their own licenses:
+ bundle above to these upstream base images, which keep their own licenses.
+ Each image carries LICENSE, NOTICE, this file and THIRD_PARTY_LICENSES.txt in
+ /usr/share/licenses/opendx-os/.
  .
   alpine:3.23                             Alpine Linux base packages: musl,
                                           zlib, OpenSSL (MIT, Zlib, Apache-2.0),

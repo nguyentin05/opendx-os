@@ -131,9 +131,9 @@ scripts/package_release.sh 0.2.0-local
 scripts/release/verify-archive.sh dist/dxos-open-core-0.2.0-local.tar.gz
 scripts/release/test-verify-archive.sh
 docker buildx build --platform linux/amd64 -f capabilities/Dockerfile \
-  --build-arg SERVICE=cap-ai -t opendx-cap-ai:local capabilities
+  --build-context legal=. --build-arg SERVICE=cap-ai -t opendx-cap-ai:local capabilities
 docker buildx build --platform linux/amd64 -f workspace-ui/Dockerfile \
-  -t opendx-workspace-ui:local workspace-ui
+  --build-context legal=. -t opendx-workspace-ui:local workspace-ui
 ```
 
 Dispatch the workflows and verify a downloaded artifact:

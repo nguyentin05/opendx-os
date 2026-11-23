@@ -40,6 +40,8 @@ services:
   cap-ai:
     build:
       context: ./capabilities
+      additional_contexts:
+        legal: .
       args:
         SERVICE: cap-ai
     restart: unless-stopped
@@ -77,6 +79,8 @@ services:
   cap-ai-parser:
     build:
       context: ./capabilities
+      additional_contexts:
+        legal: .
       dockerfile: Dockerfile.parser
     restart: unless-stopped
     network_mode: none
@@ -104,6 +108,8 @@ services:
   cap-ai-worker:
     build:
       context: ./capabilities
+      additional_contexts:
+        legal: .
       args:
         SERVICE: cap-ai-worker
     restart: unless-stopped
@@ -137,6 +143,8 @@ services:
   knowledge-dispatcher:
     build:
       context: ./operator
+      additional_contexts:
+        legal: .
     entrypoint: ["/usr/local/bin/dxos-knowledge-dispatcher"]
     restart: unless-stopped
     environment:

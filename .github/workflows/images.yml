@@ -121,6 +121,8 @@ jobs:
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
+          # The repository root, for the license files every image carries.
+          build-contexts: legal=.
           build-args: ${{ matrix.build-args }}
           platforms: linux/amd64
           # Pull requests build the image but never publish it.

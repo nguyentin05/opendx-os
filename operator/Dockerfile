@@ -28,4 +28,7 @@ RUN adduser -D -u 10001 dxos && install -d -m 0700 -o dxos -g dxos /var/lib/dxos
 COPY --from=builder /out/ /usr/local/bin/
 # Numeric user so Kubernetes can verify runAsNonRoot.
 USER 10001:10001
+# Apache-2.0 section 4: the license, notices and third-party license texts ship
+# with the binaries. `legal` is the repository root, passed as a named build context.
+COPY --from=legal LICENSE NOTICE COPYRIGHT.txt THIRD_PARTY_LICENSES.txt /usr/share/licenses/opendx-os/
 ENTRYPOINT ["/usr/local/bin/dxos-operator"]

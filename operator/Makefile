@@ -89,7 +89,7 @@ run: ## Run the controller from the host against the current kubeconfig.
 	go run ./cmd/dxos-controller
 
 docker-build: ## Build the controller container image (deployed by `deploy`).
-	$(CONTAINER_TOOL) build -f Dockerfile.controller -t $(IMG) .
+	$(CONTAINER_TOOL) build --build-context legal=.. -f Dockerfile.controller -t $(IMG) .
 
 ##@ Deployment
 

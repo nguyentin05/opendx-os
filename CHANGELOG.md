@@ -58,7 +58,9 @@ is published; see [Releasing](docs/contribute/releasing.md).
   services with its license, `THIRD_PARTY_LICENSES.txt`
   reproduces the license texts of linked and bundled code
   (`scripts/third_party_notices.py`), and `NOTICE` carries the required
-  Apache-2.0 attributions (#48).
+  Apache-2.0 attributions (#48). The files sit at the repository root, and every
+  project image carries them in `/usr/share/licenses/opendx-os/`; image builds
+  take the repository root as the named build context `legal`.
 - Documentation matches the implementation (#46): the manifest schema lists every
   validator rule, the architecture and data contracts say what is not
   implemented yet (audit checkpoint anchoring, OT and BI, OCR, gateway rate

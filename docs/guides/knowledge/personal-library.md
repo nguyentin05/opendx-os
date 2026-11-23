@@ -53,7 +53,7 @@ The narrow worker database role cannot read Core or write arbitrary cap_ai rows.
 Build the parser separately:
 
 ```sh
-docker build -f capabilities/Dockerfile.parser -t dxos-rag-parser:test capabilities
+docker build --build-context legal=. -f capabilities/Dockerfile.parser -t dxos-rag-parser:test capabilities
 python3 scripts/integration/test_parser_sandbox.py
 ```
 

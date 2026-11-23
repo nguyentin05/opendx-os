@@ -11,4 +11,7 @@ RUN apk add --no-cache poppler-utils=25.12.0-r0 && adduser -D -u 10001 dxos \
  && install -d -m 0700 -o dxos -g dxos /run/dxos-parser
 USER dxos
 COPY --from=builder /out/parser /usr/local/bin/parser
+# Apache-2.0 section 4: the license, notices and third-party license texts ship
+# with the binaries. `legal` is the repository root, passed as a named build context.
+COPY --from=legal LICENSE NOTICE COPYRIGHT.txt THIRD_PARTY_LICENSES.txt /usr/share/licenses/opendx-os/
 ENTRYPOINT ["/usr/local/bin/parser"]
