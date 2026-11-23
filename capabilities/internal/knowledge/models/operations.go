@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"hash"
+	"net"
 	"strconv"
 
 	"github.com/lib/pq"
@@ -82,9 +83,15 @@ func (s *OperationStore) Begin(ctx context.Context, key, fingerprint string) (st
 	if s == nil || s.DB == nil {
 		return "", ErrUnavailable
 	}
+	// A context that is already done proves the write never happened: the pool
+	// refuses to lease a connection, so no intent can exist. Only a caller that
+	// stops waiting after the statement is under way leaves the outcome open.
+	if err := ctx.Err(); err != nil {
+		return "", ErrUnavailable
+	}
 	var token sql.NullString
 	if err := s.DB.QueryRowContext(ctx, `SELECT cap_ai.begin_model_operation($1,$2)`, key, fingerprint).Scan(&token); err != nil {
-		return "", operationError(err)
+		return "", beginError(err)
 	}
 	return token.String, nil
 }
@@ -148,6 +155,55 @@ func operationError(err error) error {
 		}
 	}
 	return ErrUnavailable
+}
+
+// SQLSTATEs by which PostgreSQL itself reports that it cannot say what became of
+// the statement. Only the codes that describe a lost or unresolved execution
+// belong here: codes that report a connection which was never established
+// (08001, 08004) prove nothing was written and keep their ErrUnavailable.
+const (
+	pqConnectionFailure            = "08006"
+	pqTransactionResolutionUnknown = "08007"
+	pqStatementCompletionUnknown   = "40003"
+)
+
+// beginError classifies a failed dispatch-intent write. Begin is the last step
+// before a possible network side effect, so an error may only be reported as
+// retryable unavailability when "definitely unsent" is proven:
+//
+//   - A PostgreSQL error means the server answered. The statement was refused
+//     rather than lost, so the existing mapping stands (ErrConflict for a
+//     binding conflict, ErrUnavailable otherwise) — except the SQLSTATEs by
+//     which the server itself reports that it cannot say what happened.
+//   - A dial failure proves the connection never opened, so a merely
+//     unreachable database stays ErrUnavailable.
+//   - Nothing else proves the statement was rejected. A result read that fails
+//     after the request was sent, a connection the driver abandoned, and a
+//     caller that stops waiting mid-flight all leave the intent possibly
+//     committed, so they are ErrUncertain and never carry a token.
+//
+// The decision uses the error alone and never reads the operation back: a
+// read-back would be a second ambiguous observation, and the durable
+// MAY_HAVE_SENT intent already protects every later attempt. A context that is
+// already done is not classified here; Begin rejects it before writing anything.
+func beginError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var pg *pq.Error
+	if errors.As(err, &pg) {
+		switch string(pg.Code) {
+		case pqConnectionFailure, pqTransactionResolutionUnknown, pqStatementCompletionUnknown:
+			return ErrUncertain
+		}
+		return operationError(err)
+	}
+	var op *net.OpError
+	if errors.As(err, &op) && op.Op == "dial" {
+		// The connection was never established, so no intent was written.
+		return ErrUnavailable
+	}
+	return ErrUncertain
 }
 
 // operationFingerprint binds the approved authority snapshot and the canonical

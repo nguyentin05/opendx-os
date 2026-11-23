@@ -8,13 +8,19 @@ package models
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
+	"fmt"
+	"io"
+	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 
+	"github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/testutil"
 )
 
 // countingProvider is a controlled adapter spy: it counts invocations and can
@@ -629,6 +635,239 @@ func TestModelOperationUncertain(t *testing.T) {
 		}
 		if _, err := env.restart(t, provider).Call(context.Background(), env.actor, op, payload); !errors.Is(err, ErrUncertain) || provider.count() != 1 {
 			t.Fatalf("restart repeated committed success: %v %d", err, provider.count())
+		}
+	})
+}
+
+// beginTransportFault is a test-only connector that lets the real begin
+// statement reach the server and commit, then fails the caller's result read.
+// It models a connection that dies while the acknowledgment is in flight: the
+// intent is durable but the caller never observes the token.
+type beginTransportFault struct {
+	db       *sql.DB
+	err      error
+	armed    atomic.Bool
+	injected atomic.Int64
+	// token records the value the server actually returned, proving the
+	// transition committed and a token was issued before the read failed.
+	token atomic.Value
+}
+
+type beginFaultConnector struct {
+	base  driver.Connector
+	role  string
+	fault *beginTransportFault
+}
+
+func (c *beginFaultConnector) Connect(ctx context.Context) (driver.Conn, error) {
+	conn, err := c.base.Connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	execer, ok := conn.(driver.ExecerContext)
+	if !ok {
+		_ = conn.Close()
+		return nil, errors.New("driver cannot set session authorization")
+	}
+	if _, err := execer.ExecContext(ctx, "SET SESSION AUTHORIZATION "+pq.QuoteIdentifier(c.role), nil); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return &beginFaultConn{Conn: conn, fault: c.fault}, nil
+}
+
+func (c *beginFaultConnector) Driver() driver.Driver { return c.base.Driver() }
+
+// beginFaultConn delegates every statement to the real driver connection and
+// only replaces the rows of the first begin, so the server side of that call
+// runs unchanged.
+type beginFaultConn struct {
+	driver.Conn
+	fault *beginTransportFault
+	lost  atomic.Bool
+}
+
+func (c *beginFaultConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	queryer, ok := c.Conn.(driver.QueryerContext)
+	if !ok {
+		return nil, driver.ErrSkip
+	}
+	rows, err := queryer.QueryContext(ctx, query, args)
+	if err != nil || !strings.Contains(query, "begin_model_operation") || !c.fault.armed.CompareAndSwap(true, false) {
+		return rows, err
+	}
+	c.lost.Store(true)
+	c.fault.injected.Add(1)
+	return &beginFaultRows{rows: rows, fault: c.fault}, nil
+}
+
+// IsValid retires the connection after the injected loss so the pool cannot
+// hand a half-read session to a later statement.
+func (c *beginFaultConn) IsValid() bool { return !c.lost.Load() }
+
+type beginFaultRows struct {
+	rows  driver.Rows
+	fault *beginTransportFault
+}
+
+func (r *beginFaultRows) Columns() []string { return r.rows.Columns() }
+
+// Next surfaces the transport failure instead of the row the server sent.
+func (r *beginFaultRows) Next([]driver.Value) error { return r.fault.err }
+
+// Close drains the real response. The drain is what proves the server finished
+// and committed the statement; the observed row is the token this caller lost.
+func (r *beginFaultRows) Close() error {
+	values := make([]driver.Value, len(r.rows.Columns()))
+	if err := r.rows.Next(values); err == nil && len(values) == 1 {
+		switch value := values[0].(type) {
+		case string:
+			r.fault.token.Store(value)
+		case []byte:
+			r.fault.token.Store(string(value))
+		}
+	}
+	return r.rows.Close()
+}
+
+// newBeginTransportFault opens a gateway session whose first begin commits
+// server-side and then loses the client-side result read.
+func newBeginTransportFault(t *testing.T, dsn string) *beginTransportFault {
+	t.Helper()
+	base, err := pq.NewConnector(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fault := &beginTransportFault{err: &net.OpError{Op: "read", Net: "tcp", Err: io.ErrUnexpectedEOF}}
+	fault.armed.Store(true)
+	fault.db = sql.OpenDB(&beginFaultConnector{base: base, role: "dxos_ai_gateway", fault: fault})
+	t.Cleanup(func() { _ = fault.db.Close() })
+	return fault
+}
+
+// faultedToken reports the acknowledgment the server issued but the caller
+// never received.
+func (f *beginTransportFault) faultedToken() string {
+	value, _ := f.token.Load().(string)
+	return value
+}
+
+func TestModelOperationBeginTransportUncertain(t *testing.T) {
+	env := newStaticEnv(t)
+	payload := Payload{Query: "approved query"}
+	ctx := context.Background()
+
+	t.Run("committed begin never acknowledged", func(t *testing.T) {
+		provider := &countingProvider{result: Result{Text: "answer"}}
+		op := env.op
+		op.Key = "begin-transport-lost"
+		fault := newBeginTransportFault(t, databaseURL(t, env.db))
+		gateway := env.gateway(provider)
+		gateway.Operations = &OperationStore{DB: fault.db}
+		if _, err := gateway.Call(ctx, env.actor, op, payload); !errors.Is(err, ErrUncertain) {
+			t.Fatalf("unread begin acknowledgment: got %v, want %v", err, ErrUncertain)
+		}
+		if injected := fault.injected.Load(); injected != 1 {
+			t.Fatalf("fault path did not run: %d injections", injected)
+		}
+		// The server did issue a token; only the caller's read of it failed. The
+		// token the faulted result carried is the one now stored on the row, so
+		// the transition committed before the client lost the acknowledgment.
+		stored := readOperation(t, env.db, op.Key)
+		if stored.State != OperationMayHaveSent {
+			t.Fatalf("state %q", stored.State)
+		}
+		token := fault.faultedToken()
+		if token == "" {
+			t.Fatal("server issued no dispatch token, so nothing was lost")
+		}
+		if !strings.Contains(stored.Raw, token) {
+			t.Fatalf("the lost token %q is not the one the row stores: %s", token, stored.Raw)
+		}
+		if calls := provider.count(); calls != 0 {
+			t.Fatalf("ambiguous begin was dispatched: %d", calls)
+		}
+		// A different process observing the same durable intent must not resend.
+		if _, err := env.restart(t, provider).Call(ctx, env.actor, op, payload); !errors.Is(err, ErrUncertain) {
+			t.Fatalf("restart after lost acknowledgment: got %v, want %v", err, ErrUncertain)
+		}
+		if calls := provider.count(); calls != 0 {
+			t.Fatalf("restart dispatched an ambiguous begin: %d", calls)
+		}
+		if stored := readOperation(t, env.db, op.Key); stored.State != OperationMayHaveSent {
+			t.Fatalf("state after restart %q", stored.State)
+		}
+	})
+
+	t.Run("binding conflict stays definite", func(t *testing.T) {
+		store := &OperationStore{DB: env.gatewayDB}
+		key := "begin-conflict"
+		fingerprint := strings.Repeat("a", 64)
+		binding := OperationBinding{Key: key, ActorID: env.actor.UserID, AppID: env.op.AppID,
+			ProfileID: env.profile.ID, Revision: env.profile.Revision, Purpose: env.op.Purpose, Fingerprint: fingerprint}
+		if state, err := store.Claim(ctx, binding); err != nil || state != OperationClaimed {
+			t.Fatal(state, err)
+		}
+		if token, err := store.Begin(ctx, key, strings.Repeat("b", 64)); !errors.Is(err, ErrConflict) || token != "" {
+			t.Fatalf("conflicting begin: token=%q err=%v, want ErrConflict", token, err)
+		}
+		// A definite rejection leaves the claim resumable under the right binding.
+		if stored := readOperation(t, env.db, key); stored.State != OperationClaimed {
+			t.Fatalf("rejected begin moved the operation to %q", stored.State)
+		}
+		if token, err := store.Begin(ctx, key, fingerprint); err != nil || token == "" {
+			t.Fatalf("matching begin after a conflict: token=%q err=%v", token, err)
+		}
+	})
+
+	t.Run("wrong role stays unavailable", func(t *testing.T) {
+		store := &OperationStore{DB: testutil.As(t, databaseURL(t, env.db), "dxos_ai_api")}
+		if token, err := store.Begin(ctx, "begin-wrong-role", strings.Repeat("c", 64)); !errors.Is(err, ErrUnavailable) || token != "" {
+			t.Fatalf("non-gateway begin: token=%q err=%v, want ErrUnavailable", token, err)
+		}
+	})
+
+	t.Run("unreachable database stays unavailable", func(t *testing.T) {
+		// A dial failure proves the intent never reached the server, so the
+		// ambiguity rule must not swallow the one genuinely retryable case.
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		address := listener.Addr().String()
+		if err := listener.Close(); err != nil {
+			t.Fatal(err)
+		}
+		db, err := sql.Open("postgres", fmt.Sprintf("postgres://postgres@%s/test?sslmode=disable", address))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = db.Close() })
+		store := &OperationStore{DB: db}
+		if token, err := store.Begin(ctx, "begin-unreachable", strings.Repeat("e", 64)); !errors.Is(err, ErrUnavailable) || token != "" {
+			t.Fatalf("begin on an unreachable database: token=%q err=%v, want ErrUnavailable", token, err)
+		}
+	})
+
+	t.Run("confirmed begin issues one token", func(t *testing.T) {
+		store := &OperationStore{DB: env.gatewayDB}
+		key := "begin-confirmed"
+		fingerprint := strings.Repeat("d", 64)
+		binding := OperationBinding{Key: key, ActorID: env.actor.UserID, AppID: env.op.AppID,
+			ProfileID: env.profile.ID, Revision: env.profile.Revision, Purpose: env.op.Purpose, Fingerprint: fingerprint}
+		if state, err := store.Claim(ctx, binding); err != nil || state != OperationClaimed {
+			t.Fatal(state, err)
+		}
+		token, err := store.Begin(ctx, key, fingerprint)
+		if err != nil || token == "" {
+			t.Fatalf("confirmed begin: token=%q err=%v", token, err)
+		}
+		// A NULL token is a caller that lost the begin race, not a failure.
+		if second, err := store.Begin(ctx, key, fingerprint); err != nil || second != "" {
+			t.Fatalf("second begin: token=%q err=%v, want a NULL token and no error", second, err)
+		}
+		if stored := readOperation(t, env.db, key); stored.State != OperationMayHaveSent {
+			t.Fatalf("state %q", stored.State)
 		}
 	})
 }
