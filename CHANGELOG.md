@@ -51,6 +51,12 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Changed
 
+- Documentation matches the implementation (#46): the manifest schema lists every
+  validator rule, the architecture and data contracts say what is not
+  implemented yet (audit checkpoint anchoring, OT and BI, OCR, gateway rate
+  limits, account sync, Kanban), and installation covers the Compose overlays
+  and the Kubernetes controller. `runtime-v1.openapi.yaml` adds the record
+  history route.
 - Procurement: finance no longer receives the manager's review work item; its
   own budget step stays available through the record inbox (#27).
 - Workspace UI: My Work and the acting-role switcher show the role's manifest
@@ -74,6 +80,8 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Fixed
 
+- `scripts/restore.sh` checks restored objects against `core.files`; it queried
+  a table that no longer exists and failed after replacing the data.
 - `scripts/test-compose.sh` no longer fails when `ENABLED_CAPABILITIES` leaves
   off a capability that an application in `apps/` declares; it reports that
   application as not installed (#65).
