@@ -5,7 +5,7 @@ diataxis: explanation
 audience: [evaluator, platform-developer, security-reviewer]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-23
 ---
 
 # Architecture overview
@@ -14,9 +14,9 @@ OpenDX-OS is a composable platform for business applications. An application
 declares its data, permissions, workflows, and UI configuration in a package; the
 platform generates and serves it without a per-application backend.
 
-The checkout contains partial implementations. This section describes the intended
-architecture; it does not establish that every component is installed, connected,
-or verified.
+This section describes the architecture and says, where it matters, which parts
+are implemented and which are planned. The [roadmap](https://github.com/nguyentin05/opendx-os/blob/main/ROADMAP.md)
+tracks the planned parts.
 
 | Page | Covers |
 | --- | --- |
@@ -29,14 +29,16 @@ or verified.
 ## Architecture boundaries
 
 - **Tier 1** provides shared infrastructure in `platform/`. PostgreSQL, Hasura,
-  Keycloak, APISIX, Kestra, object storage, scanning, and audit checkpoints are
-  shared by every application.
+  Keycloak, `dxos-authz`, APISIX, Kestra, object storage and scanning are shared
+  by every application.
 - **Tier 2** provides reusable H-P-D-I capabilities in `capabilities/` and the
   schema-driven App Shell in `workspace-ui/`.
 - **Tier 3** packages domain declarations in `apps/<app>/manifest.yaml`,
   `workflows/*.yaml`, and `knowledge/*.md`; there is no per-app backend.
-- The Go `operator/` is the control plane outside the synchronous request path.
-  Running applications continue serving when it stops.
+- The Go `operator/` is the control plane outside the synchronous request path:
+  the `dxos-operator` CLI (and the Compose reconcile loop) and the
+  `dxos-controller` Kubernetes controller. Running applications continue serving
+  when it stops.
 - Adding an app using supported capabilities changes its package and published
   configuration. A new capability may require Tier 2 extensions with an explicit
   contract change.
@@ -44,8 +46,9 @@ or verified.
   identifiers rather than branching on app names. Domain names in examples,
   fixtures, and tests must not become a runtime app list.
 - The Operator generates domain-table DDL from manifests. Bootstrap creates
-  shared structures and enabled capability storage. OT publishes standard events;
-  declared application workflows supply thresholds and business responses.
+  shared structures and enabled capability storage. OT will publish standard
+  events, and declared application workflows supply thresholds and business
+  responses (cap-data, v1.1.0).
 
 ## Decisions and contract changes
 
@@ -53,12 +56,12 @@ The [ADRs](../adr/index.md) record accepted decisions and rationale; the
 [data contracts](../reference/data-contracts/index.md) and
 [manifest reference](../reference/manifest/index.md) describe their current
 application. ADR 0002 refines domain-attribute ownership; ADR 0003 refines
-optional capability storage while retaining the three tiers. ADR 0004 (proposed)
+optional capability storage while retaining the three tiers. ADR 0004
 introduces the `DXApplication` CRD controller. ADR 0005 defines one organization
 per installation with application and department isolation. ADR 0006 keeps
 application logic in declarations. ADR 0007 keeps authentication in Keycloak and
 authorization in the platform. ADR 0008 lets an application declare several
-tables.
+tables. ADR 0009 sets identity and source boundaries for native RAG.
 
 For a proposed change, identify relevant accepted decisions and affected
 contracts, producers, consumers, examples, and data migrations. Record a

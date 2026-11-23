@@ -5,10 +5,10 @@ diataxis: reference
 audience: [platform-developer]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-23
 ---
 
-## 8. Semantic concept ownership
+# Semantic concept ownership
 
 [ADR 0002](../../adr/0002-semantic-schema-governance-and-cross-app-data-sync.md#3-three-scenario-governance-for-domain-attributes-tier-3)
 defines three cases: independent domain attributes, an explicitly shared concept

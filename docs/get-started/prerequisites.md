@@ -5,7 +5,7 @@ diataxis: tutorial
 audience: [evaluator, operator]
 status: active
 owner: platform
-last_reviewed: 2026-11-18
+last_reviewed: 2026-11-23
 ---
 
 # Prerequisites
@@ -14,8 +14,8 @@ You need a workstation with:
 
 - Docker Engine 24 or newer and Docker Compose v2;
 - at least 8 GB of RAM available to Docker (16 GB recommended);
-- ports `5173`, `8080`, `8085`, `9080`, and `5432` free, or values overridden in
-  `.env`;
+- ports `5173`, `5432`, `8080`, `8082`, `8085`, `8091` and `9080` free, or the
+  matching `*_PORT` values overridden in `.env`;
 - `bash`, `curl`, and `git`.
 
 Optional tools:
