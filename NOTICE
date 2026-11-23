@@ -22,7 +22,26 @@ application manifests, and documentation authored by the DX-OS Open-Core
 Contributors in this repository are made available under the Apache License,
 Version 2.0.
 
-No third-party source code is vendored or bundled into this repository. External
-open-source services and library dependencies referenced by the project retain
-their respective licenses as documented in COPYRIGHT.txt and the project SBOMs
-once dependency manifests are introduced.
+No third-party source code is vendored or copied into this repository. The
+project's Go binaries and Workspace UI bundle are built from the third-party
+modules and packages listed in COPYRIGHT.txt; their license and NOTICE texts
+are reproduced in LICENSES/third_party/THIRD_PARTY_LICENSES.txt.
+
+-------------------------------------------------------------------------------
+Attribution notices of Apache-2.0 components in the project's builds
+-------------------------------------------------------------------------------
+The binaries built from operator/ include:
+
+- github.com/go-openapi/jsonpointer and github.com/go-openapi/jsonreference:
+  Copyright 2015-2025 go-swagger maintainers. They include software originally
+  authored in 2013 by sigu-399 (https://github.com/sigu-399).
+- github.com/prometheus/client_golang, client_model, common and procfs:
+  Copyright 2012-2015 The Prometheus Authors. This product includes software
+  developed at SoundCloud Ltd. (http://soundcloud.com/). client_golang includes
+  perks (Copyright 2013-2015 Blake Mizerany, Björn Rabenstein) and Go support
+  for Protocol Buffers (Copyright 2010 The Go Authors).
+- gopkg.in/yaml.v3, go.yaml.in/yaml/v2 and go.yaml.in/yaml/v3:
+  Copyright 2011-2016 Canonical Ltd.
+- sigs.k8s.io/randfill: the NOTICE of this project lists gofuzz contributors
+  under section 7 of the CNCF CLA; its text is reproduced in
+  LICENSES/third_party/THIRD_PARTY_LICENSES.txt.
