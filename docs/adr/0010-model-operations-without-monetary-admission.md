@@ -73,13 +73,19 @@ it. This decision records the result and the rollout rule that follows from it.
    missing or disabled model binding. `MODEL_OPERATION_CONFLICT` and the other
    binding failures stay internal; only the public surface collapses them into
    the uncertainty code. No client may resubmit on either outcome.
-6. **One private ingestion code is retained deliberately.** Migration `0004`
-   still stores `error_code='MODEL_CHARGE_UNCERTAIN'` on a failed embedding
-   ingestion job. It is an internal database value that marks a worker's
-   incomplete operation for operators; it is not a public API reason, a
-   settlement state or a monetary fact. Renaming it would change the applied
-   `0004` checksum and force another rebuild for no public benefit, so it stays
-   and is documented as private.
+6. **The ingestion surface publishes the same uncertainty code.** Migration
+   `0004` stores `error_code='MODEL_CALL_UNCERTAIN'` on an embedding ingestion
+   job whose model call may have been sent. That code is not private: a reader
+   who currently holds source READ sees it through `cap_ai.ingestion_metadata`
+   and through `GET /api/cap/ai/ingestions/{id}`, which serializes the function
+   result without remapping it. `MODEL_CALL_UNCERTAIN` therefore names the one
+   public uncertainty outcome on both the answer and ingestion surfaces, and it
+   is still not a settlement state or a monetary fact. The ingestion job state
+   stays `FAILED`, which is distinct from the durable operation state
+   `UNCERTAIN`: the job records that the embedding build did not complete, the
+   operation records that a call may have been sent and must never be resent.
+   Any other reader keeps the existing concealed outcome: no job, no state and
+   no error code.
 7. **Rollout is a named rebuild, not an upgrade.** The rebased `0004` and `0005`
    are a one-time clean-slate exception described below. Every affected owner
    provisions or rebuilds a named database on the approved revision, bootstraps
@@ -158,7 +164,8 @@ never selected from request JSON.
   [API contract](../reference/rag/api.md#model-gateway) describe durable
   operation state and token observation instead of budgets and settlement.
 - [The model guide](../guides/knowledge/models.md) documents the v2 catalog, the
-  processing app setting, the private ingestion code and the qualification gate.
+  processing app setting, the public uncertainty code on the ingestion surface
+  and the qualification gate.
 - [Installation](../operations/installation.md) and
   [verification](../contribute/verification.md) document the named rebuild and
   the evidence expected for it.

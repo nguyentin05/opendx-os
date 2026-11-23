@@ -450,11 +450,17 @@ route preserves selected-role behavior for existing knowledge APIs.
 
 Recheck authority after the claim, after persisting intent and immediately before
 send. A state that may have been sent (`MAY_HAVE_SENT` or `UNCERTAIN`) is never
-resent by the same or a later attempt. An uncertain EMBED job becomes FAILED with
-the private ingestion `error_code` `MODEL_CHARGE_UNCERTAIN`; the name is an
-internal database value kept for operator resolution, not a public reason or a
-charge. Operation identity for each embedding chunk stays stable across lease
-fences, so a crash after send cannot create an automatic second call. Other
+resent by the same or a later attempt. An uncertain EMBED job becomes an
+ingestion job `FAILED` with `error_code` `MODEL_CALL_UNCERTAIN`. That code is
+public, not a private database value: a caller who currently holds READ on the
+job's document sees it from `GET /api/cap/ai/ingestions/{id}`
+(`{"status":"FAILED","error_code":"MODEL_CALL_UNCERTAIN"}`) because the route
+serializes `cap_ai.ingestion_metadata` unchanged, and any other caller keeps the
+concealed `404 NOT_FOUND` with no status and no code. The job state `FAILED` is
+distinct from the durable operation state `UNCERTAIN`: the job says the embedding
+build did not complete, the operation says a call may have been sent and must
+never be resent. Operation identity for each embedding chunk stays stable across
+lease fences, so a crash after send cannot create an automatic second call. Other
 explicitly approved new attempts need their own operation identity.
 
 Token counters are observational. They are recorded, together with an optional

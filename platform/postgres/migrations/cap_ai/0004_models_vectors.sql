@@ -1011,7 +1011,7 @@ AS $$
 BEGIN
   PERFORM cap_ai.finish_embedding(job, worker, fence, run, generation, false);
   IF uncertain THEN
-    UPDATE cap_ai.ingestion_jobs SET state = 'FAILED', error_code = 'MODEL_CHARGE_UNCERTAIN', updated_at = now()
+    UPDATE cap_ai.ingestion_jobs SET state = 'FAILED', error_code = 'MODEL_CALL_UNCERTAIN', updated_at = now()
       WHERE id = job;
     UPDATE cap_ai.embedding_generations SET state = 'FAILED', updated_at = now()
       WHERE id = generation AND state = 'BUILDING';
