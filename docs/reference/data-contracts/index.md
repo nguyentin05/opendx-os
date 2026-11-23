@@ -5,14 +5,16 @@ diataxis: reference
 audience: [app-author, platform-developer, security-reviewer]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-23
 ---
 
 # Data contracts
 
 These pages are the canonical data contract shared by the Operator, capabilities,
-UI, and application packages. The implementation is partial; existing Go types and
-sample YAML are not evidence that every requirement is enforced. See
+UI, and application packages. Each page says where a requirement is accepted but
+not yet implemented (OT and BI, audit checkpoint anchoring, shared semantic
+concepts); existing Go types and sample YAML are not evidence that a requirement
+is enforced. See
 [architecture and contract changes](../../architecture/index.md#decisions-and-contract-changes)
 and [security acceptance criteria](../security/index.md).
 

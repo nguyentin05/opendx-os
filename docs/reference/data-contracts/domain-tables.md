@@ -5,10 +5,10 @@ diataxis: reference
 audience: [app-author, platform-developer]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-23
 ---
 
-## 3. Domain tables and initial state
+# Domain tables and initial state
 
 An application declares one or more domain tables `domain.<name>`
 ([ADR 0008](../../adr/0008-an-application-declares-several-tables.md)); the
@@ -47,8 +47,8 @@ The process tables of the sample applications:
 
 | Sample app | Business columns | Initial state |
 | --- | --- | --- |
-| Procurement | `vendor_name`, `item_description`, `quoted_amount NUMERIC(14,2) > 0`, `quote_file_id` → `core.files`, `rejection_reason` | `DRAFT` |
-| Maintenance | `device_id` → `cap_data.devices`, `issue_summary`, `resolution_note` | `OPEN` |
+| Procurement | `vendor_name`, `item_description`, `quoted_amount NUMERIC(14,2) > 0`, `quote_file_id` → `core.files`, `vendor_id` → `domain.procurement_vendors`, `rejection_reason` | `DRAFT` |
+| Maintenance | `assignee_id` → `core.users`, `device_id` → `cap_data.devices`, `issue_summary`, `resolution_note` | `OPEN` |
 | Timesheet | `work_date`, `logged_hours NUMERIC(4,2)` within `(0, 24]` | `SUBMITTED` |
 
 Procurement also declares a plain table, `domain.procurement_vendors` (a list

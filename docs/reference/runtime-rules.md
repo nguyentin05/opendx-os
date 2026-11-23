@@ -5,7 +5,7 @@ diataxis: reference
 audience: [platform-developer, security-reviewer]
 status: active
 owner: platform
-last_reviewed: 2026-11-22
+last_reviewed: 2026-11-23
 ---
 
 # Runtime rules
@@ -125,9 +125,10 @@ python3 -m unittest discover -s tests -p test_machine_contracts.py -v
 
 Schema shape alone does not establish a manifest's semantic safety.
 
-Runtime configuration: `DATABASE_URL`, `OIDC_ISSUER_URL`, `OIDC_JWKS_URL`,
+cap-process configuration: `DATABASE_URL`, `OIDC_ISSUER_URL`, `OIDC_JWKS_URL`,
 `OIDC_AUDIENCE`, `ROLE_CACHE_TTL`, `KESTRA_URL`, `KESTRA_USER`,
-`KESTRA_PASSWORD`, `KESTRA_WEBHOOK_KEY`, `WORKFLOW_SERVICE_TOKEN`, `S3_ENDPOINT`,
-`S3_BUCKET`, `CLAMAV_ADDRESS`. Database tests require `TEST_DATABASE_URL` and the
+`KESTRA_PASSWORD`, `KESTRA_WEBHOOK_KEY`, `WORKFLOW_SERVICE_TOKEN`,
+`WORKFLOW_SERVICE_USER_ID`, `WORKFLOW_SERVICE_ROLE`, `S3_ENDPOINT`, `S3_BUCKET`,
+`S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `CLAMAV_ADDRESS`. Database tests require `TEST_DATABASE_URL` and the
 `integration` build tag. The UI receives only the public issuer, client, callback
 and gateway configuration; service credentials are never exposed.

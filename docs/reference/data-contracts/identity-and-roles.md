@@ -5,10 +5,10 @@ diataxis: reference
 audience: [app-author, platform-developer, security-reviewer]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-23
 ---
 
-## 1. Identity, roles and scope
+# Identity, roles, and scope
 
 - One installation serves one organization. Keycloak authenticates; tokens
   carry identity only (`sub`, email, name). The role a caller acts as is named
