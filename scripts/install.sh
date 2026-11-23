@@ -30,7 +30,7 @@ if ! command -v go >/dev/null 2>&1; then
     exit 1
 fi
 
-for req in platform apps contracts operator capabilities workspace-ui compose.yaml .env.example LICENSE NOTICE COPYRIGHT.txt; do
+for req in platform apps contracts operator capabilities workspace-ui compose.yaml .env.example LICENSE NOTICE COPYRIGHT.txt THIRD_PARTY_LICENSES.txt; do
     if [ ! -e "${REPO_ROOT}/${req}" ]; then
         echo "ERROR: missing required source component: ${req}" >&2
         exit 1
@@ -41,7 +41,7 @@ echo "==> Installing OpenDX-OS (DX-OS Open-Core) into: ${TARGET_DIR}"
 
 mkdir -p "${TARGET_DIR}/bin"
 
-for item in platform apps contracts operator capabilities workspace-ui scripts compose.yaml compose.rag.yaml compose.models.yaml .env.example LICENSE NOTICE COPYRIGHT.txt Makefile; do
+for item in platform apps contracts operator capabilities workspace-ui scripts compose.yaml compose.rag.yaml compose.models.yaml .env.example LICENSE NOTICE COPYRIGHT.txt THIRD_PARTY_LICENSES.txt Makefile; do
     if [ -e "${REPO_ROOT}/${item}" ]; then
         cp -R "${REPO_ROOT}/${item}" "${TARGET_DIR}/"
     fi

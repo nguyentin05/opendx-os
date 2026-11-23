@@ -21,7 +21,7 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-OUT = ROOT / "LICENSES" / "third_party" / "THIRD_PARTY_LICENSES.txt"
+OUT = ROOT / "THIRD_PARTY_LICENSES.txt"
 LEGAL = re.compile(r"(?i)^(licen[cs]e|copying|notice)([.-].*)?$")
 
 

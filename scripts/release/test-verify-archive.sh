@@ -46,7 +46,7 @@ new_tree() {
         mkdir -p "${root}/package/${dir}"
         echo content > "${root}/package/${dir}/.keep"
     done
-    for file in LICENSE NOTICE COPYRIGHT.txt README.md compose.yaml .env.example; do
+    for file in LICENSE NOTICE COPYRIGHT.txt THIRD_PARTY_LICENSES.txt README.md compose.yaml .env.example; do
         echo content > "${root}/package/${file}"
     done
     echo content > "${root}/package/scripts/install.sh"

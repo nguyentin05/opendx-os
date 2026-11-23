@@ -55,7 +55,7 @@ is published; see [Releasing](docs/contribute/releasing.md).
   with only the open-source engine; the default image bundles proprietary
   components.
 - `COPYRIGHT.txt` lists every third-party component in the builds, images and
-  services with its license, `LICENSES/third_party/THIRD_PARTY_LICENSES.txt`
+  services with its license, `THIRD_PARTY_LICENSES.txt`
   reproduces the license texts of linked and bundled code
   (`scripts/third_party_notices.py`), and `NOTICE` carries the required
   Apache-2.0 attributions (#48).

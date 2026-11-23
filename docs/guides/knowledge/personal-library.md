@@ -101,8 +101,8 @@ This conservative recipe favors provenance over packing unrelated small blocks.
 COMPLETE runs are immutable; a new fenced attempt can replace a failed candidate
 without erasing the old eligible active version.
 
-See `LICENSES/third_party/native-rag-parser.md`. Images
-containing Poppler require the applicable GPL notices and corresponding source
+The parser image adds Poppler (`poppler-utils`, GPL-2.0-or-later) as a separate
+executable; see section 3 of `COPYRIGHT.txt`. Images containing Poppler require the applicable GPL notices and corresponding source
 when distributed; no parser image is published by this development workflow.
 
 ## Browser integration

@@ -25,7 +25,7 @@ Version 2.0.
 No third-party source code is vendored or copied into this repository. The
 project's Go binaries and Workspace UI bundle are built from the third-party
 modules and packages listed in COPYRIGHT.txt; their license and NOTICE texts
-are reproduced in LICENSES/third_party/THIRD_PARTY_LICENSES.txt.
+are reproduced in THIRD_PARTY_LICENSES.txt.
 
 -------------------------------------------------------------------------------
 Attribution notices of Apache-2.0 components in the project's builds
@@ -44,4 +44,4 @@ The binaries built from operator/ include:
   Copyright 2011-2016 Canonical Ltd.
 - sigs.k8s.io/randfill: the NOTICE of this project lists gofuzz contributors
   under section 7 of the CNCF CLA; its text is reproduced in
-  LICENSES/third_party/THIRD_PARTY_LICENSES.txt.
+  THIRD_PARTY_LICENSES.txt.

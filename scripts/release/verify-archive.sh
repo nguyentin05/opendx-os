@@ -61,6 +61,7 @@ required=(
     "LICENSE"
     "NOTICE"
     "COPYRIGHT.txt"
+    "THIRD_PARTY_LICENSES.txt"
     "README.md"
     "compose.yaml"
     ".env.example"
