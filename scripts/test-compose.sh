@@ -17,7 +17,8 @@
 # Checks a running `docker compose up` stack: every service is up (and healthy
 # where it has a healthcheck), the runtime roles log in with their .env
 # passwords, Kestra uses its own database, the operator has installed the
-# application packages, and each HTTP entry point answers.
+# application packages whose capabilities are enabled, and each HTTP entry point
+# answers.
 #
 #   docker compose up -d --build
 #   scripts/test-compose.sh            # waits up to WAIT_SECONDS (default 300)
@@ -108,22 +109,36 @@ if [ -n "$out" ]; then pass "enabled capabilities: $out"; else fail "no capabili
 echo "[test-compose] Applications"
 apps_dir="${OPERATOR_APPS_DIR:-./apps}"
 want="$(find "$apps_dir" -mindepth 2 -maxdepth 2 -name manifest.yaml | wc -l)"
+# The third column names the capabilities an app declares that ENABLED_CAPABILITIES
+# leaves off; the operator refuses such an app, so it is not expected Ready.
 app_status() {
-    docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA' \
-        <<<"SELECT app_id || ' ' || status FROM core.apps WHERE status <> 'Removed' ORDER BY 1" 2>&1
+    docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA -F " "' <<<"
+        SELECT a.app_id, a.status, coalesce((
+            SELECT string_agg(cap, ',' ORDER BY cap)
+              FROM jsonb_array_elements_text(a.spec->'capabilities') cap
+             WHERE NOT EXISTS (SELECT 1 FROM core.capabilities c WHERE c.cap_id = cap AND c.enabled)), '')
+          FROM core.apps a WHERE a.status <> 'Removed' ORDER BY 1" 2>&1
 }
 # The operator's first pass may still be running.
 while :; do
-    ready="$(app_status | grep -c ' Ready$' || true)"
-    [ "$ready" -ge "$want" ] || [ $SECONDS -ge $deadline ] && break
+    rows="$(app_status)"
+    ready="$(awk '$2 == "Ready"' <<<"$rows" | grep -c . || true)"
+    disabled="$(awk '$2 != "Ready" && $3 != ""' <<<"$rows" | grep -c . || true)"
+    [ "$ready" -ge $((want - disabled)) ] || [ $SECONDS -ge $deadline ] && break
     sleep 5
 done
-while read -r app status; do
+while read -r app status missing; do
     [ -z "$app" ] && continue
-    if [ "$status" = "Ready" ]; then pass "$app Ready"; else fail "$app $status"; fi
-done <<<"$(app_status)"
-if [ "$ready" -lt "$want" ]; then
-    fail "${ready} of ${want} packages in ${apps_dir} installed (see: docker compose logs operator)"
+    if [ "$status" = "Ready" ]; then
+        pass "$app Ready"
+    elif [ -n "$missing" ]; then
+        pass "$app not installed: needs ${missing}, which ENABLED_CAPABILITIES leaves off"
+    else
+        fail "$app $status"
+    fi
+done <<<"$rows"
+if [ "$ready" -lt $((want - disabled)) ]; then
+    fail "${ready} of $((want - disabled)) packages in ${apps_dir} installed (see: docker compose logs operator)"
 fi
 
 echo "[test-compose] HTTP entry points"

@@ -74,6 +74,9 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Fixed
 
+- `scripts/test-compose.sh` no longer fails when `ENABLED_CAPABILITIES` leaves
+  off a capability that an application in `apps/` declares; it reports that
+  application as not installed (#65).
 - Go: every error that golangci-lint's `errcheck`, `staticcheck` and `unused`
   reported is handled, and lint now checks the whole history (#85). A failed
   close of a temporary PDF or of a parser request body is now returned instead

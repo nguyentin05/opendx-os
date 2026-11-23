@@ -55,7 +55,9 @@ readiness remain open.
    `platform/postgres/init/08_runtime_passwords.sh`. This happens once per data
    volume: after changing these values, recreate it with `docker compose down -v`.
    `scripts/test-compose.sh` waits for every service, logs in as each runtime role
-   from another container and probes each HTTP entry point.
+   from another container and probes each HTTP entry point. It expects every
+   package in `apps/` to be Ready, except a package that declares a capability
+   `ENABLED_CAPABILITIES` leaves off, which the operator refuses to install.
 
    To run cap-ai, the personal library and the FTS-only Assistant, use
    `make rag-up` instead of the plain `docker compose up -d` above. It creates
