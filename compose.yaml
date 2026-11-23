@@ -307,7 +307,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - "${BIND_ADDRESS:-127.0.0.1}:${WORKSPACE_UI_PORT:-5173}:80"
+      - "${BIND_ADDRESS:-127.0.0.1}:${WORKSPACE_UI_PORT:-5173}:8080"
     depends_on:
       - apisix
 

@@ -74,6 +74,14 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Fixed
 
+- Go: every error that golangci-lint's `errcheck`, `staticcheck` and `unused`
+  reported is handled, and lint now checks the whole history (#85). A failed
+  close of a temporary PDF or of a parser request body is now returned instead
+  of ignored.
+- `dxos-operator` has a test that fails if the Kubernetes client or
+  controller-runtime comes back into it; only `dxos-controller` links them (#65).
+- Removed the unused `capabilities/internal/ai` package and its sample
+  procurement data.
 - Attachments: attaching another user's file now returns a readable refusal
   (SQLSTATE `23514`, `permission-error` in GraphQL) instead of a generic
   "database query error", and a failed `core.files` write deletes the object it
@@ -107,6 +115,16 @@ is published; see [Releasing](docs/contribute/releasing.md).
   locks an account after repeated wrong passwords, and requires passwords of at
   least eight characters that differ from the username and email (#113).
   Existing installations apply these settings in the admin console.
+- Go dependencies: `golang.org/x/net` v0.62.0 and `golang.org/x/text` v0.43.0
+  (HTTP/2 and HTML denial-of-service fixes), `goldmark` v1.8.7, `lib/pq`
+  v1.12.3, Kubernetes v0.37.2 and controller-runtime v0.25.3 (#86, #91, #92).
+  The modules stay on Go 1.27.3, so govulncheck still reports GO-2026-6859 in
+  `net/http`, fixed in Go 1.27.4.
+- The Workspace UI image runs nginx as the unprivileged `nginx` user on port
+  8080 (#86).
+- CI fails on HIGH or CRITICAL Trivy findings. The disposable kind manifests in
+  `platform/k8s/dev/` are allowlisted in `.trivyignore.yaml` with the reason
+  (#86).
 
 ## [0.2.0] - 2026-11-16
 
