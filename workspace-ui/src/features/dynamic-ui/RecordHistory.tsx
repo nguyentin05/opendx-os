@@ -2,7 +2,7 @@
 // Copyright 2026 DX-OS Open-Core Contributors
 
 import { useEffect, useState } from 'react';
-import { commandLabel, roleLabel, stateLabel } from '../../core/labels';
+import { commandLabel, dateTimeFormat, roleLabel, stateLabel } from '../../core/labels';
 import type { AppRoleContext } from '../../core/session-context';
 import type { InstalledApp, InstalledTable } from '../../types/registry';
 import { loadHistory } from './process';
@@ -13,7 +13,6 @@ const writeActions: Record<string, string> = {
   UPDATE: 'Sửa hồ sơ',
   DELETE: 'Xoá hồ sơ',
 };
-const timeFormat = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' });
 
 function actionLabel(table: InstalledTable, action: string) {
   return writeActions[action] ?? commandLabel(table, action);
@@ -21,7 +20,7 @@ function actionLabel(table: InstalledTable, action: string) {
 
 function atLabel(at: string) {
   const date = new Date(at);
-  return Number.isNaN(date.getTime()) ? at : timeFormat.format(date);
+  return Number.isNaN(date.getTime()) ? at : dateTimeFormat.format(date);
 }
 
 type HistoryResult =

@@ -55,6 +55,9 @@ is published; see [Releasing](docs/contribute/releasing.md).
   own budget step stays available through the record inbox (#27).
 - Workspace UI: My Work and the acting-role switcher show the role's manifest
   description instead of its identifier.
+- Workspace UI: record screens format dates, times and numbers by column type,
+  and the record detail names a referenced record instead of showing its id
+  (#129).
 - Procurement: the request form picks a vendor from the application's vendor
   list, labelled "Nhà cung cấp" instead of "Vendor id".
 - Demo seed: the five business accounts also hold `role_library_user` when
