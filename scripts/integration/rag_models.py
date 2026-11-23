@@ -20,6 +20,26 @@ import rag_package as package
 import rag_personal as personal
 
 
+# The fixture application's own role presentation. The operator stores these
+# descriptions on core.roles and the session hands them to the shell, whose
+# roleLabel() shows a description in place of a humanized identifier. The
+# browser gate resolves the role control through this application presentation
+# instead of guessing a translation of the role name.
+ROLE_DESCRIPTIONS = {
+    'read': 'Xem tri thức ứng dụng',
+    'manager': 'Quản lý quyền đọc tri thức',
+    'admin': 'Quản trị ứng dụng',
+}
+
+
+def role_label(role):
+    return ROLE_DESCRIPTIONS[role.rsplit('_', 1)[-1]]
+
+
+def role_definition(role):
+    return {'name': role, 'description': role_label(role)}
+
+
 def literal(value):
     return "'" + str(value).replace("'", "''") + "'"
 
@@ -45,30 +65,37 @@ def answer(who, role, scope, query, require=False):
 def browser(app, role):
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
-        browser = pw.chromium.launch()
+        chromium = pw.chromium.launch()
         try:
-            context = browser.new_context(storage_state=os.environ['RAG_TEST_UI_STORAGE_A'])
+            context = chromium.new_context(storage_state=os.environ['RAG_TEST_UI_STORAGE_A'])
             page = context.new_page()
             requests = []
             page.on('request', lambda req: requests.append(req.url))
             page.goto(os.environ['RAG_TEST_UI_URL'])
-            login = page.get_by_role('button', name='Sign in', exact=True)
+            login = page.get_by_role('button', name='Đăng nhập', exact=True)
             if login.is_visible():
                 login.click()
-            page.get_by_role('button', name='Sign out', exact=True).wait_for(timeout=30000)
-            page.get_by_role('button',name='Model qualification '+app,exact=True).click()
-            page.get_by_label('Acting role', exact=True).select_option(role)
-            region = page.get_by_role('region', name='App knowledge', exact=True)
+            page.get_by_role('button', name='Đăng xuất', exact=True).wait_for(timeout=30000)
+            # Applications are links in the shell navigation, named by the
+            # published display name.
+            page.get_by_role('navigation', name='Không gian làm việc').get_by_role(
+                'link', name='Model qualification '+app, exact=True).click()
+            # The role control is a menu button, not a select. User A holds two
+            # roles in this app, so the shell renders it here.
+            page.get_by_role('button', name='Vai trò đang dùng', exact=False).click()
+            page.get_by_role('button', name=role_label(role), exact=True).click()
+            page.get_by_role('button', name='Vai trò đang dùng · '+role_label(role), exact=True).wait_for(timeout=30000)
+            region = page.get_by_role('region', name='Tri thức của ứng dụng', exact=True)
             region.get_by_label('Tìm trong tài liệu của ứng dụng').fill('Director')
             region.get_by_role('button', name='Hỏi ứng dụng', exact=True).click()
             region.get_by_text('Director approval is required for amounts of at least 10,000,000 VND.', exact=True).wait_for(timeout=15000)
-            region.get_by_role('button', name='View answer citation 1', exact=True).click()
-            page.get_by_role('dialog', name='Protected citation', exact=True).wait_for()
+            region.get_by_role('button', name='Xem trích dẫn 1', exact=True).click()
+            page.get_by_role('dialog', name='Trích dẫn được bảo vệ', exact=True).wait_for()
             source.require(all(urlsplit(url).hostname in ('localhost', '127.0.0.1') for url in requests),
                            'FAIL: browser contacted a model/provider endpoint')
             context.close()
         finally:
-            browser.close()
+            chromium.close()
     print('PASS: real Chromium grounded answer and protected citation')
 
 
@@ -97,7 +124,7 @@ def main():
         (root/'knowledge/restricted.md').write_text('# Restricted vault\n\n'+marker+' confidential evidence.\n')
         manifest = {'apiVersion':'dxos.io/v1alpha1','kind':'DXApplication',
                     'metadata':{'name':app,'displayName':'Model qualification '+app,'version':'1.0.0'},
-                    'spec':{'capabilities':['cap-process','cap-ai'],'roles':[{'name':r} for r in (read,manager,admin)],'tables':[],
+                    'spec':{'capabilities':['cap-process','cap-ai'],'roles':[role_definition(r) for r in (read,manager,admin)],'tables':[],
                             'knowledge':{'version':1,'grantPolicies':{'managers':{'allowedRoles':[manager]}},'sources':[
                                 {'id':'general','path':'knowledge/general.md','mediaType':'text/markdown','indexingProfile':'standard-text-v1','access':{'mode':'ROLE','allowedRoles':[read]}},
                                 {'id':'restricted','path':'knowledge/restricted.md','mediaType':'text/markdown','indexingProfile':'standard-text-v1','access':{'mode':'RESTRICTED','allowedRoles':[read],'grantsManagedBy':'managers'}}]}}}
@@ -106,6 +133,10 @@ def main():
         package.publish(path)
         for who in ('A','B'):
             source.db('INSERT INTO core.user_roles(user_id,role_name) VALUES('+literal(actors[who])+','+literal(read)+')')
+        # A holds a second role of this application so the shell renders the
+        # role menu. Every knowledge authorization below names its acting role
+        # explicitly, so the extra grant cannot widen any observed access.
+        source.db('INSERT INTO core.user_roles(user_id,role_name) VALUES('+literal(actors['A'])+','+literal(manager)+')')
         for role in (manager,admin):
             source.db('INSERT INTO core.user_roles(user_id,role_name) VALUES('+literal(actors['ADMIN'])+','+literal(role)+')')
         package.dispatch_once()
