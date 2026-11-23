@@ -63,6 +63,11 @@ echo content > "${WORK}/forbidden/package/.scratch/notes.md"
 tar -C "${WORK}/forbidden" -czf "${WORK}/forbidden.tar.gz" package
 expect_fail "${WORK}/forbidden.tar.gz"
 
+new_tree "${WORK}/secrets"
+echo "AI_DATABASE_PASSWORD=generated" > "${WORK}/secrets/package/.env.rag"
+tar -C "${WORK}/secrets" -czf "${WORK}/secrets.tar.gz" package
+expect_fail "${WORK}/secrets.tar.gz"
+
 new_tree "${WORK}/missing"
 rm "${WORK}/missing/package/LICENSE"
 tar -C "${WORK}/missing" -czf "${WORK}/missing.tar.gz" package
@@ -73,4 +78,4 @@ expect_fail "${WORK}/empty.tar.gz"
 
 expect_fail "${WORK}/absent.tar.gz"
 
-echo "[test-verify-archive] PASS: the gate accepts a complete archive and rejects forbidden, incomplete, empty, and missing archives"
+echo "[test-verify-archive] PASS: the gate accepts a complete archive and rejects forbidden, secret-bearing, incomplete, empty, and missing archives"

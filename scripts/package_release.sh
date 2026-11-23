@@ -27,6 +27,14 @@ trap 'rm -rf "${STAGE_DIR}"' EXIT
 
 mkdir -p "${DIST_DIR}" "${STAGE_DIR}/${ARCHIVE_NAME}"
 
+# From a checkout, ship tracked files only, so local secrets (.env.rag),
+# virtualenvs and build output never reach an archive.
+if git -C "${REPO_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    mapfile -d '' SOURCES < <(git -C "${REPO_ROOT}" ls-files -z)
+else
+    SOURCES=(.)
+fi
+
 tar -C "${REPO_ROOT}" \
     --exclude=".git" \
     --exclude=".agents" \
@@ -47,7 +55,8 @@ tar -C "${REPO_ROOT}" \
     --exclude=".venv" \
     --exclude="__pycache__" \
     --exclude=".env" \
-    -cf - . | tar -C "${STAGE_DIR}/${ARCHIVE_NAME}" -xf -
+    --exclude=".env.rag" \
+    -cf - "${SOURCES[@]}" | tar -C "${STAGE_DIR}/${ARCHIVE_NAME}" -xf -
 
 tar -C "${STAGE_DIR}" -czf "${ARCHIVE_FILE}" "${ARCHIVE_NAME}"
 (cd "${DIST_DIR}" && sha256sum "${ARCHIVE_NAME}.tar.gz" > "${ARCHIVE_NAME}.tar.gz.sha256")
