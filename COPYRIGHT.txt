@@ -45,5 +45,5 @@ Comment:
  .
  Container images used by the development cluster (platform/k8s/dev, run as
  separate services, not bundled): postgres:17-alpine (PostgreSQL License),
- hasura/graphql-engine:v2.45.1 (Apache-2.0), golang:1.27.3-alpine and
+ hasura/graphql-engine:v2.45.1 (Apache-2.0), golang:1.27.4-alpine and
  alpine:3.21 (build/runtime base images of operator/Dockerfile).

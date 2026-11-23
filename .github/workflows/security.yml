@@ -47,7 +47,6 @@ jobs:
       - name: Scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         env:
-          # The YAML form scopes each accepted finding to named files.
           TRIVY_IGNOREFILE: .trivyignore.yaml
         with:
           scan-type: ${{ matrix.scan }}
@@ -91,10 +90,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Run govulncheck
-        # shortcut: report-only while the modules stay on Go 1.27.3, whose
-        # net/http carries GO-2026-6859 (fixed in Go 1.27.4); remove this after
-        # the Go upgrade (#86). Every other finding is fixed.
-        continue-on-error: true
         uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
         with:
           check-latest: false

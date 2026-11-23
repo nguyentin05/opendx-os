@@ -118,8 +118,8 @@ is published; see [Releasing](docs/contribute/releasing.md).
 - Go dependencies: `golang.org/x/net` v0.62.0 and `golang.org/x/text` v0.43.0
   (HTTP/2 and HTML denial-of-service fixes), `goldmark` v1.8.7, `lib/pq`
   v1.12.3, Kubernetes v0.37.2 and controller-runtime v0.25.3 (#86, #91, #92).
-  The modules stay on Go 1.27.3, so govulncheck still reports GO-2026-6859 in
-  `net/http`, fixed in Go 1.27.4.
+- Go 1.27.4 for both modules and every Go image, fixing GO-2026-6859 in
+  `net/http`. govulncheck now fails CI on a reachable vulnerability (#86).
 - The Workspace UI image runs nginx as the unprivileged `nginx` user on port
   8080 (#86).
 - CI fails on HIGH or CRITICAL Trivy findings. The disposable kind manifests in
