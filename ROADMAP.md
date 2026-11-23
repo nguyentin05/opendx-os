@@ -31,7 +31,7 @@ changes are in [CHANGELOG.md](CHANGELOG.md); open work is tracked in
 - [x] Controller split into the `dxos-controller` binary and image (#106).
 - [x] Required CI checks, security scans, image builds, and an attested release workflow (#84, #87, #101).
 - [x] Workspace UI MVP: app discovery, schema-driven lists and forms, record actions, attachments, and My Work (#104).
-- [ ] Workspace UI follow-ups: audit history (#41).
+- [x] Workspace UI follow-ups: audit history (#41).
 - [x] Department-scoped work items in My Work (#27).
 - [x] In-memory access-token refresh before expiry, without remounting open screens (#38).
 - [x] Action inbox derived from record state, with the review work item closed by `complete_work_item` (#42).

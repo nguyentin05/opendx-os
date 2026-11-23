@@ -200,12 +200,8 @@ func (v *jwtVerifier) fetch(ctx context.Context) (map[string]*rsa.PublicKey, err
 	return keys, nil
 }
 
-// verifiedPayload checks the token's header and RS256 signature against the
-// issuer's signing keys and returns the decoded payload.
-func (v *jwtVerifier) verifiedPayload(ctx context.Context, token string) ([]byte, error) {
-	return v.verifiedPayloadWithMaxAge(ctx, token, jwksMaxStaleness)
-}
-
+// verifiedPayloadWithMaxAge checks the token's header and RS256 signature
+// against the issuer's signing keys and returns the decoded payload.
 func (v *jwtVerifier) verifiedPayloadWithMaxAge(ctx context.Context, token string, maxAge time.Duration) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

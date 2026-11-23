@@ -83,7 +83,7 @@ func (r *Registry) Reconcile(ctx context.Context, catalog Catalog) (ReconcileRep
 	if err != nil {
 		return zero, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var verified bool
 	err = tx.QueryRowContext(ctx, `SELECT session_user='dxos_ai_model_catalog' AND current_user=session_user AND current_setting('role') IN ('none','dxos_ai_model_catalog') AND NOT (rolsuper OR rolbypassrls OR rolcreaterole) FROM pg_catalog.pg_roles WHERE rolname=session_user`).Scan(&verified)
 	if err != nil {

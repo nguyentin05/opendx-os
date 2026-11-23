@@ -46,6 +46,8 @@ jobs:
 
       - name: Scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_IGNOREFILE: .trivyignore.yaml
         with:
           scan-type: ${{ matrix.scan }}
           scan-ref: .
@@ -53,7 +55,7 @@ jobs:
           format: sarif
           limit-severities-for-sarif: true
           output: trivy-${{ matrix.scan }}.sarif
-          exit-code: '0'
+          exit-code: '1'
 
       - name: Upload SARIF
         if: always()
@@ -88,9 +90,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Run govulncheck
-        # shortcut: report-only until #86 clears the scan findings; the scanner
-        # also fails to load the Go 1.27.3 stdlib ("requires go1.27 or later").
-        continue-on-error: true
         uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
         with:
           check-latest: false

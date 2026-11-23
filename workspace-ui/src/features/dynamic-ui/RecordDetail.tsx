@@ -2,7 +2,7 @@
 // Copyright 2026 DX-OS Open-Core Contributors
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { stateLabel } from '../../core/labels';
+import { formatValue } from '../../core/labels';
 import { toTableURL, useWorkspaceRoute } from '../../core/routes';
 import type { AppRoleContext } from '../../core/session-context';
 import { WorkspaceLink } from '../../shell/AppShell';
@@ -11,8 +11,9 @@ import { ChildGrid } from './ChildGrid';
 import { CommandPanel } from './CommandPanel';
 import type { CommandAttempts, CommandFeedback } from './CommandPanel';
 import { FileField } from './FileField';
-import { GraphQLRequestError, isRecordID, loadRecord } from './graphql';
+import { GraphQLRequestError, isRecordID, loadRecord, referenceLabelColumn } from './graphql';
 import { allowedFields, canEditRecord, columnLabel, isAttachmentColumn, tableLabel } from './registry';
+import { RecordHistory } from './RecordHistory';
 
 export interface RecordDetailProps {
   table: InstalledTable;
@@ -69,7 +70,7 @@ function describeFields(table: InstalledTable, app: InstalledApp, readable: Set<
     return {
       name,
       label: labels.get(name) ?? columnLabel(table, { name }),
-      target: target?.name,
+      target,
       attachment: isAttachmentColumn(table, name),
     };
   });
@@ -152,16 +153,18 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
                       {attachment && isRecordID(value)
                         ? <FileField appID={app.app_id} context={context} value={value} label={label} />
                         : target && isRecordID(value)
-                          ? <WorkspaceLink href={toTableURL(app.app_id, target, value, role)} onNavigate={navigate}>
-                            {value}
+                          ? <WorkspaceLink href={toTableURL(app.app_id, target.name, value, role)} onNavigate={navigate}>
+                            <ReferenceName context={context} table={target} id={value} />
                           </WorkspaceLink>
-                          : value === null ? '—' : name === 'status' ? stateLabel(table, String(value)) : String(value)}
+                          : formatValue(table, name, value)}
                     </dd>
                   </div>
                 );
               })}
             </dl>
           ) : <p>Vai trò này chưa có trường nào để hiển thị.</p>}
+          <RecordHistory table={table} app={app} context={context} recordID={recordID}
+            version={typeof record.version === 'number' ? record.version : 0} />
           <CommandPanel table={table} appID={app.app_id} context={context} record={record}
             attempts={props.commandAttempts ?? localAttempts}
             writeGuard={{ pending: writePending, begin: beginRecordWrite }}
@@ -174,4 +177,20 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
       )}
     </>
   );
+}
+
+// Names a referenced record by its label column; the id stays when the role cannot read one.
+function ReferenceName({ context, table, id }: { context: AppRoleContext; table: InstalledTable; id: string }) {
+  const [label, setLabel] = useState<{ id: string; text: string }>();
+  useEffect(() => {
+    const column = referenceLabelColumn(table, context.role);
+    if (!column) return;
+    const controller = new AbortController();
+    void loadRecord(context, table, id, [column], controller.signal).then(record => {
+      const text = record?.[column];
+      if (typeof text === 'string' && text.trim()) setLabel({ id, text });
+    }, () => undefined);
+    return () => controller.abort();
+  }, [context, table, id]);
+  return <>{label?.id === id ? label.text : id}</>;
 }

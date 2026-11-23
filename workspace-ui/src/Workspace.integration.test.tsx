@@ -52,6 +52,7 @@ function serve(apps: () => InstalledApp[], respond: (request: WorkspaceRequest) 
     expect(headers.get('Authorization')).toBe('Bearer workspace-token');
     if (input === '/api/auth/me') return Response.json(session(apps()).user);
     if (input === '/api/auth/apps') return Response.json({ apps: apps() });
+    if (String(input).includes('/history')) return Response.json({ entries: [] });
     const request = {
       url: input,
       role: headers.get('X-Hasura-Role'),

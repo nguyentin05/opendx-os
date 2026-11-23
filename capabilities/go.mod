@@ -1,7 +1,8 @@
 module github.com/opendx-os/opendx-os/capabilities
 
-go 1.27.3
+go 1.27.4
 
-require github.com/lib/pq v1.10.9
-
-require github.com/yuin/goldmark v1.7.8
+require (
+	github.com/lib/pq v1.12.3
+	github.com/yuin/goldmark v1.8.7
+)

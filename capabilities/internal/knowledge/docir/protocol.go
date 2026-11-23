@@ -45,7 +45,7 @@ func HandlerWithAdapter(token string, adapter ParseAdapter) http.Handler {
 			return
 		}
 		raw, e := io.ReadAll(io.LimitReader(part, (64<<10)+1))
-		part.Close()
+		_ = part.Close()
 		var req ParseRequest
 		d := json.NewDecoder(bytes.NewReader(raw))
 		d.DisallowUnknownFields()
@@ -59,7 +59,7 @@ func HandlerWithAdapter(token string, adapter ParseAdapter) http.Handler {
 			return
 		}
 		result, e := adapter.Parse(r.Context(), req, part)
-		part.Close()
+		_ = part.Close()
 		if e != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(422)
@@ -103,7 +103,10 @@ func (c *Client) Parse(ctx context.Context, req ParseRequest, source io.Reader) 
 	if e != nil || n > req.Limits.MaxSourceBytes {
 		return result, ErrLimit
 	}
-	writer.Close()
+	// Close writes the closing boundary; without it the parser rejects the body.
+	if e = writer.Close(); e != nil {
+		return result, e
+	}
 	r, e := http.NewRequestWithContext(ctx, "POST", "http://parser/internal/v1/parse", &body)
 	if e != nil {
 		return result, e
@@ -114,7 +117,7 @@ func (c *Client) Parse(ctx context.Context, req ParseRequest, source io.Reader) 
 	if e != nil {
 		return result, e
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	raw, e := io.ReadAll(io.LimitReader(response.Body, req.Limits.MaxDecodedBytes+1))
 	if e != nil || int64(len(raw)) > req.Limits.MaxDecodedBytes {
 		return result, ErrLimit

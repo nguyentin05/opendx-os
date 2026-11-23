@@ -148,7 +148,7 @@ func (w *Worker) process(ctx context.Context, lease Lease) error {
 	if err != nil {
 		return ErrAuthorityUnavailable
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != 200 {
 		return ErrNotFound
 	}

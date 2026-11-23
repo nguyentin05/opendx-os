@@ -77,6 +77,7 @@ function setup(options: { status?: string; wrongParent?: boolean; denyDelete?: b
   const root = 'domain_requests_by_pk';
   let rows = [{ id: childID, request_id: id, item: 'Initial item', notes: 'Visible notes', secret: 'Private value' }];
   const fetch = vi.fn((_endpoint: string, init: RequestInit): Response | Promise<Response> => {
+    if (String(_endpoint).includes('/history')) return Response.json({ entries: [] });
     const { query, variables } = JSON.parse(String(init.body));
     const parentRecord = { id: variables.id, title: 'Visible request', status: options.status ?? 'draft', version };
     if (query.includes('items_by_request_id')) {
@@ -110,7 +111,8 @@ function setup(options: { status?: string; wrongParent?: boolean; denyDelete?: b
 }
 
 function request(fetch: ReturnType<typeof setup>, field: string) {
-  const call = fetch.mock.calls.find(([, init]) => JSON.parse(String(init.body)).query.includes(field));
+  const call = fetch.mock.calls.find(([url, init]) => !String(url).includes('/history')
+    && JSON.parse(String(init.body)).query.includes(field));
   if (!call) throw new Error('Expected GraphQL request for ' + field);
   return { ...JSON.parse(String(call[1].body)), headers: new Headers(call[1].headers) };
 }
@@ -265,7 +267,7 @@ it('omits the child grid and its query when the active role has no child select 
 
   await screen.findByText('Visible request');
   expect(screen.queryByRole('region', { name: child.name })).toBeNull();
-  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(fetch.mock.calls.filter(([url]) => !String(url).includes('/history'))).toHaveLength(1);
 });
 
 it('ignores crafted parent and system values even with a valid child save scope', async () => {
@@ -344,7 +346,8 @@ it('discards a pending child write result after switching to a different acting 
     complete(respond({ update_domain_items_by_pk: { id: childID, request_id: id } }));
   });
 
-  const readerRequests = fetch.mock.calls.filter(([, init]) => new Headers(init.headers).get('X-Hasura-Role') === reader);
+  const readerRequests = fetch.mock.calls.filter(([url, init]) => !String(url).includes('/history')
+    && new Headers(init.headers).get('X-Hasura-Role') === reader);
   expect(readerRequests).toHaveLength(2);
   expect(screen.queryByText('Pending old-role edit')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Sửa dòng con' })).toBeNull();
@@ -387,6 +390,7 @@ it('serializes writes on two child grids that share the same parent version', as
   const fetch = setup();
   const respondToRecord = fetch.getMockImplementation();
   fetch.mockImplementation((endpoint, init) => {
+    if (String(endpoint).includes('/history')) return Response.json({ entries: [] });
     const { query } = JSON.parse(String(init.body));
     if (query.includes('other_items_by_request_id')) {
       return respond({ domain_requests_by_pk: {
@@ -411,7 +415,8 @@ it('serializes writes on two child grids that share the same parent version', as
   fireEvent.click(within(grid).getByRole('button', { name: 'Lưu hồ sơ' }));
   fireEvent.submit(within(otherGrid).getByLabelText('Item').closest('form')!);
 
-  const writes = fetch.mock.calls.filter(([, init]) => JSON.parse(String(init.body)).query.startsWith('mutation'));
+  const writes = fetch.mock.calls.filter(([url, init]) => !String(url).includes('/history')
+    && JSON.parse(String(init.body)).query.startsWith('mutation'));
   expect(writes).toHaveLength(1);
   await act(async () => complete());
   await screen.findByText('First change');

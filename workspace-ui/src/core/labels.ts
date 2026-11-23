@@ -51,3 +51,31 @@ export function roleLabel(app: Pick<InstalledApp, 'roles'> | undefined, name: st
 export function platformColumnLabel(name: string): string {
   return platformColumns[name] ?? humanizeName(name);
 }
+
+// Manifest types of the operator-managed columns that are not text or uuid.
+const platformColumnTypes: Record<string, string> = {
+  version: 'integer',
+  created_at: 'timestamp',
+  updated_at: 'timestamp',
+};
+
+const day = { day: '2-digit', month: '2-digit', year: 'numeric' } as const;
+export const dateTimeFormat = new Intl.DateTimeFormat('vi-VN', { ...day, hour: '2-digit', minute: '2-digit' });
+// A date column has no time zone; formatting it in UTC keeps the stored day.
+const dateFormat = new Intl.DateTimeFormat('vi-VN', { ...day, timeZone: 'UTC' });
+const numberFormat = new Intl.NumberFormat('vi-VN');
+
+// Formats a column value by its manifest type; anything unexpected prints as is.
+export function formatValue(table: InstalledTable, name: string, value: unknown): string {
+  if (value === null || value === undefined) return '—';
+  if (name === 'status') return stateLabel(table, String(value));
+  const type = table.columns.find(column => column.name === name)?.type ?? platformColumnTypes[name];
+  if (type === 'timestamp' || type === 'date') {
+    const date = typeof value === 'string' ? new Date(value) : undefined;
+    if (date && !Number.isNaN(date.getTime())) return (type === 'date' ? dateFormat : dateTimeFormat).format(date);
+  } else if (type === 'integer' || type?.startsWith('numeric(')) {
+    const number = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN;
+    if (Number.isFinite(number)) return numberFormat.format(number);
+  }
+  return String(value);
+}

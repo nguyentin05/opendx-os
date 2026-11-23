@@ -107,6 +107,7 @@ it('refreshes permissions before opening work under its originating role and kee
       sequence.push('apps');
       return revoked ? revokedApps : Response.json({ apps: session.apps });
     }
+    if (String(url).includes('/history')) return Response.json({ entries: [] });
     if (String(init.body).includes('cap_work_work_items')) return workResponse('Review request');
     sequence.push(new Headers(init.headers).get('X-Hasura-Role')!);
     return Response.json({ data: { domain_records_by_pk: { id: sourceID, title: 'Confidential record title' } } });

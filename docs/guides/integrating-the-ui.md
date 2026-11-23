@@ -77,9 +77,13 @@ the header never grants anything.
 
 | Kind of table | Tell it by | Screen |
 | --- | --- | --- |
-| Process table | has `stateMachine` | List, form, and one button per command in `ui.actions` |
-| Plain table | no `stateMachine`, no `belongsTo` | List and form |
+| Process table | has `stateMachine` | List, form, one button per command in `ui.actions`, and a `Lịch sử` section on the detail |
+| Plain table | no `stateMachine`, no `belongsTo` | List, form, and the `Lịch sử` section on the detail |
 | Child table | has `belongsTo` | A grid inside its parent record's detail; not a menu entry |
+
+The record detail lists the record's audit history with the time, actor,
+action, resulting state and acting role. It reloads when the record version
+changes; a role that cannot read the record sees no history.
 
 Name each table with `ui.title` when the manifest declares it, and fall back to
 the table name. Name states and actions with `ui.stateLabels` and
@@ -101,7 +105,13 @@ application-specific labels.
   `status` is in its `from`. The command's `recordFilter` may still refuse it
   (for example, nobody approves their own request): handle a 403.
 - A foreign key to another table of the application (`foreignKeys`) is a
-  reference picker over that table's list.
+  reference picker over that table's list. The picker and the record detail
+  name a referenced record by the first readable `text` column in the target's
+  `ui.listColumns`, and show its id when the role can read none.
+- Format values by column type: `timestamp` (including `created_at` and
+  `updated_at`) as a `vi-VN` date and time in the viewer's time zone, `date` as
+  a `vi-VN` date, and `integer` and `numeric(...)` with `vi-VN` digit grouping.
+  Manifests do not mark a column as money, so no currency is added.
 
 The portal opens the first readable top-level table declared by the app. List
 views support paging, sorting, and an exact-match text filter when a readable

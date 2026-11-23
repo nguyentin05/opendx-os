@@ -56,7 +56,7 @@ func (d *Dispatcher) Deliver(ctx context.Context, n Notification) error {
 	if e != nil {
 		return fmt.Errorf("package delivery unavailable")
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != 204 {
 		return fmt.Errorf("package delivery refused")
 	}

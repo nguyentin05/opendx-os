@@ -21,7 +21,7 @@ readiness remain open.
 ## Prerequisites
 
 - Docker Engine & Docker Compose v2
-- Go 1.24+ (with `GOTOOLCHAIN=auto` for Go 1.27.3 module builds)
+- Go 1.24+ (with `GOTOOLCHAIN=auto` for Go 1.27.4 module builds)
 - Node.js 22+ and npm (for building `workspace-ui`)
 - Python 3.12+ with `PyYAML` (for contract verification and demo seeding)
 - `postgresql-client` (`psql`, `pg_dump`) for database operations
@@ -55,7 +55,9 @@ readiness remain open.
    `platform/postgres/init/08_runtime_passwords.sh`. This happens once per data
    volume: after changing these values, recreate it with `docker compose down -v`.
    `scripts/test-compose.sh` waits for every service, logs in as each runtime role
-   from another container and probes each HTTP entry point.
+   from another container and probes each HTTP entry point. It expects every
+   package in `apps/` to be Ready, except a package that declares a capability
+   `ENABLED_CAPABILITIES` leaves off, which the operator refuses to install.
 
    To run cap-ai, the personal library and the FTS-only Assistant, use
    `make rag-up` instead of the plain `docker compose up -d` above. It creates
@@ -174,9 +176,10 @@ owner and record it with the confirmation; no automated reset is provided.
 
 ## Kubernetes Operator (development cluster)
 
-The operator also runs as a Kubernetes controller for the cluster-scoped
-`DXApplication` resource ([ADR 0004](../adr/0004-kubernetes-crd-operator.md)).
-The CLI above keeps working without a cluster.
+The `dxos-controller` binary (`operator/cmd/dxos-controller`) runs the operator
+as a Kubernetes controller for the cluster-scoped `DXApplication` resource
+([ADR 0004](../adr/0004-kubernetes-crd-operator.md)). The `dxos-operator` CLI
+above keeps working without a cluster.
 
 1. Create a disposable kind cluster with PostgreSQL, Hasura and the operator:
    ```bash

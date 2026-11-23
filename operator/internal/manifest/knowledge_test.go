@@ -68,11 +68,17 @@ func TestKnowledgeSymlinkEscape(t *testing.T) {
 		t.Fatal(e)
 	}
 	outside := filepath.Join(t.TempDir(), "secret.md")
-	os.WriteFile(outside, []byte("secret"), 0600)
-	os.Symlink(outside, filepath.Join(root, "knowledge", "secret.md"))
+	if e := os.WriteFile(outside, []byte("secret"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	if e := os.Symlink(outside, filepath.Join(root, "knowledge", "secret.md")); e != nil {
+		t.Fatal(e)
+	}
 	raw := libraryYAML + "    sources: [{id: secret, path: knowledge/secret.md, mediaType: text/markdown, indexingProfile: standard-text-v1, access: {mode: ROLE, allowedRoles: [role_library_user]}}]\n"
 	p := filepath.Join(root, "manifest.yaml")
-	os.WriteFile(p, []byte(raw), 0600)
+	if e := os.WriteFile(p, []byte(raw), 0600); e != nil {
+		t.Fatal(e)
+	}
 	if _, e := ParseFile(p); e == nil {
 		t.Fatal("escaping symlink accepted")
 	}
@@ -90,17 +96,25 @@ func TestPublicationEnvelopeIsServerOnly(t *testing.T) {
 
 func TestKnowledgeFileContentFingerprint(t *testing.T) {
 	root := t.TempDir()
-	os.Mkdir(filepath.Join(root, "knowledge"), 0700)
+	if e := os.Mkdir(filepath.Join(root, "knowledge"), 0700); e != nil {
+		t.Fatal(e)
+	}
 	source := filepath.Join(root, "knowledge/policy.md")
-	os.WriteFile(source, []byte("one"), 0600)
+	if e := os.WriteFile(source, []byte("one"), 0600); e != nil {
+		t.Fatal(e)
+	}
 	raw := libraryYAML + "    sources: [{id: policy, path: knowledge/policy.md, mediaType: text/markdown, indexingProfile: standard-text-v1, access: {mode: ROLE, allowedRoles: [role_library_user]}}]\n"
 	file := filepath.Join(root, "manifest.yaml")
-	os.WriteFile(file, []byte(raw), 0600)
+	if e := os.WriteFile(file, []byte(raw), 0600); e != nil {
+		t.Fatal(e)
+	}
 	first, err := ParseFile(file)
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(source, []byte("two"), 0600)
+	if e := os.WriteFile(source, []byte("two"), 0600); e != nil {
+		t.Fatal(e)
+	}
 	second, err := ParseFile(file)
 	if err != nil {
 		t.Fatal(err)

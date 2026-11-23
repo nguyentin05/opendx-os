@@ -55,6 +55,7 @@ func TestRouteAuthenticationEnvelopes(t *testing.T) {
 		handler            http.Handler
 	}{
 		{"command", "POST", "/api/cap/process/commands/app/submit", e.AuthenticatedHandler(envelopeVerifier{})},
+		{"history", "GET", "/api/cap/process/records/app/domain.records/" + "11111111-1111-4111-8111-111111111111" + "/history", e.AuthenticatedHistoryHandler(envelopeVerifier{})},
 		{"upload", "POST", "/api/cap/process/files/upload", (&files.Service{}).AuthenticatedHandler(envelopeVerifier{})},
 		{"download", "GET", "/api/cap/process/files/file", (&files.Service{}).AuthenticatedHandler(envelopeVerifier{})},
 	} {
@@ -125,5 +126,36 @@ func TestEffectEndpointAdmitsOnlyTheWorkflowServiceCredential(t *testing.T) {
 	// With the credential the request is read; a malformed one is a 400, not a 401.
 	if code := call("Bearer "+credential, `{"event_id":"x","step_name":"y","extra":true}`); code != 400 {
 		t.Fatalf("authenticated malformed request: %d, want 400", code)
+	}
+}
+
+func TestHistoryHandlerRejectsUnverifiedIdentity(t *testing.T) {
+	r := httptest.NewRequest("GET", "/api/cap/process/records/app/domain.records/11111111-1111-4111-8111-111111111111/history", nil)
+	w := httptest.NewRecorder()
+	NewEngine(nil, nil).HistoryHandler().ServeHTTP(w, r)
+	if w.Code != 401 {
+		t.Fatalf("status = %d, want 401", w.Code)
+	}
+}
+
+func TestHistoryHandlerRejectsMalformedIdentifiers(t *testing.T) {
+	id := &auth.Identity{UserID: "11111111-1111-4111-8111-111111111111", Role: "user"}
+	for name, path := range map[string][3]string{
+		"app":    {"App", "domain.records", "11111111-1111-4111-8111-111111111111"},
+		"table":  {"app", "records", "11111111-1111-4111-8111-111111111111"},
+		"record": {"app", "domain.records", "not-a-uuid"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := httptest.NewRequest("GET", "/api/cap/process/records/x/y/z/history", nil)
+			r = r.WithContext(auth.WithIdentity(r.Context(), id))
+			r.SetPathValue("app_id", path[0])
+			r.SetPathValue("table", path[1])
+			r.SetPathValue("entity_id", path[2])
+			w := httptest.NewRecorder()
+			NewEngine(nil, nil).HistoryHandler().ServeHTTP(w, r)
+			if w.Code != 400 {
+				t.Fatalf("status = %d, want 400", w.Code)
+			}
+		})
 	}
 }

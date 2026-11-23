@@ -65,6 +65,7 @@ function serve(post: (request: Post) => Response | Promise<Response> = () => Res
   vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
     if (url === '/api/auth/me') return Response.json(session.user);
     if (url === '/api/auth/apps') return Response.json({ apps: [{ ...app, tables: [publishedTable] }] });
+    if (String(url).includes('/history')) return Response.json({ entries: [] });
     if (url === '/v1/graphql') {
       reads++;
       const { variables } = JSON.parse(String(init.body));

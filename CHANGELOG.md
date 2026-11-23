@@ -13,6 +13,10 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Added
 
+- Record history: `GET /api/cap/process/records/{app_id}/{table}/{entity_id}/history`
+  returns a fixed audit projection for a record the caller may read, and the
+  Workspace UI shows it as a `Lịch sử` section on the detail page. Audit
+  payloads and hash-chain columns never leave the server (#41).
 - Compose: `make rag-up` starts the stack with cap-ai, the personal library and
   the FTS-only Assistant, creating local secrets and renewing the worker, File
   Service and dispatcher tokens with Keycloak client credentials. The realm
@@ -51,6 +55,9 @@ is published; see [Releasing](docs/contribute/releasing.md).
   own budget step stays available through the record inbox (#27).
 - Workspace UI: My Work and the acting-role switcher show the role's manifest
   description instead of its identifier.
+- Workspace UI: record screens format dates, times and numbers by column type,
+  and the record detail names a referenced record instead of showing its id
+  (#129).
 - Procurement: the request form picks a vendor from the application's vendor
   list, labelled "Nhà cung cấp" instead of "Vendor id".
 - Demo seed: the five business accounts also hold `role_library_user` when
@@ -67,6 +74,17 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Fixed
 
+- `scripts/test-compose.sh` no longer fails when `ENABLED_CAPABILITIES` leaves
+  off a capability that an application in `apps/` declares; it reports that
+  application as not installed (#65).
+- Go: every error that golangci-lint's `errcheck`, `staticcheck` and `unused`
+  reported is handled, and lint now checks the whole history (#85). A failed
+  close of a temporary PDF or of a parser request body is now returned instead
+  of ignored.
+- `dxos-operator` has a test that fails if the Kubernetes client or
+  controller-runtime comes back into it; only `dxos-controller` links them (#65).
+- Removed the unused `capabilities/internal/ai` package and its sample
+  procurement data.
 - Attachments: attaching another user's file now returns a readable refusal
   (SQLSTATE `23514`, `permission-error` in GraphQL) instead of a generic
   "database query error", and a failed `core.files` write deletes the object it
@@ -100,6 +118,16 @@ is published; see [Releasing](docs/contribute/releasing.md).
   locks an account after repeated wrong passwords, and requires passwords of at
   least eight characters that differ from the username and email (#113).
   Existing installations apply these settings in the admin console.
+- Go dependencies: `golang.org/x/net` v0.62.0 and `golang.org/x/text` v0.43.0
+  (HTTP/2 and HTML denial-of-service fixes), `goldmark` v1.8.7, `lib/pq`
+  v1.12.3, Kubernetes v0.37.2 and controller-runtime v0.25.3 (#86, #91, #92).
+- Go 1.27.4 for both modules and every Go image, fixing GO-2026-6859 in
+  `net/http`. govulncheck now fails CI on a reachable vulnerability (#86).
+- The Workspace UI image runs nginx as the unprivileged `nginx` user on port
+  8080 (#86).
+- CI fails on HIGH or CRITICAL Trivy findings. The disposable kind manifests in
+  `platform/k8s/dev/` are allowlisted in `.trivyignore.yaml` with the reason
+  (#86).
 
 ## [0.2.0] - 2026-11-16
 

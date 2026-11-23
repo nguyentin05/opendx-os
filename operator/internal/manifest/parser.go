@@ -97,7 +97,7 @@ func ParseFile(path string) (*DXApplication, error) {
 		if err != nil {
 			return nil, err
 		}
-		defer root.Close()
+		defer func() { _ = root.Close() }()
 		app.SourceDigests = map[string]string{}
 		for _, source := range k.Sources {
 			f, err := root.Open(source.Path)
@@ -106,7 +106,7 @@ func ParseFile(path string) (*DXApplication, error) {
 			}
 			h := sha256.New()
 			n, err := io.Copy(h, io.LimitReader(f, (20<<20)+1))
-			f.Close()
+			_ = f.Close()
 			if err != nil || n == 0 || n > 20<<20 {
 				return nil, fmt.Errorf("knowledge source size/read error")
 			}

@@ -72,7 +72,7 @@ toolchain bump fails instead of silently downloading another Go release.
 | `unit-test` | `python3 -m unittest discover -s tests -p 'test_*.py' -v` | none | `python3 -m pip install pyyaml && python3 -m unittest discover -s tests -p 'test_*.py' -v` |
 | `ui` | `npm ci`, `npm test`, `npm run build` in `workspace-ui/` | none | `cd workspace-ui && npm ci && npm test && npm run build` |
 | `integration` | `go test -tags=integration -p 1 -count=1 ./...` in both modules, then the same pair again against one server | `pgvector/pgvector:pg17`, superuser login, database name containing `test`, passwordless host auth for test roles | see below |
-| `parser` | `go test -count=1 -v ./internal/knowledge/docir/...` on Alpine with the pinned `poppler-utils`; the job fails if a PDF check reports `--- SKIP` | none | `docker run --rm -v "$PWD:/src" -w /src golang:1.27.3-alpine3.23 sh -c 'apk add --no-cache poppler-utils=25.12.0-r0 git && cd capabilities && go test -count=1 -v ./internal/knowledge/docir/...'` |
+| `parser` | `go test -count=1 -v ./internal/knowledge/docir/...` on Alpine with the pinned `poppler-utils`; the job fails if a PDF check reports `--- SKIP` | none | `docker run --rm -v "$PWD:/src" -w /src golang:1.27.4-alpine3.23 sh -c 'apk add --no-cache poppler-utils=25.12.0-r0 git && cd capabilities && go test -count=1 -v ./internal/knowledge/docir/...'` |
 
 The Go jobs publish a coverage total in the job summary. Every job that runs a
 suite also runs `.github/actions/assert-clean-tree`, which fails if the suite
