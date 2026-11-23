@@ -51,6 +51,14 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Changed
 
+- Compose and the kind manifests run `hasura/graphql-engine:v2.45.1-ce`, the image
+  with only the open-source engine; the default image bundles proprietary
+  components.
+- `COPYRIGHT.txt` lists every third-party component in the builds, images and
+  services with its license, `LICENSES/third_party/THIRD_PARTY_LICENSES.txt`
+  reproduces the license texts of linked and bundled code
+  (`scripts/third_party_notices.py`), and `NOTICE` carries the required
+  Apache-2.0 attributions (#48).
 - Procurement: finance no longer receives the manager's review work item; its
   own budget step stays available through the record inbox (#27).
 - Workspace UI: My Work and the acting-role switcher show the role's manifest
@@ -103,6 +111,9 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Security
 
+- `scripts/package_release.sh` ships only git-tracked files from a checkout, and
+  the archive gate refuses `.env` files other than `.env.example`; a locally
+  packaged archive could carry `.env.rag` secrets.
 - Work items are no longer readable app-wide: a role reads one only when it may
   read the source record, and items without a source remain app-wide (#27).
 - Procurement roles no longer read every account's email through the shared
