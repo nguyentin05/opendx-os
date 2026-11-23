@@ -72,7 +72,7 @@ All paths are under `/api/cap/ai`. Identity derives from verified context and cu
 | POST /search | scope/query with optional collection filters; authorized active-version lexical or permitted hybrid hits |
 | POST /answers | scope/query/max_citations/require_generation; see the answer contract for implemented response fields and target extensions |
 | GET /documents/{id}/citations/{chunkId} | reauthorized active-version source/asset preview; never raw object keys |
-| GET /ingestions/{jobId} | source owner or authorized manager sees safe progress |
+| GET /ingestions/{jobId} | current document READ holder sees safe progress; otherwise concealed 404 |
 | GET /admin/model-usage | explicit operations permission, aggregated operation/token observations without private content |
 
 POST registration is CLEAN-only: do not create WAITING_SCAN documents in this MVP contract. Upload itself may remain quarantined until scanner completes. A successful registration commits document/version/job/audit and idempotency receipt together; 202 is never emitted before commit. Receipt uniqueness is actor+app+action+key with normalized payload fingerprint; replay rechecks current access, returns original result for equal payload, 409 for mismatch. Request body cannot set owner, allowed-role claims or scan state. Changed content is a new immutable file/version.
