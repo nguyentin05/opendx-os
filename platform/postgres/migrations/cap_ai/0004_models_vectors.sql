@@ -499,8 +499,10 @@ BEGIN
 END
 $$;
 
--- Direct table and token access stay inside the owner boundary.
-REVOKE ALL ON TABLE cap_ai.model_operations FROM PUBLIC,dxos_ai_gateway,dxos_ai_model_catalog,dxos_ai_api,dxos_ai_worker;
+-- Direct table and token access stay inside the owner boundary. The registry
+-- login (dxos_ai_model_catalog) is created by optional 0005 and is revoked
+-- there, after its creation, so a model-only bootstrap never references it.
+REVOKE ALL ON TABLE cap_ai.model_operations FROM PUBLIC,dxos_ai_gateway,dxos_ai_api,dxos_ai_worker;
 
 -- Reading approved sources remains independent from model availability. Egress
 -- is checked separately by model_policy/worker_model_policy.

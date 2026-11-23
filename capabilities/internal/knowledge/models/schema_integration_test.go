@@ -414,6 +414,63 @@ func TestModelCleanSlateSchema(t *testing.T) {
 	}
 }
 
+// TestModelCatalogRoleFreshBootstrap pins the optional bootstrap ordering: 0004
+// must never depend on dxos_ai_model_catalog, because only 0005 creates it.
+// PostgreSQL roles are cluster global, so a cluster that already bootstrapped
+// the registry keeps the role for later fixtures; the through-0004 containment
+// assertion keeps the ordering honest in that case.
+func TestModelCatalogRoleFreshBootstrap(t *testing.T) {
+	db, dsn := platformDB(t)
+	if schemaBool(t, db, `SELECT EXISTS(SELECT FROM pg_roles WHERE rolname='dxos_ai_model_catalog')`) {
+		t.Log("cluster already created dxos_ai_model_catalog; role catalog is not pristine")
+	}
+	// The model-only opt-in reaches 0004 without any pre-existing catalog role.
+	if out, e := runMigrations(t, dsn, "0004", "RAG_MODELS_SCHEMA_ENABLED=true"); e != nil {
+		t.Fatalf("through-0004 bootstrap: %v: %s", e, out)
+	}
+	if !schemaBool(t, db, `SELECT to_regclass('cap_ai.model_operations') IS NOT NULL AND to_regclass('cap_ai.model_profiles') IS NOT NULL`) {
+		t.Fatal("through-0004 bootstrap incomplete")
+	}
+	if schemaBool(t, db, `SELECT to_regclass('cap_ai.model_candidates') IS NOT NULL OR to_regclass('cap_ai.global_model_slots') IS NOT NULL`) {
+		t.Fatal("through-0004 bootstrap installed the registry")
+	}
+	// Source invariant: no 0004 *statement* may reference the 0005 role. Comments
+	// may name it; only executable SQL can fail on a missing role.
+	raw, e := os.ReadFile("../../../../platform/postgres/migrations/cap_ai/0004_models_vectors.sql")
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if code := strings.TrimSpace(strings.SplitN(line, "--", 2)[0]); code != "" && strings.Contains(code, "dxos_ai_model_catalog") {
+			t.Fatalf("migration 0004 statement references the catalog role that only 0005 creates: %s", code)
+		}
+	}
+	// The shell bootstrap reaches the same model-only state with the same flags.
+	bdb, bdsn := platformDB(t)
+	if out, e := runBootstrap(t, bdsn, "RAG_MODELS_SCHEMA_ENABLED=true"); e != nil {
+		t.Fatalf("bootstrap through 0004: %v: %s", e, out)
+	}
+	if !schemaBool(t, bdb, `SELECT to_regclass('cap_ai.model_operations') IS NOT NULL AND to_regclass('cap_ai.model_candidates') IS NULL`) {
+		t.Fatal("shell bootstrap through 0004 incomplete")
+	}
+	// The registry opt-in creates the catalog role and its own relations.
+	if out, e := runMigrations(t, dsn, "0005", "RAG_MODELS_SCHEMA_ENABLED=true", "RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED=true"); e != nil {
+		t.Fatalf("through-0005 bootstrap: %v: %s", e, out)
+	}
+	if !schemaBool(t, db, `SELECT EXISTS(SELECT FROM pg_roles WHERE rolname='dxos_ai_model_catalog')`) {
+		t.Fatal("registry migration did not create the catalog role")
+	}
+	if !schemaBool(t, db, `SELECT to_regclass('cap_ai.model_candidates') IS NOT NULL AND to_regclass('cap_ai.global_model_slots') IS NOT NULL`) {
+		t.Fatal("through-0005 bootstrap incomplete")
+	}
+	// The late-created catalog login never receives direct table access; the full
+	// matrix lives in TestRegistryDatabasePrivileges.
+	catalog := testutil.As(t, dsn, "dxos_ai_model_catalog")
+	if _, e := catalog.Exec(`SELECT * FROM cap_ai.model_operations`); e == nil {
+		t.Fatal("catalog can read model operations")
+	}
+}
+
 const actorID = "11111111-1111-4111-8111-111111111111"
 
 const priceFreeCandidate = `{"candidates":[{"adapter_key":"hosted-test","declaration_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","profile":{"id":"price-free","revision":1,"purpose":"GENERATE","execution":"HOSTED","provider_id":"test","model_id":"model-test","credential_ref":"TEST_KEY","limits":{"max_input_tokens":100,"max_output_tokens":100,"max_bytes":1024,"timeout_ms":1000}}}]}`

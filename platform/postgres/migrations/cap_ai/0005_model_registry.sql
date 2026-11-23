@@ -14,6 +14,10 @@ BEGIN
 END
 $$;
 
+-- The registry login owns no direct model-operation access. 0004 cannot carry
+-- this revocation because 0004 runs before the role exists.
+REVOKE ALL ON TABLE cap_ai.model_operations FROM dxos_ai_model_catalog;
+
 CREATE TABLE cap_ai.model_candidates (
     profile_id text NOT NULL,
     revision bigint NOT NULL,

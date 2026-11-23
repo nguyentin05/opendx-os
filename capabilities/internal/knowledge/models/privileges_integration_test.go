@@ -315,6 +315,16 @@ func TestRegistryDatabasePrivileges(t *testing.T) {
 			}
 		}
 	}
+	// The catalog login created by 0005 owns no direct model-operations access:
+	// the revocation that used to sit in 0004 is applied after the role exists.
+	for _, q := range []string{`SELECT * FROM cap_ai.model_operations`, `SELECT dispatch_token FROM cap_ai.model_operations`, `UPDATE cap_ai.model_operations SET state='CLAIMED'`, `DELETE FROM cap_ai.model_operations`} {
+		if _, e := catalog.Exec(q); e == nil {
+			t.Fatal("catalog privilege widened", q)
+		}
+	}
+	if _, e := catalog.Exec(`SELECT cap_ai.claim_model_operation('catalog-op',$1,'app','gen',1,'GENERATE',$2)`, actorID, strings.Repeat("c", 64)); e == nil {
+		t.Fatal("catalog can claim a model operation directly")
+	}
 	// A mistaken future EXECUTE grant still cannot substitute for deployment identity.
 	if _, e := db.Exec(`GRANT EXECUTE ON FUNCTION cap_ai.registry_import_candidates(jsonb) TO dxos_ai_gateway`); e != nil {
 		t.Fatal(e)
