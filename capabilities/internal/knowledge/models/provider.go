@@ -93,28 +93,30 @@ func (p *HTTPProvider) Invoke(ctx context.Context, profile Profile, payload Payl
 	return out, nil
 }
 
-// decodeProviderUsage distinguishes "no usage" from "zero usage". Partial,
-// fractional, negative or non-numeric counters are malformed.
+// decodeProviderUsage distinguishes "no usage" from "zero usage". Both counters
+// must be JSON integers, so partial, quoted, fractional, boolean, null, negative
+// or out-of-range counters are malformed. Pointers preserve the presence
+// distinction: an absent or null object is "no usage", while an explicit zero is
+// a reported count.
 func decodeProviderUsage(raw json.RawMessage) (*Usage, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
 		return nil, nil
 	}
+	// Integer fields, not json.Number: json.Number is a string type whose
+	// decoder accepts a quoted literal, which would let a provider report
+	// counters as JSON strings and be trusted.
 	var counters struct {
-		InputTokens  *json.Number `json:"input_tokens"`
-		OutputTokens *json.Number `json:"output_tokens"`
+		InputTokens  *int64 `json:"input_tokens"`
+		OutputTokens *int64 `json:"output_tokens"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(trimmed))
 	dec.DisallowUnknownFields()
 	if dec.Decode(&counters) != nil || dec.Decode(new(any)) != io.EOF || counters.InputTokens == nil || counters.OutputTokens == nil {
 		return nil, ErrUnavailable
 	}
-	input, err := counters.InputTokens.Int64()
-	if err != nil {
-		return nil, ErrUnavailable
-	}
-	output, err := counters.OutputTokens.Int64()
-	if err != nil || input < 0 || output < 0 {
+	input, output := *counters.InputTokens, *counters.OutputTokens
+	if input < 0 || output < 0 {
 		return nil, ErrUnavailable
 	}
 	return &Usage{InputTokens: input, OutputTokens: output}, nil

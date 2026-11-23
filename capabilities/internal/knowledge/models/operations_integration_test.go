@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -283,6 +285,64 @@ func TestModelOperationHostedUsage(t *testing.T) {
 			t.Fatalf("zero usage not stored as zeros: %+v", stored)
 		}
 	})
+}
+
+// TestModelOperationQuotedUsageUncertain drives the real HTTP adapter against a
+// controlled loopback fake that reports its counters as JSON strings. Because
+// the malformed response arrives after the durable intent, the operation is
+// ambiguous: one invocation, no stored usage, and no resend after restart.
+func TestModelOperationQuotedUsageUncertain(t *testing.T) {
+	env := newOperationEnv(t)
+	env.approve(t)
+	payload := Payload{Query: "private query"}
+
+	for _, tc := range []struct {
+		name, key, body string
+	}{
+		{"both quoted", "quoted-usage-both", `{"text":"answer","usage":{"input_tokens":"12","output_tokens":"3"}}`},
+		{"input quoted", "quoted-usage-input", `{"text":"answer","usage":{"input_tokens":"12","output_tokens":3}}`},
+		{"output quoted", "quoted-usage-output", `{"text":"answer","usage":{"input_tokens":12,"output_tokens":"3"}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int64
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				calls.Add(1)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			t.Cleanup(server.Close)
+			provider, err := NewHTTPProvider(server.URL, "", true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			op := env.op
+			op.Key = tc.key
+			if _, err := env.gateway(provider).Call(context.Background(), env.actor, op, payload); !errors.Is(err, ErrUncertain) {
+				t.Fatalf("quoted usage: got %v, want %v", err, ErrUncertain)
+			}
+			if got := calls.Load(); got != 1 {
+				t.Fatalf("provider invocations %d, want exactly 1", got)
+			}
+			stored := readOperation(t, env.db, op.Key)
+			if stored.State != OperationUncertain || stored.ErrorCode.String != codeProviderUncertain {
+				t.Fatalf("durable outcome for a malformed usage: %+v", stored)
+			}
+			if stored.Input.Valid || stored.Output.Valid {
+				t.Fatalf("malformed usage was stored: %+v", stored)
+			}
+			// A restarted gateway observes the terminal outcome and never resends.
+			for i := 0; i < 2; i++ {
+				if _, err := env.restart(t, provider).Call(context.Background(), env.actor, op, payload); !errors.Is(err, ErrUncertain) {
+					t.Fatalf("restart after quoted usage: got %v, want %v", err, ErrUncertain)
+				}
+			}
+			if got := calls.Load(); got != 1 {
+				t.Fatalf("restart repeated the dispatch: %d", got)
+			}
+			if after := readOperation(t, env.db, op.Key); after.State != OperationUncertain || after.Input.Valid || after.Output.Valid {
+				t.Fatalf("restart changed the operation: %+v", after)
+			}
+		})
+	}
 }
 
 func TestModelOperationConcurrentDispatch(t *testing.T) {
