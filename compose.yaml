@@ -62,7 +62,7 @@ services:
       retries: 10
 
   hasura:
-    image: hasura/graphql-engine:v2.45.1
+    image: hasura/graphql-engine:v2.45.1-ce
     restart: unless-stopped
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${HASURA_PORT:-8080}:8080"

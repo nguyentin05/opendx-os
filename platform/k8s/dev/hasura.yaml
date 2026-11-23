@@ -44,7 +44,7 @@ spec:
     spec:
       containers:
       - name: hasura
-        image: hasura/graphql-engine:v2.45.1
+        image: hasura/graphql-engine:v2.45.1-ce
         env:
         - name: HASURA_GRAPHQL_DATABASE_URL
           valueFrom:
