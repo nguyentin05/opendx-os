@@ -130,13 +130,7 @@ func (g *Gateway) Call(ctx context.Context, actor *auth.Identity, op Operation, 
 	defer cancel()
 	started := time.Now()
 	result, callErr := provider.Invoke(callCtx, profile, payload)
-	latency := time.Since(started).Milliseconds()
-	if latency < 0 {
-		latency = 0
-	}
-	if latency > 86400000 {
-		latency = 86400000
-	}
+	latency := min(max(time.Since(started).Milliseconds(), 0), 86400000)
 	if callErr != nil || callCtx.Err() != nil {
 		g.record(ctx, op.Key, fingerprint, token, Finalization{State: OperationUncertain, ProviderRequestID: result.ProviderRequestID, ErrorCode: codeProviderUncertain, LatencyMS: latency})
 		return Result{}, ErrUncertain
