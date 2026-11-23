@@ -16,25 +16,18 @@
 name: Release
 
 on:
-  # Temporarily disabled: tag pushes must not package or publish a release.
-  # push:
-  #   tags: ["v*"]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing tag to package and attach to (for example v0.2.0)
-        required: true
-        type: string
+  push:
+    tags: ["v*"]
 
 concurrency:
-  group: release-${{ github.event.inputs.tag || github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 env:
-  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  TAG: ${{ github.ref_name }}
 
 jobs:
   validate:
