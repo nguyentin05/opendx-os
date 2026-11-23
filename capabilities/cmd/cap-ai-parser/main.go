@@ -40,7 +40,7 @@ func main() {
 	if e != nil {
 		log.Fatal("parser socket unavailable")
 	}
-	defer os.Remove(socket)
+	defer func() { _ = os.Remove(socket) }()
 	if e = os.Chmod(socket, 0600); e != nil {
 		log.Fatal("parser socket permissions unavailable")
 	}

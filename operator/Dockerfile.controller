@@ -15,7 +15,7 @@
 
 # Kubernetes operator image: only the dxos-controller binary. The CLI and
 # Compose installer image is Dockerfile (dxos-operator).
-FROM golang:1.27.3-alpine AS builder
+FROM golang:1.27.4-alpine AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

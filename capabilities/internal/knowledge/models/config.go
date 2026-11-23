@@ -49,7 +49,7 @@ func FromEnvironment(ctx context.Context, getenv func(string) string) (*Gateway,
 	if err != nil {
 		return fail()
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	data, err := io.ReadAll(io.LimitReader(file, maxCatalogBytes+1))
 	if err != nil || len(data) > maxCatalogBytes {
 		return fail()

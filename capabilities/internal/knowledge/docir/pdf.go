@@ -55,12 +55,15 @@ func parsePDF(ctx context.Context, b []byte, l Limits, r *Result) error {
 	if e != nil {
 		return e
 	}
-	defer os.Remove(f.Name())
+	defer func() { _ = os.Remove(f.Name()) }()
 	if _, e = f.Write(b); e != nil {
-		f.Close()
+		_ = f.Close()
 		return e
 	}
-	f.Close()
+	// A failed close can leave the PDF incomplete for pdfinfo and pdftotext.
+	if e = f.Close(); e != nil {
+		return e
+	}
 	info, e := localCommand(ctx, 64<<10, "pdfinfo", f.Name())
 	if e != nil {
 		return e

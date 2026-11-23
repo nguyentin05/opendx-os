@@ -59,7 +59,7 @@ func (p *HTTPProvider) Invoke(ctx context.Context, profile Profile, payload Payl
 	if err != nil {
 		return out, ErrUnavailable
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	// Bounded opaque request ID only; transport diagnostics never leave Gateway.
 	if id := resp.Header.Get("X-Request-ID"); len(id) <= 200 {
 		out.ProviderRequestID = id

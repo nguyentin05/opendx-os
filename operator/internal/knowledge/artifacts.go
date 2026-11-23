@@ -42,7 +42,7 @@ func (s ArtifactStore) Stage(ctx context.Context, a manifest.DXApplication) (man
 	if e != nil {
 		return a, fmt.Errorf("package root unavailable")
 	}
-	defer root.Close()
+	defer func() { _ = root.Close() }()
 	if e = os.MkdirAll(s.Root, 0700); e != nil {
 		return a, fmt.Errorf("artifact storage unavailable")
 	}
@@ -54,7 +54,7 @@ func (s ArtifactStore) Stage(ctx context.Context, a manifest.DXApplication) (man
 	if e != nil {
 		return a, fmt.Errorf("artifact storage unavailable")
 	}
-	defer dest.Close()
+	defer func() { _ = dest.Close() }()
 	publication := Publication{Sources: []PublishedSource{}}
 	if a.Spec.Knowledge != nil {
 		for _, source := range a.Spec.Knowledge.Sources {
@@ -67,11 +67,11 @@ func (s ArtifactStore) Stage(ctx context.Context, a manifest.DXApplication) (man
 			}
 			info, e := file.Stat()
 			if e != nil || !info.Mode().IsRegular() || info.Size() > MaxSourceSize {
-				file.Close()
+				_ = file.Close()
 				return a, fmt.Errorf("invalid source size/type")
 			}
 			b, e := io.ReadAll(io.LimitReader(file, MaxSourceSize+1))
-			file.Close()
+			_ = file.Close()
 			if e != nil || len(b) == 0 || len(b) > MaxSourceSize {
 				return a, fmt.Errorf("invalid package source")
 			}
@@ -132,12 +132,12 @@ func (s ArtifactStore) Read(ctx context.Context, source PublishedSource) ([]byte
 	if e != nil {
 		return nil, fmt.Errorf("artifact storage unavailable")
 	}
-	defer root.Close()
+	defer func() { _ = root.Close() }()
 	f, e := root.Open(source.ArtifactRef)
 	if e != nil {
 		return nil, fmt.Errorf("artifact unavailable")
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	info, e := f.Stat()
 	if e != nil || !info.Mode().IsRegular() || info.Size() != source.SizeBytes {
 		return nil, fmt.Errorf("artifact identity mismatch")

@@ -102,7 +102,7 @@ func (c *DelegationClient) ValidateDelegation(ctx context.Context, token, worker
 	if err != nil {
 		return out, knowledge.ErrAuthorityUnavailable
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != 200 {
 		return out, knowledge.ErrNotFound
 	}

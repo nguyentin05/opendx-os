@@ -14,7 +14,7 @@
 # limitations under the License.
 
 # One image per command under cmd/: build with --build-arg SERVICE=<command>.
-FROM golang:1.27.3-alpine AS builder
+FROM golang:1.27.4-alpine AS builder
 ARG SERVICE=cap-process
 WORKDIR /src
 COPY go.mod go.sum ./

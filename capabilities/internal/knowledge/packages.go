@@ -39,12 +39,12 @@ func (s *Store) readPackageArtifact(ctx context.Context, ref packageArtifact) ([
 	if e != nil {
 		return nil, ErrAuthorityUnavailable
 	}
-	defer root.Close()
+	defer func() { _ = root.Close() }()
 	f, e := root.Open(ref.ArtifactRef)
 	if e != nil {
 		return nil, ErrNotFound
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	info, e := f.Stat()
 	if e != nil || !info.Mode().IsRegular() || info.Size() != ref.SizeBytes {
 		return nil, ErrNotFound

@@ -16,9 +16,13 @@ type safetyCheck func(context.Context, io.Reader) error
 func (f safetyCheck) Scan(c context.Context, r io.Reader) error { return f(c, r) }
 func TestArtifactsImmutableAndBounded(t *testing.T) {
 	root := t.TempDir()
-	os.Mkdir(filepath.Join(root, "knowledge"), 0700)
+	if e := os.Mkdir(filepath.Join(root, "knowledge"), 0700); e != nil {
+		t.Fatal(e)
+	}
 	path := filepath.Join(root, "knowledge/policy.md")
-	os.WriteFile(path, []byte("# Original\n"), 0600)
+	if e := os.WriteFile(path, []byte("# Original\n"), 0600); e != nil {
+		t.Fatal(e)
+	}
 	a := packageApp()
 	a.PackageRoot = root
 	store := ArtifactStore{Root: filepath.Join(t.TempDir(), "artifacts"), Scanner: safetyCheck(func(_ context.Context, r io.Reader) error { _, e := io.Copy(io.Discard, r); return e })}
@@ -27,7 +31,9 @@ func TestArtifactsImmutableAndBounded(t *testing.T) {
 		t.Fatal(e)
 	}
 	source := staged.Spec.Publication.Sources[0]
-	os.WriteFile(path, []byte("# Changed\n"), 0600)
+	if e := os.WriteFile(path, []byte("# Changed\n"), 0600); e != nil {
+		t.Fatal(e)
+	}
 	b, e := store.Read(context.Background(), source)
 	if e != nil || string(b) != "# Original\n" {
 		t.Fatal("source did not survive mutable package", e)
@@ -37,9 +43,15 @@ func TestArtifactsImmutableAndBounded(t *testing.T) {
 		t.Fatal("unsafe source staged")
 	}
 	outside := filepath.Join(t.TempDir(), "outside.md")
-	os.WriteFile(outside, []byte("outside"), 0600)
-	os.Remove(path)
-	os.Symlink(outside, path)
+	if e := os.WriteFile(outside, []byte("outside"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	if e := os.Remove(path); e != nil {
+		t.Fatal(e)
+	}
+	if e := os.Symlink(outside, path); e != nil {
+		t.Fatal(e)
+	}
 	if _, e = store.Stage(context.Background(), a); e == nil {
 		t.Fatal("symlink escape staged")
 	}

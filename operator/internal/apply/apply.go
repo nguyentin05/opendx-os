@@ -111,7 +111,7 @@ func (r *Runner) Run(ctx context.Context, plan planner.Plan, targets []string) e
 			return err
 		}
 		if _, err = connection.ExecContext(ctx, `SELECT pg_advisory_lock(hashtextextended('dxos.operator.apply',0))`); err != nil {
-			connection.Close()
+			_ = connection.Close()
 			return err
 		}
 		defer func() {

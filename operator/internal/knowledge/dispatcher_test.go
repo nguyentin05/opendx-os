@@ -29,7 +29,9 @@ func TestDispatcherUsesBoundedPrivateNotification(t *testing.T) {
 	if e := d.Deliver(context.Background(), n); e != nil || calls != 1 {
 		t.Fatal(e, calls)
 	}
-	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, server.URL, 307) }))
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, server.URL, http.StatusTemporaryRedirect)
+	}))
 	defer redirect.Close()
 	d.Endpoint = redirect.URL
 	if e := d.Deliver(context.Background(), n); e == nil || calls != 1 {
