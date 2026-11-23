@@ -16,9 +16,8 @@
 name: Release
 
 on:
-  # Temporarily disabled: tag pushes must not package or publish a release.
-  # push:
-  #   tags: ["v*"]
+  push:
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
