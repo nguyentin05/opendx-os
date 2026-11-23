@@ -66,8 +66,8 @@ git push origin vX.Y.Z
 
 Only the repository owner may create, move, or delete a tag: the `protect tags`
 repository ruleset covers every `refs/tags/*` ref and bypasses only that account.
-The release workflow enforces the same boundary for manual dispatch, which the
-ruleset does not cover, and rejects any run started by another account.
+The release workflow runs only on tag pushes; it has no manual dispatch. It
+also rejects a run started or re-run by another account.
 
 `.github/workflows/release.yml` then:
 
@@ -83,14 +83,9 @@ ruleset does not cover, and rejects any run started by another account.
    `--generate-notes` when no release exists for the tag. The workflow never
    publishes a release.
 
-To re-run the pipeline for a tag that already exists, dispatch it with the tag:
-
-```sh
-gh workflow run release.yml -f tag=vX.Y.Z
-```
-
-Dispatch attaches assets to any existing release for that tag, including a
-published release. Prefer dispatching only while the release is still a draft.
+When a run fails, re-run it from the Actions page or with
+`gh run rerun <run-id> --failed`; a re-run uses the same tag. To release a fix,
+create a new tag instead of moving an existing one.
 
 ## 4. Review the generated assets
 

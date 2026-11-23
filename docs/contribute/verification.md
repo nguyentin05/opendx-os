@@ -117,7 +117,7 @@ jobs need their own environment.
 [releasing](releasing.md#3-tag-and-run-the-release-workflow). Pull requests build
 without pushing; pushes to `main` and `v*` tags publish to
 `ghcr.io/nguyentin05/<image>` and attest the image digest.
-`.github/workflows/release.yml` runs on `v*` tags and manual dispatch. It
+`.github/workflows/release.yml` runs only when a `v*` tag is pushed. It
 rejects a tag that is not an ancestor of `main`, warns when the tag is
 lightweight, packs the source tree, runs the archive gate, generates a CycloneDX
 SBOM and `SHA256SUMS`, attests both, and attaches the assets to a release. It
@@ -136,19 +136,18 @@ docker buildx build --platform linux/amd64 -f workspace-ui/Dockerfile \
   -t opendx-workspace-ui:local workspace-ui
 ```
 
-Dispatch the workflows and verify a downloaded artifact:
+Dispatch the image workflow, push a tag for the release workflow, and verify a
+downloaded artifact:
 
 ```sh
 gh workflow run images.yml
-gh workflow run release.yml -f tag=vX.Y.Z
 gh attestation verify dxos-open-core-X.Y.Z.tar.gz --repo nguyentin05/opendx-os
 gh attestation verify oci://ghcr.io/nguyentin05/opendx-operator:X.Y.Z --repo nguyentin05/opendx-os
 ```
 
 A local image build proves the Dockerfile target resolves; it does not prove the
-registry push, attestation, SBOM, or release upload. Dispatch `release.yml` for a
-tag only while its release is still a draft, and review the assets before
-publishing.
+registry push, attestation, SBOM, or release upload. Review the assets of the
+draft release before publishing it.
 
 ## Recording results
 
