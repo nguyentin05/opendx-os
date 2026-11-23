@@ -223,3 +223,24 @@ it('rejects a response for a different ID without showing the accompanying data'
   await screen.findByText('Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.');
   expect(screen.queryByText('Different record')).toBeNull();
 });
+
+it('names a referenced record by its readable label column', async () => {
+  const vendors: InstalledTable = {
+    name: 'domain.vendors', columns: [{ name: 'name', type: 'text', nullable: false }],
+    access: { select: [{ role, columns: ['id', 'name'] }], insert: [] },
+    ui: { listColumns: ['name'], formFields: [] },
+  };
+  const app = { ...session.apps[0], tables: [table, vendors] };
+  const fetch = mockFetch(init => String(init.body).includes('domain_vendors_by_pk')
+    ? Response.json({ data: { domain_vendors_by_pk: { id: otherID, name: 'Acme' } } })
+    : recordResponse({ id, title: 'Title', vendor_id: otherID, status: 'draft', version: 1 }));
+  render(<RecordDetail table={table} app={app} context={{ app, role, token: session.token, userID: session.user.id }}
+    recordID={id} onEdit={vi.fn()} onBack={vi.fn()} />);
+
+  expect((await screen.findByRole('link', { name: 'Acme' })).getAttribute('href'))
+    .toBe('/apps/sample/tables/domain.vendors/' + otherID + '?role=role_editor');
+  const lookup = fetch.mock.calls.filter(([, init]) => init.body).map(([, init]) => JSON.parse(String(init.body)))
+    .find(body => String(body.query).includes('domain_vendors_by_pk'));
+  expect(lookup.variables).toEqual({ id: otherID });
+  expect(lookup.query).toMatch(/\{\s*id name\s*\}/);
+});

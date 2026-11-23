@@ -113,7 +113,7 @@ it('does not offer a filter for a text field the role cannot read', async () => 
   mockFetch(() => listResponse([{ amount: 12.5 }]));
   render(list({ table: numericTable, context: reader }));
 
-  await screen.findByText('12.5');
+  await screen.findByText('12,5');
   expect(screen.queryByLabelText(/Filter by/)).toBeNull();
 });
 

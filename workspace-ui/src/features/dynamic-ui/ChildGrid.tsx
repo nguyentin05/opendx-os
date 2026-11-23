@@ -2,7 +2,7 @@
 // Copyright 2026 DX-OS Open-Core Contributors
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { stateLabel } from '../../core/labels';
+import { formatValue } from '../../core/labels';
 import type { AppRoleContext } from '../../core/session-context';
 import type { InstalledTable } from '../../types/registry';
 import { childPageSize, deleteChildRecord, GraphQLRequestError, isRecordID, loadChildPage } from './graphql';
@@ -144,7 +144,7 @@ function ChildGridContents({ parent, parentRecord, child, context, onParentChang
             <tr key={isRecordID(row.id) ? row.id : index}>
               {columns.map(name => (
                 <td key={name}>
-                  {row[name] === null ? '—' : name === 'status' ? stateLabel(child, String(row[name])) : String(row[name])}
+                  {formatValue(child, name, row[name])}
                 </td>
               ))}
               {showRowActions && <td>

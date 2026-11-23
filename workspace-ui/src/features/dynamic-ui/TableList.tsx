@@ -2,7 +2,7 @@
 // Copyright 2026 DX-OS Open-Core Contributors
 
 import { useEffect, useState } from 'react';
-import { stateLabel } from '../../core/labels';
+import { formatValue } from '../../core/labels';
 import type { AppRoleContext } from '../../core/session-context';
 import type { InstalledTable } from '../../types/registry';
 import { executeGraphQL, GraphQLRequestError, isRecord } from './graphql';
@@ -222,7 +222,7 @@ function PaginatedTable({ context, onOpen, description }: Pick<TableListProps, '
                 <tr key={id ?? index}>
                   {columns.map(column => {
                     const cell = row[column.name];
-                    return <td key={column.name}>{column.name === 'status' && typeof cell === 'string' ? stateLabel(table, cell) : cell}</td>;
+                    return <td key={column.name}>{formatValue(table, column.name, cell)}</td>;
                   })}
                   {id && <td><button type="button" onClick={() => onOpen(id)}>Mở</button></td>}
                 </tr>

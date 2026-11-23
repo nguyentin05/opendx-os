@@ -105,7 +105,13 @@ application-specific labels.
   `status` is in its `from`. The command's `recordFilter` may still refuse it
   (for example, nobody approves their own request): handle a 403.
 - A foreign key to another table of the application (`foreignKeys`) is a
-  reference picker over that table's list.
+  reference picker over that table's list. The picker and the record detail
+  name a referenced record by the first readable `text` column in the target's
+  `ui.listColumns`, and show its id when the role can read none.
+- Format values by column type: `timestamp` (including `created_at` and
+  `updated_at`) as a `vi-VN` date and time in the viewer's time zone, `date` as
+  a `vi-VN` date, and `integer` and `numeric(...)` with `vi-VN` digit grouping.
+  Manifests do not mark a column as money, so no currency is added.
 
 The portal opens the first readable top-level table declared by the app. List
 views support paging, sorting, and an exact-match text filter when a readable

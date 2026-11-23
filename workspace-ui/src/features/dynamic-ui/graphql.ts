@@ -354,17 +354,22 @@ export async function saveRecord(
 
 export const referencePageSize = 25;
 
+// A referenced record is named by the first readable text column of its list.
+export function referenceLabelColumn(table: InstalledTable, role: string): string | undefined {
+  const readable = new Set(readableRecordFields(table, role));
+  return table.ui.listColumns.find(name =>
+    readable.has(name) && table.columns.some(column => column.name === name && column.type === 'text'),
+  );
+}
+
 export async function loadReferencePage(
   ctx: RequestContext,
   table: InstalledTable,
   offset: number,
   signal: AbortSignal,
 ): Promise<{ options: { id: string; label: string }[]; hasNext: boolean }> {
-  const readable = new Set(readableRecordFields(table, ctx.role));
-  if (!readable.has('id')) throw new GraphQLRequestError('forbidden');
-  const labelColumn = table.ui.listColumns.find(name =>
-    readable.has(name) && table.columns.some(column => column.name === name && column.type === 'text'),
-  );
+  if (!readableRecordFields(table, ctx.role).includes('id')) throw new GraphQLRequestError('forbidden');
+  const labelColumn = referenceLabelColumn(table, ctx.role);
   const root = recordRoot(table);
   const query = `query RecordReferences($limit: Int!, $offset: Int!) {
     ${root}(order_by: {id: asc}, limit: $limit, offset: $offset) {
