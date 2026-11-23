@@ -70,7 +70,12 @@ type Operation struct {
 type Approval struct {
 	Profile        Profile
 	PolicyRevision int64
-	Fingerprint    string
+	// Decision is the authority snapshot Policy.Check verified for this
+	// attempt. It is never exposed through the public API.
+	Decision Decision
+	// Fingerprint is recomputed with the unnormalized operation on every
+	// attempt, including the real lease fence.
+	Fingerprint string
 }
 type Decision struct {
 	// PersonalApproved is produced only by current database processing authority.

@@ -13,7 +13,6 @@ import (
 	"errors"
 	"hash"
 	"net"
-	"strconv"
 
 	"github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
@@ -206,10 +205,13 @@ func beginError(err error) error {
 	return ErrUncertain
 }
 
-// operationFingerprint binds the approved authority snapshot and the canonical
-// payload with unambiguous, length-prefixed framing. For a leased EMBED only the
-// lease fence is normalized away: a fresh fence for the same claim is the same
-// stored operation, while every in-attempt comparison still uses the real fence.
+// operationFingerprint binds the entire approved context — the full actor
+// identity, the complete operation, the verified decision and the canonical
+// payload — with unambiguous, length-prefixed framing. For a leased EMBED only
+// the lease fence is normalized away: a fresh fence for the same claim is the
+// same stored operation, while every in-attempt comparison still uses the real
+// fence. The caller's Approval.Fingerprint is never hashed here, because it
+// carries the unnormalized fence; only the digest is ever persisted.
 func operationFingerprint(actor *auth.Identity, approval Approval, op Operation, payload Payload) (string, error) {
 	binding := op
 	if binding.Lease != nil && binding.Purpose == "EMBED" {
@@ -217,11 +219,15 @@ func operationFingerprint(actor *auth.Identity, approval Approval, op Operation,
 		lease.Fence = 0
 		binding.Lease = &lease
 	}
-	sources, err := json.Marshal(binding.Sources)
+	identity, err := json.Marshal(actor)
 	if err != nil {
 		return "", ErrPolicy
 	}
-	agentSources, err := json.Marshal(binding.AgentSources)
+	operation, err := json.Marshal(binding)
+	if err != nil {
+		return "", ErrPolicy
+	}
+	decision, err := json.Marshal(approval.Decision)
 	if err != nil {
 		return "", ErrPolicy
 	}
@@ -230,28 +236,10 @@ func operationFingerprint(actor *auth.Identity, approval Approval, op Operation,
 		return "", ErrPolicy
 	}
 	digest := sha256.New()
-	writeField(digest, "dxos-model-operation-v1")
-	writeField(digest, actor.UserID)
-	writeField(digest, approval.Profile.ID)
-	writeField(digest, strconv.FormatInt(approval.Profile.Revision, 10))
-	writeField(digest, strconv.FormatInt(approval.PolicyRevision, 10))
-	writeField(digest, binding.AppID)
-	writeField(digest, binding.ScopeKind)
-	writeField(digest, binding.Purpose)
-	writeField(digest, strconv.FormatInt(binding.LLMSlotRevision, 10))
-	writeField(digest, strconv.FormatInt(binding.EmbeddingSlotRevision, 10))
-	writeField(digest, strconv.FormatBool(binding.RequirePersonalQueryApproval))
-	if binding.Lease != nil {
-		writeField(digest, "lease")
-		writeField(digest, binding.Lease.JobID)
-		writeField(digest, binding.Lease.WorkerID)
-		writeField(digest, binding.Lease.RunID)
-		writeField(digest, strconv.FormatInt(binding.Lease.Fence, 10))
-	} else {
-		writeField(digest, "no-lease")
-	}
-	writeField(digest, string(sources))
-	writeField(digest, string(agentSources))
+	writeField(digest, "dxos-model-operation-v2")
+	writeField(digest, string(identity))
+	writeField(digest, string(operation))
+	writeField(digest, string(decision))
 	writeField(digest, string(canonical))
 	return hex.EncodeToString(digest.Sum(nil)), nil
 }

@@ -20,6 +20,7 @@ import (
 
 	"github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/contracts"
 	"github.com/opendx-os/opendx-os/capabilities/internal/testutil"
 )
 
@@ -167,16 +168,27 @@ func (e operationEnv) fingerprint(t *testing.T, op Operation, payload Payload) s
 }
 
 // staticAuthority approves every operation for the requested profile and can be
-// revoked after the first check to model live authority changes.
+// revoked after the first check to model live authority changes. An approval
+// revision and every independently approved decision field default to the
+// historical non-personal decision, so tests that model a re-approval only set
+// the field they exercise.
 type staticAuthority struct {
-	revoked atomic.Bool
-	profile Profile
+	revoked              atomic.Bool
+	profile              Profile
+	personalApproved     bool
+	classification       string
+	authorityFingerprint string
 }
 
 func (a *staticAuthority) Current(_ context.Context, _ *auth.Identity, op Operation) (Decision, error) {
 	profile := a.profile
 	profile.ID, profile.Revision, profile.Purpose = op.ProfileID, op.ProfileRevision, op.Purpose
-	return Decision{Profile: profile, PolicyRevision: 1, Allowed: !a.revoked.Load(), QueryClassification: "NON_PERSONAL"}, nil
+	classification := a.classification
+	if classification == "" {
+		classification = "NON_PERSONAL"
+	}
+	return Decision{Profile: profile, PolicyRevision: 1, Allowed: !a.revoked.Load(), PersonalApproved: a.personalApproved,
+		QueryClassification: classification, AuthorityFingerprint: a.authorityFingerprint}, nil
 }
 
 // faultStore injects transitional faults around the real durable boundary.
@@ -1031,4 +1043,232 @@ func TestModelOperationAuthority(t *testing.T) {
 			t.Fatalf("state %+v", stored)
 		}
 	})
+}
+
+// authorityGateway dispatches through the real durable boundary under one
+// authority snapshot.
+func authorityGateway(env operationEnv, provider Provider, authority CurrentAuthority) *Gateway {
+	return &Gateway{Policy: &Policy{Authority: authority, Enabled: true},
+		Operations: &OperationStore{DB: env.gatewayDB}, Providers: map[string]Provider{"fake": provider}}
+}
+
+// TestModelOperationApprovedFingerprintCoverage proves the durable operation
+// identity binds the entire approved context: the actor's full identity, every
+// independently approved decision field, the reviewed sources and the payload.
+// Any disagreement under the same key is a generic conflict with no further
+// provider send and no change to the settled row.
+func TestModelOperationApprovedFingerprintCoverage(t *testing.T) {
+	ctx := context.Background()
+	payload := Payload{Query: "approved query"}
+
+	t.Run("app operation", func(t *testing.T) {
+		env := newStaticEnv(t)
+		op := env.op
+		op.Key = "fingerprint-coverage"
+		provider := &countingProvider{result: Result{Text: "answer"}}
+		gateway := authorityGateway(env, provider, &staticAuthority{profile: env.profile})
+		if _, err := gateway.Call(ctx, env.actor, op, payload); err != nil || provider.count() != 1 {
+			t.Fatalf("baseline dispatch: %v calls=%d", err, provider.count())
+		}
+		settled := readOperation(t, env.db, op.Key)
+		if len(settled.Fingerprint) != 64 || settled.Fingerprint != strings.ToLower(settled.Fingerprint) {
+			t.Fatalf("durable fingerprint is not 64 lowercase hex: %q", settled.Fingerprint)
+		}
+		baseApproval, err := gateway.Policy.Check(ctx, env.actor, op)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, change := range []struct {
+			name      string
+			actor     *auth.Identity
+			op        Operation
+			payload   Payload
+			authority *staticAuthority
+		}{
+			{"actor role", &auth.Identity{UserID: personalActor, Role: "role_operator"}, op, payload, &staticAuthority{profile: env.profile}},
+			{"personal approval", env.actor, op, payload, &staticAuthority{profile: env.profile, personalApproved: true}},
+			{"query classification", env.actor, op, payload, &staticAuthority{profile: env.profile, classification: "APPROVED"}},
+			{"authority fingerprint", env.actor, op, payload, &staticAuthority{profile: env.profile, authorityFingerprint: strings.Repeat("f", 64)}},
+			{"source review", env.actor, func() Operation {
+				changed := op
+				changed.Sources = []contracts.ReadScope{{DocumentID: personalOther}}
+				return changed
+			}(), payload, &staticAuthority{profile: env.profile}},
+			{"payload", env.actor, op, Payload{Query: "different query"}, &staticAuthority{profile: env.profile}},
+		} {
+			t.Run(change.name, func(t *testing.T) {
+				reapproved := authorityGateway(env, provider, change.authority)
+				approval, err := reapproved.Policy.Check(ctx, change.actor, change.op)
+				if err != nil {
+					t.Fatalf("changed %s was not approved: %v", change.name, err)
+				}
+				if approval.PolicyRevision != baseApproval.PolicyRevision {
+					t.Fatalf("changed %s also changed the approval revision", change.name)
+				}
+				if _, err := reapproved.Call(ctx, change.actor, change.op, change.payload); !errors.Is(err, ErrConflict) {
+					t.Fatalf("changed %s was accepted as the same durable operation: %v", change.name, err)
+				}
+				if provider.count() != 1 {
+					t.Fatalf("changed %s invoked the provider: %d", change.name, provider.count())
+				}
+				if after := readOperation(t, env.db, op.Key); after.Raw != settled.Raw || after.Fingerprint != settled.Fingerprint {
+					t.Fatalf("changed %s mutated the settled operation", change.name)
+				}
+			})
+		}
+	})
+
+	t.Run("personal operation", func(t *testing.T) {
+		env := newOperationEnvFor(t, "EMBED")
+		op := env.op
+		op.Key = "fingerprint-coverage-personal"
+		personalPayload := Payload{Query: "private query"}
+		provider := &countingProvider{result: Result{Vector: []float32{1, 0, 0}}}
+		gateway := authorityGateway(env, provider, &staticAuthority{profile: env.profile, personalApproved: true, classification: "PERSONAL"})
+		if _, err := gateway.Call(ctx, env.actor, op, personalPayload); err != nil || provider.count() != 1 {
+			t.Fatalf("baseline dispatch: %v calls=%d", err, provider.count())
+		}
+		settled := readOperation(t, env.db, op.Key)
+		for _, change := range []struct {
+			name    string
+			op      Operation
+			payload Payload
+		}{
+			{"scope kind", func() Operation {
+				changed := op
+				changed.ScopeKind = "APP"
+				return changed
+			}(), personalPayload},
+			{"source review", func() Operation {
+				changed := op
+				changed.Sources = []contracts.ReadScope{{DocumentID: personalOther}}
+				return changed
+			}(), personalPayload},
+			{"payload", op, Payload{Query: "other private query"}},
+		} {
+			t.Run(change.name, func(t *testing.T) {
+				if _, err := gateway.Call(ctx, env.actor, change.op, change.payload); !errors.Is(err, ErrConflict) {
+					t.Fatalf("changed %s was accepted as the same durable operation: %v", change.name, err)
+				}
+				if provider.count() != 1 {
+					t.Fatalf("changed %s invoked the provider: %d", change.name, provider.count())
+				}
+				if after := readOperation(t, env.db, op.Key); after.Raw != settled.Raw || after.Fingerprint != settled.Fingerprint {
+					t.Fatalf("changed %s mutated the settled operation", change.name)
+				}
+			})
+		}
+	})
+}
+
+// TestEmbeddingClaimedOperationFenceRecovery proves a leased EMBED operation has
+// one durable identity across lease rotation: a definitely unsent claim resumes
+// exactly once under the new fence, and a persisted intent is never repeated.
+// The live database lease validity and stale-fence denial are asserted by
+// TestEmbeddingClaimedOperationLeaseRecovery and TestEmbeddingIntentBlocksLeaseRecovery
+// in the knowledge package, which run this same path against worker_model_policy.
+func TestEmbeddingClaimedOperationFenceRecovery(t *testing.T) {
+	ctx := context.Background()
+	env := newOperationEnvFor(t, "EMBED")
+	policy := &Policy{Authority: &staticAuthority{profile: env.profile}, Enabled: true}
+	payload := Payload{Texts: []string{"fixed chunk text"}}
+	scope := contracts.ReadScope{DocumentID: personalDoc, VersionID: "version", RunID: "run"}
+	lease := func(fence int64) *LeaseRef {
+		return &LeaseRef{JobID: "job", WorkerID: env.actor.UserID, RunID: "run", Fence: fence}
+	}
+	op := env.op
+	op.Key = "embed:job:chunk"
+	op.ScopeKind = "APP"
+	op.Sources = []contracts.ReadScope{scope}
+	op.Lease = lease(1)
+	recovered := op
+	recovered.Lease = lease(2)
+
+	approval := func(candidate Operation) Approval {
+		t.Helper()
+		got, err := policy.Check(ctx, env.actor, candidate)
+		if err != nil {
+			t.Fatalf("lease fence %d was not approved: %v", candidate.Lease.Fence, err)
+		}
+		return got
+	}
+	fingerprint := func(candidate Operation) string {
+		t.Helper()
+		digest, err := operationFingerprint(env.actor, approval(candidate), candidate, payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return digest
+	}
+	// Only the fence is normalized; the full approval still sees the real fence.
+	if approval(op).Fingerprint == approval(recovered).Fingerprint {
+		t.Fatal("fence rotation did not change the in-attempt approval fingerprint")
+	}
+	digest := fingerprint(op)
+	if len(digest) != 64 || digest != strings.ToLower(digest) {
+		t.Fatalf("durable fingerprint is not 64 lowercase hex: %q", digest)
+	}
+	if rotated := fingerprint(recovered); rotated != digest {
+		t.Fatal("fence rotation changed the durable operation identity")
+	}
+
+	store := &OperationStore{DB: env.gatewayDB}
+	binding := func(candidate Operation) OperationBinding {
+		return OperationBinding{Key: candidate.Key, ActorID: env.actor.UserID, AppID: candidate.AppID,
+			ProfileID: env.profile.ID, Revision: env.profile.Revision, Purpose: candidate.Purpose, Fingerprint: digest}
+	}
+	if state, err := store.Claim(ctx, binding(op)); err != nil || state != OperationClaimed {
+		t.Fatalf("claim: state=%q err=%v", state, err)
+	}
+	if claimed := readOperation(t, env.db, op.Key); claimed.State != OperationClaimed || claimed.Fingerprint != digest {
+		t.Fatalf("claim not persisted as definitely unsent: %+v", claimed)
+	}
+
+	// A new process at the rotated fence resumes the same claim, exactly once.
+	provider := &countingProvider{result: Result{Vector: []float32{1, 0, 0}}}
+	gateway := &Gateway{Policy: policy, Operations: &OperationStore{DB: personalLogin(t, env.db, "dxos_ai_gateway")},
+		Providers: map[string]Provider{"fake": provider}}
+	if _, err := gateway.Call(ctx, env.actor, recovered, payload); err != nil || provider.count() != 1 {
+		t.Fatalf("claim did not resume under the rotated fence: %v calls=%d", err, provider.count())
+	}
+	if settled := readOperation(t, env.db, op.Key); settled.State != OperationSucceeded || settled.Fingerprint != digest {
+		t.Fatalf("resumed operation not settled under the same binding: %+v", settled)
+	}
+	later := op
+	later.Lease = lease(3)
+	if _, err := gateway.Call(ctx, env.actor, later, payload); !errors.Is(err, ErrUncertain) {
+		t.Fatalf("resumed claim was dispatched again: %v", err)
+	}
+	if provider.count() != 1 {
+		t.Fatalf("resumed claim repeated the dispatch: %d", provider.count())
+	}
+
+	// A persisted intent blocks every later fence: ambiguity is never resent.
+	intent := op
+	intent.Key = "embed:job:chunk-intent"
+	intentDigest := fingerprint(intent)
+	if state, err := store.Claim(ctx, OperationBinding{Key: intent.Key, ActorID: env.actor.UserID, AppID: intent.AppID,
+		ProfileID: env.profile.ID, Revision: env.profile.Revision, Purpose: intent.Purpose, Fingerprint: intentDigest}); err != nil || state != OperationClaimed {
+		t.Fatalf("intent claim: state=%q err=%v", state, err)
+	}
+	if token, err := store.Begin(ctx, intent.Key, intentDigest); err != nil || token == "" {
+		t.Fatalf("intent begin: token=%q err=%v", token, err)
+	}
+	if want := readOperation(t, env.db, intent.Key); want.State != OperationMayHaveSent {
+		t.Fatalf("intent state %q", want.State)
+	}
+	rotatedIntent := intent
+	rotatedIntent.Lease = lease(2)
+	if fingerprint(rotatedIntent) != intentDigest {
+		t.Fatal("fence rotation changed the durable identity of the intent")
+	}
+	if _, err := gateway.Call(ctx, env.actor, rotatedIntent, payload); !errors.Is(err, ErrUncertain) {
+		t.Fatalf("ambiguous intent was redispatched after rotation: %v", err)
+	}
+	if provider.count() != 1 {
+		t.Fatalf("ambiguous intent reached the provider: %d", provider.count())
+	}
+	if after := readOperation(t, env.db, intent.Key); after.State != OperationMayHaveSent || after.Fingerprint != intentDigest {
+		t.Fatalf("ambiguous intent was rewritten: %+v", after)
+	}
 }

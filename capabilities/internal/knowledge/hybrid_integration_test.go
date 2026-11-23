@@ -501,8 +501,8 @@ func TestEmbeddingClaimedOperationLeaseRecovery(t *testing.T) {
 			hook.next, hook.nextErr = s.ClaimEmbedding(context.Background(), ownerID)
 		}
 		s.ConfigureModels(gateway, profile, models.Profile{})
-		if e = s.BuildEmbeddings(context.Background(), *first, profile); e == nil {
-			t.Fatal("stale fence survived the policy recheck")
+		if e = s.BuildEmbeddings(context.Background(), *first, profile); !errors.Is(e, models.ErrPolicy) {
+			t.Fatalf("stale fence survived the live policy recheck: %v", e)
 		}
 		if provider.calls != 0 {
 			t.Fatal("stale caller invoked the provider", provider.calls)

@@ -52,7 +52,10 @@ func (p *Policy) Check(ctx context.Context, actor *auth.Identity, req Operation)
 		Decision  Decision
 	}{actor, req, d})
 	hash := sha256.Sum256(raw)
-	return Approval{Profile: profile, PolicyRevision: d.PolicyRevision, Fingerprint: hex.EncodeToString(hash[:])}, nil
+	// The verified decision is carried into the durable binding, while the
+	// in-attempt fingerprint keeps hashing the unnormalized operation so every
+	// recheck compares the real fence.
+	return Approval{Profile: profile, PolicyRevision: d.PolicyRevision, Decision: d, Fingerprint: hex.EncodeToString(hash[:])}, nil
 }
 
 func (op Operation) validScope() bool {
