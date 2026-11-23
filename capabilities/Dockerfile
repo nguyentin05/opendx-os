@@ -26,4 +26,7 @@ FROM alpine:3.23
 RUN adduser -D -u 10001 dxos
 USER dxos
 COPY --from=builder /out/service /usr/local/bin/service
+# Apache-2.0 section 4: the license, notices and third-party license texts ship
+# with the binaries. `legal` is the repository root, passed as a named build context.
+COPY --from=legal LICENSE NOTICE COPYRIGHT.txt THIRD_PARTY_LICENSES.txt /usr/share/licenses/opendx-os/
 ENTRYPOINT ["/usr/local/bin/service"]

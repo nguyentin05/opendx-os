@@ -62,7 +62,7 @@ services:
       retries: 10
 
   hasura:
-    image: hasura/graphql-engine:v2.45.1
+    image: hasura/graphql-engine:v2.45.1-ce
     restart: unless-stopped
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${HASURA_PORT:-8080}:8080"
@@ -84,6 +84,8 @@ services:
   authz:
     build:
       context: ./capabilities
+      additional_contexts:
+        legal: .
       dockerfile: Dockerfile
       args:
         SERVICE: dxos-authz
@@ -114,6 +116,8 @@ services:
   cap-hr:
     build:
       context: ./capabilities
+      additional_contexts:
+        legal: .
       dockerfile: Dockerfile
       args:
         SERVICE: cap-hr
@@ -225,6 +229,8 @@ services:
   operator:
     build:
       context: ./operator
+      additional_contexts:
+        legal: .
       dockerfile: Dockerfile
     restart: unless-stopped
     command: ["reconcile", "--dir", "/apps", "--interval", "${OPERATOR_RECONCILE_INTERVAL:-30s}"]
@@ -249,6 +255,8 @@ services:
   cap-process:
     build:
       context: ./capabilities
+      additional_contexts:
+        legal: .
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
@@ -304,6 +312,8 @@ services:
   workspace-ui:
     build:
       context: ./workspace-ui
+      additional_contexts:
+        legal: .
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:

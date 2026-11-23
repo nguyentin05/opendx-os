@@ -51,6 +51,16 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Changed
 
+- Compose and the kind manifests run `hasura/graphql-engine:v2.45.1-ce`, the image
+  with only the open-source engine; the default image bundles proprietary
+  components.
+- `COPYRIGHT.txt` lists every third-party component in the builds, images and
+  services with its license, `THIRD_PARTY_LICENSES.txt`
+  reproduces the license texts of linked and bundled code
+  (`scripts/third_party_notices.py`), and `NOTICE` carries the required
+  Apache-2.0 attributions (#48). The files sit at the repository root, and every
+  project image carries them in `/usr/share/licenses/opendx-os/`; image builds
+  take the repository root as the named build context `legal`.
 - Documentation matches the implementation (#46): the manifest schema lists every
   validator rule, the architecture and data contracts say what is not
   implemented yet (audit checkpoint anchoring, OT and BI, OCR, gateway rate
@@ -111,6 +121,9 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Security
 
+- `scripts/package_release.sh` ships only git-tracked files from a checkout, and
+  the archive gate refuses `.env` files other than `.env.example`; a locally
+  packaged archive could carry `.env.rag` secrets.
 - Work items are no longer readable app-wide: a role reads one only when it may
   read the source record, and items without a source remain app-wide (#27).
 - Procurement roles no longer read every account's email through the shared
