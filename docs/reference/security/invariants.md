@@ -18,7 +18,7 @@ last_reviewed: 2026-11-22
 - Only clean files with the correct permissions may be used. Ordinary roles may not confirm `CLEAN` themselves; a scan error does not open access.
 - Event delivery may repeat; every business effect must tolerate retries. Reconcile and export must also be safe to re-run.
 - RAG is limited by app/source/collection, owner and caller permissions; results carry cited sources. OCR must not exceed permissions through a client-supplied `file_id`.
-- Audit appends serialize within their explicitly defined chain and have checkpoints outside the DB; preserve legacy chain evidence through an approved migration. When changing audit, check concurrent writes and detect edits before the checkpoint.
+- Audit appends serialize within their explicitly defined chain and have checkpoints outside the DB; preserve legacy chain evidence through an approved migration. When changing audit, check concurrent writes and detect edits before the checkpoint. Audit payloads never leave the server raw: record history is a fixed projection of time, actor, action, acting role, version and, for process tables, status.
 
 ## Protocol response contract
 

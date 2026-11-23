@@ -46,7 +46,8 @@ function detail(current = context) {
 }
 
 function serve(handler: (path: string, init: RequestInit) => Response | Promise<Response>) {
-  const fetch = vi.fn(handler);
+  const fetch = vi.fn((path: string, init: RequestInit) => String(path).includes('/history')
+    ? Response.json({ entries: [] }) : handler(path, init));
   vi.stubGlobal('fetch', fetch);
   return fetch;
 }
@@ -223,9 +224,9 @@ it('aborts a pending status request on a role change and discards its old clean 
     return (new Headers(init.headers).get('X-Hasura-Role') === editor ? oldStatus : newStatus).result;
   });
   const { rerender } = render(detail());
-  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
   rerender(detail({ ...context, role: reader }));
-  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(6));
   expect(fetch.mock.calls[1][1].signal?.aborted).toBe(true);
   await act(async () => oldStatus.finish(scanned('CLEAN')));
   await act(async () => newStatus.finish(scanned('INFECTED')));

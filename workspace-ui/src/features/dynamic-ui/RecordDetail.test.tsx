@@ -68,7 +68,8 @@ function recordResponse(record: unknown) {
 }
 
 function mockFetch(respond: (init: RequestInit) => Response | Promise<Response>) {
-  const fetch = vi.fn((_input: string, init: RequestInit) => respond(init));
+  const fetch = vi.fn((input: string, init: RequestInit) => String(input).includes('/history')
+    ? Response.json({ entries: [] }) : respond(init));
   vi.stubGlobal('fetch', fetch);
   return fetch;
 }

@@ -2,7 +2,7 @@
 // Copyright 2026 DX-OS Open-Core Contributors
 
 import { afterEach, expect, it, vi } from 'vitest';
-import { executeCommand } from './process';
+import { executeCommand, loadHistory } from './process';
 
 const context = { token: 'token', role: 'reviewer' };
 const entity = 'aa95c645-d797-44e2-85fe-49976b17b89d';
@@ -37,6 +37,33 @@ it.each([400, 401, 403, 404, 409, 422])('reports HTTP %i without reading protect
 
   await expect(reject()).rejects.toMatchObject({ status, message: 'Process command failed.' });
   expect(response.bodyUsed).toBe(false);
+});
+
+it('loads only the fixed history projection for the record route', async () => {
+  const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({
+    entries: [{
+      at: '2026-11-22T08:00:00Z', action: 'submit',
+      actor: { id: 'actor', display_name: 'An' }, acting_role: 'reviewer', version: 2, status: 'SUBMITTED',
+      payload: { vendor_name: 'Private' }, row_hash: 'secret',
+    }],
+  }));
+  vi.stubGlobal('fetch', fetch);
+
+  await expect(loadHistory(context, 'sample', 'domain.records', entity, signal)).resolves.toEqual([{
+    at: '2026-11-22T08:00:00Z', action: 'submit',
+    actor: { id: 'actor', display_name: 'An' }, acting_role: 'reviewer', version: 2, status: 'SUBMITTED',
+  }]);
+  expect(fetch.mock.calls[0][0]).toBe('/api/cap/process/records/sample/domain.records/' + entity + '/history');
+  expect(fetch.mock.calls[0][1].method).toBeUndefined();
+  expect(new Headers(fetch.mock.calls[0][1].headers).get('X-Hasura-Role')).toBe('reviewer');
+});
+
+it('treats a 404 history as no history and rejects a malformed projection', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 404 })));
+  await expect(loadHistory(context, 'sample', 'domain.records', entity, signal)).resolves.toBeNull();
+
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ entries: [{ at: 'x', action: 'submit' }] })));
+  await expect(loadHistory(context, 'sample', 'domain.records', entity, signal)).rejects.toMatchObject({ name: 'ProcessHistoryError' });
 });
 
 it.each([

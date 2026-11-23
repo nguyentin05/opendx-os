@@ -46,6 +46,7 @@ func NewEngine(db *sql.DB, apps *registry.Store) *Engine { return &Engine{db: db
 
 var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 var namePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+var tableNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`)
 var errCommand = errors.New("command rejected")
 
 func newUUID() (string, error) {
