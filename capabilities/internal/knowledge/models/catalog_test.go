@@ -5,6 +5,8 @@ package models
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -135,5 +137,49 @@ func TestCatalogV2Contract(t *testing.T) {
 		if _, err := ParseCatalog([]byte(strings.Replace(catalogFixture, change[0], change[1], 1))); err == nil {
 			t.Fatalf("invalid bound accepted: %s", change[1])
 		}
+	}
+}
+
+// TestDeclarationDigestStable pins the immutable candidate digest, so an
+// accidental change to declarationProfile, the hash input or its encoding is
+// caught here instead of by a rejected registry import of previously recorded
+// declarations. The expected bytes are the SHA-256 of the canonical declaration
+// written out literally below; the pinned hex value pins that literal.
+func TestDeclarationDigestStable(t *testing.T) {
+	catalog, err := ParseCatalog([]byte(catalogFixture))
+	if err != nil {
+		t.Fatalf("catalog fixture: %v", err)
+	}
+	declaration := catalog.Models[0]
+	provider := catalog.Providers[0]
+
+	const embedDeclaration = `{"adapter_key":"bounded-http-v1","profile":{"credential_ref":"MODEL_KEY","dimension":3,"execution":"HOSTED","id":"embed","limits":{"max_input_tokens":100,"max_output_tokens":100,"max_bytes":1024,"timeout_ms":1000},"model_id":"model","provider_id":"provider","purpose":"EMBED","revision":1},"provider":{"id":"provider","adapter":"bounded-http-v1","endpoint":"https://adapter.invalid/invoke","credential_ref":"MODEL_KEY","loopback_test":false}}`
+	const embedPinned = "6916a3e1d97de6cb6bd87c0a464f366f1c2d3eeb0a4386308067360164bc13e8"
+
+	sum := sha256.Sum256([]byte(embedDeclaration))
+	if want := hex.EncodeToString(sum[:]); want != embedPinned {
+		t.Fatalf("canonical EMBED declaration drifted: %s", want)
+	}
+	if got := DeclarationDigest(declaration.Profile, declaration.Adapter, provider); got != embedPinned {
+		t.Fatalf("declaration digest %s, want %s", got, embedPinned)
+	}
+
+	// A GENERATE declaration carries no dimension key: absence, not zero, is
+	// part of the immutable identity of a generation profile.
+	generation := declaration.Profile
+	generation.Purpose = "GENERATE"
+	generation.Dimension = 0
+	const generateDeclaration = `{"adapter_key":"bounded-http-v1","profile":{"credential_ref":"MODEL_KEY","execution":"HOSTED","id":"embed","limits":{"max_input_tokens":100,"max_output_tokens":100,"max_bytes":1024,"timeout_ms":1000},"model_id":"model","provider_id":"provider","purpose":"GENERATE","revision":1},"provider":{"id":"provider","adapter":"bounded-http-v1","endpoint":"https://adapter.invalid/invoke","credential_ref":"MODEL_KEY","loopback_test":false}}`
+	const generatePinned = "87ff7a428dadf7a331c83430e0aa7c79a75c1cf336c312eaf0b6af4b3794c05e"
+
+	sum = sha256.Sum256([]byte(generateDeclaration))
+	if want := hex.EncodeToString(sum[:]); want != generatePinned {
+		t.Fatalf("canonical GENERATE declaration drifted: %s", want)
+	}
+	if got := DeclarationDigest(generation, declaration.Adapter, provider); got != generatePinned {
+		t.Fatalf("declaration digest %s, want %s", got, generatePinned)
+	}
+	if embedPinned == generatePinned {
+		t.Fatal("purpose did not change the declaration digest")
 	}
 }
