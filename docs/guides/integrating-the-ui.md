@@ -38,13 +38,16 @@ acting role, and the server checks which rows it can read.
 The access token carries identity only. Send it as `Authorization: Bearer
 <token>` on every call below.
 
-The portal keeps the access and refresh tokens in memory only. Before the
+The portal keeps the access, refresh and ID tokens in memory only. Before the
 shorter of the two lifetimes ends it exchanges the refresh token for a new
 access token while keeping the same sign-in identity, so open screens and typed
 forms are not remounted. A page reload returns to the sign-in screen; if the
 Keycloak session is still active, one click signs in again without a password.
-The session ends when Keycloak's SSO idle or maximum lifetime ends, or when the
-refresh is refused.
+The session ends when Keycloak's SSO idle or maximum lifetime ends, when the
+refresh is refused, or on sign-out. Sign-out clears the tokens and redirects to
+Keycloak's `end_session_endpoint` with `id_token_hint`, `client_id` and
+`post_logout_redirect_uri` (the portal origin), so the next sign-in in the same
+browser asks for the password again.
 
 ## 2. Who am I, and what can I open
 

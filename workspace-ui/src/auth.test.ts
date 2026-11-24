@@ -3,7 +3,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bearer, endSession, refreshSession, registerSession, sessionDeadlines, watchSession } from './auth';
+import { bearer, endKeycloakSession, endSession, refreshSession, registerSession, sessionDeadlines, watchSession } from './auth';
 
 const issuer = 'http://localhost:8085/realms/dxos';
 const tokenURL = issuer + '/protocol/openid-connect/token';
@@ -14,12 +14,14 @@ function discovery() {
     issuer,
     authorization_endpoint: issuer + '/protocol/openid-connect/auth',
     token_endpoint: tokenURL,
+    end_session_endpoint: issuer + '/protocol/openid-connect/logout',
   });
 }
 
-function refreshed(access = 'access-2', refresh = 'refresh-2', expires = 60, refreshExpires = 120) {
+function refreshed(access = 'access-2', refresh = 'refresh-2', expires = 60, refreshExpires = 120, idToken = 'id-refreshed') {
   return Response.json({
     access_token: access, token_type: 'Bearer', expires_in: expires,
+    id_token: idToken,
     refresh_token: refresh, refresh_expires_in: refreshExpires,
   });
 }
@@ -99,6 +101,31 @@ describe('access token holder', () => {
     release(refreshed());
     expect(await Promise.all([first, second])).toEqual(['ok', 'ok']);
     endSession('sign-in');
+  });
+
+  it('keeps the refreshed id token for sign-out and ends the Keycloak session', async () => {
+    const fetcher = stubFetch(url => url === discoveryURL ? discovery() : refreshed());
+    registerSession({
+      token: 'sign-in', expires: Date.now() + 3600_000, idToken: 'id-1',
+      refreshToken: 'refresh-1', refreshExpires: Date.now() + 1800_000,
+    });
+    expect(await refreshSession('sign-in')).toBe('ok');
+    expect(bearer('sign-in')).toBe('Bearer access-2');
+
+    const assign = vi.fn();
+    vi.stubGlobal('location', { origin: 'http://localhost:3000', assign });
+    const idToken = endSession('sign-in');
+    expect(idToken).toBe('id-refreshed');
+    expect(sessionDeadlines('sign-in')).toBeUndefined();
+    expect(tokenCalls(fetcher)).toHaveLength(1);
+
+    await endKeycloakSession(idToken);
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(String(assign.mock.calls[0][0])).toBe(
+      issuer + '/protocol/openid-connect/logout'
+      + '?id_token_hint=id-refreshed&client_id=dxos-portal'
+      + '&post_logout_redirect_uri=' + encodeURIComponent('http://localhost:3000/'),
+    );
   });
 
   it('never writes a refresh token to localStorage or sessionStorage', async () => {

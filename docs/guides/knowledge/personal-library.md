@@ -117,7 +117,7 @@ Supply `window.DXOS_CONFIG = {issuer, clientID}` before the UI bundle for a
 public OIDC client with allowed redirect URIs and PKCE S256 enabled. Production
 requires HTTPS and explicit configuration; only localhost has the development
 Keycloak default. The access token stays in memory, expires locally, and is
-cleared on sign-out. Only transient PKCE verifier/state uses sessionStorage.
+cleared on sign-out, which also ends the Keycloak session. Only transient PKCE verifier/state uses sessionStorage.
 There is no token paste field, provider/key setup or browser storage credential.
 
 The library uploads privately, polls actual scan status, registers only CLEAN
