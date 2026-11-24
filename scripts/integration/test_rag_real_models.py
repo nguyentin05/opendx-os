@@ -54,7 +54,7 @@ class RealModelsTests(unittest.TestCase):
                 real.check_state(state, self.expected(), 'review-17')
 
     def test_real_models_requires_real_semantic_and_generation_evidence(self):
-        reply = {'status': 'GROUNDED', 'answer': 'BLUE-17', 'model_profile': {'id': 'generate-real', 'revision': 3},
+        reply = {'status': 'ANSWERED', 'answer': 'BLUE-17', 'model_profile': {'id': 'generate-real', 'revision': 3},
                  'citations': [{'document_id': 'doc', 'chunk_id': 'chunk'}]}
         real.check_answer(reply, 'doc', {'chunk'}, ('generate-real', 3))
         for field in ('answer', 'citations', 'model_profile'):
@@ -109,6 +109,74 @@ class LiveDispatchTests(unittest.TestCase):
                 result = subprocess.run(['bash', str(script), mode], env=env, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.strip(), filename)
+
+
+class ReviewRegressionTests(unittest.TestCase):
+    def test_withdrawal_target_must_match_disposable_read_target(self):
+        read = 'postgres://postgres@localhost:5432/real_test?sslmode=disable'
+        real.check_write_target(read, 'postgres://dxos_authz@localhost/real_test?sslmode=disable')
+        for write in ('postgres://dxos_authz@production/real_test',
+                      'postgres://dxos_authz@localhost/production',
+                      'postgres://dxos_authz@localhost/real_test?host=production',
+                      'postgres://dxos_authz@localhost/real_test?host=',
+                      'postgres://dxos_authz@localhost/real_test?hostaddr=10.0.0.1',
+                      'postgres://dxos_authz@localhost/real_test?dbname=production'):
+            with self.subTest(write=write), self.assertRaises(real.NotRun):
+                real.check_write_target(read, write)
+
+    def test_positive_answer_requires_status_and_every_citation(self):
+        reply = {'status': 'SEARCH_ONLY', 'answer': 'BLUE-17',
+                 'model_profile': {'id': 'generate-real', 'revision': 3},
+                 'citations': [{'document_id': 'doc', 'chunk_id': 'chunk'}]}
+        with self.assertRaises(RuntimeError):
+            real.check_answer(reply, 'doc', {'chunk'}, ('generate-real', 3))
+        reply['status'] = 'ANSWERED'
+        reply['citations'].append({'document_id': 'foreign', 'chunk_id': 'private'})
+        with self.assertRaises(RuntimeError):
+            real.check_answer(reply, 'doc', {'chunk'}, ('generate-real', 3))
+
+    def test_denial_requires_no_evidence_and_no_disclosure(self):
+        good = {'status': 'NO_EVIDENCE', 'answer': None, 'results': [], 'citations': []}
+        real.check_denied(good)
+        for bad in ({}, dict(good, citations=[{'document_id': 'private'}]), dict(good, status='SEARCH_ONLY')):
+            with self.assertRaises(RuntimeError):
+                real.check_denied(bad)
+
+    def test_withdrawal_requires_changed_true_and_visible_policy_block(self):
+        real.check_withdrawal({'approval': 'review-id', 'changed': True}, 'review-id')
+        for result in ({'approval': 'review-id', 'changed': False}, {'approval': 'other', 'changed': True}):
+            with self.assertRaises(RuntimeError):
+                real.check_withdrawal(result, 'review-id')
+        good = {'status': 'SEARCH_ONLY', 'reason': 'POLICY_BLOCKED', 'answer': None,
+                'citations': [], 'results': [{'document_id': 'doc'}]}
+        real.check_revoked(good, 'doc')
+        for bad in ({}, dict(good, results=[]), dict(good, reason='MODEL_UNAVAILABLE')):
+            with self.assertRaises(RuntimeError):
+                real.check_revoked(bad, 'doc')
+
+
+class ProtectedInputTests(unittest.TestCase):
+    def test_cli_inputs_are_checked_before_live_work(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / 'dxos-model'
+            executable.write_text('#!/bin/sh\nexit 0\n')
+            executable.chmod(0o700)
+            token = Path(directory) / 'operator.jwt'
+            token.write_text('synthetic-token')
+            token.chmod(0o600)
+            env = {'RAG_REAL_MODEL_CLI': str(executable), 'RAG_REAL_ADMIN_TOKEN_FILE': str(token),
+                   'OIDC_ISSUER_URL': 'https://idp.invalid/realm', 'OIDC_JWKS_URL': 'https://idp.invalid/keys'}
+            with patch.dict(os.environ, env, clear=True):
+                real.check_cli_inputs()
+                token.chmod(0o644)
+                with self.assertRaises(real.NotRun):
+                    real.check_cli_inputs()
+                token.chmod(0o600)
+                executable.chmod(0o600)
+                with self.assertRaises(real.NotRun):
+                    real.check_cli_inputs()
 
 
 if __name__ == '__main__':

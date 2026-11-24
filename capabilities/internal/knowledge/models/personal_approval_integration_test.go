@@ -13,6 +13,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/contracts"
@@ -420,5 +421,88 @@ func TestHostedPersonalCurrentAuthorityRevocation(t *testing.T) {
 				t.Fatal("revoked authority reused", change)
 			}
 		})
+	}
+}
+
+func TestPersonalWithdrawalSerializesAdminRevocation(t *testing.T) {
+	db, admin, _, _ := personalFixture(t, "GENERATE")
+	for _, migration := range []string{"0011_model_administration.sql", "0012_personal_admin_authority_locks.sql"} {
+		raw, err := os.ReadFile("../../../../platform/postgres/migrations/cap_ai/" + migration)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = db.Exec(string(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	approval := approvePersonal(t, admin, "GENERATE")
+	blocker, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer blocker.Rollback()
+	if _, err = blocker.Exec(`SELECT 1 FROM cap_ai.agent_processing_approvals WHERE id=$1 FOR UPDATE`, approval); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, err := admin.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	var pid int
+	if err = conn.QueryRowContext(ctx, `SELECT pg_backend_pid()`).Scan(&pid); err != nil {
+		t.Fatal(err)
+	}
+	withdrawal := make(chan error, 1)
+	go func() {
+		_, e := conn.ExecContext(ctx, `SELECT cap_ai.disable_agent_processing($1,$2,'concurrency fixture')`, personalActor, approval)
+		withdrawal <- e
+	}()
+	deadline := time.Now().Add(3 * time.Second)
+	waiting := false
+	for time.Now().Before(deadline) {
+		if err = db.QueryRow(`SELECT coalesce(wait_event_type='Lock',false) FROM pg_stat_activity WHERE pid=$1`, pid).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !waiting {
+		t.Fatal("withdrawal never reached blocked mutation")
+	}
+	revocation := make(chan error, 1)
+	go func() {
+		_, e := db.ExecContext(ctx, `DELETE FROM core.user_roles WHERE user_id=$1 AND role_name='role_operator'`, personalActor)
+		revocation <- e
+	}()
+	revokedEarly := false
+	select {
+	case err = <-revocation:
+		if err != nil {
+			t.Fatal(err)
+		}
+		revokedEarly = true
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err = blocker.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if err = <-withdrawal; err != nil {
+		t.Fatal(err)
+	}
+	if !revokedEarly {
+		if err = <-revocation; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if revokedEarly {
+		t.Fatal("role revocation committed before the protected withdrawal completed")
+	}
+	if _, err = admin.Exec(`SELECT cap_ai.disable_agent_processing($1,$2,'revoked actor')`, personalActor, approval); err == nil {
+		t.Fatal("revoked operator remained eligible")
 	}
 }

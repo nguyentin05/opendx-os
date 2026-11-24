@@ -275,8 +275,9 @@ audited PERSONAL processing, hybrid search and AGENT model authority, set all
 three schema flags to `true` in the migration environment: `RAG_MODELS_SCHEMA_ENABLED`,
 `RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED`, and
 `RAG_AGENT_MODELS_SCHEMA_ENABLED`.
-Use `--through 0010` to apply these migrations, or `--through 0011` to add the
-audited slot administration functions and the `dxos_ai_model_admin` login. The
+Use `--through 0010` to apply these migrations, or `--through 0012` to add the
+audited slot administration functions, the `dxos_ai_model_admin` login and
+PERSONAL approval authority locks. The
 bootstrap runner uses the same prerequisites. The agent-model flag defaults to
 `false` and also gates later model-dependent migrations when present. None of
 these flags activate a profile, slot or approval, and migration 0008 seeds no
@@ -672,6 +673,11 @@ the rendered form, which resolves secrets.
 
 ### Database logins and migrations
 
+Apply `0012_personal_admin_authority_locks.sql` before using the CLI for PERSONAL
+approval changes. It holds the operator identity and membership rows through
+each mutation, serializing concurrent role withdrawal. It uses the existing
+non-login owner and narrow row-lock privileges introduced by 0011.
+
 Migration `0011_model_administration.sql` is additive: narrow audited slot
 functions plus the `dxos_ai_model_admin` login, no password and no seeded profile,
 slot or approval. It follows the existing agent-schema opt-in, so a runner that
@@ -710,7 +716,7 @@ Apply the schema with all three schema flags, then verify the ledger:
 ```bash
 RAG_MODELS_SCHEMA_ENABLED=true RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED=true \
 RAG_AGENT_MODELS_SCHEMA_ENABLED=true \
-  scripts/migrate-rag.sh --database-url-env DATABASE_URL --scope cap-ai --through 0011
+  scripts/migrate-rag.sh --database-url-env DATABASE_URL --scope cap-ai --through 0012
 ```
 
 A retained installation that conflicts with an earlier `cap_ai` checksum must
@@ -1056,11 +1062,14 @@ Supply these environment variables through the protected test environment.
 | `RAG_REAL_MODELS_REVIEW_REF` | Opaque shared slot review reference |
 | `RAG_REAL_MODEL_CLI` | Path to the built `dxos-model` executable |
 | `RAG_REAL_ADMIN_TOKEN_FILE` | Owner-only operator access-token file accepted by the CLI |
-| `AI_MODEL_APPROVAL_DATABASE_URL` | Protected `dxos_authz` connection used only for approval withdrawal |
+| `AI_MODEL_APPROVAL_DATABASE_URL` | Protected `dxos_authz` connection to the same host, port and disposable database as `TEST_DATABASE_URL` |
 | `CLAMAV_ADDRESS`, `RAG_INTERNAL_AI_URL` | Running scanner and worker's internal AI endpoint |
 | `RAG_PARSER_QUALIFIED`, `RAG_SOURCE_QUALIFIED`, `RAG_METADATA_QUALIFIED` | Qualification gates for the actual ingestion deployment |
 
-The CLI also needs its existing issuer, audience and JWKS configuration. Keep
+Preflight requires `OIDC_ISSUER_URL`, `OIDC_AUDIENCE` and `OIDC_JWKS_URL`,
+an executable CLI and an owner-readable token file with no group or other access.
+Connection-target overrides in either DSN or `PGHOSTADDR`, `PGSERVICE` and
+`PGSERVICEFILE` are refused before hosted work. Keep
 vendor keys in the adapter's secret file. The runner uses service tokens and the
 protected approval session, and consumes safe model metadata from PostgreSQL.
 

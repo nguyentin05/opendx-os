@@ -598,3 +598,20 @@ func TestMatchCatalog(t *testing.T) {
 		})
 	}
 }
+
+func TestRouteRejectsInternalTokenReference(t *testing.T) {
+	route := embedTestRoute("https://vendor.invalid/v1")
+	route.CredentialRef = "MODEL_ADAPTER_TOKEN"
+	cfg := Config{SchemaVersion: 1, Routes: []Route{route}}
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = ParseConfig(raw); err == nil {
+		t.Fatal("internal bearer accepted as upstream credential")
+	}
+	lookups := 0
+	if _, err = NewOpenAIClient(cfg, func(string) string { lookups++; return "internal-canary" }, nil); err == nil || lookups != 0 {
+		t.Fatal("reserved credential read before validation", err, lookups)
+	}
+}

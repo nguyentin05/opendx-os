@@ -401,7 +401,7 @@ func TestOpenAIEmbedding(t *testing.T) {
 		if result.Usage == nil || result.Usage.InputTokens != 20 || result.Usage.OutputTokens != 0 {
 			t.Fatalf("usage %+v", result.Usage)
 		}
-		if result.ProviderRequestID != requestIDCanary {
+		if result.ProviderRequestID != "sha256:9e99158d93711fa379e3795da2ffeb1c9b5e28a39989b543347b80ca0b8f20aa" {
 			t.Fatalf("request id %q", result.ProviderRequestID)
 		}
 	})
@@ -522,7 +522,7 @@ func TestOpenAIGeneration(t *testing.T) {
 		if len(messages) != 2 {
 			t.Fatalf("messages %+v", messages)
 		}
-		if messages[0].Role != "system" || messages[0].Content != models.BoundedSystemInstruction {
+		if messages[0].Role != "system" || messages[0].Content != models.BoundedSystemInstruction+` Return a JSON object with exactly "text" (a string) and "citation_ids" (an array of supplied evidence IDs).` {
 			t.Fatalf("system message %+v", messages[0])
 		}
 		if messages[1].Role != "user" {
@@ -559,7 +559,7 @@ func TestOpenAIGeneration(t *testing.T) {
 		if result.Usage == nil || result.Usage.InputTokens != 30 || result.Usage.OutputTokens != 12 {
 			t.Fatalf("usage %+v", result.Usage)
 		}
-		if result.ProviderRequestID != requestIDCanary {
+		if result.ProviderRequestID != "sha256:9e99158d93711fa379e3795da2ffeb1c9b5e28a39989b543347b80ca0b8f20aa" {
 			t.Fatalf("request id %q", result.ProviderRequestID)
 		}
 	})
@@ -1204,4 +1204,64 @@ func TestOpenAIClientConstruction(t *testing.T) {
 			t.Fatalf("error %v", err)
 		}
 	})
+}
+
+func TestOpenAIJSONModeInstruction(t *testing.T) {
+	var vendor *fakeUpstream
+	vendor = newFakeUpstream(t, func(w http.ResponseWriter, r *http.Request, call int) {
+		var body struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.Unmarshal(vendor.record(t, call-1).body, &body); err != nil {
+			t.Error(err)
+			w.WriteHeader(400)
+			return
+		}
+		if len(body.Messages) != 2 || !strings.Contains(body.Messages[0].Content, "JSON") || !strings.Contains(body.Messages[0].Content, "citation_ids") {
+			w.WriteHeader(400)
+			return
+		}
+		writeJSON(w, http.StatusOK, chatBody(groundedContent))
+	})
+	route := generateTestRoute(vendor.baseURL())
+	client := clientFor(t, vendor, route)
+	if _, err := client.Invoke(context.Background(), route, route.Models[0], generateGroundedRequest()); err != nil || vendor.count() != 1 {
+		t.Fatal("JSON-mode request rejected", err, vendor.count())
+	}
+}
+
+func TestOpenAIRequestIDCredentialEcho(t *testing.T) {
+	vendor := newFakeUpstream(t, func(w http.ResponseWriter, r *http.Request, call int) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Request-ID", r.Header.Get("Authorization"))
+		_, _ = io.WriteString(w, embeddingBody)
+	})
+	route := embedTestRoute(vendor.baseURL())
+	client := clientFor(t, vendor, route)
+	result, err := client.Invoke(context.Background(), route, route.Models[0], embedQueryRequest("synthetic"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(result.ProviderRequestID, embedSecret) {
+		t.Fatal("vendor credential escaped in operation metadata")
+	}
+	if vendor.count() != 1 {
+		t.Fatal("unexpected dispatch count", vendor.count())
+	}
+}
+
+func TestOpenAIEmbeddingRejectsNullCoordinate(t *testing.T) {
+	vendor := newFakeUpstream(t, func(w http.ResponseWriter, r *http.Request, call int) {
+		writeJSON(w, http.StatusOK, strings.Replace(embeddingBody, "[0.5,-1.25,2]", "[0.5,null,2]", 1))
+	})
+	route := embedTestRoute(vendor.baseURL())
+	client := clientFor(t, vendor, route)
+	if _, err := client.Invoke(context.Background(), route, route.Models[0], embedQueryRequest("synthetic")); err == nil {
+		t.Fatal("null coordinate silently became zero")
+	}
+	if vendor.count() != 1 {
+		t.Fatal("unexpected dispatch count", vendor.count())
+	}
 }

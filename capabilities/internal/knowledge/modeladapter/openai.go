@@ -16,6 +16,7 @@ package modeladapter
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -34,8 +35,9 @@ const (
 	// embeddingsPath and chatCompletionsPath are the only two upstream paths. A
 	// route's canonical base URL is joined to one of them; no caller value ever
 	// reaches the destination.
-	embeddingsPath      = "/embeddings"
-	chatCompletionsPath = "/chat/completions"
+	embeddingsPath              = "/embeddings"
+	chatCompletionsPath         = "/chat/completions"
+	generationSystemInstruction = models.BoundedSystemInstruction + ` Return a JSON object with exactly "text" (a string) and "citation_ids" (an array of supplied evidence IDs).`
 
 	// Bound the production transport. The per-call context deadline (derived from
 	// the reviewed route ceiling) is the effective limit; these are the floor
@@ -308,7 +310,7 @@ func translate(route Route, rule ModelRule, request models.BoundedRequest, limit
 		payload := chatRequest{
 			Model: rule.ModelID,
 			Messages: []chatMessage{
-				{Role: "system", Content: models.BoundedSystemInstruction},
+				{Role: "system", Content: generationSystemInstruction},
 				{Role: "user", Content: string(user)},
 			},
 			ResponseFormat: chatResponseFormat{Type: "json_object"},
@@ -320,7 +322,7 @@ func translate(route Route, rule ModelRule, request models.BoundedRequest, limit
 			MaxTokens: limits.MaxOutputTokens,
 			Provider:  upstreamProvider(route),
 		}
-		return chatCompletionsPath, payload, len(user) + len(models.BoundedSystemInstruction), nil
+		return chatCompletionsPath, payload, len(user) + len(generationSystemInstruction), nil
 	}
 	return "", nil, 0, models.ErrUnavailable
 }
@@ -400,8 +402,8 @@ type userData struct {
 type embeddingResponse struct {
 	Model string `json:"model"`
 	Data  []struct {
-		Index     *int      `json:"index"`
-		Embedding []float32 `json:"embedding"`
+		Index     *int       `json:"index"`
+		Embedding []*float32 `json:"embedding"`
 	} `json:"data"`
 	Usage json.RawMessage `json:"usage"`
 }
@@ -448,17 +450,20 @@ func decodeEmbedding(raw []byte, rule ModelRule, limits models.Limits, requestID
 	if rule.Dimension < 1 || len(vector.Embedding) != rule.Dimension {
 		return models.Result{}, invalidResult("embedding vector does not match the declared dimension")
 	}
-	for _, value := range vector.Embedding {
-		if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
-			return models.Result{}, invalidResult("embedding vector is not finite")
+	coordinates := make([]float32, len(vector.Embedding))
+	for i, value := range vector.Embedding {
+		if value == nil || math.IsNaN(float64(*value)) || math.IsInf(float64(*value), 0) {
+			return models.Result{}, invalidResult("embedding coordinate is not a finite number")
 		}
+		coordinates[i] = *value
 	}
+
 	usage, err := embeddingUsage(decoded.Usage, limits.MaxInputTokens)
 	if err != nil {
 		return models.Result{}, err
 	}
 	return models.Result{
-		Vector:            append([]float32(nil), vector.Embedding...),
+		Vector:            coordinates,
 		Usage:             usage,
 		ProviderRequestID: requestID,
 	}, nil
@@ -733,9 +738,7 @@ func nilOrEmpty(raw json.RawMessage) bool {
 	return absentOrNull(raw) || bytes.Equal(bytes.TrimSpace(raw), []byte(`""`))
 }
 
-// safeRequestID returns the upstream request ID only when it is an opaque,
-// bounded, printable ASCII value. It never comes from the body or an error, so it
-// can only be an identifier the intermediary itself put in the header.
+// Hash vendor IDs because upstream headers can contain echoed credentials.
 func safeRequestID(id string) string {
 	if id == "" || len(id) > requestIDLimit {
 		return ""
@@ -745,7 +748,7 @@ func safeRequestID(id string) string {
 			return ""
 		}
 	}
-	return id
+	return fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(id)))
 }
 
 // invalidResult is a static, value-free rejection. It keeps errors.Is with the

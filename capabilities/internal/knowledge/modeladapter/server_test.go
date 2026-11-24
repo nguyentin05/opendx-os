@@ -1095,3 +1095,23 @@ func (c *captureHandler) contentType() string {
 	defer c.mu.Unlock()
 	return c.head.Get("Content-Type")
 }
+
+func TestBoundedAdapterUsesRequestedTimeout(t *testing.T) {
+	cfg := mustParseConfig(t, configFixture)
+	upstream := &stubUpstream{}
+	upstream.behave(func(ctx context.Context, _ Route, _ ModelRule, _ models.BoundedRequest) (models.Result, error) {
+		deadline, ok := ctx.Deadline()
+		if !ok || time.Until(deadline) > 100*time.Millisecond {
+			return models.Result{Vector: make([]float32, 1536)}, nil
+		}
+		<-ctx.Done()
+		return models.Result{}, ctx.Err()
+	})
+	harness := newAdapterHarness(t, cfg, upstream)
+	request := embedRequest()
+	request.Limits.TimeoutMS = 20
+	response, _ := harness.send(http.MethodPost, harness.path(t, 0), boundedBody(t, request), jsonHeader(adapterToken))
+	if response.StatusCode != http.StatusGatewayTimeout || upstream.count() != 1 {
+		t.Fatal("requested deadline was ignored", response.StatusCode, upstream.count())
+	}
+}

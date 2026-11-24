@@ -7,9 +7,10 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import stat
 import time
 import uuid
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs, unquote
 
 import rag_sources as source
 import rag_personal as personal
@@ -34,6 +35,41 @@ def check_target(url):
         raise NotRun('NOT_RUN: disposable test database required')
 
 
+def check_write_target(read, write):
+    check_target(read)
+    check_target(write)
+    try:
+        source_target, write_target = urlsplit(read), urlsplit(write)
+        allowed = {'sslmode', 'sslrootcert', 'sslcert', 'sslkey', 'connect_timeout', 'application_name'}
+        for target in (source_target, write_target):
+            if not target.hostname or not set(parse_qs(target.query, keep_blank_values=True)) <= allowed:
+                raise ValueError
+        if ((source_target.hostname.lower(), source_target.port or 5432, unquote(source_target.path)) !=
+                (write_target.hostname.lower(), write_target.port or 5432, unquote(write_target.path)) or
+                unquote(write_target.username or '') != 'dxos_authz'):
+            raise ValueError
+    except ValueError:
+        raise NotRun('NOT_RUN: approval connection must target the same disposable database') from None
+
+
+def check_cli_inputs():
+    executable = Path(os.environ['RAG_REAL_MODEL_CLI'])
+    token = Path(os.environ['RAG_REAL_ADMIN_TOKEN_FILE'])
+    try:
+        info = token.stat()
+        valid = (executable.is_file() and os.access(executable, os.X_OK) and
+                 stat.S_ISREG(info.st_mode) and info.st_mode & 0o400 and
+                 not info.st_mode & 0o077 and 0 < info.st_size <= 16384 and os.access(token, os.R_OK))
+    except OSError:
+        valid = False
+    if not valid:
+        raise NotRun('NOT_RUN: executable CLI and protected token required')
+    for name in ('OIDC_ISSUER_URL', 'OIDC_JWKS_URL'):
+        target = urlsplit(os.environ[name])
+        if target.scheme not in ('http', 'https') or not target.hostname:
+            raise NotRun('NOT_RUN: valid ' + name + ' required')
+
+
 def check_state(state, expected, review):
     for name, purpose in (('embed', 'EMBED'), ('generate', 'GENERATE')):
         profile = state.get(name) or {}
@@ -54,10 +90,27 @@ def check_semantic(reply, document, lexical_match):
 
 
 def check_answer(reply, document, chunks, profile):
-    source.require(isinstance(reply.get('answer'), str) and 'BLUE-17' in reply['answer'] and
+    source.require(reply.get('status') == 'ANSWERED' and isinstance(reply.get('answer'), str) and 'BLUE-17' in reply['answer'] and
                    reply.get('model_profile') == {'id': profile[0], 'revision': profile[1]} and
-                   any(c.get('document_id') == document and c.get('chunk_id') in chunks
-                       for c in reply.get('citations', [])), 'grounded generation evidence missing')
+                   reply.get('citations') and all(c.get('document_id') == document and c.get('chunk_id') in chunks
+                       for c in reply['citations']), 'grounded generation evidence missing')
+
+
+def check_denied(reply):
+    source.require(reply.get('status') == 'NO_EVIDENCE' and reply.get('answer') is None and
+                   reply.get('results') == [] and reply.get('citations') == [], 'denied response disclosed evidence')
+
+
+def check_withdrawal(result, approval):
+    source.require(result.get('approval') == approval and result.get('changed') is True,
+                   'exact approval withdrawal missing')
+
+
+def check_revoked(reply, document):
+    source.require(reply.get('status') == 'SEARCH_ONLY' and reply.get('reason') == 'POLICY_BLOCKED' and
+                   reply.get('answer') is None and reply.get('citations') == [] and
+                   any(hit.get('document_id') == document for hit in reply.get('results', [])),
+                   'visible source with blocked generation required')
 
 
 def await_generation(document, profile, dimension):
@@ -87,6 +140,7 @@ def preflight():
                 'RAG_REAL_MODELS_REVIEW_REF', 'RAG_REAL_TEST_APP', 'RAG_REAL_TEST_ROLE',
                 'RAG_REAL_EMBED_APPROVAL', 'RAG_REAL_GENERATE_APPROVAL',
                 'RAG_REAL_MODEL_CLI', 'RAG_REAL_ADMIN_TOKEN_FILE', 'AI_MODEL_APPROVAL_DATABASE_URL',
+                'OIDC_ISSUER_URL', 'OIDC_JWKS_URL', 'OIDC_AUDIENCE',
                 'CLAMAV_ADDRESS', 'RAG_INTERNAL_AI_URL', 'RAG_PARSER_QUALIFIED',
                 'RAG_SOURCE_QUALIFIED', 'RAG_METADATA_QUALIFIED')
     for name in required:
@@ -95,12 +149,13 @@ def preflight():
     for name in ('RAG_PARSER_QUALIFIED', 'RAG_SOURCE_QUALIFIED', 'RAG_METADATA_QUALIFIED'):
         if os.environ[name] != 'true':
             raise NotRun('NOT_RUN: missing ' + name)
-    check_target(os.environ['TEST_DATABASE_URL'])
+    check_write_target(os.environ['TEST_DATABASE_URL'], os.environ['AI_MODEL_APPROVAL_DATABASE_URL'])
+    if any(os.environ.get(name) for name in ('PGHOSTADDR', 'PGSERVICE', 'PGSERVICEFILE')):
+        raise NotRun('NOT_RUN: database target overrides must be unset')
+    check_cli_inputs()
     app = os.environ['RAG_REAL_TEST_APP']
     if not re.fullmatch(r'ragreal[a-z0-9_-]{1,50}', app):
         raise NotRun('NOT_RUN: distinct ragreal synthetic library required')
-    if not Path(os.environ['RAG_REAL_MODEL_CLI']).is_file() or not Path(os.environ['RAG_REAL_ADMIN_TOKEN_FILE']).is_file():
-        raise NotRun('NOT_RUN: protected CLI and operator token files required')
     expected = {}
     state = {}
     for name, purpose, slot in (('embed', 'EMBED', 'EMBEDDING'), ('generate', 'GENERATE', 'LLM')):
@@ -180,17 +235,23 @@ def run():
                    'successful real model operations missing')
     before = operation_count(app)
     denied = api('/answers', role, {'scope': scope, 'query': 'What is the synthetic project code?'}, 'B')
-    source.require(not denied.get('answer') and not denied.get('results') and operation_count(app) == before,
+    check_denied(denied)
+    source.require(operation_count(app) == before,
                    'denied user caused dispatch or disclosure')
     # The explicitly consented disposable approval stays revoked after this gate.
+    approval = str(uuid.UUID(os.environ['RAG_REAL_GENERATE_APPROVAL']))
     result = subprocess.run([os.environ['RAG_REAL_MODEL_CLI'], 'policy', 'revoke',
-                             '--approval', os.environ['RAG_REAL_GENERATE_APPROVAL'],
+                             '--approval', approval, '--json',
                              '--reason', 'synthetic live qualification', '--token-file',
                              os.environ['RAG_REAL_ADMIN_TOKEN_FILE']], capture_output=True, timeout=65)
     source.require(result.returncode == 0, 'qualification approval revocation failed')
+    check_withdrawal(json.loads(result.stdout), approval)
+    audited = db("SELECT count(*) FROM cap_ai.agent_processing_approvals a JOIN cap_ai.agent_processing_approval_events e ON e.approval_id=a.id WHERE a.id=" + literal(approval) + " AND NOT a.enabled AND e.action='DISABLE' AND e.session_identity='dxos_authz' AND e.reason='synthetic live qualification'")
+    source.require(audited == '1', 'audited withdrawal missing from disposable database')
     before = operation_count(app, 'GENERATE')
     revoked = api('/answers', role, {'scope': scope, 'query': 'What is the synthetic project code?'})
-    source.require(not revoked.get('answer') and operation_count(app, 'GENERATE') == before,
+    check_revoked(revoked, document)
+    source.require(operation_count(app, 'GENERATE') == before,
                    'revoked processing approval caused generation')
     print(json.dumps({'status': 'PASS', 'document_id': document, 'run_id': generation['run'],
                       'generation_id': generation['generation'], 'profiles': expected}))

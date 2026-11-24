@@ -335,6 +335,9 @@ func validateRoute(r *Route) error {
 	// Store the canonical base so one implementation serves both the digest and
 	// the upstream request path.
 	r.BaseURL = base
+	if r.CredentialRef == "MODEL_ADAPTER_TOKEN" {
+		return invalid("credential_ref names the internal bearer")
+	}
 	if !secretReference.MatchString(r.CredentialRef) {
 		return invalid("credential_ref is not an environment reference")
 	}

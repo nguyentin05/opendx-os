@@ -316,7 +316,7 @@ func requestWithinBounds(rule ModelRule, request models.BoundedRequest) bool {
 }
 
 // dispatch performs the one upstream call an accepted request earns, with a
-// deadline bounded by the route ceiling. A failure is final: there is no retry,
+// deadline bounded by the requested timeout. A failure is final: there is no retry,
 // no second route and no fallback model.
 func dispatch(w http.ResponseWriter, r *http.Request, h *handler, route Route, rule ModelRule, request models.BoundedRequest) {
 	input, err := json.Marshal(request.Input)
@@ -324,7 +324,7 @@ func dispatch(w http.ResponseWriter, r *http.Request, h *handler, route Route, r
 		reject(w, http.StatusBadRequest)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(rule.Limits.TimeoutMS)*time.Millisecond)
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(request.Limits.TimeoutMS)*time.Millisecond)
 	defer cancel()
 	result, err := h.upstream.Invoke(ctx, route, rule, request)
 	if err != nil {
