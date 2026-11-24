@@ -95,30 +95,18 @@ spec:
       select:
       - role: role_procurement_requester
         scope: own
-        columns: &procurement_columns
-        - id
-        - created_by
-        - org_unit_id
-        - vendor_name
-        - item_description
-        - quoted_amount
-        - quote_file_id
-        - rejection_reason
-        - vendor_id
-        - status
-        - version
-        - created_at
-        - updated_at
+        # Every column, including any added in a later version.
+        columns: "*"
       # A draft is the requester's own until it is submitted.
       - role: role_procurement_manager
         scope: department
-        columns: *procurement_columns
+        columns: "*"
         recordFilter:
           status:
             _neq: DRAFT
       - role: role_procurement_finance
         scope: organization
-        columns: *procurement_columns
+        columns: "*"
         recordFilter:
           status:
             _neq: DRAFT

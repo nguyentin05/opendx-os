@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -60,6 +61,9 @@ func TestRoundTripSupportedPackages(t *testing.T) {
 				}
 			}
 
+			if pkg == "procurement" && !slices.Equal(cr.Spec.Tables[0].Access.Select[0].Columns, []string{"*"}) {
+				t.Fatalf(`the resource keeps columns: "*" as written, got %v`, cr.Spec.Tables[0].Access.Select[0].Columns)
+			}
 			got, flows, err := ToManifest(cr)
 			if err != nil {
 				t.Fatalf("ToManifest: %v", err)
