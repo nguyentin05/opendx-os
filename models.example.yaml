@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+#
+# Example deployment declaration. Copy to models.yaml and replace every
+# placeholder with the exact model, revision and endpoint a deployment review
+# qualified. Nothing here is a qualified route or a known-good model.
+#
+# This file is the single source of the models one installation may call: the Go
+# runtime derives each immutable profile from it, and the LiteLLM proxy
+# configuration is generated from it. Store secret *references* only; the values
+# are injected into the proxy container environment by the deployment.
+#
+# `local` means a trusted, operator-controlled inference endpoint inside the
+# deployment network (a private or loopback address, or a single-label service
+# name such as `ollama`). A cloud endpoint, a public address, a credential, a
+# query, a fragment or a redirect target is rejected. `hosted` requires an HTTPS
+# endpoint and an environment reference for the credential.
+#
+# Validation is not qualification: a declaration that loads proves only that it
+# is unambiguous and safe to interpret. The route becomes usable after the
+# deployment probe in the reviewed runbook shows the exact upstream model and, for
+# embeddings, the exact indexing and query encoding.
+enabled: false
+embedding:
+  # Provider prefix and pinned upstream model identifier, never a router alias,
+  # wildcard or routing suffix.
+  model: 'ollama/pinned-embedding-model'
+  execution: local
+  api_base: http://ollama:11434
+  revision: 'qualified-model-revision'
+  dimension: 768
+  # Declared together, or not at all. Only when the qualified model encodes index
+  # and query text differently.
+  # indexing_parameters: {input_type: passage}
+  # query_parameters: {input_type: query}
+  # Optional; the defaults are 8192 input tokens, 2048 output tokens, 1048576
+  # bytes and 30000 ms. When declared, all four bounds are required.
+  # limits: {max_input_tokens: 8192, max_output_tokens: 2048, max_bytes: 1048576, timeout_ms: 30000}
+llm:
+  model: 'openrouter/qualified-model'
+  execution: hosted
+  api_key_env: OPENROUTER_API_KEY
+  revision: 'reviewed-route-revision'
+  # Optional immutable provider routing of a hosted route. It is part of the
+  # reviewed identity, never a request parameter.
+  # routing: {provider: provider-slug, data_collection: deny, zdr: true}

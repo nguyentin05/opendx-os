@@ -17,7 +17,12 @@ type ProfileRef struct {
 	ID       string `json:"id"`
 	Revision int64  `json:"revision"`
 }
-type Deployment struct {
+
+// legacyRuntimeConfig is the pre-deployment-selection file shape read by the
+// baseline runtime path. The canonical declaration is Deployment in
+// deployment.go; the baseline path is replaced in a later task and this shape
+// then disappears.
+type legacyRuntimeConfig struct {
 	Providers []struct {
 		ID            string `json:"id"`
 		Endpoint      string `json:"endpoint"`
@@ -54,7 +59,7 @@ func FromEnvironment(ctx context.Context, getenv func(string) string) (*Gateway,
 	if err != nil || len(data) > maxCatalogBytes {
 		return fail()
 	}
-	var config Deployment
+	var config legacyRuntimeConfig
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	registryEnabled := getenv("RAG_GLOBAL_MODEL_REGISTRY_ENABLED") == "true"
