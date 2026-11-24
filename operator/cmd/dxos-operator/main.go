@@ -43,6 +43,9 @@ import (
 	"github.com/opendx-os/opendx-os/operator/internal/workflows"
 )
 
+// version is stamped at build time with -ldflags "-X main.version=...".
+var version = "dev"
+
 func main() {
 	os.Exit(runCLI(os.Args[1:], os.Stdout, os.Stderr, nil, nil))
 }
@@ -80,7 +83,7 @@ func runCLI(args []string, stdout, stderr io.Writer, applier *apply.Runner, reco
 		return runExportCRDCmd(args[1:], stdout, stderr)
 
 	case "version":
-		_, _ = fmt.Fprintln(stdout, "dxos-operator v0.1.0 (DX-OS Open-Core OLP 2026)")
+		_, _ = fmt.Fprintf(stdout, "dxos-operator %s (DX-OS Open-Core OLP 2026)\n", version)
 		return 0
 
 	default:

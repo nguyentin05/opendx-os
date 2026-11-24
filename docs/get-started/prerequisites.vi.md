@@ -5,7 +5,7 @@ diataxis: tutorial
 audience: [evaluator, operator]
 status: active
 owner: platform
-last_reviewed: 2026-11-18
+last_reviewed: 2026-11-23
 source_reviewed: 2026-11-18
 ---
 
@@ -15,8 +15,8 @@ Máy của bạn cần có:
 
 - Docker Engine 24 trở lên và Docker Compose v2;
 - ít nhất 8 GB RAM dành cho Docker (khuyến nghị 16 GB);
-- các cổng `5173`, `8080`, `8085`, `9080` và `5432` đang trống, hoặc đã đổi giá
-  trị trong `.env`;
+- các cổng `5173`, `5432`, `8080`, `8082`, `8085`, `8091` và `9080` đang trống,
+  hoặc đã đổi các giá trị `*_PORT` tương ứng trong `.env`;
 - `bash`, `curl` và `git`.
 
 Công cụ không bắt buộc:

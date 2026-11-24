@@ -5,7 +5,7 @@ diataxis: reference
 audience: [app-author, platform-developer, operator]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-23
 ---
 
 ### Installation and registry
@@ -16,12 +16,15 @@ its capabilities in `core.app_capabilities`. Each attempt is recorded in
 `core.app_deployments`; a failed upgrade keeps the previous version `Ready` and
 records `last_error`, a failed first install leaves the row `Failed`. A role
 owned by another app, a capability or the platform, or a capability that is not
-enabled, refuses the app before any change. Uninstalling marks the row `Removed`,
-drops its Hasura permissions and releases its capabilities; the domain tables,
-data, roles and role assignments are kept. Roles dropped from a manifest are
-deleted with their assignments.
+enabled, refuses the app before any change. At most one `Ready` application may
+enable the personal library. Uninstalling marks the row `Removed`, drops its
+Hasura permissions, retires its packaged knowledge and releases its
+capabilities; the domain tables, data, roles and role assignments are kept.
+Roles dropped from a manifest are deleted with their assignments.
 
-An upgrade may add a table, a nullable column or a state. A table that is no
+An upgrade may add a table, a nullable column or a state, and the system
+columns a new declaration needs when they have a default (for example `status`
+when a table gains a state machine). A table that is no
 longer declared loses its Hasura permissions and keeps its rows. A changed type
 or nullability, a new required column, a column that is no longer declared, or
 a state removed while records use it refuses the upgrade, and the previous

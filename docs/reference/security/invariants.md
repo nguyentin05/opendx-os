@@ -5,7 +5,7 @@ diataxis: reference
 audience: [security-reviewer, platform-developer]
 status: active
 owner: platform
-last_reviewed: 2026-11-22
+last_reviewed: 2026-11-23
 ---
 
 ## Security invariants
@@ -18,10 +18,10 @@ last_reviewed: 2026-11-22
 - Only clean files with the correct permissions may be used. Ordinary roles may not confirm `CLEAN` themselves; a scan error does not open access.
 - Event delivery may repeat; every business effect must tolerate retries. Reconcile and export must also be safe to re-run.
 - RAG is limited by app/source/collection, owner and caller permissions; results carry cited sources. OCR must not exceed permissions through a client-supplied `file_id`.
-- Audit appends serialize within their explicitly defined chain and have checkpoints outside the DB; preserve legacy chain evidence through an approved migration. When changing audit, check concurrent writes and detect edits before the checkpoint. Audit payloads never leave the server raw: record history is a fixed projection of time, actor, action, acting role, version and, for process tables, status.
+- Audit appends serialize within their explicitly defined chain and have checkpoints outside the DB (checkpoint anchoring is not implemented yet); preserve legacy chain evidence through an approved migration. When changing audit, check concurrent writes and detect edits before the checkpoint. Audit payloads never leave the server raw: record history is a fixed projection of time, actor, action, acting role, version and, for process tables, status.
 
 ## Protocol response contract
 
-Command REST: missing/invalid authentication returns `401`; authenticated but insufficient permission returns `403`; a stale version or conflicting idempotency key returns `409`; using an unclean file returns `422`. Perform the permission check before revealing the state/version/file of a resource outside the caller's scope.
+Command REST: a malformed request or payload returns `400`; missing/invalid authentication returns `401`; a role or `recordFilter` that refuses the command returns `403`; an unknown record, or one the acting role cannot read, returns `404`; a stale version, a state outside the command's `from`, or an idempotency key reused with a different payload returns `409`; a required attachment that is missing or not `CLEAN` returns `422`; an unavailable dependency returns `503`. The read check comes first, so a record outside the caller's scope reveals neither its state, its version nor its files.
 
 Hasura GraphQL: check `data`, `errors`, the number of affected rows, and DB state. A row filter may return an empty result; a disallowed field may cause a GraphQL error even when HTTP is `200`. The requirement is met when no data/relationship outside permissions is leaked and no unauthorized write occurs; not every rejection must be HTTP `403`.

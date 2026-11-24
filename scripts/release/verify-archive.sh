@@ -52,11 +52,16 @@ for pattern in "${forbidden[@]}"; do
         fail "archive contains ${pattern}"
     fi
 done
+# Local environment files hold generated secrets; only .env.example ships.
+if grep -Eq -- '/\.env(\.[^/]*)?$' <<<"$(grep -Fv -- '/.env.example' <<<"${listing}")"; then
+    fail "archive contains a local .env file"
+fi
 
 required=(
     "LICENSE"
     "NOTICE"
     "COPYRIGHT.txt"
+    "THIRD_PARTY_LICENSES.txt"
     "README.md"
     "compose.yaml"
     ".env.example"

@@ -68,7 +68,7 @@ toolchain bump fails instead of silently downloading another Go release.
 | `hygiene` | `make check-hygiene` | none | `make check-hygiene` |
 | `architecture` | `make check-architecture` | none | `make check-architecture` |
 | `backend (operator)`, `backend (capabilities)` | `go vet ./...`, `go test -race -count=1 -covermode=atomic ./...` with coverage written to `$RUNNER_TEMP`, then `CGO_ENABLED=0 go build ./...` | none | `cd <module> && go vet ./... && go test -race -count=1 ./... && CGO_ENABLED=0 go build ./...` |
-| `lint (operator)`, `lint (capabilities)` | golangci-lint v2 with the root `.golangci.yml`; pull requests report only issues the change introduces | none | `cd <module> && golangci-lint run --config ../.golangci.yml` |
+| `lint (operator)`, `lint (capabilities)` | golangci-lint v2.15.0 with the root `.golangci.yml` (errcheck, govet, ineffassign, staticcheck, unused) over the whole module | none | `cd <module> && golangci-lint run --config ../.golangci.yml` |
 | `unit-test` | `python3 -m unittest discover -s tests -p 'test_*.py' -v` | none | `python3 -m pip install pyyaml && python3 -m unittest discover -s tests -p 'test_*.py' -v` |
 | `ui` | `npm ci`, `npm test`, `npm run build` in `workspace-ui/` | none | `cd workspace-ui && npm ci && npm test && npm run build` |
 | `integration` | `go test -tags=integration -p 1 -count=1 ./...` in both modules, then the same pair again against one server | `pgvector/pgvector:pg17`, superuser login, database name containing `test`, passwordless host auth for test roles | see below |
@@ -78,12 +78,14 @@ The Go jobs publish a coverage total in the job summary. Every job that runs a
 suite also runs `.github/actions/assert-clean-tree`, which fails if the suite
 modified tracked or untracked files.
 
-Two workflows cover suites that need an external service:
+Other workflows cover external services and security scans:
 
 | Workflow | What it verifies |
 | --- | --- |
 | `keycloak-conformance.yml` | Imports the shipped realm into a disposable Keycloak and checks discovery, JWKS, the `dxos-runtime` audience mapper, token claims from `dxos-portal`, and wrong-password rejection |
 | `release-gate.yml` | Negative tests for the archive gate, then packages a real archive, verifies it, and checks its checksum and install script |
+| `security.yml` | Trivy `fs` and `config` scans that fail on HIGH or CRITICAL findings (accepted findings are listed with a reason in `.trivyignore.yaml`), gitleaks, and govulncheck for both Go modules, which fails on a reachable vulnerability |
+| `codeql.yml` | CodeQL analysis of the Go, JavaScript/TypeScript and Python code |
 
 The integration tests create and drop one database per test, so the login must be
 a superuser, the URL must name a database containing `test` (the harness rejects
@@ -115,7 +117,7 @@ jobs need their own environment.
 [releasing](releasing.md#3-tag-and-run-the-release-workflow). Pull requests build
 without pushing; pushes to `main` and `v*` tags publish to
 `ghcr.io/nguyentin05/<image>` and attest the image digest.
-`.github/workflows/release.yml` runs on `v*` tags and manual dispatch. It
+`.github/workflows/release.yml` runs only when a `v*` tag is pushed. It
 rejects a tag that is not an ancestor of `main`, warns when the tag is
 lightweight, packs the source tree, runs the archive gate, generates a CycloneDX
 SBOM and `SHA256SUMS`, attests both, and attaches the assets to a release. It
@@ -129,24 +131,23 @@ scripts/package_release.sh 0.2.0-local
 scripts/release/verify-archive.sh dist/dxos-open-core-0.2.0-local.tar.gz
 scripts/release/test-verify-archive.sh
 docker buildx build --platform linux/amd64 -f capabilities/Dockerfile \
-  --build-arg SERVICE=cap-ai -t opendx-cap-ai:local capabilities
+  --build-context legal=. --build-arg SERVICE=cap-ai -t opendx-cap-ai:local capabilities
 docker buildx build --platform linux/amd64 -f workspace-ui/Dockerfile \
-  -t opendx-workspace-ui:local workspace-ui
+  --build-context legal=. -t opendx-workspace-ui:local workspace-ui
 ```
 
-Dispatch the workflows and verify a downloaded artifact:
+Dispatch the image workflow, push a tag for the release workflow, and verify a
+downloaded artifact:
 
 ```sh
 gh workflow run images.yml
-gh workflow run release.yml -f tag=vX.Y.Z
 gh attestation verify dxos-open-core-X.Y.Z.tar.gz --repo nguyentin05/opendx-os
 gh attestation verify oci://ghcr.io/nguyentin05/opendx-operator:X.Y.Z --repo nguyentin05/opendx-os
 ```
 
 A local image build proves the Dockerfile target resolves; it does not prove the
-registry push, attestation, SBOM, or release upload. Dispatch `release.yml` for a
-tag only while its release is still a draft, and review the assets before
-publishing.
+registry push, attestation, SBOM, or release upload. Review the assets of the
+draft release before publishing it.
 
 ## Recording results
 

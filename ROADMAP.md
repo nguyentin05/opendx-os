@@ -25,7 +25,7 @@ changes are in [CHANGELOG.md](CHANGELOG.md); open work is tracked in
 - [x] Cross-department procurement app and demo organization seed.
 - [x] Bilingual documentation site.
 
-## v0.3.0: Workspace UI and delivery pipeline (in progress)
+## v0.3.0: Workspace UI and delivery pipeline (released 2026-11-23)
 
 - [x] Workspace Assistant across application and personal knowledge (#103).
 - [x] Controller split into the `dxos-controller` binary and image (#106).
@@ -37,7 +37,16 @@ changes are in [CHANGELOG.md](CHANGELOG.md); open work is tracked in
 - [x] Action inbox derived from record state, with the review work item closed by `complete_work_item` (#42).
 - [x] Vietnamese Workspace UI copy and sample application labels (#45).
 - [x] Run `cap-ai` from the default Compose stack without manual token setup.
-- [ ] README quickstart and screenshots (#47), documentation pass (#46), and the PoF checklist (#48).
+- [x] Documentation matched to the implementation (#46).
+- [x] Third-party license inventory and texts, Hasura community edition, and license files in every image (#48).
+- [x] Releases start only from a pushed tag (#137).
+
+## v1.0.0: Submission release
+
+- [ ] README quickstart and screenshots (#47).
+- [ ] `dxos-operator version` reports the build version (#138).
+- [ ] Documentation and UI build toolchain refresh (#139).
+- [ ] Durable model operations for knowledge ingestion (#136).
 
 ## v1.1.0: Data capability
 

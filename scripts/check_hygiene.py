@@ -15,6 +15,7 @@ REQUIRED_FILES = [
     "LICENSE",
     "NOTICE",
     "COPYRIGHT.txt",
+    "THIRD_PARTY_LICENSES.txt",
     "README.md",
     "CHANGELOG.md",
     "CONTRIBUTING.md",

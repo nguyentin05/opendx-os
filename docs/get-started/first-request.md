@@ -5,7 +5,7 @@ diataxis: tutorial
 audience: [evaluator, app-author]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-23
 ---
 
 # Complete a first request
@@ -22,9 +22,20 @@ After the stack is healthy and the Operator has installed the sample apps:
 scripts/seed-demo.py seed
 ```
 
-This creates three departments and six Keycloak accounts with procurement,
-maintenance, and timesheet roles. The demo password is `DEMO_PASSWORD` (default
-`Demo@2026`). The command is safe to re-run.
+This creates three departments and six Keycloak accounts. The demo password is
+`DEMO_PASSWORD` (default `Demo@2026`), and the command is safe to re-run.
+
+| Account | Department | Roles |
+| --- | --- | --- |
+| `an.nguyen` | Kinh doanh | procurement requester, timesheet employee |
+| `cuong.le` | Kinh doanh (head) | procurement requester and manager, timesheet manager |
+| `binh.tran` | Kỹ thuật | procurement requester, maintenance technician, timesheet employee |
+| `dung.pham` | Kỹ thuật (head) | procurement manager, maintenance manager, timesheet manager |
+| `giang.vo` | Tài chính | procurement finance, timesheet employee |
+| `quan.tri` | Tài chính | platform operator, auditor, HR administrator |
+
+When cap-ai is enabled, the five business accounts also get the personal library
+role.
 
 ## Run the approval flow
 
@@ -36,11 +47,17 @@ scripts/seed-demo.py flow
 
 The script:
 
-1. files a purchase request with a quote uploaded to cap-process;
-2. submits it with a versioned command;
-3. shows a stale-version refusal and a self-approval refusal;
-4. approves it as the department manager, then as the budget manager;
-5. shows the workflow review that the committed event opens in Kestra.
+1. files a purchase request as `an.nguyen`, with a quote uploaded to
+   cap-process and scanned by ClamAV;
+2. shows that the manager cannot act on a draft (`404`);
+3. submits it with a versioned command, and shows the review work item that the
+   workflow opens in Kestra;
+4. shows the refusals: a manager of another department (`404`) and the
+   requester approving their own request (`403`);
+5. approves it as the department manager (`BUDGET_REVIEW`), then as finance
+   (`APPROVED`);
+6. on a second request, refuses a rejection without a reason (`400`), rejects
+   it with one, and shows the requester reading the reason.
 
 Other demo scenarios:
 
@@ -53,10 +70,18 @@ scripts/seed-demo.py lines    # vendor list and request line items
 
 ## Inspect the result
 
-Open the App Shell at <http://localhost:5173> and sign in as a demo user to see
-the requests your role may read. In Hasura (<http://localhost:8080>) you can
-inspect `core.audit_logs` and the generated `domain.procurement_requests` row; its
-state and version should match the script output.
+Open the Workspace UI at <http://localhost:5173> and sign in as a demo user, for
+example `an.nguyen`. Under **Mua sắm vật tư** the approved request shows its
+state, version and **Lịch sử** (history): created, submitted, approved by the
+department and approved by finance. `cuong.le` sees requests waiting for them
+in **Chờ tôi xử lý** and their review items in **Việc của tôi**.
+
+The rows themselves are in PostgreSQL:
+
+```bash
+docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+  -c "SELECT status, version FROM domain.procurement_requests"'
+```
 
 ## What you just used
 

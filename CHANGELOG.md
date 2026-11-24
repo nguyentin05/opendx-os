@@ -11,6 +11,8 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-23
+
 ### Added
 
 - Record history: `GET /api/cap/process/records/{app_id}/{table}/{entity_id}/history`
@@ -51,6 +53,24 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Changed
 
+- Releases start only from a pushed `vX.Y.Z` tag: the release workflow has no
+  manual dispatch and still only drafts the release (#137).
+- Compose and the kind manifests run `hasura/graphql-engine:v2.45.1-ce`, the image
+  with only the open-source engine; the default image bundles proprietary
+  components.
+- `COPYRIGHT.txt` lists every third-party component in the builds, images and
+  services with its license, `THIRD_PARTY_LICENSES.txt`
+  reproduces the license texts of linked and bundled code
+  (`scripts/third_party_notices.py`), and `NOTICE` carries the required
+  Apache-2.0 attributions (#48). The files sit at the repository root, and every
+  project image carries them in `/usr/share/licenses/opendx-os/`; image builds
+  take the repository root as the named build context `legal`.
+- Documentation matches the implementation (#46): the manifest schema lists every
+  validator rule, the architecture and data contracts say what is not
+  implemented yet (audit checkpoint anchoring, OT and BI, OCR, gateway rate
+  limits, account sync, Kanban), and installation covers the Compose overlays
+  and the Kubernetes controller. `runtime-v1.openapi.yaml` adds the record
+  history route.
 - Procurement: finance no longer receives the manager's review work item; its
   own budget step stays available through the record inbox (#27).
 - Workspace UI: My Work and the acting-role switcher show the role's manifest
@@ -74,6 +94,8 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Fixed
 
+- `scripts/restore.sh` checks restored objects against `core.files`; it queried
+  a table that no longer exists and failed after replacing the data.
 - `scripts/test-compose.sh` no longer fails when `ENABLED_CAPABILITIES` leaves
   off a capability that an application in `apps/` declares; it reports that
   application as not installed (#65).
@@ -103,6 +125,9 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ### Security
 
+- `scripts/package_release.sh` ships only git-tracked files from a checkout, and
+  the archive gate refuses `.env` files other than `.env.example`; a locally
+  packaged archive could carry `.env.rag` secrets.
 - Work items are no longer readable app-wide: a role reads one only when it may
   read the source record, and items without a source remain app-wide (#27).
 - Procurement roles no longer read every account's email through the shared
@@ -208,6 +233,7 @@ is published; see [Releasing](docs/contribute/releasing.md).
 - Apache-2.0 SPDX headers, LF line endings, tier boundary checks, and file
   quarantine for non-`CLEAN` uploads.
 
-[Unreleased]: https://github.com/nguyentin05/opendx-os/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/nguyentin05/opendx-os/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/nguyentin05/opendx-os/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/nguyentin05/opendx-os/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/nguyentin05/opendx-os/releases/tag/v0.1.0

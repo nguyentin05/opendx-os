@@ -10,13 +10,20 @@ last_reviewed: 2026-11-23
 
 # OpenDX-OS Installation Guide
 
-A qualified local environment is disposable and provisions restricted roles before
-Hasura and cap-process, and delays persistent Kestra until its database is created.
-Use [Verification](../contribute/verification.md) to record evidence. The generic
-archive procedure below is a release procedure; it does not by itself establish
-clean-machine installation or frontend readiness. Only procurement/process_fixture
-are supported in this scope; registry discovery and beta automatic-workflow
-readiness remain open.
+This page installs OpenDX-OS with Docker Compose, from a release archive or a
+checkout, and on a development Kubernetes cluster. A local stack is disposable:
+PostgreSQL provisions the restricted runtime roles before Hasura and the
+capability services start, and Kestra waits until its own database exists.
+Record evidence with [Verification](../contribute/verification.md).
+
+The Compose files:
+
+| File | Adds |
+| --- | --- |
+| `compose.yaml` | PostgreSQL, Hasura, `dxos-authz`, Keycloak, SeaweedFS, ClamAV, Kestra, the operator, cap-process, cap-hr, APISIX and the Workspace UI |
+| `compose.rag.yaml` | cap-ai, its parser and worker, and `dxos-knowledge-dispatcher`; started by `make rag-up` ([knowledge models](../guides/knowledge/models.md#compose-installation)) |
+| `compose.models.yaml` | On top of `compose.rag.yaml`: pgvector (`pgvector/pgvector:pg17`) and deployment-controlled model configuration ([knowledge models](../guides/knowledge/models.md)) |
+| `compose.integration.yaml` | Fixtures for the integration test suite only |
 
 ## Prerequisites
 
@@ -30,14 +37,14 @@ readiness remain open.
 
 1. Build the release archive:
    ```bash
-   ./scripts/package_release.sh 0.1.0-demo
-   sha256sum -c dist/dxos-open-core-0.1.0-demo.tar.gz.sha256
+   ./scripts/package_release.sh 0.3.0
+   (cd dist && sha256sum -c dxos-open-core-0.3.0.tar.gz.sha256)
    ```
 
 2. Extract the archive outside the Git repository and run the installer:
    ```bash
-   tar -xzf dist/dxos-open-core-0.1.0-demo.tar.gz -C /tmp
-   /tmp/dxos-open-core-0.1.0-demo/scripts/install.sh /opt/opendx-os
+   tar -xzf dist/dxos-open-core-0.3.0.tar.gz -C /tmp
+   /tmp/dxos-open-core-0.3.0/scripts/install.sh /opt/opendx-os
    ```
 
 3. Configure environment variables and start services:
@@ -50,8 +57,10 @@ readiness remain open.
    At first start PostgreSQL loads the capabilities listed in
    `ENABLED_CAPABILITIES` (default `cap-process,cap-hr,cap-work,cap-data,cap-ai`, which
    the sample apps need), sets the runtime role passwords
-   (`HASURA_DATABASE_PASSWORD`, `PROCESS_DATABASE_PASSWORD`) and creates Kestra's
-   own `dxos_kestra` database (`KESTRA_DATABASE_PASSWORD`), all in
+   (`HASURA_DATABASE_PASSWORD`, `AUTHZ_DATABASE_PASSWORD`,
+   `PROCESS_DATABASE_PASSWORD`, `HR_DATABASE_PASSWORD`, and the `AI_*` ones for
+   cap-ai) and creates Kestra's own `dxos_kestra` database
+   (`KESTRA_DATABASE_PASSWORD`), all in
    `platform/postgres/init/08_runtime_passwords.sh`. This happens once per data
    volume: after changing these values, recreate it with `docker compose down -v`.
    `scripts/test-compose.sh` waits for every service, logs in as each runtime role
@@ -105,7 +114,8 @@ readiness remain open.
    apply code as the Kubernetes controller. No container needs recreating:
    - copy a package directory in to install it; edit it to upgrade;
    - remove it to uninstall: the `core.apps` row becomes `Removed`, its Hasura
-     permissions are dropped, and the domain table, data and roles are kept;
+     permissions and flows are dropped, its packaged knowledge is retired, and
+     the domain tables, data and roles are kept;
    - Hasura metadata changed by hand is repaired on the next pass.
 
    The operator also deploys each application's workflows to Kestra and keeps
@@ -120,12 +130,17 @@ readiness remain open.
    is invalid (for instance half-copied), nothing is uninstalled. Follow it with
    `docker compose logs -f operator`.
 
-   Without Compose, validate and apply application manifests using `dxos-operator`:
+   Without Compose, build the binaries (`make -C operator build` writes
+   `operator/bin/dxos-operator` and `operator/bin/dxos-controller`). The build
+   stamps the operator version from `git describe --tags --always --dirty`
+   (falling back to `dev`), so `operator/bin/dxos-operator version` reports the
+   built revision. Then validate and apply application manifests with your own
+   `.env` values:
    ```bash
-   ./bin/dxos-operator validate apps/procurement/manifest.yaml
-   HASURA_URL=http://localhost:8080 HASURA_ADMIN_SECRET=dxos_admin_secret \
-   DATABASE_URL=postgres://dxos_admin:dxos_secret@localhost:5432/dxos_db?sslmode=disable \
-   ./bin/dxos-operator apply apps/procurement/manifest.yaml
+   operator/bin/dxos-operator validate apps/procurement/manifest.yaml
+   HASURA_URL=http://localhost:8080 HASURA_ADMIN_SECRET=<HASURA_ADMIN_SECRET> \
+   DATABASE_URL='postgres://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:5432/<POSTGRES_DB>?sslmode=disable' \
+   operator/bin/dxos-operator apply apps/procurement/manifest.yaml
    ```
 
 ## Rebuilding an existing model installation
@@ -202,11 +217,15 @@ above keeps working without a cluster.
 3. Status conditions: `Valid`, `SchemaInSync`, `PermissionsInSync`, `Published`,
    `Ready`, plus `status.activeVersion`. A blocked schema change keeps the previous
    version serving. Deleting the resource revokes its grants and marks the
-   `core.apps` row `Removed`; the domain table, data and roles are kept.
+   `core.apps` row `Removed`; the domain tables, data and roles are kept. A
+   resource may set `spec.interval` and `spec.suspend`, and the
+   `dxos.io/reconcileAt` annotation requests an immediate reconciliation
+   ([control plane](../architecture/control-plane.md#kubernetes-controller)).
 4. Remove the cluster with `scripts/k8s/dev-cluster.sh down`.
 
 For another cluster, create the `dxos-operator-config` Secret (keys `DATABASE_URL`,
 `HASURA_URL`, `HASURA_ADMIN_SECRET`) in `dxos-operator-system`, then run
-`make -C operator docker-build deploy IMG=<registry>/dxos-operator:<tag>`. The
+`make -C operator docker-build deploy IMG=<registry>/dxos-controller:<tag>`
+(`docker-build` builds the `dxos-controller` image from `Dockerfile.controller`). The
 operator needs an operator-privileged database connection; never reuse runtime
 service credentials.

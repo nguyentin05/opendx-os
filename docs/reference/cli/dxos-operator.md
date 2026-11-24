@@ -5,7 +5,7 @@ diataxis: reference
 audience: [operator, platform-developer]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-23
 ---
 
 # dxos-operator CLI
@@ -25,6 +25,19 @@ dxos-operator <command> [options]
 
 The Compose `operator` service runs `reconcile` over `apps/` every 30 seconds; see
 [installation](../../operations/installation.md).
+
+## Environment
+
+`apply` and `reconcile`, and `dxos-controller`, read:
+
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | Operator-privileged PostgreSQL connection (Compose uses `POSTGRES_USER`; never a runtime service account) |
+| `HASURA_URL`, `HASURA_ADMIN_SECRET` | Hasura metadata API |
+| `KESTRA_URL`, `KESTRA_USER`, `KESTRA_PASSWORD` | Optional. Deploys application workflows to Kestra; without `KESTRA_URL` flows are not deployed |
+| `RAG_PACKAGE_ARTIFACT_ROOT`, `CLAMAV_ADDRESS` | Optional. Stages and scans packaged knowledge sources for cap-ai |
+
+`version` prints a fixed string; it does not report the release version.
 
 The Kubernetes `DXApplication` controller is a separate binary, `dxos-controller`;
 see [installation](../../operations/installation.md#kubernetes-operator-development-cluster).

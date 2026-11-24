@@ -5,7 +5,7 @@ diataxis: reference
 audience: [security-reviewer, platform-developer]
 status: active
 owner: platform
-last_reviewed: 2026-11-16
+last_reviewed: 2026-11-23
 ---
 
 ## Eight mandatory acceptance groups
@@ -22,7 +22,10 @@ last_reviewed: 2026-11-16
 | S08 | Lineage | Every metric traces to the full, exact source `(app_id, entity_type, entity_id, entity_version)`; test both aggregation of multiple records and versions |
 
 Choose checks by scope and record results using [verification](../../contribute/verification.md).
-Release requires evidence for all eight groups on the revision/artifact being released.
+A release records evidence for every group on the revision and artifact being
+released. S02, S07 and S08 need the cap-data service, which is scheduled for
+v1.1.0 (#111); until then a release states them as not implemented rather than
+passed, and S06 has no OCR path to check.
 
 ## Additional review cases
 

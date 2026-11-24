@@ -75,7 +75,7 @@ create_cluster() {
 
 load_images() {
     log "building $IMAGE"
-    docker build -q -f "$ROOT/operator/Dockerfile.controller" -t "$IMAGE" "$ROOT/operator" >/dev/null
+    docker build -q --build-context legal="$ROOT" -f "$ROOT/operator/Dockerfile.controller" -t "$IMAGE" "$ROOT/operator" >/dev/null
     "$KIND" load docker-image "$IMAGE" --name "$CLUSTER"
     if docker image inspect postgres:17-alpine >/dev/null 2>&1; then
         "$KIND" load docker-image postgres:17-alpine --name "$CLUSTER"
