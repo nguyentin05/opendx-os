@@ -5,10 +5,13 @@
 // catalog: it loads and cross-checks declarations, delegates the disabled
 // candidate import to the registry, and runs one synthetic adapter verification.
 //
-// Nothing here activates a profile, binds a slot or sets a qualification flag.
-// Validation opens no database, resolves no secret and makes no network call; the
-// import uses only the separate catalog login; verification is an explicit,
-// single, bounded synthetic call against the reviewed adapter endpoint.
+// Nothing in the catalog, import or probe paths activates a profile, binds a slot
+// or sets a qualification flag. Validation opens no database, resolves no secret
+// and makes no network call; the import uses only the separate catalog login;
+// verification is an explicit, single, bounded synthetic call against the reviewed
+// adapter endpoint. The authenticated management methods live in admin.go, and each
+// one delegates every transition and every authority check to the SQL function that
+// owns it.
 package modelprovisioning
 
 import (
