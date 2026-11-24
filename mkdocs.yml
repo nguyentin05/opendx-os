@@ -217,6 +217,9 @@ extra:
     Backup and restore: Sao lưu và khôi phục
     Contribute: Đóng góp
     Verification: Kiểm chứng
+    Release test plan: Kế hoạch kiểm thử phát hành
+    Benchmark plan: Kế hoạch benchmark
+    Benchmark method: Phương pháp benchmark
     Source hygiene: Vệ sinh mã nguồn
     Releasing: Phát hành
     Writing docs: Viết tài liệu
@@ -292,6 +295,9 @@ nav:
   - Contribute:
       - Overview: contribute/index.md
       - Verification: contribute/verification.md
+      - Release test plan: contribute/test-plan.md
+      - Benchmark plan: contribute/benchmarks.md
+      - Benchmark method: contribute/benchmark-method.md
       - Source hygiene: contribute/source-hygiene.md
       - Releasing: contribute/releasing.md
       - Writing docs: contribute/writing-docs.md
