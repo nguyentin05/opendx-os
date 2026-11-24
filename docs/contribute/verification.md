@@ -85,6 +85,7 @@ Other workflows cover external services and security scans:
 | `keycloak-conformance.yml` | Imports the shipped realm into a disposable Keycloak and checks discovery, JWKS, the `dxos-runtime` audience mapper, token claims from `dxos-portal`, and wrong-password rejection |
 | `release-gate.yml` | Negative tests for the archive gate, then packages a real archive, verifies it, and checks its checksum and install script |
 | `security.yml` | Trivy `fs` and `config` scans that fail on HIGH or CRITICAL findings (accepted findings are listed with a reason in `.trivyignore.yaml`), gitleaks, and govulncheck for both Go modules, which fails on a reachable vulnerability |
+| `images.yml` | Trivy scan of every built image before it is pushed ([images and release](#images-and-release)) |
 | `codeql.yml` | CodeQL analysis of the Go, JavaScript/TypeScript and Python code |
 
 The integration tests create and drop one database per test, so the login must be
@@ -114,9 +115,11 @@ jobs need their own environment.
 ## Images and release
 
 `.github/workflows/images.yml` builds the nine image targets in
-[releasing](releasing.md#3-tag-and-run-the-release-workflow). Pull requests build
-without pushing; pushes to `main` and `v*` tags publish to
-`ghcr.io/nguyentin05/<image>` and attest the image digest.
+[releasing](releasing.md#3-tag-and-run-the-release-workflow). Each image is
+scanned with Trivy before anything is pushed, and the job fails on a HIGH or
+CRITICAL finding that has a fixed version (`.trivyignore.yaml` applies). Pull
+requests build and scan without pushing; pushes to `main` and `v*` tags publish
+to `ghcr.io/nguyentin05/<image>` and attest the image digest.
 `.github/workflows/release.yml` runs only when a `v*` tag is pushed. It
 rejects a tag that is not an ancestor of `main`, warns when the tag is
 lightweight, packs the source tree, runs the archive gate, generates a CycloneDX

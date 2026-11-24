@@ -76,6 +76,17 @@ it('shows the fixed projection with Vietnamese action, state and role labels', a
   expect(new Headers(fetch.mock.calls[0][1].headers).get('X-Hasura-Role')).toBe('role_reviewer');
 });
 
+it('renders an entry without the actor fields the role cannot read', async () => {
+  serve([{ at: '2026-11-22T08:00:00Z', action: 'INSERT', version: 1, status: 'DRAFT' }]);
+  render(<RecordHistory table={table} app={app} context={context} recordID={id} version={1} />);
+
+  await screen.findByText('Tạo hồ sơ');
+  expect(screen.getByText('Nháp')).toBeTruthy();
+  expect(screen.queryByText('Nguyễn Văn An')).toBeNull();
+  expect(screen.queryByText('Người duyệt hồ sơ')).toBeNull();
+  expect(screen.queryByText(/undefined/)).toBeNull();
+});
+
 it('reloads the history when the record version changes', async () => {
   const fetch = vi.fn()
     .mockResolvedValueOnce(Response.json({ entries: [entry('INSERT', 'DRAFT', '2026-11-22T08:00:00Z')] }))

@@ -92,6 +92,13 @@ The Compose files:
    effect within `ROLE_CACHE_TTL` (default `5s`), with no new token
    ([ADR 0007](../adr/0007-keycloak-authenticates-platform-authorizes.md)).
 
+   The Workspace UI sends a `Content-Security-Policy` that lets the browser call
+   only its own origin and the Keycloak origin in `DXOS_OIDC_ORIGIN` (default
+   `http://localhost:8085`). If Keycloak is served from another origin, set
+   `DXOS_OIDC_ORIGIN` in the environment of `docker compose` (for example
+   `DXOS_OIDC_ORIGIN=https://id.example.org`), or as a container environment
+   variable when you run the image elsewhere.
+
    For a demo organization, run `scripts/seed-demo.py seed`. It creates three
    departments and six Keycloak accounts (password `DEMO_PASSWORD`, default
    `Demo@2026`) with procurement, maintenance and timesheet roles (and the

@@ -36,9 +36,11 @@ record outside the caller's scope all return 404, so the route does not reveal
 existence; a malformed application, table or record id returns 400. The response is
 `{"entries":[{"at","action","actor":{"id","display_name"},"acting_role","acting_role_description","version","status"}]}`:
 the newest 200 entries, oldest first. `acting_role_description` is the role's
-registry description, omitted when empty. `status` is present only for a
-state-machine table. Audit payloads, chain/sequence and hash columns are never
-returned.
+registry description, omitted when empty. `status` is present only when the
+table has a state machine and the role's select rule exposes `status`. When the
+role's select rule does not expose `created_by`, `actor`, `acting_role` and
+`acting_role_description` are omitted; `at`, `action` and `version` remain.
+Audit payloads, chain/sequence and hash columns are never returned.
 
 ## Owner conversations
 

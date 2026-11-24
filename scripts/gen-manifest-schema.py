@@ -63,6 +63,11 @@ def build():
     workflow = spec["properties"]["workflows"]["items"]
     del workflow["properties"]["definition"]
     workflow["required"] = [name for name in workflow["required"] if name != "definition"] + ["file"]
+    # A manifest may write columns: "*"; the resource stores it as ["*"].
+    access = spec["properties"]["tables"]["items"]["properties"]["access"]["properties"]
+    for op in ("select", "insert", "update"):
+        rule = access[op]["items"]["properties"]
+        rule["columns"] = {"anyOf": [rule["columns"], {"const": "*"}]}
     text = {"type": "string", "minLength": 1}
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",

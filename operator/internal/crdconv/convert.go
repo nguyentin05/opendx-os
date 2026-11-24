@@ -57,7 +57,7 @@ func AppIDFromName(name string) string { return strings.ReplaceAll(name, "-", "_
 type Workflows map[string]string
 
 // ToManifest converts a resource to the manifest model consumed by the planner and
-// runs the semantic validator. The returned Workflows hold the inline definitions
+// runs the semantic validator, then expands columns: "*". The returned Workflows hold the inline definitions
 // that the manifest model only references by file name.
 func ToManifest(app *dxosv1alpha1.DXApplication) (*manifest.DXApplication, Workflows, error) {
 	if app == nil {
@@ -93,13 +93,14 @@ func ToManifest(app *dxosv1alpha1.DXApplication) (*manifest.DXApplication, Workf
 	if err := manifest.Validate(m); err != nil {
 		return nil, nil, err
 	}
+	manifest.ExpandColumns(m)
 	return m, flows, nil
 }
 
 // FromPackage builds a resource from an application package directory. The
-// package is validated by manifest.ParseFile.
+// package is validated by manifest.ParseFileAsWritten; columns: "*" stays as written.
 func FromPackage(dir string) (*dxosv1alpha1.DXApplication, error) {
-	m, err := manifest.ParseFile(filepath.Join(dir, "manifest.yaml"))
+	m, err := manifest.ParseFileAsWritten(filepath.Join(dir, "manifest.yaml"))
 	if err != nil {
 		return nil, err
 	}

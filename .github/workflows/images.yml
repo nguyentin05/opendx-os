@@ -125,8 +125,9 @@ jobs:
             echo "value=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build and push
-        id: build
+      # Build once into the local Docker engine and scan it, so nothing with a
+      # fixable HIGH or CRITICAL finding is published. Pull requests stop here.
+      - name: Build for scanning
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ matrix.context }}
@@ -137,15 +138,38 @@ jobs:
           # version comes from the step above; every other image keeps its matrix args.
           build-args: ${{ matrix.image == 'opendx-operator' && format('VERSION={0}', steps.operator-version.outputs.value) || matrix.build-args }}
           platforms: linux/amd64
-          # Pull requests build the image but never publish it.
-          push: ${{ github.event_name != 'pull_request' }}
-          # Attestations attach to the published image, so pull request builds skip them.
-          provenance: ${{ github.event_name != 'pull_request' }}
-          sbom: ${{ github.event_name != 'pull_request' }}
+          load: true
+          tags: ${{ matrix.image }}:scan
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+      - name: Scan image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_IGNOREFILE: .trivyignore.yaml
+        with:
+          image-ref: ${{ matrix.image }}:scan
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      # Same inputs, so every layer comes from the cache of the scanned build.
+      - name: Build and push
+        id: build
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          build-contexts: legal=.
+          build-args: ${{ matrix.image == 'opendx-operator' && format('VERSION={0}', steps.operator-version.outputs.value) || matrix.build-args }}
+          platforms: linux/amd64
+          push: true
+          provenance: true
+          sbom: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
       - name: Attest image provenance
         if: github.event_name != 'pull_request'
