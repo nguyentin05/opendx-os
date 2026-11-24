@@ -29,10 +29,10 @@ import (
 	"unicode/utf8"
 
 	_ "github.com/lib/pq"
+	"github.com/opendx-os/opendx-os/capabilities/internal/ai/knowledge/modeladapter"
+	"github.com/opendx-os/opendx-os/capabilities/internal/ai/modelprovisioning"
+	"github.com/opendx-os/opendx-os/capabilities/internal/ai/models"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/modeladapter"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/modelprovisioning"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
 )
 
 const (

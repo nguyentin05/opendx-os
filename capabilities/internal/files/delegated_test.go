@@ -4,8 +4,8 @@ package files
 
 import (
 	"context"
+	"github.com/opendx-os/opendx-os/capabilities/internal/ai/knowledge"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 	"net/http/httptest"
 	"testing"
 	"time"

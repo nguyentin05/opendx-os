@@ -30,10 +30,10 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+	"github.com/opendx-os/opendx-os/capabilities/internal/ai/knowledge"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/authz"
 	"github.com/opendx-os/opendx-os/capabilities/internal/files"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 	"github.com/opendx-os/opendx-os/capabilities/internal/process"
 	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
 )

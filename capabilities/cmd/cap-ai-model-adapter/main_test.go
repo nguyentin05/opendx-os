@@ -25,8 +25,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/modeladapter"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
+	"github.com/opendx-os/opendx-os/capabilities/internal/ai/knowledge/modeladapter"
+	"github.com/opendx-os/opendx-os/capabilities/internal/ai/models"
 )
 
 // adapterConfigJSON is a reviewed deployment declaration whose upstream is never

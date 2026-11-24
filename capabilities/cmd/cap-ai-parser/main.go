@@ -7,7 +7,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/docir"
+	"github.com/opendx-os/opendx-os/capabilities/internal/ai/knowledge/docir"
 	"log"
 	"net"
 	"net/http"

@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/opendx-os/opendx-os/capabilities/internal/ai/knowledge"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 )
 
 type DelegationValidator interface {

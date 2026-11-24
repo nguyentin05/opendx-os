@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opendx-os/opendx-os/capabilities/internal/agent"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
+	"github.com/opendx-os/opendx-os/capabilities/internal/ai/agent"
+	"github.com/opendx-os/opendx-os/capabilities/internal/ai/knowledge"
 	"github.com/opendx-os/opendx-os/capabilities/internal/testutil"
 )
 

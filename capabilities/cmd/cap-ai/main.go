@@ -16,11 +16,11 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-	"github.com/opendx-os/opendx-os/capabilities/internal/agent"
 	"github.com/opendx-os/opendx-os/capabilities/internal/ai/access"
+	"github.com/opendx-os/opendx-os/capabilities/internal/ai/agent"
+	"github.com/opendx-os/opendx-os/capabilities/internal/ai/knowledge"
+	"github.com/opendx-os/opendx-os/capabilities/internal/ai/models"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
 )
 
 type config struct{ DatabaseURL, IssuerURL, JWKSURL, Audience, Port string }

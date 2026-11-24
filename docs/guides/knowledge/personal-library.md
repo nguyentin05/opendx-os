@@ -76,7 +76,7 @@ are deployment requirements, not properties of launching the binary alone.
 
 The worker rejects other adapter versions. The container pins the APK version;
 requalification is required before changing it. Gold fixtures in
-`capabilities/internal/knowledge/docir/testdata/` are original generated documents:
+`capabilities/internal/ai/knowledge/docir/testdata/` are original generated documents:
 Markdown/Vietnamese text, an aligned approval table on PDF page 4, an image-only
 PDF and a 201-page limit fixture. The table relation `>= 10,000,000 VND → Director`
 is retained in labelled rows and citations. This is a small regression corpus,

@@ -23,7 +23,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/modeladapter"
+	"github.com/opendx-os/opendx-os/capabilities/internal/ai/knowledge/modeladapter"
 )
 
 const (

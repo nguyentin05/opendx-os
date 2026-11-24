@@ -54,7 +54,7 @@ if __name__ == '__main__':
                 time.sleep(.1)
             config = json.loads(subprocess.check_output(['docker','inspect',name]))[0]['HostConfig']
             assert config['NetworkMode']=='none' and config['Memory']==512<<20 and config['ReadonlyRootfs'] and config['PidsLimit']==64
-            data = ROOT/'capabilities/internal/knowledge/docir/testdata'
+            data = ROOT/'capabilities/internal/ai/knowledge/docir/testdata'
             for file,media,status in [('policy.md','text/markdown',200),('table.pdf','application/pdf',200),('scan.pdf','application/pdf',422),('too-many-pages.pdf','application/pdf',422)]:
                 probe(tmp+'/parser.sock',data/file,media,status)
             probe(tmp+'/parser.sock',data/'policy.md','text/markdown',422,{'deadline': 1})

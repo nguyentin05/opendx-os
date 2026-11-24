@@ -228,7 +228,7 @@ jobs:
               set -e
               apk add --no-cache poppler-utils=25.12.0-r0 git >/dev/null
               cd capabilities
-              if ! go test -count=1 -v ./internal/knowledge/docir/... > /tmp/docir.log 2>&1; then
+              if ! go test -count=1 -v ./internal/ai/knowledge/docir/... > /tmp/docir.log 2>&1; then
                 cat /tmp/docir.log
                 exit 1
               fi

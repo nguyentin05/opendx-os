@@ -14,6 +14,54 @@ import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
+CAPABILITIES = ROOT / "capabilities"
+GO_MODULE_PREFIX = "github.com/opendx-os/opendx-os/capabilities"
+
+# Intelligence packages live under a single internal/ai/ root. The Agent and
+# knowledge runtimes, the model gateway, the provisioning CLI support code and
+# the read-scope contracts are siblings; DocIR parsing stays nested inside the
+# knowledge package it belongs to.
+AI_ROOT = CAPABILITIES / "internal" / "ai"
+AI_PACKAGES = {
+    "access": "access",
+    "agent": "agent",
+    "knowledge": "knowledge",
+    "knowledge/docir": "docir",
+    "models": "models",
+    "modelprovisioning": "modelprovisioning",
+    "contracts": "contracts",
+}
+
+# Pre-consolidation locations. Nothing may import them and they must not exist,
+# because a leftover copy silently forks the runtime authority.
+STALE_INTERNAL_PACKAGES = (
+    "internal/agent",
+    "internal/knowledge",
+)
+# Half-moved packages: these belong next to knowledge, not inside it.
+STALE_NESTED_PACKAGES = (
+    "internal/knowledge/models",
+    "internal/knowledge/modelprovisioning",
+    "internal/knowledge/contracts",
+)
+
+# Executable tooling that runs the moved packages. A stale path here breaks a
+# build or a CI job rather than a document, so it is checked too.
+TOOLING_GLOBS = (
+    ".github/workflows/*.yml",
+    ".github/workflows/*.yaml",
+    "scripts/**/*.py",
+    "scripts/**/*.sh",
+    "Makefile",
+)
+
+
+def _go_source_files(root: pathlib.Path):
+    for path in sorted(root.rglob("*.go")):
+        if "vendor" in path.parts:
+            continue
+        yield path
+
 
 class TestContractsAndHygiene(unittest.TestCase):
     def test_repository_hygiene_script_passes(self) -> None:
@@ -30,6 +78,58 @@ class TestContractsAndHygiene(unittest.TestCase):
             0,
             f"{target_script.name} failed:\n{result.stderr}\n{result.stdout}",
         )
+
+    def test_ai_package_layout(self) -> None:
+        # The consolidated target layout exists and keeps its package names.
+        for rel, package in AI_PACKAGES.items():
+            directory = AI_ROOT / rel
+            with self.subTest(package=rel, check="directory"):
+                self.assertTrue(directory.is_dir(), f"Missing intelligence package: internal/ai/{rel}")
+            sources = sorted(directory.glob("*.go")) if directory.is_dir() else []
+            with self.subTest(package=rel, check="go sources"):
+                self.assertTrue(sources, f"internal/ai/{rel} contains no Go sources")
+            declarations = {
+                line.split()[1]
+                for line in "\n".join(
+                    path.read_text(encoding="utf-8") for path in sources[:3]
+                ).splitlines()
+                if line.startswith("package ")
+            }
+            with self.subTest(package=rel, check="package clause"):
+                self.assertEqual(
+                    declarations,
+                    {package},
+                    f"internal/ai/{rel} must declare `package {package}`",
+                )
+
+        # No pre-consolidation or half-moved package may survive.
+        for rel in STALE_INTERNAL_PACKAGES + STALE_NESTED_PACKAGES:
+            with self.subTest(stale=rel):
+                self.assertFalse(
+                    (CAPABILITIES / rel).exists(),
+                    f"Stale package still exists: capabilities/{rel}",
+                )
+
+        # No Go source may import a pre-consolidation path.
+        stale_imports = tuple(f'"{GO_MODULE_PREFIX}/{rel}' for rel in STALE_INTERNAL_PACKAGES)
+        offenders = [
+            f"{path.relative_to(ROOT).as_posix()}"
+            for path in _go_source_files(CAPABILITIES)
+            if any(stale in path.read_text(encoding="utf-8") for stale in stale_imports)
+        ]
+        self.assertEqual(offenders, [], f"Stale internal/agent or internal/knowledge imports: {offenders}")
+
+        # Executable tooling must reference the consolidated paths too.
+        tooling_offenders = []
+        for pattern in TOOLING_GLOBS:
+            for path in sorted(ROOT.glob(pattern)):
+                if not path.is_file():
+                    continue
+                text = path.read_text(encoding="utf-8", errors="ignore")
+                for rel in STALE_INTERNAL_PACKAGES:
+                    if f"/{rel}" in text or f'"{rel}' in text or f"'{rel}" in text:
+                        tooling_offenders.append(f"{path.relative_to(ROOT).as_posix()} -> {rel}")
+        self.assertEqual(tooling_offenders, [], f"Stale package path in tooling: {tooling_offenders}")
 
     def test_core_schema_invariants(self) -> None:
         init_dir = ROOT / "platform" / "postgres" / "init"
