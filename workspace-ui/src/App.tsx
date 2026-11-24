@@ -2,7 +2,7 @@
 // Copyright 2026 DX-OS Open-Core Contributors
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { endSession, finishSignIn, registerSession, signIn, watchSession } from './auth';
+import { endKeycloakSession, endSession, finishSignIn, registerSession, signIn, watchSession } from './auth';
 import type { Session } from './auth';
 import { toTableURL, useWorkspaceRoute } from './core/routes';
 import type { WorkspaceRoute } from './core/routes';
@@ -76,9 +76,10 @@ function WorkspaceRoot({ initialSession }: { initialSession?: Session }) {
         token={credential.token}
         initialSession={initialSession}
         onSignOut={() => {
-          endSession(credential.token);
+          const idToken = endSession(credential.token);
           setCredential(null);
           setMessage('');
+          void endKeycloakSession(idToken);
         }}
       />
     );
