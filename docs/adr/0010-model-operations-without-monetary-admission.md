@@ -13,6 +13,9 @@ last_reviewed: 2026-11-23
 - **Status:** Accepted. Supersedes parts of
   [ADR 0009](0009-native-rag-identity-and-source-boundaries.md) listed under
   [Supersession](#supersession-of-adr-0009); all other ADR 0009 decisions stand.
+  Slot authority and the `bounded-http-v1` declaration key are superseded by
+  [ADR 0011](0011-deployment-selected-litellm-models.md); the durable operation
+  decisions here stand.
 - **Date:** 2026-11-23
 - **Decision owner:** repository/product owner.
 
