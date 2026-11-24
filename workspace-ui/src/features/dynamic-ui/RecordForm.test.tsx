@@ -260,6 +260,26 @@ it.each([
   expect(window.location.pathname).toBe(tablePath + '/' + id + '/edit');
 });
 
+it.each([
+  ['Hồ sơ cha không còn ở trạng thái cho phép sửa dòng con.', 'the parent record can no longer be changed (status SUBMITTED)'],
+] as const)('reports a refused child row with "%s"', async (message, refusal) => {
+  serve(({ query }) => {
+    if (query.includes('domain_vendors(')) return dataResponse('domain_vendors', []);
+    if (query.startsWith('mutation')) return Response.json({
+      errors: [{ message: 'Check constraint violation. ' + refusal, extensions: { code: 'permission-error' } }],
+    });
+    return dataResponse('domain_requests_by_pk', draft);
+  });
+  showForm('/' + id + '/edit');
+
+  await screen.findByLabelText('Title');
+  fill('Title', 'Attempted edit');
+  save();
+
+  expect((await screen.findByRole('alert')).textContent).toBe(message);
+  expect((screen.getByLabelText('Title') as HTMLInputElement).value).toBe('Attempted edit');
+});
+
 it('hides the edit action on the detail of a noneditable process record', async () => {
   serve(() => dataResponse('domain_requests_by_pk', { ...draft, status: 'COMPLETE', version: 2, reference_id: null }));
   showForm('/' + id);

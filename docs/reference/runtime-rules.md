@@ -44,6 +44,14 @@ refused attachment raises SQLSTATE `23514` (`check_violation`) with the message
 A role reads a file's metadata only if its user uploaded it or it is attached to a
 record the role may read.
 
+A child row is refused when its parent is no longer in an editable state or when
+the row would move to another parent. Both refusals use SQLSTATE `23514` with a
+stable prefix: `the parent record can no longer be changed (status <status>)` and
+`a row cannot move to another parent record`. Existing installations apply the
+redefined function with
+`scripts/migrate-rag.sh --database-url-env DATABASE_URL --scope core --through 0005`
+(the same runner applies `0004_attachment_refusal.sql`).
+
 ## Identity, roles, and commands
 
 `contracts/fixtures/identity-claims.json` shows the decoded claims of a Keycloak
