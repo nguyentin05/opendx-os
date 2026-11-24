@@ -71,10 +71,53 @@ func (p *HTTPProvider) Invoke(ctx context.Context, profile Profile, payload Payl
 	if err != nil || len(data) > profile.Limits.MaxBytes+65536 {
 		return out, ErrUnavailable
 	}
+	// Usage presence is decoded explicitly: an absent or JSON-null object is "no
+	// usage", while a present object must carry both counters as integers.
+	var decoded struct {
+		Text        string          `json:"text"`
+		Vector      []float32       `json:"vector"`
+		CitationIDs []string        `json:"citation_ids"`
+		Usage       json.RawMessage `json:"usage"`
+		Status      string          `json:"status"`
+	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
-	if dec.Decode(&out) != nil || dec.Decode(new(any)) != io.EOF {
+	if dec.Decode(&decoded) != nil || dec.Decode(new(any)) != io.EOF {
 		return Result{ProviderRequestID: out.ProviderRequestID}, ErrUnavailable
 	}
+	usage, err := decodeProviderUsage(decoded.Usage)
+	if err != nil {
+		return Result{ProviderRequestID: out.ProviderRequestID}, ErrUnavailable
+	}
+	out.Text, out.Vector, out.CitationIDs, out.Status, out.Usage = decoded.Text, decoded.Vector, decoded.CitationIDs, decoded.Status, usage
 	return out, nil
+}
+
+// decodeProviderUsage distinguishes "no usage" from "zero usage". Both counters
+// must be JSON integers, so partial, quoted, fractional, boolean, null, negative
+// or out-of-range counters are malformed. Pointers preserve the presence
+// distinction: an absent or null object is "no usage", while an explicit zero is
+// a reported count.
+func decodeProviderUsage(raw json.RawMessage) (*Usage, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return nil, nil
+	}
+	// Integer fields, not json.Number: json.Number is a string type whose
+	// decoder accepts a quoted literal, which would let a provider report
+	// counters as JSON strings and be trusted.
+	var counters struct {
+		InputTokens  *int64 `json:"input_tokens"`
+		OutputTokens *int64 `json:"output_tokens"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(trimmed))
+	dec.DisallowUnknownFields()
+	if dec.Decode(&counters) != nil || dec.Decode(new(any)) != io.EOF || counters.InputTokens == nil || counters.OutputTokens == nil {
+		return nil, ErrUnavailable
+	}
+	input, output := *counters.InputTokens, *counters.OutputTokens
+	if input < 0 || output < 0 {
+		return nil, ErrUnavailable
+	}
+	return &Usage{InputTokens: input, OutputTokens: output}, nil
 }

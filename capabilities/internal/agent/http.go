@@ -19,6 +19,7 @@ import (
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
 )
 
 // ConversationsPath is the cap-ai mount for all chat routes.
@@ -357,6 +358,10 @@ func chatError(w http.ResponseWriter, err error) {
 		status, code = http.StatusNotFound, "NOT_FOUND"
 	case errors.Is(err, knowledge.ErrConflict):
 		status, code = http.StatusConflict, "CONFLICT"
+	case errors.Is(err, models.ErrUncertain), errors.Is(err, models.ErrConflict):
+		// A model call that may already have been sent is never described with
+		// operation details, and is distinct from definitive unavailability.
+		status, code = http.StatusServiceUnavailable, "MODEL_CALL_UNCERTAIN"
 	}
 	chatJSONResponse(w, status, map[string]any{"error": map[string]string{"code": code, "message": http.StatusText(status)}})
 }

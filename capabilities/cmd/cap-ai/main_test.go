@@ -182,6 +182,25 @@ func TestChatHTTPDefaultClosedIndependentlyOfNativeKnowledge(t *testing.T) {
 	}
 }
 
+// The retired AI_AGENT_BILLING_APP_ID setting is unsupported: it must never be
+// accepted as a fallback for the current AI_AGENT_PROCESSING_APP_ID name.
+func TestProcessingAppConfiguration(t *testing.T) {
+	settings := map[string]string{"AI_AGENT_PROCESSING_APP_ID": "personal_library"}
+	getenv := func(k string) string { return settings[k] }
+	if got := processingAppID(getenv); got != "personal_library" {
+		t.Fatalf("processing app from configuration: %q", got)
+	}
+	delete(settings, "AI_AGENT_PROCESSING_APP_ID")
+	settings["AI_AGENT_BILLING_APP_ID"] = "legacy_library"
+	if got := processingAppID(getenv); got != "" {
+		t.Fatalf("legacy billing setting was accepted as a fallback: %q", got)
+	}
+	settings["AI_AGENT_PROCESSING_APP_ID"] = "  "
+	if got := processingAppID(getenv); got != "" {
+		t.Fatalf("blank processing app accepted: %q", got)
+	}
+}
+
 func TestChatHTTPRequiresFeatureAndQualifiedMetadata(t *testing.T) {
 	flags := map[string]string{
 		"RAG_AGENT_ENABLED":      "true",

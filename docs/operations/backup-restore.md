@@ -84,11 +84,15 @@ does not prove that its audit history was not rewritten.
 4. Record the result with [Verification](../contribute/verification.md),
    including the revision, environment, and any checks that could not run.
 
-## Model reservations
+## Model operation state
 
-For optional semantic retrieval, model policy, conservative reservations, and
-uncertain-charge reconciliation, follow
+For optional semantic retrieval, model policy and durable operation state, follow
 [model retrieval and answers](../guides/knowledge/models.md). Keep model features
 disabled until predecessor and model gates pass and classification, provider,
-retention, and deployment-adapter approvals exist. Do not release
-`IN_FLIGHT`/`UNCERTAIN` reservations because their period expired.
+retention, and deployment-adapter approvals exist. There is no reservation or
+settlement to reconcile and no monetary account to release. An operation row in
+`MAY_HAVE_SENT` or `UNCERTAIN` records that a call may have reached the provider:
+never resend it, and never treat an expired period as permission to retry. If the
+database applied the earlier model migration checksums, restore is not a valid
+upgrade path; rebuild a named database as described in
+[installation](installation.md#rebuilding-an-existing-model-installation).

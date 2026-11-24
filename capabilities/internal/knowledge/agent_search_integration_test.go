@@ -42,8 +42,8 @@ INSERT INTO core.user_roles(user_id, role_name) VALUES($1, 'role_operator');`, a
 	if _, err := db.Exec(`
 INSERT INTO core.apps(app_id,display_name,version,status,spec)
 VALUES ('elsewhere','Other app','1','Ready','{}');
-INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,dimension,limits,pricing_revision,enabled)
-SELECT 'other-embed',revision,purpose,execution,provider_id,model_id,dimension,limits,pricing_revision,enabled
+INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,dimension,limits,enabled)
+SELECT 'other-embed',revision,purpose,execution,provider_id,model_id,dimension,limits,enabled
 FROM cap_ai.model_profiles WHERE id='embed';
 INSERT INTO cap_ai.model_candidates(profile_id,revision,adapter_key,declaration_digest,declaration)
 VALUES ('embed',1,'bounded-http-v1',repeat('a',64),'{}'),('other-embed',1,'bounded-http-v1',repeat('b',64),'{}');
@@ -53,8 +53,8 @@ UPDATE cap_ai.global_model_slots SET profile_id='embed',profile_revision=1,slot_
 
 	spy := &personalEmbeddingVectorProvider{documentVector: []float32{1, 0, 0}, queryVector: []float32{1, 0, 0}}
 	gateway := &models.Gateway{
-		Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: gatewayDB}},
-		Budget: &models.Budget{DB: gatewayDB}, Providers: map[string]models.Provider{"fake": spy},
+		Policy:     &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: gatewayDB}},
+		Operations: &models.OperationStore{DB: gatewayDB}, Providers: map[string]models.Provider{"fake": spy},
 	}
 	api.ConfigureModels(gateway, profile, models.Profile{})
 	api.ConfigureModelResolver(&models.Registry{DB: gatewayDB})
@@ -132,7 +132,7 @@ UPDATE cap_ai.global_model_slots SET profile_id='embed',profile_revision=1,slot_
 			req := req
 			req.Query = "Director"
 			var previousCalls int
-			if err := db.QueryRow(`SELECT count(*) FROM cap_ai.model_calls`).Scan(&previousCalls); err != nil {
+			if err := db.QueryRow(`SELECT count(*) FROM cap_ai.model_operations`).Scan(&previousCalls); err != nil {
 				t.Fatal(err)
 			}
 			before := spy.queryCalls
@@ -149,7 +149,7 @@ UPDATE cap_ai.global_model_slots SET profile_id='embed',profile_revision=1,slot_
 				t.Fatal(err)
 			}
 			defer func() { _ = tx.Rollback() }()
-			if _, err := tx.ExecContext(waitCtx, `SELECT id FROM cap_ai.budget_accounts WHERE scope='APP' FOR UPDATE`); err != nil {
+			if _, err := tx.ExecContext(waitCtx, `LOCK TABLE cap_ai.model_operations IN ACCESS EXCLUSIVE MODE`); err != nil {
 				t.Fatal(err)
 			}
 			type outcome struct {
@@ -167,7 +167,7 @@ UPDATE cap_ai.global_model_slots SET profile_id='embed',profile_revision=1,slot_
 				var locked bool
 				err := db.QueryRowContext(waitCtx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity
                  WHERE datname=current_database() AND wait_event_type='Lock'
-                 AND query LIKE 'SELECT cap_ai.reserve_model(%')`).Scan(&locked)
+                 AND query LIKE '%cap_ai.claim_model_operation(%')`).Scan(&locked)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -190,16 +190,15 @@ UPDATE cap_ai.global_model_slots SET profile_id='embed',profile_revision=1,slot_
 				t.Fatal(err)
 			}
 			got := <-done
-			var state string
-			var reserved, calls int
-			err = db.QueryRow(`SELECT state,(SELECT sum(reserved_units) FROM cap_ai.budget_accounts),
-             (SELECT count(*) FROM cap_ai.model_calls)
-             FROM cap_ai.model_reservations ORDER BY created_at DESC,id DESC LIMIT 1`).Scan(&state, &reserved, &calls)
+			var state, code string
+			var operations int
+			err = db.QueryRow(`SELECT state,coalesce(error_code,''),(SELECT count(*) FROM cap_ai.model_operations)
+             FROM cap_ai.model_operations ORDER BY claimed_at DESC LIMIT 1`).Scan(&state, &code, &operations)
 			if got.err != nil || got.result.Status != "LEXICAL_ONLY" || len(got.result.Results) != 1 ||
 				got.result.Results[0].DocumentID != hit.DocumentID || spy.queryCalls != before ||
-				err != nil || state != "CANCELLED" || reserved != 0 || calls != previousCalls {
-				t.Fatalf("search=%+v err=%v sends=%d state=%q reserved=%d new calls=%d ledger err=%v",
-					got.result, got.err, spy.queryCalls-before, state, reserved, calls-previousCalls, err)
+				err != nil || state != "FAILED_UNSENT" || code != "AUTHORITY_CHANGED" || operations != previousCalls+1 {
+				t.Fatalf("search=%+v err=%v sends=%d state=%q code=%q operations=%d err=%v",
+					got.result, got.err, spy.queryCalls-before, state, code, operations, err)
 			}
 		})
 	}

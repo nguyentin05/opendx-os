@@ -64,7 +64,7 @@ func personalFixture(t *testing.T, purpose string) (*sql.DB, *sql.DB, *Policy, O
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,dimension,limits,pricing_revision,enabled) VALUES('personal',1,$1,'HOSTED','fake','fake',CASE WHEN $1='EMBED' THEN 3 END,'{"max_input_tokens":4096,"max_output_tokens":20,"max_bytes":8192,"input_unit_price":1,"output_unit_price":1,"timeout_ms":1000}','price-1',true)`, purpose)
+	_, err = db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,dimension,limits,enabled) VALUES('personal',1,$1,'HOSTED','fake','fake',CASE WHEN $1='EMBED' THEN 3 END,'{"max_input_tokens":4096,"max_output_tokens":20,"max_bytes":8192,"timeout_ms":1000}',true)`, purpose)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestHostedPersonalApprovedGenerate(t *testing.T) {
 	if checkPersonal(p, op, personalOther) == nil {
 		t.Fatal("approval bypassed owner READ")
 	}
-	if _, err := db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,pricing_revision,enabled) SELECT id,2,purpose,execution,'other-provider',model_id,limits,pricing_revision,enabled FROM cap_ai.model_profiles WHERE id='personal'`); err != nil {
+	if _, err := db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,enabled) SELECT id,2,purpose,execution,'other-provider',model_id,limits,enabled FROM cap_ai.model_profiles WHERE id='personal'`); err != nil {
 		t.Fatal(err)
 	}
 	op.ProfileRevision = 2
@@ -392,19 +392,16 @@ func (a *disableBeforeSend) Current(ctx context.Context, actor *auth.Identity, o
 func TestDisabledApprovalAtIntentPreventsEgress(t *testing.T) {
 	db, admin, p, op := personalFixture(t, "GENERATE")
 	id := approvePersonal(t, admin, "GENERATE")
-	if _, err := db.Exec(`INSERT INTO cap_ai.budget_accounts(scope,scope_key,period_start,period_end,limit_units,pricing_revision) VALUES('INSTALLATION','installation',now()-interval '1 day',now()+interval '1 day',100000,'price-1'),('APP','library',now()-interval '1 day',now()+interval '1 day',100000,'price-1'),('USER','11111111-1111-4111-8111-111111111111',now()-interval '1 day',now()+interval '1 day',100000,'price-1')`); err != nil {
-		t.Fatal(err)
-	}
 	p.Authority = &disableBeforeSend{authority: p.Authority, admin: admin, approval: id}
 	spy := &personalEgressSpy{}
-	g := Gateway{Policy: p, Budget: &Budget{DB: personalLogin(t, db, "dxos_ai_gateway")}, Providers: map[string]Provider{"fake": spy}}
+	g := Gateway{Policy: p, Operations: &OperationStore{DB: personalLogin(t, db, "dxos_ai_gateway")}, Providers: map[string]Provider{"fake": spy}}
 	_, err := g.Call(context.Background(), &auth.Identity{UserID: personalActor, Role: "role_library_user"}, op, Payload{Query: "private query"})
 	if err != ErrPolicy || spy.calls != 0 {
 		t.Fatal("revoked approval sent content", err, spy.calls)
 	}
-	var n int
-	if err = db.QueryRow(`SELECT count(*) FROM cap_ai.model_reservations WHERE state='CANCELLED'`).Scan(&n); err != nil || n != 1 {
-		t.Fatal("unsent reservation not cancelled", n, err)
+	var state, code string
+	if err = db.QueryRow(`SELECT state,error_code FROM cap_ai.model_operations`).Scan(&state, &code); err != nil || state != "FAILED_UNSENT" || code != "AUTHORITY_CHANGED" {
+		t.Fatal("unsent operation not recorded as definitely unsent", state, code, err)
 	}
 }
 

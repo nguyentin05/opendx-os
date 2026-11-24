@@ -69,26 +69,22 @@ func newAgentTurnFixture(t *testing.T, provider models.Provider) agentTurnFixtur
 	admin := testutil.As(t, u.String(), "dxos_authz")
 	turnSQL(t, db, `INSERT INTO core.user_roles(user_id,role_name) VALUES
 		('11111111-1111-1111-1111-111111111111','role_operator');
-		INSERT INTO core.apps(app_id,display_name,version,status,spec) VALUES('agent_billing','Agent Billing','1','Ready','{}');
-		INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,pricing_revision,enabled)
+		INSERT INTO core.apps(app_id,display_name,version,status,spec) VALUES('agent_processing','Agent Processing','1','Ready','{}');
+		INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,enabled)
 		VALUES('fixture-llm',1,'GENERATE','HOSTED','fixture-adapter','fixture-llm',
-		'{"max_input_tokens":4096,"max_output_tokens":64,"max_bytes":8192,"input_unit_price":1,"output_unit_price":1,"timeout_ms":1500}',
-		'fixture-price',true);
+		'{"max_input_tokens":4096,"max_output_tokens":64,"max_bytes":8192,"timeout_ms":1500}',true);
 		INSERT INTO cap_ai.model_candidates(profile_id,revision,adapter_key,declaration_digest,declaration)
 		VALUES('fixture-llm',1,'bounded-http-v1',repeat('a',64),'{}');
 		UPDATE cap_ai.global_model_slots SET profile_id='fixture-llm', profile_revision=1, slot_revision=1 WHERE capability='LLM';
-		INSERT INTO cap_ai.budget_accounts(scope,scope_key,period_start,period_end,limit_units,pricing_revision) VALUES
-		('INSTALLATION','installation',now()-interval '1 day',now()+interval '1 day',50000,'fixture-price'),
-		('APP','agent_billing',now()-interval '1 day',now()+interval '1 day',50000,'fixture-price'),
-		('USER','11111111-1111-1111-1111-111111111111',now()-interval '1 day',now()+interval '1 day',50000,'fixture-price');`)
+`)
 	search := knowledge.NewStore(apiDB)
 	if err := search.ConfigurePackages(true, t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	reader := knowledge.NewPolicy(apiDB)
 	gateway := &models.Gateway{
-		Policy: &models.Policy{Authority: models.DatabaseAuthority{DB: gatewayDB}, Enabled: true},
-		Budget: &models.Budget{DB: gatewayDB}, Providers: map[string]models.Provider{"fixture-adapter": provider},
+		Policy:     &models.Policy{Authority: models.DatabaseAuthority{DB: gatewayDB}, Enabled: true},
+		Operations: &models.OperationStore{DB: gatewayDB}, Providers: map[string]models.Provider{"fixture-adapter": provider},
 	}
 	return agentTurnFixture{
 		db: db, admin: admin, actor: Actor{alice}, store: &PostgresConversationStore{DB: apiDB}, reader: reader,
@@ -171,11 +167,11 @@ func (f agentTurnFixture) addChunk(t *testing.T, run, text string) {
 }
 
 func (f agentTurnFixture) orchestrator(retriever Retriever) *Orchestrator {
-	memory := NewWorkingMemory(NewSourcePolicyChecker(f.reader, f.resolver, f.gateway.Policy, "agent_billing"), 0)
-	return NewOrchestrator(f.store, memory, retriever, f.reader, f.resolver, f.gateway, "agent_billing")
+	memory := NewWorkingMemory(NewSourcePolicyChecker(f.reader, f.resolver, f.gateway.Policy, "agent_processing"), 0)
+	return NewOrchestrator(f.store, memory, retriever, f.reader, f.resolver, f.gateway, "agent_processing")
 }
 
-func TestAgentTurnIdempotencyAndUncertainCharge(t *testing.T) {
+func TestAgentTurnIdempotencyAndUncertainCall(t *testing.T) {
 	for _, uncertain := range []bool{false, true} {
 		name := "settled"
 		if uncertain {
@@ -225,7 +221,7 @@ func TestAgentTurnIdempotencyAndUncertainCharge(t *testing.T) {
 			}
 			f := newAgentTurnFixture(t, provider)
 			f.addPackage(t, "procurement", "role_procurement", "New hires can request a laptop.")
-			f.approveGeneration(t, "agent_billing", "reviewed fixture")
+			f.approveGeneration(t, "agent_processing", "reviewed fixture")
 			o := f.orchestrator(turnRetrieverFunc(func(ctx context.Context, actor Actor, query string) (RetrievalResult, error) {
 				searches.Add(1)
 				return f.retrieval.Retrieve(ctx, actor, query)
@@ -257,14 +253,18 @@ func TestAgentTurnIdempotencyAndUncertainCharge(t *testing.T) {
 			}
 			close(release)
 			first := <-replied
-			state, wantCharges, wantReserved := "SETTLED", "APP:agent_billing:5,INSTALLATION:installation:5,USER:"+alice+":5", 0
+			state := "SUCCEEDED"
 			if uncertain {
-				state, wantCharges, wantReserved = "UNCERTAIN", "", 4160
-				if first.err != nil || first.result.Reason != models.ErrUncertain.Error() || first.result.Answer != nil || first.result.Usage != nil {
-					t.Fatalf("possible billed error escaped: %+v err=%v", first.result, first.err)
+				state = "UNCERTAIN"
+				raw, _ := json.Marshal(first.result)
+				if first.err != nil || first.result.Status != "SEARCH_ONLY" || first.result.Reason != "MODEL_CALL_UNCERTAIN" ||
+					first.result.Answer != nil || first.result.Usage != nil || len(first.result.Citations) != 0 ||
+					len(first.result.Sources) != 0 || strings.Contains(string(raw), `"usage"`) || !strings.Contains(string(raw), `"citations":[]`) {
+					t.Fatalf("possible sent error escaped: %+v err=%v body=%s", first.result, first.err, raw)
 				}
 			} else if first.err != nil || first.result.Status != "ANSWERED" || first.result.Answer == nil || len(first.result.Citations) != 1 ||
-				first.result.Usage == nil || first.result.Usage.Units != 5 || !strings.Contains(first.result.Citations[0].URL, "message_seq=2") {
+				first.result.Usage == nil || first.result.Usage.InputTokens != 3 || first.result.Usage.OutputTokens != 2 ||
+				!strings.Contains(first.result.Citations[0].URL, "message_seq=2") {
 				t.Fatalf("missing settled answer: %+v err=%v", first.result, first.err)
 			}
 			if !uncertain {
@@ -275,6 +275,11 @@ func TestAgentTurnIdempotencyAndUncertainCharge(t *testing.T) {
 			if err != nil || !reflect.DeepEqual(replay, first.result) || sends.Load() != 1 || searches.Load() != 1 {
 				t.Fatalf("completed replay repeated work or changed snapshot: %+v err=%v sends=%d searches=%d", replay, err, sends.Load(), searches.Load())
 			}
+			if raw, _ := json.Marshal(replay); uncertain && (strings.Contains(string(raw), `"usage"`) || !strings.Contains(string(raw), `"answer":null`)) {
+				t.Fatalf("uncertain replay invented usage or an answer: %s", raw)
+			} else if !uncertain && !strings.Contains(string(raw), `"usage":{"input_tokens":3,"output_tokens":2}`) {
+				t.Fatalf("settled replay lost reported usage: %s", raw)
+			}
 			if _, err = o.Reply(t.Context(), Actor{bob}, request); !errors.Is(err, knowledge.ErrNotFound) {
 				t.Fatalf("foreign owner replay: %v", err)
 			}
@@ -282,27 +287,27 @@ func TestAgentTurnIdempotencyAndUncertainCharge(t *testing.T) {
 			if _, err = o.Reply(t.Context(), f.actor, request); !errors.Is(err, knowledge.ErrConflict) {
 				t.Fatalf("different content on same key: %v", err)
 			}
-			var reservations, calls, allocationCount, userReserved int
-			var gotState, charged string
-			err = f.db.QueryRow(`SELECT
-				(SELECT count(*) FROM cap_ai.model_reservations),
-				(SELECT count(*) FROM cap_ai.model_calls),
-				(SELECT count(*) FROM cap_ai.reservation_allocations),
-				(SELECT state FROM cap_ai.model_reservations),
-				(SELECT reserved_units FROM cap_ai.budget_accounts WHERE scope='USER'),
-				coalesce((SELECT string_agg(a.scope||':'||a.scope_key||':'||e.units,',' ORDER BY a.scope)
-					FROM cap_ai.usage_ledger e JOIN cap_ai.budget_accounts a ON a.id=e.account_id WHERE e.kind='CHARGE'),'')`).
-				Scan(&reservations, &calls, &allocationCount, &gotState, &userReserved, &charged)
-			if err != nil || reservations != 1 || calls != 1 || allocationCount != 3 || gotState != state || userReserved != wantReserved || charged != wantCharges {
-				t.Fatalf("ledger: reservations=%d calls=%d allocations=%d state=%s reserved=%d charges=%q err=%v",
-					reservations, calls, allocationCount, gotState, userReserved, charged, err)
+			var operations int
+			var gotState, app string
+			var input, output sql.NullInt64
+			err = f.db.QueryRow(`SELECT count(*),coalesce(min(state),''),coalesce(min(app_id),''),
+				min(input_tokens),min(output_tokens) FROM cap_ai.model_operations`).
+				Scan(&operations, &gotState, &app, &input, &output)
+			if err != nil || operations != 1 || gotState != state || app != "agent_processing" {
+				t.Fatalf("operations=%d state=%s app=%s err=%v", operations, gotState, app, err)
+			}
+			if uncertain && (input.Valid || output.Valid) {
+				t.Fatalf("uncertain operation recorded usage: %+v/%+v", input, output)
+			}
+			if !uncertain && (input.Int64 != 3 || output.Int64 != 2) {
+				t.Fatalf("usage counters %+v/%+v", input, output)
 			}
 		})
 	}
 }
 
 func TestAgentTurnRechecksCurrentAuthorityAfterProvider(t *testing.T) {
-	for _, revoke := range []string{"uncited prior role", "billing review replaced"} {
+	for _, revoke := range []string{"uncited prior role", "cited source READ revoked", "processing review replaced"} {
 		t.Run(revoke, func(t *testing.T) {
 			var f agentTurnFixture
 			var latestReview string
@@ -330,6 +335,12 @@ func TestAgentTurnRechecksCurrentAuthorityAfterProvider(t *testing.T) {
 							_, err := f.db.ExecContext(req.Context(), `DELETE FROM core.user_roles WHERE user_id=$1 AND role_name='role_hr'`, f.actor.UserID)
 							return err
 						}
+						if revoke == "cited source READ revoked" {
+							// The Ready processing app keeps its query review; only the
+							// READ ceiling of one cited source is withdrawn.
+							_, err := f.db.ExecContext(req.Context(), `DELETE FROM core.user_roles WHERE user_id=$1 AND role_name='role_procurement'`, f.actor.UserID)
+							return err
+						}
 						var disabled bool
 						err := f.admin.QueryRowContext(req.Context(), `SELECT cap_ai.disable_agent_processing($1,$2,'fixture review withdrawn')`, f.actor.UserID, latestReview).Scan(&disabled)
 						if err == nil && !disabled {
@@ -346,7 +357,7 @@ func TestAgentTurnRechecksCurrentAuthorityAfterProvider(t *testing.T) {
 				}
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(models.Result{
-					Text: answer, CitationIDs: []string{"E1"}, Usage: models.Usage{InputTokens: 3, OutputTokens: 2},
+					Text: answer, CitationIDs: []string{"E1"}, Usage: &models.Usage{InputTokens: 3, OutputTokens: 2},
 				})
 			}))
 			defer server.Close()
@@ -357,8 +368,8 @@ func TestAgentTurnRechecksCurrentAuthorityAfterProvider(t *testing.T) {
 			f = newAgentTurnFixture(t, model)
 			f.addPackage(t, "hr", "role_hr", "Benefits details are available through Human Resources.")
 			f.addPackage(t, "procurement", "role_procurement", "New hires can request a laptop.")
-			f.approveGeneration(t, "agent_billing", "first valid billing review")
-			latestReview = f.approveGeneration(t, "agent_billing", "independently reviewed replacement")
+			f.approveGeneration(t, "agent_processing", "first valid processing review")
+			latestReview = f.approveGeneration(t, "agent_processing", "independently reviewed replacement")
 			o := f.orchestrator(f.retrieval)
 			conversation, err := f.store.Create(t.Context(), f.actor, "Policies")
 			if err != nil {
@@ -388,7 +399,7 @@ func TestAgentTurnRechecksCurrentAuthorityAfterProvider(t *testing.T) {
 	}
 }
 
-func TestAgentTurnRequiresCurrentBillingBudget(t *testing.T) {
+func TestAgentTurnRequiresCurrentModelBinding(t *testing.T) {
 	var sends atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		sends.Add(1)
@@ -401,22 +412,22 @@ func TestAgentTurnRequiresCurrentBillingBudget(t *testing.T) {
 	}
 	f := newAgentTurnFixture(t, provider)
 	f.addPackage(t, "procurement", "role_procurement", "New hires can request a laptop.")
-	f.approveGeneration(t, "agent_billing", "reviewed fixture")
-	turnSQL(t, f.db, `DELETE FROM cap_ai.budget_accounts WHERE scope='APP' AND scope_key='agent_billing'`)
+	f.approveGeneration(t, "agent_processing", "reviewed fixture")
+	turnSQL(t, f.db, `UPDATE cap_ai.global_model_slots SET profile_id=NULL,profile_revision=NULL,slot_revision=slot_revision+1 WHERE capability='LLM'`)
 	o := f.orchestrator(f.retrieval)
 	conversation, err := f.store.Create(t.Context(), f.actor, "Laptop policy")
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := o.Reply(t.Context(), f.actor, TurnRequest{conversation.ID, "budget withdrawn", "laptop"})
-	if err != nil || got.Status != "SEARCH_ONLY" || got.Reason != "QUOTA_EXCEEDED" ||
+	got, err := o.Reply(t.Context(), f.actor, TurnRequest{conversation.ID, "binding withdrawn", "laptop"})
+	if err != nil || got.Status != "SEARCH_ONLY" || got.Reason != models.ErrUnavailable.Error() ||
 		got.Answer != nil || len(got.Citations) != 1 || sends.Load() != 0 {
-		t.Fatalf("missing budget did not preserve safe search: %+v, err=%v, sends=%d", got, err, sends.Load())
+		t.Fatalf("missing binding did not preserve safe search: %+v, err=%v, sends=%d", got, err, sends.Load())
 	}
-	var ledger int
-	err = f.db.QueryRow(`SELECT count(*) FROM cap_ai.usage_ledger`).Scan(&ledger)
-	if err != nil || ledger != 0 {
-		t.Fatalf("budget denial left ledger entries: %d, err=%v", ledger, err)
+	var operations int
+	err = f.db.QueryRow(`SELECT count(*) FROM cap_ai.model_operations`).Scan(&operations)
+	if err != nil || operations != 0 {
+		t.Fatalf("missing binding left operations: %d, err=%v", operations, err)
 	}
 }
 
@@ -433,7 +444,7 @@ func TestAgentTurnSlotWithdrawalWhileReserving(t *testing.T) {
 	}
 	f := newAgentTurnFixture(t, provider)
 	f.addPackage(t, "procurement", "role_procurement", "New hires can request a laptop.")
-	f.approveGeneration(t, "agent_billing", "reviewed fixture")
+	f.approveGeneration(t, "agent_processing", "reviewed fixture")
 	conversation, err := f.store.Create(t.Context(), f.actor, "Laptop policy")
 	if err != nil {
 		t.Fatal(err)
@@ -446,7 +457,7 @@ func TestAgentTurnSlotWithdrawalWhileReserving(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `SELECT id FROM cap_ai.budget_accounts WHERE scope='APP' FOR UPDATE`); err != nil {
+	if _, err := tx.ExecContext(ctx, `LOCK TABLE cap_ai.model_operations IN ACCESS EXCLUSIVE MODE`); err != nil {
 		t.Fatal(err)
 	}
 	type outcome struct {
@@ -465,7 +476,7 @@ func TestAgentTurnSlotWithdrawalWhileReserving(t *testing.T) {
 		var waiting bool
 		err = f.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity
 			WHERE datname=current_database()
-			AND wait_event_type='Lock' AND query LIKE 'SELECT cap_ai.reserve_model(%')`).Scan(&waiting)
+			AND wait_event_type='Lock' AND query LIKE '%cap_ai.claim_model_operation(%')`).Scan(&waiting)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -474,14 +485,14 @@ func TestAgentTurnSlotWithdrawalWhileReserving(t *testing.T) {
 		}
 		select {
 		case early := <-reply:
-			t.Fatalf("turn finished before entering reservation: %+v, err=%v", early.result, early.err)
+			t.Fatalf("turn finished before entering the durable claim: %+v, err=%v", early.result, early.err)
 		case <-ctx.Done():
-			t.Fatal("Gateway did not block on the reserved budget account")
+			t.Fatal("Gateway did not block on the durable claim")
 		case <-ticker.C:
 		}
 	}
-	// Withdraw the slot from a separate committed session while the reservation
-	// is blocked. The old model profile and processing approvals stay enabled.
+	// Withdraw the slot from a separate committed session while the claim is
+	// blocked. The old model profile and processing approvals stay enabled.
 	if _, err := f.db.ExecContext(ctx, `UPDATE cap_ai.global_model_slots SET
 		profile_id=NULL,profile_revision=NULL,slot_revision=slot_revision+1 WHERE capability='LLM'`); err != nil {
 		t.Fatal(err)
@@ -494,12 +505,10 @@ func TestAgentTurnSlotWithdrawalWhileReserving(t *testing.T) {
 		got.result.Answer != nil || len(got.result.Citations) != 0 || sends.Load() != 0 {
 		t.Fatalf("withdrawn slot reached provider: reply=%+v, err=%v, sends=%d", got.result, got.err, sends.Load())
 	}
-	var state string
-	var reserved, calls int
-	err = f.db.QueryRowContext(ctx, `SELECT state,
-		(SELECT sum(reserved_units) FROM cap_ai.budget_accounts),
-		(SELECT count(*) FROM cap_ai.model_calls) FROM cap_ai.model_reservations`).Scan(&state, &reserved, &calls)
-	if err != nil || state != "CANCELLED" || reserved != 0 || calls != 0 {
-		t.Fatalf("withdrawn slot retained funds or attempted send: state=%s reserved=%d calls=%d err=%v", state, reserved, calls, err)
+	var state, code string
+	var usage int
+	err = f.db.QueryRowContext(ctx, `SELECT state,coalesce(error_code,''),(input_tokens IS NOT NULL)::int FROM cap_ai.model_operations`).Scan(&state, &code, &usage)
+	if err != nil || state != "FAILED_UNSENT" || code != "AUTHORITY_CHANGED" || usage != 0 {
+		t.Fatalf("withdrawn slot not recorded as unsent: state=%s code=%s usage=%d err=%v", state, code, usage, err)
 	}
 }

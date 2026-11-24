@@ -176,5 +176,25 @@ These tests install parsed fixture chunks. The full `models` gate separately
 requires actual worker/parser processing, three authenticated user fixtures,
 two loopback adapter spies and browser state. Its preflight prints each missing
 environment variable and exits 2 before starting the test.
-Deterministic fake responses establish boundary/accounting/citation behavior,
-not real-provider groundedness or invoice qualification.
+Deterministic fake responses establish boundary, operation-state, token and
+citation behavior, not real-provider groundedness or provider invoicing. A fake
+LOCAL case exercises the shared dispatch boundary; it is not evidence that a
+LOCAL serving adapter ships.
+
+The model runner asserts the current baseline rather than the retired one: no
+budget, reservation or usage-ledger setup is performed or required, a successful
+call must be observed as a `SUCCEEDED` operation with its recorded token counters,
+and an ambiguous call must be observed as a durable `UNCERTAIN` operation with
+null counters, no public usage and no second invocation. Schema presence, absence
+of the retired relations, migration checksum refusal and restricted-role
+privileges are qualified by the dedicated Go integration cases instead, so a
+missing stack prerequisite is reported as `NOT_RUN` and never as a pass.
+
+A qualification run also has to record the rollout gate separately from the test
+suite: fresh bootstrap, checksum refusal against an old applied model checksum,
+database privileges, standalone capability behavior and the full-stack fake
+gate. The named-database rebuild for an installation that applied the earlier
+model checksums is an owner-run action with a human execution gate
+([installation](../operations/installation.md#rebuilding-an-existing-model-installation));
+no qualification run performs it, and a skipped rebuild stays pending rather than
+counting as verified.

@@ -32,21 +32,21 @@ const (
 type TurnRequest struct{ ConversationID, ClientTurnID, Query string }
 
 type Orchestrator struct {
-	store     ConversationStore
-	memory    ContextBuilder
-	retriever Retriever
-	reader    knowledge.AnswerReader
-	resolver  knowledge.ModelResolver
-	policy    knowledge.ModelPolicy
-	gateway   knowledge.ModelCaller
-	billing   string
+	store      ConversationStore
+	memory     ContextBuilder
+	retriever  Retriever
+	reader     knowledge.AnswerReader
+	resolver   knowledge.ModelResolver
+	policy     knowledge.ModelPolicy
+	gateway    knowledge.ModelCaller
+	processing string
 }
 
 // NewOrchestrator accepts optional generation dependencies for lexical-only
 // installations. A configured Gateway supplies its own canonical policy.
 func NewOrchestrator(store ConversationStore, memory ContextBuilder, retrieval Retriever, reader knowledge.AnswerReader,
-	resolver knowledge.ModelResolver, gateway *models.Gateway, billingAppID string) *Orchestrator {
-	o := &Orchestrator{store: store, memory: memory, retriever: retrieval, reader: reader, resolver: resolver, billing: billingAppID}
+	resolver knowledge.ModelResolver, gateway *models.Gateway, processingAppID string) *Orchestrator {
+	o := &Orchestrator{store: store, memory: memory, retriever: retrieval, reader: reader, resolver: resolver, processing: processingAppID}
 	if gateway != nil && gateway.Policy != nil {
 		o.policy, o.gateway = gateway.Policy, gateway
 	}
@@ -54,17 +54,17 @@ func NewOrchestrator(store ConversationStore, memory ContextBuilder, retrieval R
 }
 
 // NewSourcePolicyChecker reauthorizes history under each source's actual role,
-// exact READ snapshot, the active generation profile, and the billing consumer.
-func NewSourcePolicyChecker(reader knowledge.AnswerReader, resolver knowledge.ModelResolver, policy knowledge.ModelPolicy, billingAppID string) SourcePolicyChecker {
+// exact READ snapshot, the active generation profile, and the processing consumer.
+func NewSourcePolicyChecker(reader knowledge.AnswerReader, resolver knowledge.ModelResolver, policy knowledge.ModelPolicy, processingAppID string) SourcePolicyChecker {
 	return func(ctx context.Context, actor Actor, ref SourceRef) (bool, error) {
-		if resolver == nil || policy == nil || billingAppID == "" || !readCurrentSource(ctx, reader, actor, ref) {
+		if resolver == nil || policy == nil || processingAppID == "" || !readCurrentSource(ctx, reader, actor, ref) {
 			return false, nil
 		}
 		binding, err := resolver.Resolve(ctx, models.CapabilityLLM)
 		if err != nil {
 			return false, err
 		}
-		op := agentOperation("agent-memory:"+ref.ChunkID, billingAppID, binding, []models.AgentSourceProof{agentProof(ref)})
+		op := agentOperation("agent-memory:"+ref.ChunkID, processingAppID, binding, []models.AgentSourceProof{agentProof(ref)})
 		_, err = policy.Check(ctx, &auth.Identity{UserID: actor.UserID}, op)
 		return err == nil, err
 	}
@@ -153,7 +153,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, actor Actor, user Message) T
 	if o.resolver == nil || o.policy == nil || o.gateway == nil {
 		return fallback(models.ErrUnavailable.Error())
 	}
-	if o.billing == "" {
+	if o.processing == "" {
 		return fallback(models.ErrPolicy.Error())
 	}
 
@@ -168,7 +168,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, actor Actor, user Message) T
 	}
 
 	identity := &auth.Identity{UserID: actor.UserID}
-	op := agentOperation("agent-turn:"+user.ID, o.billing, binding, proofs)
+	op := agentOperation("agent-turn:"+user.ID, o.processing, binding, proofs)
 	approval, err := o.policy.Check(ctx, identity, op)
 	if err != nil {
 		return fallback(safeModelReason(err))
@@ -194,7 +194,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, actor Actor, user Message) T
 	if err != nil || fresh.Fingerprint != approval.Fingerprint {
 		return emptyTurn("SEARCH_ONLY", authorizationChanged, search)
 	}
-	if errors.Is(callErr, models.ErrUnavailable) || errors.Is(callErr, models.ErrQuota) {
+	if errors.Is(callErr, models.ErrUnavailable) {
 		return fallback(safeModelReason(callErr))
 	}
 	if callErr != nil {
@@ -206,7 +206,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, actor Actor, user Message) T
 		return emptyTurn("SEARCH_ONLY", "UNSUPPORTED_ANSWER", search)
 	}
 	out := emptyTurn("ANSWERED", "", search)
-	out.Answer, out.Citations, out.Sources, out.Usage = &generated.Text, citations, sources, &generated.Usage
+	out.Answer, out.Citations, out.Sources, out.Usage = &generated.Text, citations, sources, generated.Usage
 	return out
 }
 
@@ -218,8 +218,6 @@ func safeModelReason(err error) string {
 	switch {
 	case errors.Is(err, models.ErrPolicy):
 		return models.ErrPolicy.Error()
-	case errors.Is(err, models.ErrQuota):
-		return models.ErrQuota.Error()
 	case errors.Is(err, models.ErrUncertain), errors.Is(err, models.ErrConflict):
 		return models.ErrUncertain.Error()
 	default:
@@ -227,8 +225,8 @@ func safeModelReason(err error) string {
 	}
 }
 
-func agentOperation(key, billing string, binding models.ActiveBinding, sources []models.AgentSourceProof) models.Operation {
-	return models.Operation{Key: key, AppID: billing, ScopeKind: "AGENT", Purpose: "GENERATE",
+func agentOperation(key, processing string, binding models.ActiveBinding, sources []models.AgentSourceProof) models.Operation {
+	return models.Operation{Key: key, AppID: processing, ScopeKind: "AGENT", Purpose: "GENERATE",
 		ProfileID: binding.Profile.ID, ProfileRevision: binding.Profile.Revision, LLMSlotRevision: binding.SlotRevision,
 		AgentSources: sources}
 }

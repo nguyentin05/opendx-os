@@ -35,6 +35,24 @@ it('explains search-only answers without inventing generated text',async()=>{
  render(<AppKnowledge {...props}/>);fireEvent.change(screen.getByLabelText('Tìm trong tài liệu của ứng dụng'),{target:{value:'Who approves?'}});await clickReady('Hỏi ứng dụng');await screen.findByText(/Chỉ tìm được nguồn.*không khả dụng/i);
 });
 
+it('keeps authorized results when the model call outcome is unconfirmed',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>String(input).endsWith('/answers')?json({status:'SEARCH_ONLY',answer:null,reason:'MODEL_CALL_UNCERTAIN',results:[evidence],citations:[]}):json({sources:[source]})));
+ render(<AppKnowledge {...props}/>);fireEvent.change(screen.getByLabelText('Tìm trong tài liệu của ứng dụng'),{target:{value:'Who approves?'}});await clickReady('Hỏi ứng dụng');
+ await screen.findByText(/chưa xác nhận được kết quả gọi mô hình/i);
+ expect(screen.getByText('Restricted excerpt')).toBeTruthy();
+ expect(screen.queryByText('Protected answer')).toBeNull();
+});
+it('shows the unconfirmed model call for a 503 uncertainty error',async()=>{
+ let requests=0;
+ vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>{
+  if(String(input).endsWith('/answers')){requests++;return new Response(JSON.stringify({error:{code:'MODEL_CALL_UNCERTAIN',message:'Service Unavailable'}}),{status:503,headers:{'Content-Type':'application/json'}})}
+  return json({sources:[source]});
+ }));
+ render(<AppKnowledge {...props}/>);fireEvent.change(screen.getByLabelText('Tìm trong tài liệu của ứng dụng'),{target:{value:'Who approves?'}});await clickReady('Hỏi ứng dụng');
+ await screen.findByText(/chưa xác nhận được kết quả gọi mô hình/i);
+ expect(requests).toBe(1);
+});
+
 it('loads sources and permits searching after Strict Mode replays effect setup', async () => {
  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
   if (init?.signal?.aborted) throw new DOMException('Context changed', 'AbortError');

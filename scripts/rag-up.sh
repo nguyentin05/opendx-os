@@ -82,7 +82,7 @@ ensure_env RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED false
 ensure_env RAG_MODELS_SCHEMA_ENABLED false
 ensure_env RAG_AGENT_MODELS_SCHEMA_ENABLED false
 ensure_env RAG_AGENT_ENABLED false
-ensure_env AI_AGENT_BILLING_APP_ID ""
+ensure_env AI_AGENT_PROCESSING_APP_ID ""
 
 # A caller's exported list takes precedence over every env file; use the list
 # this installation was created with so cap-ai is not silently absent.
@@ -234,7 +234,7 @@ while :; do
     sleep 5
 done
 
-set_env AI_AGENT_BILLING_APP_ID personal_library
+set_env AI_AGENT_PROCESSING_APP_ID personal_library
 set_env RAG_AGENT_ENABLED true
 compose up -d
 

@@ -14,6 +14,10 @@ BEGIN
 END
 $$;
 
+-- The registry login owns no direct model-operation access. 0004 cannot carry
+-- this revocation because 0004 runs before the role exists.
+REVOKE ALL ON TABLE cap_ai.model_operations FROM dxos_ai_model_catalog;
+
 CREATE TABLE cap_ai.model_candidates (
     profile_id text NOT NULL,
     revision bigint NOT NULL,
@@ -148,14 +152,14 @@ BEGIN
     l := p->'limits';
     IF jsonb_typeof(item) IS DISTINCT FROM 'object' OR item - ARRAY['profile', 'adapter_key', 'declaration_digest'] <> '{}'::jsonb
       OR NOT item ?& ARRAY['profile', 'adapter_key', 'declaration_digest'] OR jsonb_typeof(p) IS DISTINCT FROM 'object'
-      OR p - ARRAY['id', 'revision', 'purpose', 'execution', 'provider_id', 'model_id', 'dimension', 'credential_ref', 'limits', 'pricing_revision'] <> '{}'::jsonb
-      OR NOT p ?& ARRAY['id', 'revision', 'purpose', 'execution', 'provider_id', 'model_id', 'limits', 'pricing_revision']
-      OR jsonb_typeof(l) IS DISTINCT FROM 'object' OR l - ARRAY['max_input_tokens', 'max_output_tokens', 'max_bytes', 'input_unit_price', 'output_unit_price', 'timeout_ms'] <> '{}'::jsonb
-      OR NOT l ?& ARRAY['max_input_tokens', 'max_output_tokens', 'max_bytes', 'input_unit_price', 'output_unit_price', 'timeout_ms']
+      OR p - ARRAY['id', 'revision', 'purpose', 'execution', 'provider_id', 'model_id', 'dimension', 'credential_ref', 'limits'] <> '{}'::jsonb
+      OR NOT p ?& ARRAY['id', 'revision', 'purpose', 'execution', 'provider_id', 'model_id', 'limits']
+      OR jsonb_typeof(l) IS DISTINCT FROM 'object' OR l - ARRAY['max_input_tokens', 'max_output_tokens', 'max_bytes', 'timeout_ms'] <> '{}'::jsonb
+      OR NOT l ?& ARRAY['max_input_tokens', 'max_output_tokens', 'max_bytes', 'timeout_ms']
       THEN
       RAISE EXCEPTION 'invalid candidate declaration' USING ERRCODE = '22023';
     END IF;
-    FOREACH k IN ARRAY ARRAY['id', 'provider_id', 'model_id', 'pricing_revision'] LOOP IF jsonb_typeof(p->k) IS DISTINCT FROM 'string'
+    FOREACH k IN ARRAY ARRAY['id', 'provider_id', 'model_id'] LOOP IF jsonb_typeof(p->k) IS DISTINCT FROM 'string'
       OR length(p->>k) NOT BETWEEN 1 AND 200 OR(p->>k) !~ '^[a-zA-Z0-9][a-zA-Z0-9_.:/-]*$' THEN RAISE EXCEPTION 'invalid profile identifier'
       USING ERRCODE = '22023';
   END IF;
@@ -176,7 +180,7 @@ IF p->>'purpose' = 'EMBED' THEN
 ELSIF p ? 'dimension' AND p->'dimension' <> 'null'::jsonb THEN RAISE EXCEPTION 'generation dimension forbidden'
   USING ERRCODE = '22023';
 END IF;
-FOREACH k IN ARRAY ARRAY['max_input_tokens', 'max_output_tokens', 'max_bytes', 'input_unit_price', 'output_unit_price', 'timeout_ms'] LOOP IF jsonb_typeof(l->k) IS DISTINCT FROM 'number'
+FOREACH k IN ARRAY ARRAY['max_input_tokens', 'max_output_tokens', 'max_bytes', 'timeout_ms'] LOOP IF jsonb_typeof(l->k) IS DISTINCT FROM 'number'
   OR(l->>k) !~ '^(0|[1-9][0-9]{0,17})$' THEN RAISE EXCEPTION 'invalid model limit' USING ERRCODE = '22023';
 END IF;
 END LOOP;
@@ -186,8 +190,8 @@ IF(l->>'max_input_tokens')::numeric NOT BETWEEN 1 AND 2147483647 OR(l->>'max_out
   RAISE EXCEPTION 'invalid model limits' USING ERRCODE = '22023';
 END IF;
 normalized := p || jsonb_build_object('dimension', p->'dimension', 'credential_ref', p->'credential_ref');
-INSERT INTO cap_ai.model_profiles(id, revision, purpose, execution, provider_id, model_id, dimension, credential_ref, limits, pricing_revision)
-  VALUES(p->>'id', (p->>'revision')::bigint, p->>'purpose', p->>'execution', p->>'provider_id', p->>'model_id', (p->>'dimension')::integer, p->>'credential_ref', l, p->>'pricing_revision')
+INSERT INTO cap_ai.model_profiles(id, revision, purpose, execution, provider_id, model_id, dimension, credential_ref, limits)
+  VALUES(p->>'id', (p->>'revision')::bigint, p->>'purpose', p->>'execution', p->>'provider_id', p->>'model_id', (p->>'dimension')::integer, p->>'credential_ref', l)
   ON CONFLICT DO NOTHING;
 SELECT to_jsonb(mp) - ARRAY['created_at', 'enabled'] INTO existing
   FROM cap_ai.model_profiles mp

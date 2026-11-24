@@ -25,7 +25,7 @@ type ActiveBinding struct {
 
 // Resolve reads the installation slot and exact profile in one statement snapshot.
 // The returned value pins identity only: every call still requires current Gateway
-// policy approval and budget reservation. No application context selects a model.
+// policy approval and durable operation claim. No application context selects a model.
 func (r *Registry) Resolve(ctx context.Context, capability Capability) (ActiveBinding, error) {
 	return r.resolve(ctx, capability, nil)
 }

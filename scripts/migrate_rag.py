@@ -46,11 +46,12 @@ if a.scope == 'cap-ai':
                 and (f.name[:4] != '0005' or registry)
                 and (f.name[:4] < '0008' or agent)]
 sql = ["BEGIN; SELECT pg_advisory_xact_lock(782634901);", (root / "platform/postgres/migrations/ledger.sql").read_text()]
-# Check every checksum before executing any domain mutation.
-for f in selected:
+# Preflight is separate from selection: every present ledger row of this scope
+# must match the repository file, including an applied 0004/0005 above --through.
+for f in files:
     v = f.name[:4]
     checksum = hashlib.sha256(f.read_bytes()).hexdigest()
-    sql.append(f"DO $$ BEGIN IF EXISTS (SELECT 1 FROM core.schema_migrations WHERE scope='{a.scope}' AND version='{v}' AND checksum<>'{checksum}') THEN RAISE EXCEPTION 'migration checksum conflict'; END IF; END $$;")
+    sql.append(f"DO $$ BEGIN IF EXISTS (SELECT 1 FROM core.schema_migrations WHERE scope='{a.scope}' AND version='{v}' AND checksum<>'{checksum}') THEN RAISE EXCEPTION 'migration checksum conflict: scope={a.scope} version={v}; recreate the coordinated development database (see docs/operations/installation.md#rebuilding-an-existing-model-installation)'; END IF; END $$;")
 for f in selected:
     v = f.name[:4]
     checksum = hashlib.sha256(f.read_bytes()).hexdigest()
@@ -70,6 +71,10 @@ try:
 except FileNotFoundError:
     sys.exit('NOT_RUN: psql required')
 if result.returncode:
-    # Connection errors can contain credentials; never forward server/client diagnostics.
+    # Connection errors can contain credentials: forward only our own conflict line.
+    for line in result.stderr.splitlines():
+        marker = line.find('migration checksum conflict')
+        if marker >= 0:
+            print(line[marker:].strip(), file=sys.stderr)
     sys.exit('FAIL: migration failed (connection, SQL or checksum conflict); transaction rolled back')
 print('PASS: migrations applied or unchanged')

@@ -6,6 +6,7 @@ package models
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"regexp"
 	"strconv"
@@ -32,6 +33,10 @@ type CandidateDeclaration struct {
 
 const maxCatalogBytes = 65536
 
+// catalogSchemaVersion is the only declaration format the strict parser accepts.
+// Version 1 carried monetary fields and is rejected before interpretation.
+const catalogSchemaVersion = 2
+
 var catalogIdentifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.:/-]{0,199}$`)
 var catalogSecretRef = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,127}$`)
 
@@ -52,10 +57,21 @@ func ParseCatalog(data []byte) (Catalog, error) {
 	if _, e := tokens.Token(); e != io.EOF {
 		return fail()
 	}
+	// The schema version is checked before the rest of the document is
+	// interpreted, so a retired format can never be mistaken for a v2 catalog.
+	var version struct {
+		Value *int `json:"schema_version"`
+	}
+	if json.Unmarshal(data, &version) != nil || version.Value == nil {
+		return fail()
+	}
+	if *version.Value != catalogSchemaVersion {
+		return Catalog{}, fmt.Errorf("%w: schema_version %d", ErrCatalogVersion, *version.Value)
+	}
 	var c Catalog
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
-	if dec.Decode(&c) != nil || dec.Decode(new(any)) != io.EOF || c.SchemaVersion != 1 || c.Providers == nil || c.Models == nil || len(c.Providers) > 10 || len(c.Models) > 100 {
+	if dec.Decode(&c) != nil || dec.Decode(new(any)) != io.EOF || c.SchemaVersion != catalogSchemaVersion || c.Providers == nil || c.Models == nil || len(c.Providers) > 10 || len(c.Models) > 100 {
 		return fail()
 	}
 	providers := map[string]ProviderConfig{}
@@ -82,13 +98,13 @@ func ParseCatalog(data []byte) (Catalog, error) {
 		provider, exists := providers[p.ProviderID]
 		key := p.ID + "\x00" + strconv.FormatInt(p.Revision, 10)
 		l := p.Limits
-		if !exists || seen[key] || m.Adapter != "bounded-http-v1" || m.Adapter != provider.Adapter || p.CredentialRef != provider.CredentialRef || p.Enabled || p.Execution != "HOSTED" || !catalogIdentifier.MatchString(p.ID) || !catalogIdentifier.MatchString(p.ModelID) || !catalogIdentifier.MatchString(p.PricingRevision) || p.Revision < 1 || p.Revision > 999999999999999999 {
+		if !exists || seen[key] || m.Adapter != "bounded-http-v1" || m.Adapter != provider.Adapter || p.CredentialRef != provider.CredentialRef || p.Enabled || p.Execution != "HOSTED" || !catalogIdentifier.MatchString(p.ID) || !catalogIdentifier.MatchString(p.ModelID) || p.Revision < 1 || p.Revision > 999999999999999999 {
 			return fail()
 		}
 		if p.Purpose != "EMBED" && p.Purpose != "GENERATE" || p.Purpose == "EMBED" && (p.Dimension < 1 || p.Dimension > 16000) || p.Purpose == "GENERATE" && p.Dimension != 0 {
 			return fail()
 		}
-		if l.MaxInputTokens < 1 || int64(l.MaxInputTokens) > 2147483647 || l.MaxOutputTokens < 1 || int64(l.MaxOutputTokens) > 2147483647 || l.MaxBytes < 1 || l.MaxBytes > 1048576 || l.TimeoutMS < 1 || l.TimeoutMS > 120000 || l.InputUnitPrice < 0 || l.InputUnitPrice > 999999999999999999 || l.OutputUnitPrice < 0 || l.OutputUnitPrice > 999999999999999999 {
+		if l.MaxInputTokens < 1 || int64(l.MaxInputTokens) > 2147483647 || l.MaxOutputTokens < 1 || int64(l.MaxOutputTokens) > 2147483647 || l.MaxBytes < 1 || l.MaxBytes > 1048576 || l.TimeoutMS < 1 || l.TimeoutMS > 120000 {
 			return fail()
 		}
 		seen[key] = true
@@ -141,9 +157,10 @@ func catalogValue(dec *json.Decoder, field string) bool {
 		if e != nil || end != json.Delim('}') {
 			return false
 		}
-		// Zero prices are valid, so require their explicit presence.
+		// Every limit is required even at its minimum, so an omitted bound can
+		// never be read as an unbounded default.
 		if field == "limits" {
-			for _, key := range []string{"max_input_tokens", "max_output_tokens", "max_bytes", "timeout_ms", "input_unit_price", "output_unit_price"} {
+			for _, key := range []string{"max_input_tokens", "max_output_tokens", "max_bytes", "timeout_ms"} {
 				if !seen[key] {
 					return false
 				}

@@ -166,7 +166,7 @@ function ScopedAppKnowledge({token, appID, role}: Pick<Props, 'token' | 'appID' 
   <button disabled={!client||busy||!query.trim()} onClick={()=>void ask()}>Hỏi ứng dụng</button>
   {answer&&<div aria-label="Câu trả lời của ứng dụng">
    {answer.status==='ANSWERED'&&answer.answer&&<p>{answer.answer}</p>}
-   {answer.status==='SEARCH_ONLY'&&<p>Chỉ tìm được nguồn: {answer.reason==='AUTHORIZATION_CHANGED'?'quyền truy cập đã thay đổi; hãy hỏi lại.':answer.reason==='UNSUPPORTED_ANSWER'?'câu trả lời chưa được nguồn chứng minh.':'tính năng tạo câu trả lời không khả dụng cho yêu cầu này.'}</p>}
+   {answer.status==='SEARCH_ONLY'&&<p>Chỉ tìm được nguồn: {answer.reason==='AUTHORIZATION_CHANGED'?'quyền truy cập đã thay đổi; hãy hỏi lại.':answer.reason==='UNSUPPORTED_ANSWER'?'câu trả lời chưa được nguồn chứng minh.':answer.reason==='MODEL_CALL_UNCERTAIN'?'chưa xác nhận được kết quả gọi mô hình; các nguồn đã tìm vẫn được giữ.':'tính năng tạo câu trả lời không khả dụng cho yêu cầu này.'}</p>}
    {answer.status==='NO_EVIDENCE'&&<p>Không tìm thấy nguồn nào bạn được xem.</p>}
    {answer.citations.map((hit,index)=><button key={hit.chunk_id} onClick={()=>void showCitation(hit)}>Xem trích dẫn {index+1}</button>)}
   </div>}

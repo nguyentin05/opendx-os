@@ -62,7 +62,7 @@ services:
       RAG_PACKAGE_ENABLED: ${RAG_PACKAGE_ENABLED:-false}
       RAG_PERSONAL_ENABLED: ${RAG_PERSONAL_ENABLED:-false}
       RAG_AGENT_ENABLED: ${RAG_AGENT_ENABLED:-false}
-      AI_AGENT_BILLING_APP_ID: ${AI_AGENT_BILLING_APP_ID:-}
+      AI_AGENT_PROCESSING_APP_ID: ${AI_AGENT_PROCESSING_APP_ID:-}
     volumes:
       - type: volume
         source: package-artifacts
