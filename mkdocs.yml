@@ -267,6 +267,7 @@ nav:
           - API: reference/rag/api.md
           - Authorization: reference/rag/authorization.md
       - dxos-operator CLI: reference/cli/dxos-operator.md
+      - dxos-model CLI: reference/cli/dxos-model.md
   - Architecture:
       - Overview: architecture/index.md
       - Three tiers: architecture/tiers.md

@@ -3,7 +3,8 @@
 # Copyright 2026 DX-OS Open-Core Contributors
 set -euo pipefail
 mode="${1:-}"
-case "$mode" in source|metadata|personal|package|models) ;; *) echo 'usage: test-rag.sh source|metadata|personal|package|models' >&2; exit 2;; esac
+if [[ "$mode" == real-models ]]; then exec python3 "$(dirname "$0")/integration/rag_real_models.py"; fi
+case "$mode" in source|metadata|personal|package|models) ;; *) echo 'usage: test-rag.sh source|metadata|personal|package|models|real-models' >&2; exit 2;; esac
 required=(TEST_DATABASE_URL)
 if [[ "$mode" == source || "$mode" == metadata || "$mode" == personal || "$mode" == package || "$mode" == models ]]; then
  required+=(RAG_TEST_HASURA_URL RAG_TEST_HASURA_ADMIN_SECRET RAG_TEST_FILE_API_URL RAG_TEST_OIDC_TOKEN_A RAG_TEST_OIDC_TOKEN_B RAG_TEST_OIDC_TOKEN_ADMIN)

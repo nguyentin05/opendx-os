@@ -124,7 +124,8 @@ create_init_configmaps() {
             args+=(--from-file="${scope}-$(basename "$f")=$f")
         done
     done
-    kc -n "$PLATFORM_NS" create configmap postgres-migrations "${args[@]}" --dry-run=client -o yaml | kc apply -f - >/dev/null
+    # Keep migration data out of the size-limited last-applied annotation.
+    kc -n "$PLATFORM_NS" create configmap postgres-migrations "${args[@]}" --dry-run=client -o yaml | kc apply --server-side -f - >/dev/null
 }
 
 up() {

@@ -135,3 +135,12 @@ func declarationDigest(p Profile, adapter string, provider ProviderConfig) strin
 	digest := sha256.Sum256(declaration)
 	return hex.EncodeToString(digest[:])
 }
+
+// DeclarationDigest exposes the immutable candidate digest to offline deployment
+// tooling so it can print and compare the exact value the registry records.
+// Callers pass values already validated by ParseCatalog. This is a thin wrapper:
+// it adds no field, order or encoding of its own, so digests recorded by an
+// earlier release keep their bytes.
+func DeclarationDigest(p Profile, adapter string, provider ProviderConfig) string {
+	return declarationDigest(p, adapter, provider)
+}

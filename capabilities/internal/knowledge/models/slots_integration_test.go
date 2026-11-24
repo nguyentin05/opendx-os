@@ -184,3 +184,62 @@ func TestRegistryRuntimeCatalogWithoutCandidates(t *testing.T) {
 		t.Fatal("startup imported candidates", count, err)
 	}
 }
+
+// Promotion and runtime selection use different logins and independent providers.
+func TestRegistryIndependentHostedSlots(t *testing.T) {
+	db, dsn := adminFixture(t)
+	catalogLogin := testutil.As(t, dsn, "dxos_ai_model_catalog")
+	admin := testutil.As(t, dsn, "dxos_ai_model_admin")
+	registry := &Registry{DB: testutil.As(t, dsn, "dxos_ai_gateway")}
+	catalog := Catalog{SchemaVersion: 2, Providers: []ProviderConfig{
+		{ID: "embed-only", Adapter: "bounded-http-v1", Endpoint: "https://embed.invalid/v1/routes/old/call", CredentialRef: "EMBED_TOKEN"},
+		{ID: "generate-only", Adapter: "bounded-http-v1", Endpoint: "https://generate.invalid/v1/routes/current/call", CredentialRef: "GENERATE_TOKEN"},
+	}, Models: []CandidateDeclaration{}}
+	for i, purpose := range []string{"EMBED", "GENERATE"} {
+		p := Profile{ID: "independent-" + purpose, Revision: 1, Purpose: purpose, Execution: "HOSTED", ProviderID: catalog.Providers[i].ID, ModelID: "exact-model", CredentialRef: catalog.Providers[i].CredentialRef, Limits: Limits{MaxInputTokens: 1000, MaxOutputTokens: 100, MaxBytes: 1024, TimeoutMS: 1000}}
+		if purpose == "EMBED" {
+			p.Dimension = 3
+		}
+		catalog.Models = append(catalog.Models, CandidateDeclaration{Adapter: "bounded-http-v1", Profile: p})
+	}
+	if _, err := (&Registry{DB: catalogLogin}).Reconcile(context.Background(), catalog); err != nil {
+		t.Fatal(err)
+	}
+	var enabled int
+	if err := db.QueryRow(`SELECT count(*) FROM cap_ai.model_profiles WHERE id LIKE 'independent-%' AND enabled`).Scan(&enabled); err != nil || enabled != 0 {
+		t.Fatal("import enabled profiles", enabled, err)
+	}
+	for i, slot := range []Capability{CapabilityEmbedding, CapabilityLLM} {
+		if _, err := registry.Resolve(context.Background(), slot); !errors.Is(err, ErrUnavailable) {
+			t.Fatal("unreviewed slot available", err)
+		}
+		p := catalog.Models[i].Profile
+		digest := DeclarationDigest(p, "bounded-http-v1", catalog.Providers[i])
+		if _, err := adminPromote(admin, string(slot), 0, p.ID, p.Revision, digest, adminReview(p.ID, p.Revision, digest, p.Purpose, p.Dimension)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	embed, err := registry.Resolve(context.Background(), CapabilityEmbedding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	generate, err := registry.Resolve(context.Background(), CapabilityLLM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if embed.Profile.ProviderID == generate.Profile.ProviderID || embed.Profile.CredentialRef == generate.Profile.CredentialRef {
+		t.Fatal("slots lost independent provider credentials")
+	}
+	if embed.Profile.Purpose != "EMBED" || generate.Profile.Purpose != "GENERATE" {
+		t.Fatal("slot purpose mismatch")
+	}
+	if _, err := adminChange(admin, adminChangeArgs{Actor: adminOperatorID, Slot: "LLM", Expected: 1, Action: "DISABLE", Review: `{"reason":"synthetic qualification"}`}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.Resolve(context.Background(), CapabilityLLM); !errors.Is(err, ErrUnavailable) {
+		t.Fatal("disabled LLM available", err)
+	}
+	if got, err := registry.Resolve(context.Background(), CapabilityEmbedding); err != nil || got != embed {
+		t.Fatal("LLM change affected EMBEDDING", got, err)
+	}
+}

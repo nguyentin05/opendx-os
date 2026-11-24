@@ -172,6 +172,9 @@ func TestRegistryExplicitMigrationRunner(t *testing.T) {
 	if e = run("0010"); e == nil {
 		t.Fatal("model-dependent upgrade accepted without gates")
 	}
+	if e = db.QueryRow(`SELECT to_regprocedure('cap_ai.model_admin_change_slot(uuid,text,bigint,text,text,bigint,text,jsonb)') IS NOT NULL`).Scan(&present); e != nil || present {
+		t.Fatal("ungated upgrade installed audited slot administration", present, e)
+	}
 	for i := 0; i < 2; i++ {
 		if e = run("0005"); e != nil {
 			t.Fatal(e)
@@ -182,10 +185,20 @@ func TestRegistryExplicitMigrationRunner(t *testing.T) {
 		t.Fatal(count, e)
 	}
 	flags := []string{"RAG_MODELS_SCHEMA_ENABLED=true", "RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED=true", "RAG_AGENT_MODELS_SCHEMA_ENABLED=true"}
+	// 0011 sits behind the existing >=0008 opt-in: no new flag selects it.
 	for i := 0; i < 2; i++ {
-		if e = run("0010", flags...); e != nil {
+		if e = run("0011", flags...); e != nil {
 			t.Fatal(e)
 		}
+	}
+	if e = db.QueryRow(`SELECT to_regprocedure('cap_ai.model_admin_list(uuid,text,bigint,text,bigint,integer)') IS NOT NULL
+		AND to_regprocedure('cap_ai.model_admin_slots(uuid)') IS NOT NULL
+		AND to_regprocedure('cap_ai.model_admin_change_slot(uuid,text,bigint,text,text,bigint,text,jsonb)') IS NOT NULL
+		AND EXISTS(SELECT FROM information_schema.columns WHERE table_schema='cap_ai' AND table_name='model_slot_events' AND column_name='review')`).Scan(&present); e != nil || !present {
+		t.Fatal("optional audited slot administration missing", present, e)
+	}
+	if e = db.QueryRow(`SELECT count(*) FROM core.schema_migrations WHERE scope='cap-ai' AND version='0011'`).Scan(&count); e != nil || count != 1 {
+		t.Fatal("administration migration not recorded exactly once", count, e)
 	}
 	if e = db.QueryRow(`SELECT to_regprocedure('cap_ai.search_personal_vectors(uuid,text,text,bigint,public.vector,uuid[])') IS NOT NULL`).Scan(&present); e != nil || !present {
 		t.Fatal("optional PERSONAL vector search missing", present, e)

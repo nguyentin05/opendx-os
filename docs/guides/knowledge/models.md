@@ -5,7 +5,7 @@ diataxis: how-to
 audience: [operator, platform-developer]
 status: active
 owner: platform
-last_reviewed: 2026-11-23
+last_reviewed: 2026-11-24
 ---
 
 # Optional model retrieval and answers
@@ -22,7 +22,9 @@ OCR/VLM and local-model serving are outside this increment. App selection is
 not a permission grant. Legacy `/rag` remains unavailable.
 
 Migrations 0008–0010 add audited PERSONAL processing, PERSONAL semantic
-retrieval and the mixed-source AGENT model boundary. Follow the
+retrieval and the mixed-source AGENT model boundary. Migration 0011 adds the
+narrow audited slot administration functions and the deployment administration
+login; it follows the same agent-schema opt-in and changes no default. Follow the
 [ADR 0009 migration/consumer delta](../../adr/0009-native-rag-identity-and-source-boundaries.md#contract-amendment-and-implementation-delta-2026-11-18)
 before enabling the new behavior; provisioning an active slot alone cannot
 implement or authorize it.
@@ -77,8 +79,11 @@ the same file order and project name throughout an installation.
    private socket volume and UID 10001. API, worker and dispatcher each connect
    under the corresponding restricted DB login.
 5. Model activation stays manual. Add `compose.models.yaml`, provide the schema
-   flags, catalog and credential file, and follow the steps below. `make rag-up`
-   never enables models.
+   flags, catalog and credential file, and follow the steps below. For the bundled
+   adapter, additionally prepare the private files and add
+   `compose.model-adapter.yaml` as the last `-f` file
+   ([bundled hosted adapter](#bundled-hosted-adapter-opt-in)). `make rag-up` never
+   enables models and never starts the adapter.
 6. Before enabling model calls, qualify the bounded adapter, import disabled
    candidates, complete Platform Admin review and activate the exact EMBEDDING
    and/or LLM revisions through the deployment's audited slot procedure.
@@ -171,8 +176,9 @@ credential environment-variable references, with no endpoint or credential value
 The caller-supplied declaration digest is metadata; full normalized declarations
 are also compared, so equal digests never authorize conflicting definitions.
 Activation requires an independently reviewed Platform Admin deployment operation.
-R1 supplies candidate import and runtime slot resolution. The deployment must
-provide its audited promotion/rollback procedure before enabling hosted models.
+Migration 0011 supplies that operation; the `dxos-model activate`, `deactivate`,
+`slots` and `list` commands
+([CLI reference](../../reference/cli/dxos-model.md)) are its only interface.
 Authenticate the Platform Admin, verify the candidate digest, purpose, limits
 and adapter, and record the review. The administration transaction
 enables the reviewed profile, advances the expected slot revision to bind that
@@ -194,6 +200,15 @@ assert classification or choose credentials/endpoints. Do not amend an existing
 local-only policy into a hosted approval; create a new reviewed revision and
 explicitly bind eligible sources. Disabled or mismatched approvals deny egress.
 
+After activating a new EMBEDDING revision, keep the worker running. Each
+`Worker.Once` poll resolves the current slot and calls `cap_ai.queue_embeddings`
+through the worker login for eligible active document versions, including
+previously parsed documents. The new revision needs its own reviewed processing
+policy allowlist or PERSONAL approval before a job can be queued. Queueing is
+idempotent for the version and exact profile identity. The worker then resolves
+the fenced lease's pinned revision before building its generation. Keep old
+provider routes available until their outstanding leases have finished.
+
 EMBED jobs pin `profile@revision`, lexical run, chunk hashes and dimensions.
 Only a complete generation is READY; lease loss, source removal, a newer desired
 version or a disabled policy blocks writes/activation. Exact cosine ranking
@@ -211,7 +226,10 @@ admins, API, worker, Gateway and `dxos_ai_model_catalog` cannot approve processi
 The functions authenticate `session_user`, reject substituted roles and privileged
 runtime logins, and audit the verified actor and deployment session. There is no
 management UI in this increment. The deployment operator runs these functions
-through a protected `dxos_authz` connection after authenticating the Platform Admin.
+through a protected `dxos_authz` connection after authenticating the Platform Admin,
+either with `psql` as shown here or with
+`dxos-model policy approve|revoke` on `AI_MODEL_APPROVAL_DATABASE_URL` and a
+protected token ([CLI reference](../../reference/cli/dxos-model.md)).
 
 For a retained default volume, back up first and connect as the deployment database
 administrator using standard libpq environment variables (`PGHOST`, `PGPORT`,
@@ -255,11 +273,15 @@ For an FTS-only upgrade, `scripts/migrate-rag.sh --database-url-env DATABASE_URL
 `--through 0004` and `--through 0005` opt-ins retain their meaning. To install
 audited PERSONAL processing, hybrid search and AGENT model authority, set all
 three schema flags to `true` in the migration environment: `RAG_MODELS_SCHEMA_ENABLED`,
-`RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED`, and `RAG_AGENT_MODELS_SCHEMA_ENABLED`.
-Use `--through 0010` to apply these migrations. The bootstrap runner uses the
-same prerequisites. The agent-model flag defaults to `false` and also gates
-later model-dependent migrations when present. None of these flags activate a
-profile, slot or approval, and migration 0008 seeds no approvals.
+`RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED`, and
+`RAG_AGENT_MODELS_SCHEMA_ENABLED`.
+Use `--through 0010` to apply these migrations, or `--through 0012` to add the
+audited slot administration functions, the `dxos_ai_model_admin` login and
+PERSONAL approval authority locks. The
+bootstrap runner uses the same prerequisites. The agent-model flag defaults to
+`false` and also gates later model-dependent migrations when present. None of
+these flags activate a profile, slot or approval, and migration 0008 seeds no
+approvals; migration 0011 seeds no slot event either.
 
 The minimal approval object binds one immutable provider/profile revision and
 purpose, one existing PERSONAL `LOCAL_ONLY` source-policy revision, and an
@@ -395,6 +417,439 @@ context, output caps and provider-side pricing agreement before real use. Input 
 admission uses a conservative byte bound and a fixed envelope allowance; whole
 chunks are omitted rather than truncating tables to fit. No tools, SQL execution,
 URL fetching or streaming are exposed.
+
+## Bundled hosted adapter (opt-in)
+
+`compose.model-adapter.yaml` is an optional overlay for the bundled adapter: a
+Tier 2 boundary integration that translates the existing `bounded-http-v1`
+request into one OpenAI-compatible `POST`, owns no database, holds no application
+identity and applies no policy. The Gateway remains the only dispatch authority
+and the registry remains the only model-selection authority. Leaving the overlay
+out keeps every existing installation on its external-endpoint provider path and
+starts no adapter; [`make rag-up`](../../operations/installation.md) is unchanged
+and never enables model calls.
+
+The overlay publishes no host port and adds no APISIX route. `cap-ai` and
+`cap-ai-worker` reach it at `https://cap-ai-model-adapter:8443` over the private
+Compose network and trust it through a CA bundle that also contains the system
+roots. Only `HOSTED` `EMBED` and `GENERATE` are served; `VLM`, `RERANKING`,
+streaming, tools and local serving remain out of scope.
+
+### Files the owner prepares
+
+Prepare these outside Git, with `umask 077`. Never pass a value as a command
+argument, and never render the resolved Compose configuration into a terminal or a
+log: `docker compose config` prints environment values.
+
+| File | Contents |
+| --- | --- |
+| `.env.providers` | Adapter-only upstream vendor keys, one per route `credential_ref`. Loaded only by the adapter |
+| `.env.models` | Exactly `MODEL_ADAPTER_TOKEN=<random 32+ bytes>`, the internal Gateway token |
+| `model-adapter.json` | The reviewed route declaration |
+| `adapter-tls.crt`, `adapter-tls.key` | The adapter's server certificate and private key |
+| `adapter-ca-bundle.crt` | System trust roots plus the adapter CA |
+
+```bash
+umask 077
+{ printf 'MODEL_ADAPTER_TOKEN='; openssl rand -hex 32; } > .env.models
+read -rsp 'Embed provider API key: ' KEY; printf 'EMBED_PROVIDER_API_KEY=%s\n' "$KEY" > .env.providers; unset KEY
+read -rsp 'Generate provider API key: ' KEY; printf 'GENERATE_PROVIDER_API_KEY=%s\n' "$KEY" >> .env.providers; unset KEY
+```
+
+Check the pair before starting the stack. The preflight prints variable names and
+static reasons only, never a value:
+
+```bash
+python3 scripts/check_model_adapter_env.py \
+  --provider-env .env.providers --internal-env .env.models
+```
+
+It rejects a provider file that defines `MODEL_ADAPTER_TOKEN` or any reserved
+name (`MODEL_ADAPTER_*`, `AI_*`, `AI_MODEL_*`, `RAG_*`, `POSTGRES_*`, `OIDC_*`,
+`DATABASE_URL`, `PG*`, `SSL_CERT_FILE`), a repeated name, an internal file that is
+not exactly one nonempty `MODEL_ADAPTER_TOKEN`, and a file that grants group or
+other access. The adapter loads the provider file first and the internal file
+second, so the deployment's own token wins; the preflight is what stops the
+collision before Compose silently accepts it.
+
+### Route declaration
+
+Two routes, one per purpose, each with its own immutable provider identity. The
+upstream URLs, model identifiers and keys below are placeholders: use the exact
+reviewed endpoint, literal model identifier and credential reference. Router
+aliases (`openrouter/auto`, `@preset/...`, `:nitro`) are rejected, and an
+`openrouter.ai` route additionally requires the reviewed `routing` object.
+
+```json
+{
+  "schema_version": 1,
+  "routes": [
+    {
+      "protocol_version": 1,
+      "type": "openai-compatible",
+      "base_url": "https://embed.example.com/v1",
+      "credential_ref": "EMBED_PROVIDER_API_KEY",
+      "models": [
+        {
+          "model_id": "example-embed-v1",
+          "purpose": "EMBED",
+          "dimension": 1536,
+          "limits": {"max_input_tokens": 8191, "max_output_tokens": 1, "max_bytes": 65536, "timeout_ms": 30000}
+        }
+      ]
+    },
+    {
+      "protocol_version": 1,
+      "type": "openai-compatible",
+      "base_url": "https://generate.example.com/v1",
+      "credential_ref": "GENERATE_PROVIDER_API_KEY",
+      "models": [
+        {
+          "model_id": "example-generate-v1",
+          "purpose": "GENERATE",
+          "limits": {"max_input_tokens": 64000, "max_output_tokens": 2048, "max_bytes": 262144, "timeout_ms": 60000}
+        }
+      ]
+    }
+  ]
+}
+```
+
+A route is immutable configuration. Changing the base URL, the credential
+reference, a model, a purpose, a dimension, any limit or a routing policy changes
+its digest and therefore its served path, so it needs a new catalog revision and a
+new review. Rotating the secret value behind an unchanged reference does not
+change the digest.
+
+### Digest and path before the catalog
+
+Derive each route's identity offline, before a catalog exists:
+
+```bash
+bin/dxos-model validate --adapter-config model-adapter.json
+```
+
+```text
+route digest=83ad328c6b4af2ecda6416cdf6f488dd062018548079fbb9684021917ae92082 path=/v1/routes/83ad328c6b4af2ecda6416cdf6f488dd062018548079fbb9684021917ae92082/call protocol_version=1 type=openai-compatible base_url=https://embed.example.com/v1 credential_ref=EMBED_PROVIDER_API_KEY
+model example-embed-v1 purpose=EMBED dimension=1536 max_input_tokens=8191 max_output_tokens=1 max_bytes=65536 timeout_ms=30000
+route digest=7e26c5c3ab5c23ca79e0ecf4af17e7c6b3e0fc55fe44a17d10dd24cefa924038 path=/v1/routes/7e26c5c3ab5c23ca79e0ecf4af17e7c6b3e0fc55fe44a17d10dd24cefa924038/call protocol_version=1 type=openai-compatible base_url=https://generate.example.com/v1 credential_ref=GENERATE_PROVIDER_API_KEY
+model example-generate-v1 purpose=GENERATE max_input_tokens=64000 max_output_tokens=2048 max_bytes=262144 timeout_ms=60000
+```
+
+The digests are path segments, not routing decisions: the adapter serves each
+route only at its own `/v1/routes/<digest>/call` path. See the
+[CLI reference](../../reference/cli/dxos-model.md#route-only-validation).
+
+### Catalog declaration
+
+Use the derived path in each provider endpoint. Two provider IDs keep the two
+routes independent, and the profile revisions carry the exact dimension and
+limits from the route:
+
+```json
+{
+  "schema_version": 2,
+  "providers": [
+    {
+      "id": "example-embed",
+      "adapter": "bounded-http-v1",
+      "endpoint": "https://cap-ai-model-adapter:8443/v1/routes/83ad328c6b4af2ecda6416cdf6f488dd062018548079fbb9684021917ae92082/call",
+      "credential_ref": "MODEL_ADAPTER_TOKEN"
+    },
+    {
+      "id": "example-generate",
+      "adapter": "bounded-http-v1",
+      "endpoint": "https://cap-ai-model-adapter:8443/v1/routes/7e26c5c3ab5c23ca79e0ecf4af17e7c6b3e0fc55fe44a17d10dd24cefa924038/call",
+      "credential_ref": "MODEL_ADAPTER_TOKEN"
+    }
+  ],
+  "models": [
+    {
+      "adapter": "bounded-http-v1",
+      "profile": {
+        "id": "embed-primary",
+        "revision": 1,
+        "purpose": "EMBED",
+        "execution": "HOSTED",
+        "provider_id": "example-embed",
+        "model_id": "example-embed-v1",
+        "credential_ref": "MODEL_ADAPTER_TOKEN",
+        "dimension": 1536,
+        "limits": {"max_input_tokens": 8191, "max_output_tokens": 1, "max_bytes": 65536, "timeout_ms": 30000},
+        "enabled": false
+      }
+    },
+    {
+      "adapter": "bounded-http-v1",
+      "profile": {
+        "id": "generate-primary",
+        "revision": 1,
+        "purpose": "GENERATE",
+        "execution": "HOSTED",
+        "provider_id": "example-generate",
+        "model_id": "example-generate-v1",
+        "credential_ref": "MODEL_ADAPTER_TOKEN",
+        "limits": {"max_input_tokens": 64000, "max_output_tokens": 2048, "max_bytes": 262144, "timeout_ms": 60000},
+        "enabled": false
+      }
+    }
+  ]
+}
+```
+
+The provider `credential_ref` is the Gateway's internal adapter token; the route's
+own `credential_ref` names the vendor key inside the adapter. Cross-check the
+catalog against the routes offline:
+
+```bash
+bin/dxos-model validate --catalog model-catalog.json --adapter-config model-adapter.json
+```
+
+```text
+embed-primary@1 example-embed EMBED fb3a4c787dc2a7cce37bfbcdb7dea872a01ac9961f08a582f3d999c2f42a83aa /v1/routes/83ad328c6b4af2ecda6416cdf6f488dd062018548079fbb9684021917ae92082/call
+generate-primary@1 example-generate GENERATE ac8d1b0c1de5dd293603c9a15d83e3f63900c581e78c8753c8abc5bb9e42de7c /v1/routes/7e26c5c3ab5c23ca79e0ecf4af17e7c6b3e0fc55fe44a17d10dd24cefa924038/call
+```
+
+The third column is the immutable declaration digest the review must carry. A
+candidate that the route does not permit exactly (model, purpose, dimension,
+limits no greater than the ceiling) fails here, before any database exists.
+
+### TLS trust
+
+The adapter serves TLS only on `cap-ai-model-adapter:8443`; the certificate SAN
+must contain that name. Generate a private CA for this installation and keep it
+out of the adapter's own trust: the adapter verifies public vendor endpoints with
+the system roots.
+
+```bash
+umask 077
+openssl ecparam -name prime256v1 -genkey -noout -out adapter-ca.key
+openssl req -x509 -new -key adapter-ca.key -sha256 -days 3650 \
+  -subj '/CN=OpenDX-OS bundled model adapter CA' -out adapter-ca.crt
+openssl ecparam -name prime256v1 -genkey -noout -out adapter-tls.key
+openssl req -new -key adapter-tls.key -subj '/CN=cap-ai-model-adapter' -out adapter-tls.csr
+printf 'subjectAltName=DNS:cap-ai-model-adapter\nextendedKeyUsage=serverAuth\n' > adapter-tls.ext
+openssl x509 -req -in adapter-tls.csr -CA adapter-ca.crt -CAkey adapter-ca.key \
+  -CAcreateserial -days 825 -sha256 -extfile adapter-tls.ext -out adapter-tls.crt
+cat /etc/ssl/certs/ca-certificates.crt adapter-ca.crt > adapter-ca-bundle.crt
+chown 10001:10001 adapter-tls.key adapter-tls.crt model-adapter.json adapter-ca-bundle.crt
+chmod 0400 adapter-tls.key adapter-tls.crt model-adapter.json adapter-ca-bundle.crt
+```
+
+`capabilities/Dockerfile` runs the service as UID 10001, and Compose mounts a file
+secret with the host file's ownership and mode, so the key, certificate and
+configuration must be owned by that UID and readable by it alone. The CA bundle is
+not secret, but `cap-ai` and `cap-ai-worker` also run as UID 10001 and must be able
+to read it: an operator-only `0600` bundle leaves both services unable to verify
+the adapter. Never `chmod` the private key to 644 and never add it to Git. The
+bundle mounts read-only into
+`cap-ai` and `cap-ai-worker` as `SSL_CERT_FILE`; it must keep the system roots
+(`cat /etc/ssl/certs/ca-certificates.crt ...`), because removing them would break
+every other TLS connection those services make. An empty or adapter-only bundle is
+not a supported configuration: verification is never disabled.
+
+Rotation: replace `adapter-tls.crt`/`adapter-tls.key` (or the vendor key value in
+`.env.providers`) and recreate only the affected containers with the same Compose
+files. Keep `credential_ref` unchanged when only a secret value rotates. Re-review
+the route when processing terms, account scope or the endpoint change.
+
+### Compose invocation
+
+Set the five opt-in paths in the protected env file (or a second `--env-file`),
+then start the same project with the added overlay:
+
+```bash
+docker compose --env-file .env --env-file .env.rag \
+  -f compose.yaml -f compose.rag.yaml -f compose.models.yaml \
+  -f compose.model-adapter.yaml up -d
+```
+
+`RAG_MODEL_ADAPTER_CONFIG_FILE`, `RAG_MODEL_ADAPTER_CREDENTIAL_ENV_FILE`,
+`RAG_MODEL_ADAPTER_TLS_CERT_FILE`, `RAG_MODEL_ADAPTER_TLS_KEY_FILE` and
+`RAG_MODEL_ADAPTER_CA_FILE` are required by the overlay: omitting one stops
+Compose with a static message naming the missing variable. Validate the same file
+list with `docker compose ... config --quiet`, which prints nothing; never inspect
+the rendered form, which resolves secrets.
+
+### Database logins and migrations
+
+Apply `0012_personal_admin_authority_locks.sql` before using the CLI for PERSONAL
+approval changes. It holds the operator identity and membership rows through
+each mutation, serializing concurrent role withdrawal. It uses the existing
+non-login owner and narrow row-lock privileges introduced by 0011.
+
+Migration `0011_model_administration.sql` is additive: narrow audited slot
+functions plus the `dxos_ai_model_admin` login, no password and no seeded profile,
+slot or approval. It follows the existing agent-schema opt-in, so a runner that
+stops at `0010` keeps stopping there and no default changes.
+
+Provision the two new deployment logins as the database owner, with passwords read
+from the protected environment rather than written in a statement:
+
+```sh
+psql -X -v ON_ERROR_STOP=1 <<'SQL'
+DO $$
+DECLARE name text;
+BEGIN
+  FOREACH name IN ARRAY ARRAY['dxos_ai_model_catalog','dxos_ai_model_admin'] LOOP
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = name) THEN
+      EXECUTE format('CREATE ROLE %I LOGIN', name);
+    END IF;
+    EXECUTE format('ALTER ROLE %I LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT', name);
+  END LOOP;
+END $$;
+\getenv catalog_password MODEL_CATALOG_DATABASE_PASSWORD
+\getenv admin_password MODEL_ADMIN_DATABASE_PASSWORD
+ALTER ROLE dxos_ai_model_catalog PASSWORD :'catalog_password';
+ALTER ROLE dxos_ai_model_admin PASSWORD :'admin_password';
+SQL
+```
+
+`dxos_ai_model_catalog` executes only the candidate importer; it cannot activate,
+change a slot or read protected knowledge. `dxos_ai_model_admin` executes only the
+administration functions and validates the exact session plus the current Core
+`role_operator`. The approval commands use the existing protected `dxos_authz`
+login and its password; no CLI command runs on the owner login.
+
+Apply the schema with all three schema flags, then verify the ledger:
+
+```bash
+RAG_MODELS_SCHEMA_ENABLED=true RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED=true \
+RAG_AGENT_MODELS_SCHEMA_ENABLED=true \
+  scripts/migrate-rag.sh --database-url-env DATABASE_URL --scope cap-ai --through 0012
+```
+
+A retained installation that conflicts with an earlier `cap_ai` checksum must
+stop: no ledger edit, checksum bypass or reset command is accepted. Follow the
+named owner-approved rebuild in
+[installation](../../operations/installation.md#rebuilding-an-existing-model-installation),
+which rebuilds a separate database and re-derives model state.
+
+### Import, verify, review and activate
+
+Export one DSN at a time from the protected environment; the CLI reads exactly the
+login its command needs and never echoes a value.
+
+```bash
+export AI_MODEL_CATALOG_DATABASE_URL   # restricted catalog login
+bin/dxos-model import --catalog model-catalog.json
+bin/dxos-model validate --catalog model-catalog.json --adapter-config model-adapter.json
+unset AI_MODEL_CATALOG_DATABASE_URL
+```
+
+`import` declares disabled candidates only. Then make one explicit synthetic call
+per reviewed candidate. `verify` sends the fixed synthetic input to the adapter
+route the catalog names; it reads the candidate's `credential_ref` (the internal
+adapter token) from the protected environment and no vendor key:
+
+```bash
+bin/dxos-model verify --catalog model-catalog.json --profile embed-primary --revision 1 --json > verify-embed.json
+bin/dxos-model verify --catalog model-catalog.json --profile generate-primary --revision 1 --json > verify-generate.json
+```
+
+The JSON report carries the profile identity, the declaration digest, the
+dimension and the bounded usage, never response text, an endpoint or a key. A
+transport failure after a possible send exits 6 and is never re-sent: reconcile
+the state before another reviewed attempt.
+
+Write the review that binds the probe to one independent human attestation. The
+`qualification` object is the verify report unchanged; the `attestation_ref` is
+the review record, not a copy of the probe:
+
+```json
+{
+  "declaration_digest": "fb3a4c787dc2a7cce37bfbcdb7dea872a01ac9961f08a582f3d999c2f42a83aa",
+  "qualification": {"profile_id": "embed-primary", "revision": 1, "declaration_digest": "fb3a4c787dc2a7cce37bfbcdb7dea872a01ac9961f08a582f3d999c2f42a83aa", "purpose": "EMBED", "passed": true, "dimension": 1536, "citation_ids": [], "checked_at": "2026-11-24T10:00:00Z"},
+  "attestation_ref": "review/2026-11-24/model-board/embed-primary"
+}
+```
+
+Authenticate as a Platform Admin without putting the token in a command line, then
+activate the exact revision. Check `slots` first: a fresh installation reports
+`EMBEDDING slot_revision=0`, and the expected revision is required explicitly,
+including 0.
+
+```bash
+export AI_MODEL_ADMIN_DATABASE_URL
+bin/dxos-model slots --token-file operator.jwt
+bin/dxos-model activate --slot EMBEDDING --profile embed-primary --revision 1 \
+  --expected-slot-revision 0 --review embed-review.json --token-file operator.jwt
+bin/dxos-model slots --token-file operator.jwt
+unset AI_MODEL_ADMIN_DATABASE_URL
+```
+
+The mutation verifies the token subject and the current `role_operator` in the
+same transaction, locks the slot, compares the expected revision, enables the
+reviewed profile, advances the slot revision exactly once and appends the audit
+event with the review. A stale revision exits 4 and changes nothing. `LLM` binds
+`generate-primary` the same way.
+
+- Rollback is an explicit action with a fresh review, never a revision decrement:
+  `bin/dxos-model activate --slot EMBEDDING --profile <older> --revision <n>
+  --expected-slot-revision <current> --review <fresh-review> --rollback
+  --token-file operator.jwt`. The slot revision still advances.
+- Deactivate unbinds without deleting the profile or any vector:
+  `bin/dxos-model deactivate --slot EMBEDDING --expected-slot-revision <current>
+  --reason 'review withdrawn' --token-file operator.jwt`.
+- Read-only commands (`list`, `inspect`, `slots`) use the same administration
+  login and authenticate the operator; they never mutate.
+
+### PERSONAL processing approval
+
+Slot activation never approves personal egress. Record the separate audited
+PERSONAL approval for each purpose on the protected `dxos_authz` session:
+
+```json
+{
+  "profile_id": "embed-primary",
+  "profile_revision": 1,
+  "provider_id": "example-embed",
+  "purpose": "EMBED",
+  "source_policy_id": "local-only",
+  "source_policy_version": 1,
+  "source_classification": "PERSONAL",
+  "query_app_id": "personal_library",
+  "query_classification": "PERSONAL",
+  "retention_evidence": "review/2026-11-24/retention",
+  "training_use_evidence": "review/2026-11-24/training-use",
+  "region_evidence": "review/2026-11-24/region"
+}
+```
+
+```bash
+export AI_MODEL_APPROVAL_DATABASE_URL   # the protected dxos_authz login
+bin/dxos-model policy approve --file approval-embed.json --token-file operator.jwt
+unset AI_MODEL_APPROVAL_DATABASE_URL
+```
+
+`query_app_id` must be the genuine registered app that is currently `Ready` for the
+query; confirm the deployed app identifier rather than assuming a directory name,
+and use the value configured as `AI_AGENT_PROCESSING_APP_ID` for AGENT queries.
+`GENERATE` needs its own review with its own provider, profile revision and
+`purpose`. Withdraw one approval with
+`bin/dxos-model policy revoke --approval <uuid> --reason '<reason>' --token-file
+operator.jwt`; the withdrawn revision cannot be reactivated. APP `NON_PERSONAL`
+processing keeps its separately reviewed procedure above and is not a PERSONAL
+approval.
+
+### Enable, rotate and retire routes
+
+Only after qualification, import, activation and the required approvals, set
+`RAG_MODELS_QUALIFIED`, `RAG_MODELS_ENABLED` and
+`RAG_GLOBAL_MODEL_REGISTRY_ENABLED` for `cap-ai` and the worker and recreate them.
+Missing any of them keeps inference off; authorized FTS remains available.
+
+When a route changes, add the new route and a new provider ID (one endpoint per
+provider ID), import the new disabled revision and review it, then keep the old
+and new routes and IDs until every fenced embedding job and pinned operation has
+drained or failed closed. Retire the old configuration explicitly: remove its
+route, re-import, deactivate its slot and confirm the old digest no longer
+resolves. Never rewrite an old provider declaration or reinterpret existing
+vectors under a new dimension.
+
+Environment files are not encrypted and are not a boundary against a privileged
+host or container operator; they only keep secrets out of Git, images, rendered
+Compose output and shell history.
 
 ## Global registry compatibility
 
@@ -569,3 +1024,78 @@ digest against provider metadata; endpoint or loopback changes require a new
 profile revision and provisioning. Slot reads and fenced embedding lease profile
 reads use narrowly granted gateway functions. Registry enablement alone provides
 no production qualification.
+
+## Explicit real hosted qualification
+
+Run `scripts/test-rag.sh real-models` only in an owner-approved disposable
+installation. Setting `RAG_REAL_MODELS_OPT_IN=true` authorizes synthetic hosted
+requests, possible provider charges and withdrawal of the supplied GENERATE
+processing approval at the end of the test. The runner leaves that approval
+disabled. Restore it only through a fresh, independently reviewed approval.
+
+Use the CLI procedure above to import, verify, review and activate the exact
+EMBEDDING and LLM revisions first. Independently approve PERSONAL content and
+queries for both purposes with `policy approve`. Record the returned approval
+UUIDs. Both approvals must cover the dedicated library app, the `local-only@1`
+source policy, exact profile revisions and their actual processors. Use the same
+opaque `attestation_ref` in both slot activation reviews and supply that reference
+as `RAG_REAL_MODELS_REVIEW_REF`. A provider behind OpenRouter also needs review
+of the pinned underlying processor and routing settings.
+
+Prepare a separate installation whose Ready personal-library app ID begins with
+`ragreal`. Give fixture actors A and B its allowed library role and keep the
+library empty. Actor A uploads the synthetic document. Actor B must have no
+access to A's document. Use running File Service, scanner, parser, cap-ai and
+worker processes with their documented runtime identities and TLS trust.
+
+Supply these environment variables through the protected test environment.
+
+| Variables | Required values |
+| --- | --- |
+| `TEST_DATABASE_URL` | Disposable database name beginning `test_` or ending `_test` |
+| `RAG_TEST_AI_API_URL`, `RAG_TEST_FILE_API_URL` | Actual test service origins |
+| `RAG_TEST_OIDC_TOKEN_A`, `RAG_TEST_OIDC_TOKEN_B` | Valid, distinct authenticated fixture sessions |
+| `RAG_REAL_TEST_APP`, `RAG_REAL_TEST_ROLE` | Dedicated `ragreal` library app and allowed role |
+| `RAG_REAL_EMBED_PROFILE`, `RAG_REAL_EMBED_REVISION` | Exact reviewed active EMBEDDING profile |
+| `RAG_REAL_GENERATE_PROFILE`, `RAG_REAL_GENERATE_REVISION` | Exact reviewed active LLM profile |
+| `RAG_REAL_EMBED_APPROVAL`, `RAG_REAL_GENERATE_APPROVAL` | Actual enabled PERSONAL approval UUIDs |
+| `RAG_REAL_MODELS_REVIEW_REF` | Opaque shared slot review reference |
+| `RAG_REAL_MODEL_CLI` | Path to the built `dxos-model` executable |
+| `RAG_REAL_ADMIN_TOKEN_FILE` | Owner-only operator access-token file accepted by the CLI |
+| `AI_MODEL_APPROVAL_DATABASE_URL` | Protected `dxos_authz` connection to the same host, port and disposable database as `TEST_DATABASE_URL` |
+| `CLAMAV_ADDRESS`, `RAG_INTERNAL_AI_URL` | Running scanner and worker's internal AI endpoint |
+| `RAG_PARSER_QUALIFIED`, `RAG_SOURCE_QUALIFIED`, `RAG_METADATA_QUALIFIED` | Qualification gates for the actual ingestion deployment |
+
+Preflight requires `OIDC_ISSUER_URL`, `OIDC_AUDIENCE` and `OIDC_JWKS_URL`,
+an executable CLI and an owner-readable token file with no group or other access.
+Connection-target overrides in either DSN or `PGHOSTADDR`, `PGSERVICE` and
+`PGSERVICEFILE` are refused before hosted work. Keep
+vendor keys in the adapter's secret file. The runner uses service tokens and the
+protected approval session, and consumes safe model metadata from PostgreSQL.
+
+```sh
+RAG_REAL_MODELS_OPT_IN=true scripts/test-rag.sh real-models
+```
+
+The gate uploads fresh Markdown through File Service, waits for scanner/parser
+processing and a complete matching vector generation, then requires a document
+that lexical search missed to appear in hybrid retrieval. It requires a grounded
+`BLUE-17` answer with an accessible chunk citation and successful EMBED/GENERATE
+operation evidence. It checks the denied fixture actor and withdraws the
+GENERATE approval before checking that no further generation was dispatched.
+The final output contains safe document, run, generation and profile identities.
+Capture it in a local qualification report under `.scratch/` together with the
+tested commit, command, result and reviewed routing evidence.
+
+Missing prerequisites exit 2 with `NOT_RUN`. A transport or provider failure
+exits 1 and is never retried automatically. A failed run can leave the synthetic
+document and approval withdrawal in place. Inspect the safe operation state and
+prepare another isolated empty fixture before a new qualification attempt.
+
+A second live embedding revision remains a separate owner-run qualification.
+Activate its independently reviewed candidate and approval, keep both adapter
+routes available, allow worker polling to build the new complete generation and
+verify its exact profile revision and dimension before claiming a live switch.
+Record this criterion as `NOT_RUN` when a second reviewed revision is unavailable.
+The deterministic revision-isolation tests cover the code regression. Record
+only provider/model combinations that actually passed the live gate.

@@ -32,6 +32,8 @@ if 'create' in args:
     print(json.dumps({'metadata':{'name':name},'data':data}))
 elif 'apply' in args:
     obj=json.load(sys.stdin)
+    if '--server-side' not in args and len(json.dumps(obj, separators=(',', ':')).encode()) > 262144:
+        raise SystemExit('last-applied annotation exceeds Kubernetes size limit')
     (pathlib.Path(os.environ['CAPTURE_CONFIGMAPS'])/(obj['metadata']['name']+'.json')).write_text(json.dumps(obj))
 ''')
             kubectl.chmod(0o755)
