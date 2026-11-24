@@ -521,6 +521,15 @@ func fieldKind(name string) valueKind {
 // where the declaration requires a positive integer and any value whose shape
 // does not match its field, so a decoded struct can never hold a value the
 // reviewed document did not state.
+//
+// This walk deliberately differs from requestValue in server.go on exactly one
+// point: JSON null. A route declaration is deployment-owned and frozen, so no null
+// is accepted anywhere (`err != nil || token == nil`). The request envelope is an
+// external wire, so that walk tolerates null on optional fields only, through its
+// nullAccepted helper, and still rejects it for every required value. The two are
+// otherwise identical on purpose — duplicate keys, case aliases, depth, shape,
+// integer kinds, complete EOF — and strict_test.go runs one malformed corpus
+// through both decoders so the shared rejections cannot drift.
 func declarationValue(dec *json.Decoder, field string, depth int) bool {
 	if depth > maxValueDepth {
 		return false
