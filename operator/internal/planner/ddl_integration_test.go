@@ -19,9 +19,11 @@ package planner
 
 import (
 	"database/sql"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/operator/internal/manifest"
 	"github.com/opendx-os/opendx-os/operator/internal/testutil"
 )
@@ -386,6 +388,65 @@ func TestDDLIntegrationChildRowsFollowTheirParent(t *testing.T) {
 		return err
 	}); err != nil {
 		t.Fatalf("another draft must stay editable: %v", err)
+	}
+}
+
+// Hasura hides insufficient_privilege behind "database query error". The child
+// refusals use check_violation so the client receives the stable message.
+func TestDDLIntegrationChildParentRefusalsAreCheckViolations(t *testing.T) {
+	db := testutil.NewDatabase(t)
+	installDomainTable(t, db, loadFixtureApp(t))
+
+	asAlice := func(fn func(*sql.Tx) error) error { return inTx(t, db, "dxos_hasura", alice, "", fn) }
+	newRequest := func() string {
+		var id string
+		if err := asAlice(func(tx *sql.Tx) error {
+			return tx.QueryRow(`INSERT INTO domain.procurement_requests (vendor_name, item_description, quoted_amount)
+				VALUES ('Acme', 'Office equipment', 100) RETURNING id`).Scan(&id)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	request, other := newRequest(), newRequest()
+
+	var item string
+	if err := asAlice(func(tx *sql.Tx) error {
+		return tx.QueryRow(`INSERT INTO domain.procurement_items (request_id, item, quantity, unit_price)
+			VALUES ($1, 'Laptop', 2, 18000000) RETURNING id`, request).Scan(&item)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := asAlice(func(tx *sql.Tx) error {
+		_, err := tx.Exec(`UPDATE domain.procurement_items SET request_id = $2 WHERE id = $1`, item, other)
+		return err
+	})
+	var pqErr *pq.Error
+	if !errors.As(err, &pqErr) || pqErr.Code != "23514" ||
+		!strings.Contains(pqErr.Message, "a row cannot move to another parent record") {
+		t.Fatalf("moving a line: %v", err)
+	}
+
+	if err := inTx(t, db, "dxos_process", alice, "submit", func(tx *sql.Tx) error {
+		_, err := tx.Exec(`UPDATE domain.procurement_requests SET status = 'SUBMITTED' WHERE id = $1`, request)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for name, stmt := range map[string]string{
+		"insert": `INSERT INTO domain.procurement_items (request_id, item, quantity, unit_price) VALUES ('` + request + `', 'Late', 1, 1)`,
+		"update": `UPDATE domain.procurement_items SET quantity = 99 WHERE id = '` + item + `'`,
+	} {
+		err := asAlice(func(tx *sql.Tx) error {
+			_, err := tx.Exec(stmt)
+			return err
+		})
+		if !errors.As(err, &pqErr) || pqErr.Code != "23514" ||
+			!strings.Contains(pqErr.Message, "the parent record can no longer be changed") ||
+			!strings.HasSuffix(pqErr.Message, "(status SUBMITTED)") {
+			t.Fatalf("%s against a submitted parent: %v", name, err)
+		}
 	}
 }
 

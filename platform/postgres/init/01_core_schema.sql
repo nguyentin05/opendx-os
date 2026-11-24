@@ -367,7 +367,7 @@ BEGIN
         v_parent := (to_jsonb(NEW) ->> TG_ARGV[1])::uuid;
         IF TG_OP = 'UPDATE' AND v_parent IS DISTINCT FROM (to_jsonb(OLD) ->> TG_ARGV[1])::uuid THEN
             RAISE EXCEPTION 'a row cannot move to another parent record'
-                USING ERRCODE = 'insufficient_privilege';
+                USING ERRCODE = 'check_violation';
         END IF;
     END IF;
 
@@ -382,8 +382,8 @@ BEGIN
             v_found := v_found OR v_status = TG_ARGV[i];
         END LOOP;
         IF NOT v_found THEN
-            RAISE EXCEPTION 'the parent record is % and can no longer be changed', v_status
-                USING ERRCODE = 'insufficient_privilege';
+            RAISE EXCEPTION 'the parent record can no longer be changed (status %)', v_status
+                USING ERRCODE = 'check_violation';
         END IF;
     END IF;
 

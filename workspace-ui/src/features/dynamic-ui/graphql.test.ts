@@ -55,6 +55,20 @@ it('maps an attachment refusal to its own kind', async () => {
   await expect(executeGraphQL(context, query, variables, signal)).rejects.toMatchObject({ kind: 'attachment' });
 });
 
+it.each([
+  ['parent locked', 'the parent record can no longer be changed (status SUBMITTED)', 'parent_locked'],
+  ['parent move', 'a row cannot move to another parent record', 'parent_move'],
+] as const)('maps a refused child row (%s) to its own kind', async (_reason, refusal, kind) => {
+  vi.stubGlobal('fetch', async () => Response.json({
+    errors: [{
+      message: 'Check constraint violation. ' + refusal,
+      extensions: { code: 'permission-error' },
+    }],
+  }));
+
+  await expect(executeGraphQL(context, query, variables, signal)).rejects.toMatchObject({ kind });
+});
+
 it('rejects a response with an invalid JSON body', async () => {
   vi.stubGlobal('fetch', async () => new Response('<html>Gateway</html>'));
 

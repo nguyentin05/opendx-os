@@ -30,6 +30,8 @@ const failureMessages = {
   unauthenticated: 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.',
   forbidden: 'Vai trò hiện tại không được xem hồ sơ này. Hãy chọn vai trò khác hoặc liên hệ quản trị viên.',
   attachment: 'Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.',
+  parent_locked: 'Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.',
+  parent_move: 'Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.',
   unavailable: 'Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.',
 };
 

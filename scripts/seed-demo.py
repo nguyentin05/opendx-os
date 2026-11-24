@@ -604,7 +604,7 @@ def lines() -> None:
             rows.append((label, people[user], role, f"{result}  [{'ok' if ok else 'UNEXPECTED'}]"))
 
         def refused(err):
-            return "refused: " + str((err or [{}])[0].get("message", err))[:60]
+            return "refused: " + str((err or [{}])[0].get("message", err))[:120]
 
         # A plain table: finance maintains the vendor list, everyone reads it.
         vendor_name = "Phong Vũ " + uuid.uuid4().hex[:6]
