@@ -32,6 +32,10 @@ var (
 	roleName     = regexp.MustCompile(`^role_[a-z0-9_]+$`)
 )
 
+// SupportedColumnTypes are the SQL types a business column may declare. The
+// operator manifest validator keeps the same list; the two modules release separately.
+var SupportedColumnTypes = []string{"uuid", "text", "date", "numeric(14,2)", "numeric(4,2)"}
+
 // Validate checks what the services rely on at run time. The operator has
 // already validated the whole manifest before marking it Ready; this guards
 // the identifiers that reach SQL and the rules the services evaluate, so a
@@ -106,15 +110,24 @@ func (a *AppDefinition) validateTable(t *Table, roles, commands map[string]bool)
 			return errors.New("invalid child table")
 		}
 	}
-	cols := a.ColumnTypes(t)
+	system := a.systemColumns(t)
+	seen := map[string]bool{}
 	for _, c := range t.Columns {
-		if !identifier.MatchString(c.Name) || !oneOf(c.Type, "uuid", "text", "date", "numeric(14,2)", "numeric(4,2)") {
-			return fmt.Errorf("invalid column %q", c.Name)
+		if !identifier.MatchString(c.Name) {
+			return fmt.Errorf("column %q: invalid identifier; use a lowercase SQL identifier", c.Name)
+		}
+		if system[c.Name] != "" {
+			return fmt.Errorf("column %q: reserved system column", c.Name)
+		}
+		if seen[c.Name] {
+			return fmt.Errorf("column %q: duplicate column", c.Name)
+		}
+		seen[c.Name] = true
+		if !oneOf(c.Type, SupportedColumnTypes...) {
+			return fmt.Errorf("column %q: unsupported type %q; supported types are %s", c.Name, c.Type, strings.Join(SupportedColumnTypes, ", "))
 		}
 	}
-	if len(cols) != len(a.systemColumns(t))+len(t.Columns) {
-		return errors.New("duplicate or reserved column")
-	}
+	cols := a.ColumnTypes(t)
 	for _, rules := range [][]Permission{t.Access.Select, t.Access.Insert, t.Access.Update} {
 		for _, p := range rules {
 			if !roles[p.Role] {
