@@ -23,6 +23,8 @@ apisix:
     ip: "127.0.0.1"
     port: 9092
 
+# No plugin list is set, so APISIX loads its built-in defaults. These include
+# client-control, limit-count and serverless-pre-function used by /v1/graphql.
 deployment:
   role: data_plane
   role_data_plane:

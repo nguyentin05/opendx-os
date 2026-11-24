@@ -17,9 +17,9 @@ stopped.
 | Area | Responsibility | Status |
 | --- | --- | --- |
 | Keycloak | OIDC sign-in; tokens carry identity only | Implemented |
-| APISIX | Routes `/v1/graphql`, `/api/auth/*`, `/api/cap/{process,hr,ai}/*` and `/realms/*`; closes the internal effect route | Implemented; rate limits are not configured |
+| APISIX | Routes `/v1/graphql`, `/api/auth/*`, `/api/cap/{process,hr,ai}/*` and `/realms/*`; closes the internal effect route; `/v1/graphql` caps request size and rate | Implemented |
 | `dxos-authz` | Resolves the acting role from `core.user_roles` for Hasura (auth webhook) and the UI; platform operators assign roles | Implemented |
-| PostgreSQL and Hasura | Transactional data and filtered CRUD by role, row and column | Implemented; pgvector with the `compose.models.yaml` overlay |
+| PostgreSQL and Hasura | Transactional data and filtered CRUD by role, row and column; request-serving roles have bounded query time | Implemented; pgvector with the `compose.models.yaml` overlay |
 | Kestra | Application workflows fed by the cap-process outbox | Implemented |
 | SeaweedFS and ClamAV | File objects, quarantine and scanning | Implemented |
 | `dxos-operator` | Manifest lifecycle: DDL, triggers, Hasura metadata, roles, flows and registry publication | Implemented (CLI and Compose reconcile loop) |
@@ -33,6 +33,16 @@ stopped.
 
 Dependency manifests and deployment configuration record actual technology
 versions.
+
+The GraphQL route accepts at most 256 KiB per request and 600 requests per
+minute from one client address, and rejects JSON-array bodies. Request-serving
+database roles have a 10s statement timeout; Hasura, cap-process, authz and
+cap-hr also have a 30s idle-in-transaction timeout, while background ingestion,
+the knowledge dispatcher, the model gateway, Kestra and migration/test roles
+keep no limit because they run longer operations. Existing installations apply
+`0006_runtime_statement_limits.sql` with
+`scripts/migrate-rag.sh --database-url-env DATABASE_URL --scope core --through 0006`
+and restart services so new connections pick up the settings.
 
 ## Capability availability
 

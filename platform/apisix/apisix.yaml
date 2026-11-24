@@ -21,6 +21,27 @@ routes:
         allow_origins: "http://localhost:5173,http://localhost:15173"
         allow_methods: "GET,POST,PUT,OPTIONS"
         allow_headers: "Authorization,Content-Type,X-Hasura-Role,Idempotency-Key"
+      client-control:
+        max_body_size: 262144
+      limit-count:
+        count: 600
+        time_window: 60
+        key: remote_addr
+        policy: local
+        rejected_code: 429
+      serverless-pre-function:
+        phase: rewrite
+        functions:
+          - |
+            return function(conf, ctx)
+              if ngx.req.get_method() == "POST" then
+                ngx.req.read_body()
+                local body = ngx.req.get_body_data()
+                if body and body:match("^%s*%[") then
+                  return 400, { error = { code = "Bad Request", message = "Bad Request" } }
+                end
+              end
+            end
       proxy-rewrite:
         headers:
           remove:
