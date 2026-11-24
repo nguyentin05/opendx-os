@@ -200,6 +200,15 @@ assert classification or choose credentials/endpoints. Do not amend an existing
 local-only policy into a hosted approval; create a new reviewed revision and
 explicitly bind eligible sources. Disabled or mismatched approvals deny egress.
 
+After activating a new EMBEDDING revision, keep the worker running. Each
+`Worker.Once` poll resolves the current slot and calls `cap_ai.queue_embeddings`
+through the worker login for eligible active document versions, including
+previously parsed documents. The new revision needs its own reviewed processing
+policy allowlist or PERSONAL approval before a job can be queued. Queueing is
+idempotent for the version and exact profile identity. The worker then resolves
+the fenced lease's pinned revision before building its generation. Keep old
+provider routes available until their outstanding leases have finished.
+
 EMBED jobs pin `profile@revision`, lexical run, chunk hashes and dimensions.
 Only a complete generation is READY; lease loss, source removal, a newer desired
 version or a disabled policy blocks writes/activation. Exact cosine ranking
