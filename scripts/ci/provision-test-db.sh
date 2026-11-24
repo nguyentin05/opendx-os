@@ -34,6 +34,7 @@ for file in \
     platform/postgres/init/07_app_definitions.sql \
     platform/postgres/capabilities/cap_hr.sql \
     platform/postgres/capabilities/cap_work.sql \
+    platform/postgres/migrations/core/0007_work_item_source_version.sql \
     platform/postgres/capabilities/cap_process.sql \
     platform/postgres/capabilities/cap_data.sql \
     platform/postgres/init/06_runtime_roles.sql

@@ -50,6 +50,11 @@ A flow calls back with `{"event_id", "step_name"}` using the workflow service
 credential, not a user token. The effect is resolved from the persisted event and
 the manifest and runs at most once per event and step.
 
+Effects on one record are serialized. A completion closes only items created by
+earlier events, and an older creation is skipped when a later completion is
+already recorded, so the open set follows event order rather than the order in
+which workers call back.
+
 ## Debug
 
 ```bash

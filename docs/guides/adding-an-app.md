@@ -44,7 +44,8 @@ apps/<app>/
 5. `spec.sharedAccess`: the shared columns a role reads, such as
    `core.users.display_name`.
 6. `spec.workflows`, if commands should open or close work items: see
-   [running workflows](running-workflows.md).
+   [running workflows](running-workflows.md). Effects on one record are applied
+   in event order, not worker arrival order.
 
 Keep thresholds and business handling in declarations and workflows. Adding an
 app must not add an app-name branch to shared capabilities, the UI or bootstrap

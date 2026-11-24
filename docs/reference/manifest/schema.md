@@ -154,7 +154,8 @@ Both effect kinds need `cap-work`:
   (`LOW`, `MEDIUM`, `HIGH` or `CRITICAL`) and an optional `assigneeId` (a
   UUID). It opens a work item whose source is the command's record.
 - `complete_work_item` declares no `fields` and marks the record's open work
-  items `DONE`.
+  items `DONE`. It closes only items created by earlier event versions; an
+  older creation is skipped once a later completion has been recorded.
 
 Event delivery needs exactly one subscriber. The validator accepts several
 flows, but cap-process does not deliver the events of an application in which

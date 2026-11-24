@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS cap_work.work_items (
     assignee_id UUID REFERENCES core.users(id),
     source_type TEXT CHECK (source_type IS NULL OR length(trim(source_type)) > 0),
     source_id UUID,
+    source_version BIGINT,
     created_by UUID NOT NULL REFERENCES core.users(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),

@@ -121,6 +121,13 @@ that point at the event's record and commits that update with the receipt. It
 returns the number of completed items, replays through the same receipt, and
 never touches another application's items.
 
+Work items created by an effect record the event's `entity_version`. Effects for
+one record serialize: a completion closes only items created by earlier events,
+and a creation is skipped when a later completion is already recorded, so the
+open set follows event order rather than arrival order. Existing installations
+apply `0007_work_item_source_version.sql` with
+`scripts/migrate-rag.sh --database-url-env DATABASE_URL --scope core --through 0007`.
+
 ## Fixtures and checks
 
 `contracts/fixtures/negative-cases.json` lists cases that must be refused. Those
