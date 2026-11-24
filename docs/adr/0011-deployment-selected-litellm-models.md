@@ -100,19 +100,29 @@ query.
 4. **Changing a model is a coordinated stop/drain deployment, never a runtime
    mutation.** The sequence is: validate the declaration and pinned digests;
    stop or drain the model-calling API and worker and prove no model operation is
-   in flight; reconcile the immutable profile rows idempotently and confirm the
-   approval metadata bound to them, under the restricted deployment identities of
-   decision 9 (`dxos-model import` for the rows, the operator approval session for
-   the approvals); start the pinned proxy with the generated configuration; probe
-   each configured purpose with bounded synthetic payloads from the one-shot
-   prober of decision 9; start the API and worker so that all three consume one
-   deployment snapshot. A snapshot mismatch denies model calls. A synthetic probe
-   is technical verification only and grants no processing permission. The actors
-   and their credentials are fixed by this ADR so that the sequence is executable
-   under decision 11: the reconciler is a short-lived process that needs only the
-   restricted catalog database login and never touches the proxy, and the prober
-   is a short-lived process that runs under the `cap-ai` client identity on the
-   private model network and holds no database login at all.
+   in flight; generate the proxy configuration from the declaration, compute its
+   digest and confirm it is the configuration digest decision 3 made part of the
+   identity; only then reconcile the immutable profile rows idempotently and
+   confirm the approval metadata bound to them; start the pinned proxy with that
+   same generated configuration; probe each configured purpose with bounded
+   synthetic payloads from the one-shot prober of decision 9; start the API and
+   worker so that all three consume one deployment snapshot. The order is fixed
+   because decision 3 puts the configuration digest in the identity: generation
+   and digest precede reconciliation, and reconciliation precedes the proxy
+   start, so no identity row can be written against a configuration that has not
+   been generated and hashed yet. The reconciliation and approval steps run under
+   restricted identities: `dxos-model import` writes the rows on the catalog
+   login of decision 9, and the approvals go through the baseline CLI's
+   one-operator approval session, which verifies exactly one operator token and
+   opens only the approval login
+   (`capabilities/cmd/dxos-model/main.go:154-161`). A snapshot mismatch denies
+   model calls. A synthetic probe is technical verification only and grants no
+   processing permission. The actors and their credentials are fixed by this ADR
+   so that the sequence is executable under decision 11: the reconciler is a
+   short-lived process that needs only the restricted catalog database login and
+   never touches the proxy, and the prober is a short-lived process that runs
+   under the `cap-ai` client identity on the private model network and holds no
+   database login at all.
 5. **Migration is additive by default.** Retired relations are removed only by a
    reviewed migration after their readers are gone; until then they are retained
    without writers. No migration deletes source documents, transcripts, original
@@ -160,14 +170,17 @@ query.
    explicitly reviewed counterpart `policy resume`:
    - `import` (retained, narrowed) is the reconciliation writer of decision 4 and
      the only command that writes a `cap_ai.model_profiles` row — the writer role
-     the retired baseline `import` holds through `registry_import_candidates`
-     (`capabilities/cmd/dxos-model/main.go`, `runImport`). It reads one reviewed
-     deployment declaration, upserts exactly those rows keyed by the digest
-     identity, and runs on the restricted `dxos_ai_model_catalog` login through
-     one narrow `SECURITY DEFINER` function granted only to it — the successor to
-     `registry_import_candidates`, whose exact name and grants the migration task
-     settles. It writes no candidate, slot, event, operation or approval row, and
-     it cannot activate, enable or approve anything.
+     the baseline `import` holds today through `registry_import_candidates`
+     (`capabilities/cmd/dxos-model/main.go`, `runImport`), which it keeps in
+     narrowed form. The command is not retired: what retires is its
+     candidate-catalog mode, which declares disabled candidates for slot
+     activation. It reads one reviewed deployment declaration, upserts exactly
+     those rows keyed by the digest identity, and runs on the restricted
+     `dxos_ai_model_catalog` login through one narrow `SECURITY DEFINER` function
+     granted only to it — the successor to `registry_import_candidates`, whose
+     exact name and grants the migration task settles. It writes no candidate,
+     slot, event, operation or approval row, and it cannot activate, enable or
+     approve anything.
    - `verify` (retained, retargeted) makes one bounded synthetic call per named
      purpose through the private proxy, from the one-shot prober described under
      [Who probes](#who-probes-and-who-reconciles). It takes the reviewed
@@ -185,9 +198,17 @@ query.
      the one reason that denies it — route absent, declaration or snapshot
      mismatch, policy not enabled, no current approval for the exact identity,
      suspended, or the installation-wide switch off. It reads the same durable
-     database authority that enables and suspends, opens no network connection
-     and prints no secret value. It is a deployment view, not a registry history
-     view, and it does not replace the retired `list`/`inspect`.
+     database authority that enables and suspends, but not by touching the
+     `cap_ai` tables: the inventory found that only `dxos_ai_owner` holds table
+     privileges there and every runtime role holds none, so `status` needs one
+     narrowly granted `SECURITY DEFINER` read function on the
+     `dxos_ai_model_admin` login the baseline `list`/`inspect`/`slots` commands
+     already open (`capabilities/cmd/dxos-model/main.go:160`) — a read-only
+     successor to `model_admin_list`, whose exact name, signature and grant the
+     runtime task settles together with the suspension reader. It opens no
+     network connection and prints no secret value. It is a deployment view, not
+     a registry history view, and it does not replace the retired
+     `list`/`inspect`.
    `policy suspend` must block subsequent dispatch for a purpose or for the whole
    installation through durable database authority with an audited actor,
    without depending on restarting the API, the worker or the proxy; it is the
@@ -227,22 +248,27 @@ are short-lived deployment jobs with a fixed identity, not new long-running
 services.
 
 - **The prober is a one-shot container, not a new client.** It is built from the
-  same `capabilities/Dockerfile` with `SERVICE=dxos-model`, which already produces
-  that command's image. It is attached only to the private model network, the
-  same network segment as `cap-ai`, and it authenticates to the proxy with the
-  `cap-ai` client credential — the `LITELLM_MASTER_KEY` that `cap-ai` holds —
-  supplied by the deployment secret store for the duration of that one container.
-  The key is passed as an environment variable at container start: never as a
-  command-line argument, never through the declaration or the proxy
-  configuration file, never in the image, and never printed. The prober holds no
-  database login, so a probe cannot write a profile, approval or operation row.
-  It runs between the proxy start and the `cap-ai` start in decision 4, exits
-  after one bounded synthetic call per configured purpose, and is removed; while
-  it runs, the deployment is neither serving model traffic nor admitting any
-  other client. Because it acts as `cap-ai`, decision 11's admission rule is
-  unchanged, and the deployment must remove the credential from the one-shot
-  container's environment when it exits rather than leave a job definition that
-  could be re-run unattended.
+  same single `capabilities/Dockerfile` with `SERVICE=dxos-model`. No published
+  image exists for that command: `.github/workflows/images.yml` builds
+  `opendx-operator`, `opendx-dxos-controller`, `opendx-dxos-authz`,
+  `opendx-cap-process`, `opendx-cap-hr`, `opendx-cap-data`, `opendx-cap-ai`,
+  `opendx-cap-ai-worker`, `opendx-cap-ai-parser` and `opendx-workspace-ui`, and
+  has no `dxos-model` entry, so the deployment must build this variant itself
+  from the pinned commit and run it as a one-shot job. It is attached only to the
+  private model network, the same network segment as `cap-ai`, and it
+  authenticates to the proxy with the `cap-ai` client credential — the
+  `LITELLM_MASTER_KEY` that `cap-ai` holds — supplied by the deployment secret
+  store for the duration of that one container. The key is passed as an
+  environment variable at container start: never as a command-line argument,
+  never through the declaration or the proxy configuration file, never in the
+  image, and never printed. The prober holds no database login, so a probe
+  cannot write a profile, approval or operation row. It runs between the proxy
+  start and the `cap-ai` start in decision 4, exits after one bounded synthetic
+  call per configured purpose, and is removed; while it runs, the deployment is
+  neither serving model traffic nor admitting any other client. Because it acts
+  as `cap-ai`, decision 11's admission rule is unchanged, and the deployment must
+  remove the credential from the one-shot container's environment when it exits
+  rather than leave a job definition that could be re-run unattended.
 - **The reconciler is `dxos-model import` on the catalog login.** It runs on
   `AI_MODEL_CATALOG_DATABASE_URL` (`dxos_ai_model_catalog`) with no proxy
   reachability and no model network attachment, and it writes only the
@@ -290,16 +316,17 @@ declared qualified; neither may be asserted as done:
 
 - **Advisory status of the pin is unverified.** This ADR names no advisory
   identifier and no affected version range for `v1.110.3`, because no such
-  attribution could be confirmed. An earlier draft of this ADR cited a
-  high-severity JWT/SSO email-fallback advisory as affecting `< 1.111.0`; that
-  citation was withdrawn on 2026-11-24 because its identifier resolved to nothing
-  — 404 from both the OSV vulnerability endpoint
-  (`https://api.osv.dev/v1/vulns/<id>`) and the GitHub advisory pages — and
-  because the OSV query for the `litellm` PyPI package returned no entry matching
-  that description and none with a range reaching `1.111.0`. The pin must
-  therefore be treated as advisory-unchecked, not clean. Before a route is
-  declared qualified, the security reviewer must run and record the query itself
-  against resolvable sources: the GitHub Advisory Database
+  attribution could be confirmed. The first committed draft of this ADR (commit
+  `cc29f51`, 2026-11-25) cited a high-severity JWT/SSO email-fallback advisory as
+  affecting `< 1.111.0`; that citation was still present when the draft was
+  reviewed and was withdrawn during that review, before this ADR was accepted on
+  2026-11-25, because its identifier resolved to nothing: 404 from both the OSV
+  vulnerability endpoint (`https://api.osv.dev/v1/vulns/<id>`) and the GitHub
+  advisory pages, and because the OSV query for the `litellm` PyPI package
+  returned no entry matching that description and none with a range reaching
+  `1.111.0`. The pin must therefore be treated as advisory-unchecked, not clean.
+  Before a route is declared qualified, the security reviewer must run and record
+  the query itself against resolvable sources: the GitHub Advisory Database
   (`https://github.com/advisories?query=litellm`, or the advisory REST API
   filtered on the `pip` ecosystem and `litellm`), OSV
   (`POST https://api.osv.dev/v1/query` with
@@ -353,15 +380,18 @@ From [ADR 0009](0009-native-rag-identity-and-source-boundaries.md):
   exclude local inference, and no other clause is read as doing so.
 - The requirement that hosted transport pass through the bounded adapter
   protocol, and any provider-translation responsibility it implies for Go
-  (decision 1). ADR 0009 states this as implementation, not as a numbered
-  decision, so the requirement to retire is anchored where it is actually
-  enforced and documented: the strict catalog schema constraint at
+  (decision 1). ADR 0009 does not state this requirement at all — neither
+  "adapter" nor "bounded-http-v1" appears anywhere in
+  [ADR 0009](0009-native-rag-identity-and-source-boundaries.md), and no clause of
+  it is read as having stated it, as a decision or otherwise. The requirement to
+  retire is therefore anchored only where it is actually enforced and documented:
+  the strict catalog schema constraint at
   `capabilities/internal/knowledge/modelprovisioning/catalog.go:52`
   (`boundedAdapter = "bounded-http-v1"`, the only accepted value, rejected at
   `catalog.go:129` for any candidate), the catalog and route requirements in
   [the model guide](../guides/knowledge/models.md) (the catalog declaration at
   lines 549-598, which repeats `"adapter": "bounded-http-v1"` on every provider
-  and every model entry, and the schema statement at lines 1007-1030), and the
+  and every model entry, and the schema statement at lines 1016-1021), and the
   Tier 2 boundary row at [Tier boundaries](../architecture/tiers.md) line 84.
   Retiring them is what removes the adapter from the transport path.
 
@@ -382,7 +412,7 @@ From [ADR 0010](0010-model-operations-without-monetary-admission.md):
   (`bounded-http-v1`) as a mandatory element of the successor declaration,
   anchored at `capabilities/internal/knowledge/modelprovisioning/catalog.go:52`,
   at the model-guide catalog declaration (lines 549-598) and its schema statement
-  (lines 1007-1030), rather than at any ADR 0010 clause. The successor
+  (lines 1016-1021), rather than at any ADR 0010 clause. The successor
   declaration schema is settled by the migration task; it must keep immutable
   identity, purpose, execution class, resource limits and admin/runtime
   separation, and it must still reject retired schemas.

@@ -15,10 +15,13 @@ last_reviewed: 2026-11-20
   #70 (v0.2.0) and #103. The register below lists the gates that remain open.
   D10, the reservation/settlement requirements and the applied-migration rule
   are superseded by [ADR 0010](0010-model-operations-without-monetary-admission.md);
-  the model lifecycle, hosted transport and unreachable-local-inference clauses
-  are superseded by
-  [ADR 0011](0011-deployment-selected-litellm-models.md); every other decision,
-  including the security decisions, stands.
+  the `cap-ai/0005_model_registry.sql` slot-lifecycle row and the
+  `capabilities/internal/knowledge/answers.go` local-serving row are superseded
+  by [ADR 0011](0011-deployment-selected-litellm-models.md), which also retires
+  the bounded adapter transport that is enforced at
+  `capabilities/internal/knowledge/modelprovisioning/catalog.go:52` and recorded
+  in the model guide rather than in any clause of this decision; every other
+  decision, including the security decisions, stands.
 - **Date:** 2026-11-13
 - **Decision owner:** repository/product owner; issue owner `nguyentin05` is the proposed responsible owner, pending identity/assignment confirmation.
 
