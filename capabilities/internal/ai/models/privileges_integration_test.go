@@ -253,7 +253,7 @@ func TestModelOperationConflicts(t *testing.T) {
 	const otherActor = "22222222-2222-4222-8222-222222222222"
 	if _, e := db.Exec(`INSERT INTO core.apps(app_id,display_name,version,status,spec) VALUES('other_app','Other','1','Ready','{}');
 INSERT INTO core.users(id,email,display_name) VALUES('22222222-2222-4222-8222-222222222222','other@test.invalid','Other');
-INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,enabled) VALUES('gen',2,'GENERATE','HOSTED','fake','fake','{"max_input_tokens":100,"max_output_tokens":20,"max_bytes":4096,"timeout_ms":1000}',true);`); e != nil {
+INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,enabled) VALUES('gen',2,'GENERATE','HOSTED','fake','fake','{"max_input_tokens":100,"max_output_tokens":20,"max_bytes":4096,"timeout_ms":1000}',false);`); e != nil {
 		t.Fatal(e)
 	}
 	fingerprint := strings.Repeat("8", 64)

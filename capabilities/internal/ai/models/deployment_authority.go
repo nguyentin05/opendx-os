@@ -1,0 +1,208 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 DX-OS Open-Core Contributors
+
+package models
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+
+	"github.com/lib/pq"
+)
+
+// Deployment authority is the only way live model authority changes. The
+// database records the exact selected profile revisions, keeps model_profiles as
+// immutable history, and authorizes a model call only while the exact revision is
+// the current selection for its purpose. These three wrappers are the whole Go
+// surface over that contract; none of them approves a processing policy.
+//
+// The connection must be the restricted deployment login (dxos_ai_model_catalog).
+// A gateway, worker, API or administration session is refused by the database, so
+// no wrapper re-checks the role: the SQL session check is the authority.
+
+// DeploymentSelection is the complete declaration of what this installation
+// serves. A nil purpose is a disabled route: it is withdrawn, not left enabled.
+type DeploymentSelection struct {
+	Embedding  *Profile
+	Generation *Profile
+}
+
+// DeploymentPurposeState reports what the database now holds for one purpose.
+type DeploymentPurposeState struct {
+	Purpose           string `json:"purpose"`
+	ProfileID         string `json:"profile_id"`
+	Revision          int64  `json:"revision"`
+	Enabled           bool   `json:"enabled"`
+	SelectionRevision int64  `json:"selection_revision"`
+	Changed           bool   `json:"changed"`
+}
+
+// DeploymentSelectionReport is the sanitized result of a reconciliation.
+type DeploymentSelectionReport struct {
+	Profiles  []DeploymentPurposeState `json:"profiles"`
+	Created   int                      `json:"created"`
+	Withdrawn []string                 `json:"withdrawn"`
+	Changed   bool                     `json:"changed"`
+}
+
+// DeploymentSuspension is the sanitized result of an emergency withdrawal.
+type DeploymentSuspension struct {
+	Suspended  int      `json:"suspended"`
+	Purposes   []string `json:"purposes"`
+	ActorID    string   `json:"actor_id"`
+	OccurredAt string   `json:"occurred_at"`
+}
+
+// DeploymentStatusProfile is the sanitized live metadata for one purpose. It
+// never carries a credential reference, an endpoint or any content.
+type DeploymentStatusProfile struct {
+	Purpose           string `json:"purpose"`
+	ProfileID         string `json:"profile_id"`
+	Revision          int64  `json:"revision"`
+	Execution         string `json:"execution"`
+	ProviderID        string `json:"provider_id"`
+	ModelID           string `json:"model_id"`
+	Dimension         int    `json:"dimension"`
+	Limits            Limits `json:"limits"`
+	Selected          bool   `json:"selected"`
+	SelectionRevision int64  `json:"selection_revision"`
+	SelectedAt        string `json:"selected_at"`
+	Enabled           bool   `json:"enabled"`
+}
+
+// DeploymentStatus is the read-only view the deployment and administration
+// logins may hold. Enabled is the installation switch: no live profile means
+// model calls are unavailable and search stays lexical.
+type DeploymentStatus struct {
+	Enabled      bool                      `json:"enabled"`
+	LiveProfiles int                       `json:"live_profiles"`
+	Profiles     []DeploymentStatusProfile `json:"profiles"`
+}
+
+// deploymentDeclaration is the exact key set cap_ai.reconcile_deployment_models
+// accepts. Client-side state (Enabled, an absent GENERATE dimension, a zero
+// revision) can never be smuggled into the declaration.
+func deploymentDeclaration(p Profile) (map[string]any, error) {
+	if p.ID == "" || p.Revision < 1 || p.Purpose == "" {
+		return nil, ErrPolicy
+	}
+	if p.Purpose != "EMBED" && p.Purpose != "GENERATE" {
+		return nil, ErrPolicy
+	}
+	if p.Execution != "LOCAL" && p.Execution != "HOSTED" {
+		return nil, ErrPolicy
+	}
+	if p.ProviderID == "" || p.ModelID == "" {
+		return nil, ErrPolicy
+	}
+	if p.Limits.MaxInputTokens < 1 || p.Limits.MaxOutputTokens < 1 || p.Limits.MaxBytes < 1 || p.Limits.TimeoutMS < 1 {
+		return nil, ErrPolicy
+	}
+	declaration := map[string]any{
+		"id": p.ID, "revision": p.Revision, "purpose": p.Purpose,
+		"execution": p.Execution, "provider_id": p.ProviderID, "model_id": p.ModelID,
+		"limits": p.Limits,
+	}
+	if p.Purpose == "EMBED" {
+		if p.Dimension < 1 {
+			return nil, ErrPolicy
+		}
+		declaration["dimension"] = p.Dimension
+	} else if p.Dimension != 0 {
+		return nil, ErrPolicy
+	}
+	if p.CredentialRef != "" {
+		declaration["credential_ref"] = p.CredentialRef
+	}
+	return declaration, nil
+}
+
+// ReconcileDeployment records the complete installation selection. It is
+// idempotent for an identical declaration, withdraws any other live revision per
+// purpose, and never touches an approval, policy, document or operation row.
+func ReconcileDeployment(ctx context.Context, db *sql.DB, selection DeploymentSelection) (DeploymentSelectionReport, error) {
+	report := DeploymentSelectionReport{}
+	if db == nil {
+		return report, ErrUnavailable
+	}
+	profiles := make([]map[string]any, 0, 2)
+	for _, profile := range []*Profile{selection.Embedding, selection.Generation} {
+		if profile == nil {
+			continue
+		}
+		declaration, err := deploymentDeclaration(*profile)
+		if err != nil {
+			return report, err
+		}
+		profiles = append(profiles, declaration)
+	}
+	payload, err := json.Marshal(map[string]any{"profiles": profiles})
+	if err != nil {
+		return report, ErrPolicy
+	}
+	var raw []byte
+	if err := db.QueryRowContext(ctx, `SELECT cap_ai.reconcile_deployment_models($1::jsonb)`, string(payload)).Scan(&raw); err != nil {
+		return report, deploymentError(err)
+	}
+	if err := json.Unmarshal(raw, &report); err != nil {
+		return report, ErrUnavailable
+	}
+	return report, nil
+}
+
+// SuspendModelCalls withdraws every live profile in one transaction. The actor is
+// authenticated inside the same statement, so a revoked or inactive
+// administrator cannot suspend and an authorized one always leaves an audit row.
+func SuspendModelCalls(ctx context.Context, db *sql.DB, actorID string) (DeploymentSuspension, error) {
+	result := DeploymentSuspension{}
+	if db == nil || actorID == "" {
+		return result, ErrUnavailable
+	}
+	var raw []byte
+	if err := db.QueryRowContext(ctx, `SELECT cap_ai.suspend_model_calls($1)`, actorID).Scan(&raw); err != nil {
+		return result, deploymentError(err)
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return result, ErrUnavailable
+	}
+	return result, nil
+}
+
+// ReadDeploymentStatus reads the sanitized deployment metadata. It is read-only and
+// never returns a credential reference, endpoint, token or content.
+func ReadDeploymentStatus(ctx context.Context, db *sql.DB) (DeploymentStatus, error) {
+	status := DeploymentStatus{}
+	if db == nil {
+		return status, ErrUnavailable
+	}
+	var raw []byte
+	if err := db.QueryRowContext(ctx, `SELECT cap_ai.model_deployment_status()`).Scan(&raw); err != nil {
+		return status, deploymentError(err)
+	}
+	if err := json.Unmarshal(raw, &status); err != nil {
+		return status, ErrUnavailable
+	}
+	return status, nil
+}
+
+// deploymentError keeps the deployment boundary sanitized: callers see only the
+// package errors, never a driver message or a SQL state.
+func deploymentError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var pg *pq.Error
+	if errors.As(err, &pg) {
+		switch pg.Code {
+		case "42501", "22023", "22003":
+			// No deployment session, or a declaration the database refuses.
+			return ErrPolicy
+		case "23505", "40001":
+			// An immutable revision conflict, or a concurrent selection change.
+			return ErrConflict
+		}
+	}
+	return ErrUnavailable
+}

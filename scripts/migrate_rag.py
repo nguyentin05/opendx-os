@@ -15,7 +15,7 @@ p = argparse.ArgumentParser()
 p.add_argument('--database-url-env', required=True)
 p.add_argument('--scope', choices=['core', 'cap-ai'], required=True)
 p.add_argument('--through', required=True,
-               help='inclusive migration version; cap-ai 0004 opts into models, 0005 also opts into the registry')
+               help='inclusive migration version; cap-ai 0004 opts into models, 0005 also opts into the registry, 0008+ into agent authority, and 0013 (deployment authority) is derived from those, not a separate flag')
 a = p.parse_args()
 if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', a.database_url_env) or not os.environ.get(a.database_url_env):
     sys.exit('NOT_RUN: database URL environment variable required')
@@ -34,6 +34,11 @@ if a.scope == 'cap-ai':
     models = a.through in ('0004', '0005') or os.environ.get('RAG_MODELS_SCHEMA_ENABLED') == 'true'
     registry = a.through == '0005' or os.environ.get('RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED') == 'true'
     agent = os.environ.get('RAG_AGENT_MODELS_SCHEMA_ENABLED') == 'true'
+    # Deployment-bound model authority is derived from the installation itself,
+    # never from a further operator flag: an installation that boots the model,
+    # registry and agent schemas always runs it, and a plain FTS installation
+    # never does, so 0013 can never become a pgvector prerequisite for FTS.
+    deployment = models and registry and agent
     if registry and not models:
         sys.exit('model registry requires RAG_MODELS_SCHEMA_ENABLED=true')
     if agent and not (models and registry):
@@ -44,7 +49,8 @@ if a.scope == 'cap-ai':
         sys.exit('model prerequisites missing')
     selected = [f for f in selected if (f.name[:4] != '0004' or models)
                 and (f.name[:4] != '0005' or registry)
-                and (f.name[:4] < '0008' or agent)]
+                and (f.name[:4] < '0008' or agent)
+                and (f.name[:4] < '0013' or deployment)]
 sql = ["BEGIN; SELECT pg_advisory_xact_lock(782634901);", (root / "platform/postgres/migrations/ledger.sql").read_text()]
 # Preflight is separate from selection: every present ledger row of this scope
 # must match the repository file, including an applied 0004/0005 above --through.

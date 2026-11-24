@@ -43,14 +43,11 @@ func personalFixture(t *testing.T, purpose string) (*sql.DB, *sql.DB, *Policy, O
 	t.Helper()
 	db := modelDB(t, true)
 	applyRegistry(t, db)
-	raw, err := os.ReadFile("../../../../platform/postgres/migrations/cap_ai/0008_personal_model_processing.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = db.Exec(string(raw)); err != nil {
-		t.Fatal(err)
-	}
-	_, err = db.Exec(`INSERT INTO core.apps(app_id,display_name,version,status,spec) VALUES('library','Library','1','Ready','{"knowledge":{"version":1,"personalLibrary":{"enabled":true,"allowedRoles":["role_library_user"]}}}');
+	// Deployment-bound authority replaces the slot: the fixture installs the full
+	// personal/agent/administration chain through 0013 and then declares its
+	// profile as the live selection.
+	applyModelAuthority(t, db)
+	_, err := db.Exec(`INSERT INTO core.apps(app_id,display_name,version,status,spec) VALUES('library','Library','1','Ready','{"knowledge":{"version":1,"personalLibrary":{"enabled":true,"allowedRoles":["role_library_user"]}}}');
  INSERT INTO core.roles(name,app_id) VALUES('role_library_user','library');
  INSERT INTO core.users(id,email,display_name) VALUES('11111111-1111-4111-8111-111111111111','a@test.invalid','A'),('22222222-2222-4222-8222-222222222222','b@test.invalid','B');
  INSERT INTO core.user_roles(user_id,role_name) VALUES('11111111-1111-4111-8111-111111111111','role_library_user'),('11111111-1111-4111-8111-111111111111','role_operator'),('22222222-2222-4222-8222-222222222222','role_library_user');
@@ -68,6 +65,16 @@ func personalFixture(t *testing.T, purpose string) (*sql.DB, *sql.DB, *Policy, O
 	_, err = db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,dimension,limits,enabled) VALUES('personal',1,$1,'HOSTED','fake','fake',CASE WHEN $1='EMBED' THEN 3 END,'{"max_input_tokens":4096,"max_output_tokens":20,"max_bytes":8192,"timeout_ms":1000}',true)`, purpose)
 	if err != nil {
 		t.Fatal(err)
+	}
+	profile := readModelProfile(t, db, "personal", 1)
+	selection := DeploymentSelection{}
+	if purpose == "EMBED" {
+		selection.Embedding = &profile
+	} else {
+		selection.Generation = &profile
+	}
+	if report := applySelection(t, db, selection); !report.Changed {
+		t.Fatalf("deployment selection was not recorded: %+v", report)
 	}
 	var scope contracts.ReadScope
 	var value []byte
@@ -114,7 +121,7 @@ func TestHostedPersonalApprovedGenerate(t *testing.T) {
 	if checkPersonal(p, op, personalOther) == nil {
 		t.Fatal("approval bypassed owner READ")
 	}
-	if _, err := db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,enabled) SELECT id,2,purpose,execution,'other-provider',model_id,limits,enabled FROM cap_ai.model_profiles WHERE id='personal'`); err != nil {
+	if _, err := db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,enabled) SELECT id,2,purpose,execution,'other-provider',model_id,limits,false FROM cap_ai.model_profiles WHERE id='personal'`); err != nil {
 		t.Fatal(err)
 	}
 	op.ProfileRevision = 2
@@ -169,7 +176,7 @@ func TestHostedPersonalApprovedEmbed(t *testing.T) {
 		t.Fatal(err)
 	}
 	var lease []byte
-	if err := db.QueryRow(`SELECT cap_ai.claim_embedding($1)`, personalActor).Scan(&lease); err != nil || len(lease) == 0 {
+	if err := db.QueryRow(`SELECT cap_ai.claim_embedding($1,'personal',1)`, personalActor).Scan(&lease); err != nil || len(lease) == 0 {
 		t.Fatal("approved embedding not queued", err)
 	}
 	var l struct {
@@ -425,16 +432,9 @@ func TestHostedPersonalCurrentAuthorityRevocation(t *testing.T) {
 }
 
 func TestPersonalWithdrawalSerializesAdminRevocation(t *testing.T) {
+	// The fixture already installs 0011 and 0012, including the row-lock grants the
+	// administrative revocation path depends on.
 	db, admin, _, _ := personalFixture(t, "GENERATE")
-	for _, migration := range []string{"0011_model_administration.sql", "0012_personal_admin_authority_locks.sql"} {
-		raw, err := os.ReadFile("../../../../platform/postgres/migrations/cap_ai/" + migration)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err = db.Exec(string(raw)); err != nil {
-			t.Fatal(err)
-		}
-	}
 	approval := approvePersonal(t, admin, "GENERATE")
 	blocker, err := db.Begin()
 	if err != nil {

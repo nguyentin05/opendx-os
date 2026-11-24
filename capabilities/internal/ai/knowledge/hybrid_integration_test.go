@@ -95,7 +95,7 @@ func TestEmbeddingReadinessIndependent(t *testing.T) {
 	if e := s.EnqueueEmbeddings(context.Background(), a, profile); e != nil {
 		t.Fatal(e)
 	}
-	lease, e := s.ClaimEmbedding(context.Background(), ownerID)
+	lease, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
 	if e != nil || lease == nil {
 		t.Fatal(e)
 	}
@@ -118,7 +118,7 @@ func TestScopedExactVectorRanking(t *testing.T) {
 	if e := s.EnqueueEmbeddings(context.Background(), a, profile); e != nil {
 		t.Fatal(e)
 	}
-	lease, e := s.ClaimEmbedding(context.Background(), ownerID)
+	lease, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
 	if e != nil || lease == nil {
 		t.Fatal(e)
 	}
@@ -154,7 +154,7 @@ func TestUncertainEmbeddingIsNotAutomaticallyRetried(t *testing.T) {
 	if e := s.EnqueueEmbeddings(context.Background(), a, profile); e != nil {
 		t.Fatal(e)
 	}
-	lease, e := s.ClaimEmbedding(context.Background(), ownerID)
+	lease, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
 	if e != nil || lease == nil {
 		t.Fatal(e)
 	}
@@ -164,7 +164,7 @@ func TestUncertainEmbeddingIsNotAutomaticallyRetried(t *testing.T) {
 	if _, e = db.Exec(`UPDATE cap_ai.ingestion_jobs SET next_attempt_at=now()-interval '1 second' WHERE kind='EMBED'`); e != nil {
 		t.Fatal(e)
 	}
-	next, e := s.ClaimEmbedding(context.Background(), ownerID)
+	next, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
 	if e != nil || next != nil {
 		t.Fatal("possibly billed embedding automatically retried", e, next)
 	}
@@ -176,7 +176,7 @@ func TestEmbeddingCrashAfterSendDoesNotResend(t *testing.T) {
 	if e := s.EnqueueEmbeddings(context.Background(), a, profile); e != nil {
 		t.Fatal(e)
 	}
-	lease, e := s.ClaimEmbedding(context.Background(), ownerID)
+	lease, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
 	if e != nil || lease == nil {
 		t.Fatal(e)
 	}
@@ -192,7 +192,7 @@ func TestEmbeddingCrashAfterSendDoesNotResend(t *testing.T) {
 	if _, e = db.Exec(`UPDATE cap_ai.ingestion_jobs SET lease_until=now()-interval '1 second',next_attempt_at=now()-interval '1 second' WHERE kind='EMBED'`); e != nil {
 		t.Fatal(e)
 	}
-	next, e := s.ClaimEmbedding(context.Background(), ownerID)
+	next, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
 	if e != nil || next == nil {
 		t.Fatal(e)
 	}
@@ -276,7 +276,7 @@ func TestRegistryEmbeddingLeaseRecoveryPinsOriginalRevision(t *testing.T) {
 			}
 			worker := workerStore(t, db)
 			worker.ConfigureModels(gateway, models.Profile{}, models.Profile{})
-			first, err := worker.ClaimEmbedding(context.Background(), ownerID)
+			first, err := worker.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
 			if err != nil || first == nil {
 				t.Fatal(first, err)
 			}
@@ -320,7 +320,7 @@ func TestRegistryEmbeddingLeaseRecoveryPinsOriginalRevision(t *testing.T) {
 			if _, err = db.Exec(`UPDATE cap_ai.ingestion_jobs SET state='PENDING',next_attempt_at=now() WHERE id=$1`, first.JobID); err != nil {
 				t.Fatal(err)
 			}
-			lease, err := worker.ClaimEmbedding(context.Background(), ownerID)
+			lease, err := worker.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
 			if err != nil || lease == nil {
 				t.Fatal(lease, err)
 			}
@@ -432,7 +432,7 @@ func TestEmbeddingClaimedOperationLeaseRecovery(t *testing.T) {
 		if e := s.EnqueueEmbeddings(context.Background(), actor, profile); e != nil {
 			t.Fatal(e)
 		}
-		first, e := s.ClaimEmbedding(context.Background(), ownerID)
+		first, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
 		if e != nil || first == nil {
 			t.Fatal(first, e)
 		}
@@ -450,7 +450,7 @@ func TestEmbeddingClaimedOperationLeaseRecovery(t *testing.T) {
 		if _, e = db.Exec(`UPDATE cap_ai.ingestion_jobs SET lease_until=now()-interval '1 second',next_attempt_at=now()-interval '1 second' WHERE id=$1`, first.JobID); e != nil {
 			t.Fatal(e)
 		}
-		second, e := s.ClaimEmbedding(context.Background(), ownerID)
+		second, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
 		if e != nil || second == nil || second.JobID != first.JobID || second.Fence <= first.Fence {
 			t.Fatal("reclaim", second, e)
 		}
@@ -485,7 +485,7 @@ func TestEmbeddingClaimedOperationLeaseRecovery(t *testing.T) {
 		if e := s.EnqueueEmbeddings(context.Background(), actor, profile); e != nil {
 			t.Fatal(e)
 		}
-		first, e := s.ClaimEmbedding(context.Background(), ownerID)
+		first, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
 		if e != nil || first == nil {
 			t.Fatal(first, e)
 		}
@@ -498,7 +498,7 @@ func TestEmbeddingClaimedOperationLeaseRecovery(t *testing.T) {
 				t.Error(e)
 				return
 			}
-			hook.next, hook.nextErr = s.ClaimEmbedding(context.Background(), ownerID)
+			hook.next, hook.nextErr = s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
 		}
 		s.ConfigureModels(gateway, profile, models.Profile{})
 		if e = s.BuildEmbeddings(context.Background(), *first, profile); !errors.Is(e, models.ErrPolicy) {
@@ -540,7 +540,7 @@ func TestEmbeddingIntentBlocksLeaseRecovery(t *testing.T) {
 		if e := s.EnqueueEmbeddings(context.Background(), actor, profile); e != nil {
 			t.Fatal(e)
 		}
-		first, e := s.ClaimEmbedding(context.Background(), ownerID)
+		first, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
 		if e != nil || first == nil {
 			t.Fatal(first, e)
 		}
@@ -550,7 +550,7 @@ func TestEmbeddingIntentBlocksLeaseRecovery(t *testing.T) {
 				t.Error(e)
 				return
 			}
-			hook.next, hook.nextErr = s.ClaimEmbedding(context.Background(), ownerID)
+			hook.next, hook.nextErr = s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
 		}
 		s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}},
 			Operations: hook, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
@@ -598,7 +598,7 @@ func TestEmbeddingIntentBlocksLeaseRecovery(t *testing.T) {
 		if e := s.EnqueueEmbeddings(context.Background(), actor, profile); e != nil {
 			t.Fatal(e)
 		}
-		first, e := s.ClaimEmbedding(context.Background(), ownerID)
+		first, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
 		if e != nil || first == nil {
 			t.Fatal(first, e)
 		}
@@ -619,7 +619,7 @@ func TestEmbeddingIntentBlocksLeaseRecovery(t *testing.T) {
 		if _, e = db.Exec(`UPDATE cap_ai.ingestion_jobs SET lease_until=now()-interval '1 second',next_attempt_at=now()-interval '1 second' WHERE id=$1`, first.JobID); e != nil {
 			t.Fatal(e)
 		}
-		second, e := s.ClaimEmbedding(context.Background(), ownerID)
+		second, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
 		if e != nil || second == nil {
 			t.Fatal(second, e)
 		}

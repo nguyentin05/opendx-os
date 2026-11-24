@@ -89,7 +89,7 @@ func TestHostedEmbeddingRevisionIsolation(t *testing.T) {
 	if err = api.EnqueueEmbeddings(ctx, actor, profile); err != nil {
 		t.Fatal(err)
 	}
-	lease, err := worker.ClaimEmbedding(ctx, ownerID)
+	lease, err := worker.ClaimEmbedding(ctx, ownerID, models.Profile{ID: "embed", Revision: 1})
 	if err != nil || lease == nil {
 		t.Fatal(lease, err)
 	}
@@ -110,7 +110,7 @@ func TestHostedEmbeddingRevisionIsolation(t *testing.T) {
 	if err = api.EnqueueEmbeddings(ctx, actor, newer); err != nil {
 		t.Fatal(err)
 	}
-	if lease, err = worker.ClaimEmbedding(ctx, ownerID); err != nil || lease != nil {
+	if lease, err = worker.ClaimEmbedding(ctx, ownerID, models.Profile{ID: "embed", Revision: 1}); err != nil || lease != nil {
 		t.Fatal("unapproved revision scheduled", lease, err)
 	}
 	if calls.Load() != 1 {
@@ -415,7 +415,7 @@ func TestHostedRuntimeIndependentProvidersAndPinnedLease(t *testing.T) {
 	if err = f.api.EnqueueEmbeddings(context.Background(), f.owner, models.Profile{}); err != nil {
 		t.Fatal(err)
 	}
-	lease, err := f.worker.ClaimEmbedding(context.Background(), ownerID)
+	lease, err := f.worker.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
 	if err != nil || lease == nil {
 		t.Fatal(lease, err)
 	}
@@ -447,7 +447,7 @@ func TestHostedRuntimeIndependentProvidersAndPinnedLease(t *testing.T) {
 	if _, err = f.db.Exec(`UPDATE cap_ai.ingestion_jobs SET state='PENDING',next_attempt_at=now() WHERE id=$1`, lease.JobID); err != nil {
 		t.Fatal(err)
 	}
-	pinned, err := f.worker.ClaimEmbedding(context.Background(), ownerID)
+	pinned, err := f.worker.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
 	if err != nil || pinned == nil {
 		t.Fatal(pinned, err)
 	}

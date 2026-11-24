@@ -158,7 +158,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, actor Actor, user Message) T
 	}
 
 	binding, err := o.resolver.Resolve(ctx, models.CapabilityLLM)
-	if err != nil || binding.Capability != models.CapabilityLLM || binding.SlotRevision < 1 ||
+	if err != nil || binding.Capability != models.CapabilityLLM ||
 		binding.Profile.ID == "" || binding.Profile.Revision < 1 || !binding.Profile.Enabled || binding.Profile.Purpose != "GENERATE" {
 		return fallback(models.ErrUnavailable.Error())
 	}
@@ -226,8 +226,11 @@ func safeModelReason(err error) string {
 }
 
 func agentOperation(key, processing string, binding models.ActiveBinding, sources []models.AgentSourceProof) models.Operation {
+	// The exact profile revision is the whole binding: no slot revision is sent or
+	// accepted. The database authorizes it only while it is the live deployment
+	// selection, and every call re-checks that current authority.
 	return models.Operation{Key: key, AppID: processing, ScopeKind: "AGENT", Purpose: "GENERATE",
-		ProfileID: binding.Profile.ID, ProfileRevision: binding.Profile.Revision, LLMSlotRevision: binding.SlotRevision,
+		ProfileID: binding.Profile.ID, ProfileRevision: binding.Profile.Revision,
 		AgentSources: sources}
 }
 

@@ -149,5 +149,7 @@ spec:
                 path: migrations/cap_ai/0011_model_administration.sql
               - key: cap_ai-0012_personal_admin_authority_locks.sql
                 path: migrations/cap_ai/0012_personal_admin_authority_locks.sql
+              - key: cap_ai-0013_deployment_models.sql
+                path: migrations/cap_ai/0013_deployment_models.sql
       - name: data
         emptyDir: {}

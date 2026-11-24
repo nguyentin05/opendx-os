@@ -40,7 +40,8 @@ func resolverFixture(t *testing.T) (*sql.DB, *Registry) {
 	if _, err := importer.Reconcile(context.Background(), catalog); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`UPDATE cap_ai.model_profiles SET enabled=true; UPDATE cap_ai.global_model_slots SET profile_id='candidate',profile_revision=2,slot_revision=1 WHERE capability='LLM'`); err != nil {
+	// Only the slot-bound revision may be live: at most one profile per purpose.
+	if _, err := db.Exec(`UPDATE cap_ai.model_profiles SET enabled=(revision=2); UPDATE cap_ai.global_model_slots SET profile_id='candidate',profile_revision=2,slot_revision=1 WHERE capability='LLM'`); err != nil {
 		t.Fatal(err)
 	}
 	var name string
@@ -68,7 +69,7 @@ func TestRegistryResolvePinnedRevision(t *testing.T) {
 			t.Fatal(app, got, err)
 		}
 	}
-	if _, err := db.Exec(`UPDATE cap_ai.global_model_slots SET profile_revision=3,slot_revision=2 WHERE capability='LLM'`); err != nil {
+	if _, err := db.Exec(`UPDATE cap_ai.model_profiles SET enabled=(revision=3); UPDATE cap_ai.global_model_slots SET profile_revision=3,slot_revision=2 WHERE capability='LLM'`); err != nil {
 		t.Fatal(err)
 	}
 	fresh, err := r.Resolve(ctx, CapabilityLLM)

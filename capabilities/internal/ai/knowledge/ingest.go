@@ -53,7 +53,7 @@ func (w *Worker) Once(ctx context.Context) error {
 		if w.Store.gateway == nil || profile.ID == "" && w.Store.modelResolver == nil {
 			return nil
 		}
-		embedLease, e := w.Store.ClaimEmbedding(ctx, w.WorkerID)
+		embedLease, e := w.Store.ClaimEmbedding(ctx, w.WorkerID, profile)
 		if e != nil || embedLease == nil {
 			return e
 		}

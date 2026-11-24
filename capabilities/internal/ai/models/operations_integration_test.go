@@ -154,6 +154,9 @@ func (e operationEnv) setTimeout(t *testing.T, ms int) {
 	if _, err := conn.ExecContext(ctx, "SET session_replication_role=origin"); err != nil {
 		t.Fatal(err)
 	}
+	// The deployment records the exact binding: a changed declaration must be
+	// re-declared before it is authority again.
+	selectProfile(t, e.db, "personal", 1)
 }
 
 func (e operationEnv) fingerprint(t *testing.T, op Operation, payload Payload) string {
@@ -454,7 +457,7 @@ func TestModelOperationConflict(t *testing.T) {
 	before := readOperation(t, env.db, op.Key).Raw
 	if _, err := env.db.Exec(`INSERT INTO core.apps(app_id,display_name,version,status,spec) VALUES('other_app','Other','1','Ready','{}');
 		INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,enabled)
-		SELECT id,2,purpose,execution,provider_id,model_id,limits,enabled FROM cap_ai.model_profiles WHERE id='personal'`); err != nil {
+		SELECT id,2,purpose,execution,provider_id,model_id,limits,false FROM cap_ai.model_profiles WHERE id='personal'`); err != nil {
 		t.Fatal(err)
 	}
 	for _, change := range []struct {

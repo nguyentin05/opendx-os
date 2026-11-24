@@ -65,11 +65,11 @@ func (op Operation) validScope() bool {
 			return false
 		}
 		if op.RequirePersonalQueryApproval {
-			return op.Purpose == "EMBED" && op.EmbeddingSlotRevision > 0 && len(op.Sources) == 0 && op.Lease == nil
+			return op.Purpose == "EMBED" && len(op.Sources) == 0 && op.Lease == nil
 		}
 		return op.EmbeddingSlotRevision == 0 && len(op.Sources) <= 50
 	case "AGENT":
-		return op.Purpose == "GENERATE" && op.AppID != "" && op.LLMSlotRevision > 0 && op.Lease == nil && len(op.Sources) == 0 &&
+		return op.Purpose == "GENERATE" && op.AppID != "" && op.LLMSlotRevision == 0 && op.Lease == nil && len(op.Sources) == 0 &&
 			op.EmbeddingSlotRevision == 0 && !op.RequirePersonalQueryApproval && len(op.AgentSources) > 0 && len(op.AgentSources) <= 50
 	default:
 		return false

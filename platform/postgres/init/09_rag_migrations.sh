@@ -52,7 +52,9 @@ for folder in core cap_ai; do
   filename=$(basename "$file");
   if [ "$folder" = cap_ai ] && [ "$filename" = 0004_models_vectors.sql ] && [ "${RAG_MODELS_SCHEMA_ENABLED:-false}" != true ]; then continue; fi
   if [ "$folder" = cap_ai ] && [ "$filename" = 0005_model_registry.sql ] && [ "${RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED:-false}" != true ]; then continue; fi
-  # Audited approvals, PERSONAL hybrid, and AGENT model authority share this opt-in.
+  # Audited approvals, PERSONAL hybrid, AGENT model authority and the derived
+  # deployment authority (0013) share this opt-in. There is no separate flag: a
+  # model installation always runs 0013 and an FTS installation never does.
   version=$(printf '%s' "$filename" | cut -c1-4)
   if [ "$folder" = cap_ai ] && [ "$version" -ge 8 ] && [ "${RAG_AGENT_MODELS_SCHEMA_ENABLED:-false}" != true ]; then continue; fi
   checksum=$(sha256sum "$file" | cut -d ' ' -f1)

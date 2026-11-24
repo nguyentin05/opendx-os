@@ -72,9 +72,15 @@ func (s *Store) EnqueueEmbeddings(ctx context.Context, actor *auth.Identity, pro
 	return dbErrorOrNil(err)
 }
 
-func (s *Store) ClaimEmbedding(ctx context.Context, worker string) (*Lease, error) {
+// ClaimEmbedding leases only a job queued for the exact embedding profile the
+// worker currently holds. The database refuses every other job, so a job queued
+// for a superseded profile is never dispatched and never blocks this one.
+func (s *Store) ClaimEmbedding(ctx context.Context, worker string, profile models.Profile) (*Lease, error) {
+	if profile.ID == "" || profile.Revision < 1 {
+		return nil, nil
+	}
 	var lease Lease
-	err := decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.claim_embedding($1)`, worker), &lease)
+	err := decodeRow(s.db.QueryRowContext(ctx, `SELECT cap_ai.claim_embedding($1,$2,$3)`, worker, profile.ID, profile.Revision), &lease)
 	if err == ErrNotFound {
 		return nil, nil
 	}
@@ -146,7 +152,7 @@ func (s *Store) semanticCandidates(ctx context.Context, actor *auth.Identity, re
 		return nil, err
 	}
 	profile := binding.Profile
-	if req.RequirePersonalQueryApproval && (binding.Capability != models.CapabilityEmbedding || binding.SlotRevision < 1) {
+	if req.RequirePersonalQueryApproval && binding.Capability != models.CapabilityEmbedding {
 		return nil, models.ErrUnavailable
 	}
 	if s.gateway == nil || profile.ID == "" || (req.Scope.Kind != "APP" && req.Scope.Kind != "PERSONAL") {
@@ -172,9 +178,6 @@ func (s *Store) semanticCandidates(ctx context.Context, actor *auth.Identity, re
 		Key: modelOperationKey(), AppID: app, ScopeKind: req.Scope.Kind, Purpose: "EMBED",
 		ProfileID: profile.ID, ProfileRevision: profile.Revision,
 		RequirePersonalQueryApproval: req.RequirePersonalQueryApproval,
-	}
-	if req.RequirePersonalQueryApproval {
-		op.EmbeddingSlotRevision = binding.SlotRevision
 	}
 	result, err := s.gateway.Call(ctx, actor, op, models.Payload{Query: req.Query})
 	if err != nil {

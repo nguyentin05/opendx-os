@@ -64,7 +64,7 @@ UPDATE cap_ai.global_model_slots SET profile_id='embed',profile_revision=1,slot_
 	if err := api.EnqueueEmbeddings(ctx, actor, profile); err != nil {
 		t.Fatal(err)
 	}
-	lease, err := worker.ClaimEmbedding(ctx, actor.UserID)
+	lease, err := worker.ClaimEmbedding(ctx, actor.UserID, models.Profile{ID: "embed", Revision: 1})
 	if err != nil || lease == nil {
 		t.Fatal("claiming APP embedding", lease, err)
 	}

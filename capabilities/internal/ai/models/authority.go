@@ -14,7 +14,11 @@ import (
 // DatabaseAuthority uses a fresh statement snapshot for every decision. SQL
 // repeats current identity, source and publication checks; no parent dependency.
 // PersonalApproved is decoded solely from this current SQL decision. Request
-// classification and active slot state never populate the approval bit.
+// classification and legacy slot state never populate the approval bit.
+//
+// Every branch names the exact (profile_id, profile_revision) the caller holds;
+// the database authorizes it only while it is the current deployment selection
+// for that profile's purpose. No slot revision crosses this boundary.
 type DatabaseAuthority struct{ DB *sql.DB }
 
 func (a DatabaseAuthority) Current(ctx context.Context, actor *auth.Identity, op Operation) (Decision, error) {
@@ -33,11 +37,11 @@ func (a DatabaseAuthority) Current(ctx context.Context, actor *auth.Identity, op
 		if marshalErr != nil {
 			return d, ErrPolicy
 		}
-		err = a.DB.QueryRowContext(ctx, `SELECT cap_ai.agent_model_policy($1,$2,$3,$4,$5,$6)`,
-			actor.UserID, op.AppID, op.ProfileID, op.ProfileRevision, op.LLMSlotRevision, string(raw)).Scan(&value)
+		err = a.DB.QueryRowContext(ctx, `SELECT cap_ai.agent_model_policy($1,$2,$3,$4,$5)`,
+			actor.UserID, op.AppID, op.ProfileID, op.ProfileRevision, string(raw)).Scan(&value)
 	case op.RequirePersonalQueryApproval:
-		err = a.DB.QueryRowContext(ctx, `SELECT cap_ai.agent_query_model_policy($1,$2,$3,$4,$5,$6,$7)`,
-			actor.UserID, actor.Role, op.AppID, op.ScopeKind, op.ProfileID, op.ProfileRevision, op.EmbeddingSlotRevision).Scan(&value)
+		err = a.DB.QueryRowContext(ctx, `SELECT cap_ai.agent_query_model_policy($1,$2,$3,$4,$5,$6)`,
+			actor.UserID, actor.Role, op.AppID, op.ScopeKind, op.ProfileID, op.ProfileRevision).Scan(&value)
 	default:
 		raw, marshalErr := json.Marshal(op.Sources)
 		if marshalErr != nil {

@@ -30,7 +30,7 @@ func TestIngestionUncertainStatusPublicContract(t *testing.T) {
 	if e := s.EnqueueEmbeddings(ctx, a, profile); e != nil {
 		t.Fatal(e)
 	}
-	lease, e := s.ClaimEmbedding(ctx, ownerID)
+	lease, e := s.ClaimEmbedding(ctx, ownerID, models.Profile{ID: "embed", Revision: 1})
 	if e != nil || lease == nil {
 		t.Fatal(e)
 	}

@@ -122,9 +122,12 @@ func unitTurn(t *testing.T, store *turnStore, evidence ...Evidence) (*Orchestrat
 		return RetrievalResult{Evidence: evidence, SearchStatus: "HYBRID", Warnings: []string{"SEMANTIC_UNAVAILABLE"}}, nil
 	})
 	policy := turnPolicyFunc(func(_ context.Context, actor *auth.Identity, op models.Operation) (models.Approval, error) {
+		// The exact profile revision is the whole authority; a retired slot
+		// revision must never be carried into a policy decision or a fingerprint.
 		if actor.UserID != retrievalActor.UserID || actor.Role != "" || op.Key == "" || op.AppID != "agent_processing" ||
 			op.ScopeKind != "AGENT" || op.Purpose != "GENERATE" || op.ProfileID != binding.Profile.ID ||
-			op.ProfileRevision != binding.Profile.Revision || op.LLMSlotRevision != binding.SlotRevision || len(op.AgentSources) == 0 {
+			op.ProfileRevision != binding.Profile.Revision || op.LLMSlotRevision != 0 || op.EmbeddingSlotRevision != 0 ||
+			len(op.AgentSources) == 0 {
 			t.Fatalf("operation lacks server authority: %+v, actor=%+v", op, actor)
 		}
 		return models.Approval{Profile: binding.Profile, Fingerprint: "approved"}, nil

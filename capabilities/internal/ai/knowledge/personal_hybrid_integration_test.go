@@ -126,7 +126,7 @@ func (f personalHybridFixture) enqueue(t *testing.T, actor *auth.Identity) {
 func (f personalHybridFixture) claim(t *testing.T) (*Lease, models.Profile) {
 	t.Helper()
 	ctx := context.Background()
-	lease, err := f.worker.ClaimEmbedding(ctx, ownerID)
+	lease, err := f.worker.ClaimEmbedding(ctx, ownerID, models.Profile{ID: "embed", Revision: 1})
 	if err != nil || lease == nil {
 		t.Fatalf("expected a PERSONAL embedding lease, got %v, %v", lease, err)
 	}
@@ -175,7 +175,7 @@ func TestPersonalVectorOwnerIsolation(t *testing.T) {
 	if err != nil || jobs != 1 {
 		t.Fatal("owner enqueue duplicated or lost the job", jobs, err)
 	}
-	firstLease, err := f.worker.ClaimEmbedding(context.Background(), ownerID)
+	firstLease, err := f.worker.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
 	if err != nil || firstLease == nil || firstLease.VersionID != first.VersionID {
 		t.Fatal("owner enqueue delegated the wrong version", firstLease, err)
 	}
@@ -189,7 +189,7 @@ func TestPersonalVectorOwnerIsolation(t *testing.T) {
 	if err := f.worker.BuildEmbeddings(context.Background(), *resumed, profile); err != nil {
 		t.Fatal(err)
 	}
-	if lease, err := f.worker.ClaimEmbedding(context.Background(), ownerID); err != nil || lease != nil {
+	if lease, err := f.worker.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1}); err != nil || lease != nil {
 		t.Fatal("owner enqueue also scheduled a foreign document", lease, err)
 	}
 	f.enqueue(t, other)
@@ -250,7 +250,7 @@ func TestPersonalHybridNoApprovedEmbeddingFallback(t *testing.T) {
 		}
 	}
 	f.enqueue(t, f.owner)
-	if lease, err := f.worker.ClaimEmbedding(context.Background(), ownerID); err != nil || lease != nil {
+	if lease, err := f.worker.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1}); err != nil || lease != nil {
 		t.Fatal("unapproved document received a lease", lease, err)
 	}
 	assertFallback()
@@ -259,7 +259,7 @@ func TestPersonalHybridNoApprovedEmbeddingFallback(t *testing.T) {
 	assertFallback()
 	f.enqueue(t, f.owner)
 	f.disable(t, approval)
-	if lease, err := f.worker.ClaimEmbedding(context.Background(), ownerID); err != nil || lease != nil {
+	if lease, err := f.worker.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1}); err != nil || lease != nil {
 		t.Fatal("pending job claimed after approval revocation", lease, err)
 	}
 	assertFallback()
@@ -434,7 +434,7 @@ func TestPersonalHybridRebuildsAfterApprovalRenewal(t *testing.T) {
 		t.Fatal("withdrawn generation qualified after replacement approval", unready, f.spy.calls)
 	}
 
-	lease, err := f.worker.ClaimEmbedding(ctx, ownerID)
+	lease, err := f.worker.ClaimEmbedding(ctx, ownerID, models.Profile{ID: "embed", Revision: 1})
 	if err != nil || lease == nil || lease.JobID == originalJob || lease.RunID != originalRun {
 		t.Fatal("replacement approval needs its own job on the same parse run", lease, err)
 	}

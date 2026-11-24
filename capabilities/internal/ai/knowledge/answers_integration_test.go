@@ -64,7 +64,7 @@ func TestEmbeddingLeaseLossPreservesLexical(t *testing.T) {
 	if e := s.EnqueueEmbeddings(context.Background(), a, profile); e != nil {
 		t.Fatal(e)
 	}
-	lease, e := s.ClaimEmbedding(context.Background(), ownerID)
+	lease, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
 	if e != nil || lease == nil {
 		t.Fatal(e)
 	}

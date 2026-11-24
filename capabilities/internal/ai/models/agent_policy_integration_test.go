@@ -10,7 +10,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 
@@ -87,14 +86,10 @@ func agentPackage(t *testing.T, db, api *sql.DB, app, role string) contracts.Rea
 
 func newAgentFixture(t *testing.T, purpose string) agentFixture {
 	t.Helper()
+	// personalFixture installs the model, registry, personal, agent and
+	// administration chain through the deployment migration and records its
+	// profile as the live deployment selection.
 	db, admin, policy, personal := personalFixture(t, purpose)
-	for _, migration := range []string{"0007_agent_scopes.sql", "0009_personal_hybrid.sql", "0010_agent_model_authority.sql"} {
-		raw, err := os.ReadFile("../../../../platform/postgres/migrations/cap_ai/" + migration)
-		if err != nil {
-			t.Fatal(err)
-		}
-		agentExec(t, db, string(raw))
-	}
 	agentExec(t, db, `INSERT INTO core.apps(app_id,display_name,version,status,spec)
 	VALUES('agent_processing','Agent Processing','1','Ready','{}');
 	INSERT INTO core.app_capabilities(app_id,cap_id) VALUES('library','cap-ai')`)
@@ -105,15 +100,8 @@ func newAgentFixture(t *testing.T, purpose string) agentFixture {
 		{ScopeKind: "PERSONAL", AppID: "library", ActingRole: "role_library_user", ReadScope: personal.Sources[0]},
 	}
 	provider := &agentProvider{}
+	// The exact profile revision is the whole binding: no slot revision is set.
 	op := Operation{Key: "agent-call", AppID: "agent_processing", ScopeKind: "AGENT", Purpose: purpose, ProfileID: "personal", ProfileRevision: 1}
-	if purpose == "GENERATE" {
-		agentExec(t, db, `UPDATE cap_ai.global_model_slots SET profile_id='personal',
-			profile_revision=1,slot_revision=1 WHERE capability='LLM'`)
-		op.LLMSlotRevision = 1
-	} else {
-		agentExec(t, db, `UPDATE cap_ai.global_model_slots SET profile_id='personal',
-            profile_revision=1,slot_revision=1 WHERE capability='EMBEDDING'`)
-	}
 	return agentFixture{
 		db: db, admin: admin, actor: &auth.Identity{UserID: personalActor, Role: "role_hr_reader"},
 		provider: provider, proofs: proofs,
@@ -282,7 +270,6 @@ func TestAgentModelPolicyGlobalQueryEmbedRequiresPersonalReview(t *testing.T) {
 	}
 	op.Key = "global-query"
 	op.RequirePersonalQueryApproval = true
-	op.EmbeddingSlotRevision = 1
 	if _, err := f.gateway.Call(context.Background(), f.actor, op, payload); !errors.Is(err, ErrPolicy) || f.provider.calls != 1 {
 		t.Fatalf("APP approval sent flagged query: calls=%d err=%v", f.provider.calls, err)
 	}
@@ -332,8 +319,8 @@ func TestAgentModelPolicyRejectsMalformedSQLProofs(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var allowed bool
-			err := gateway.QueryRow(`SELECT coalesce((cap_ai.agent_model_policy($1,$2,$3,$4,$5,$6)->>'allowed')::boolean,false)`,
-				f.actor.UserID, f.op.AppID, f.op.ProfileID, f.op.ProfileRevision, f.op.LLMSlotRevision, tc.proofs).Scan(&allowed)
+			err := gateway.QueryRow(`SELECT coalesce((cap_ai.agent_model_policy($1,$2,$3,$4,$5)->>'allowed')::boolean,false)`,
+				f.actor.UserID, f.op.AppID, f.op.ProfileID, f.op.ProfileRevision, tc.proofs).Scan(&allowed)
 			if err != nil || allowed != tc.allowed {
 				t.Fatalf("allowed=%t, want %t, err=%v", allowed, tc.allowed, err)
 			}
@@ -353,8 +340,9 @@ func TestAgentModelPolicyRequiresGroundedGeneration(t *testing.T) {
 	}{
 		{"missing evidence", func(_ *Operation, p *Payload) { p.Evidence = nil }},
 		{"missing question", func(_ *Operation, p *Payload) { p.Query = "" }},
-		{"missing LLM slot pin", func(o *Operation, _ *Payload) { o.LLMSlotRevision = 0 }},
-		{"stale LLM slot pin", func(o *Operation, _ *Payload) { o.LLMSlotRevision++ }},
+		{"missing profile", func(o *Operation, _ *Payload) { o.ProfileID = "" }},
+		{"stale profile revision", func(o *Operation, _ *Payload) { o.ProfileRevision++ }},
+		{"retired slot pin", func(o *Operation, _ *Payload) { o.LLMSlotRevision = 1 }},
 		{"legacy sources mixed in", func(o *Operation, _ *Payload) { o.Sources = []contracts.ReadScope{f.proofs[0].ReadScope} }},
 		{"worker lease mixed in", func(o *Operation, _ *Payload) { o.Lease = &LeaseRef{} }},
 		{"AGENT proofs on APP", func(o *Operation, _ *Payload) { o.ScopeKind, o.AppID = "APP", "hr" }},
@@ -415,12 +403,12 @@ func TestAgentModelPolicyRejectsOtherRuntimeSessions(t *testing.T) {
 	for _, role := range []string{"dxos_ai_api", "dxos_ai_worker", "dxos_authz"} {
 		t.Run(role, func(t *testing.T) {
 			runtime := personalLogin(t, f.db, role)
-			const query = `SELECT coalesce((cap_ai.agent_query_model_policy($1,'role_hr_reader','hr','APP','personal',1,1)->>'allowed')::boolean,false)`
+			const query = `SELECT coalesce((cap_ai.agent_query_model_policy($1,'role_hr_reader','hr','APP','personal',1)->>'allowed')::boolean,false)`
 			var allowed bool
 			if err := runtime.QueryRow(query, personalActor).Scan(&allowed); err == nil {
 				t.Fatal("unexpected default EXECUTE grant")
 			}
-			agentExec(t, f.db, `GRANT EXECUTE ON FUNCTION cap_ai.agent_query_model_policy(uuid,text,text,text,text,bigint,bigint) TO `+role)
+			agentExec(t, f.db, `GRANT EXECUTE ON FUNCTION cap_ai.agent_query_model_policy(uuid,text,text,text,text,bigint) TO `+role)
 			if err := runtime.QueryRow(query, personalActor).Scan(&allowed); err != nil || allowed {
 				t.Fatalf("accidental grant authorized query: allowed=%t err=%v", allowed, err)
 			}

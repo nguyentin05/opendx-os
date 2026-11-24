@@ -186,6 +186,17 @@ func adminProfiles(t *testing.T, db *sql.DB) string {
 	return profiled
 }
 
+// adminImmutableProfiles snapshots every profile row except the live switch, so an
+// assertion can distinguish "history was rewritten" from "the live revision moved".
+func adminImmutableProfiles(t *testing.T, db *sql.DB) string {
+	t.Helper()
+	var profiled string
+	if e := db.QueryRow(`SELECT coalesce(string_agg((to_jsonb(p)-'enabled')::text,'|' ORDER BY p.id,p.revision),'') FROM cap_ai.model_profiles p`).Scan(&profiled); e != nil {
+		t.Fatal(e)
+	}
+	return profiled
+}
+
 func adminSlotBinding(t *testing.T, db *sql.DB, capability string) (int64, sql.NullString, sql.NullInt64) {
 	t.Helper()
 	var revision int64
@@ -843,11 +854,16 @@ func TestModelAdminRollbackAndDisable(t *testing.T) {
 	if _, e := adminPromote(admin, "EMBEDDING", 1, adminEmbedProfile, 2, adminEmbed2Digest, second); e != nil {
 		t.Fatalf("second promotion: %v", e)
 	}
-	if n := schemaCount(t, db, `SELECT count(*) FROM cap_ai.model_profiles WHERE id=$1 AND enabled`, adminEmbedProfile); n != 2 {
-		t.Fatal("promotions did not enable both reviewed revisions", n)
+	// Only one revision of a purpose may be live at a time: the newer promotion
+	// withdraws the older live revision and both immutable revisions stay stored.
+	if n := schemaCount(t, db, `SELECT count(*) FROM cap_ai.model_profiles WHERE id=$1 AND enabled`, adminEmbedProfile); n != 1 {
+		t.Fatal("promotions did not leave exactly one live revision", n)
+	}
+	if n := schemaCount(t, db, `SELECT count(*) FROM cap_ai.model_profiles WHERE id=$1 AND enabled AND revision=2`, adminEmbedProfile); n != 1 {
+		t.Fatal("the newest reviewed revision is not the live one", n)
 	}
 	events := adminEventCount(t, db)
-	profiles := adminProfiles(t, db)
+	profiles := adminImmutableProfiles(t, db)
 	// An explicitly reviewed older binding is restored at a new slot revision.
 	result, e := adminChange(admin, adminChangeArgs{
 		Actor: adminOperatorID, Slot: "EMBEDDING", Expected: int64(2), Action: "ROLLBACK",
@@ -866,8 +882,10 @@ func TestModelAdminRollbackAndDisable(t *testing.T) {
 	if n := adminEventCount(t, db); n != events+1 {
 		t.Fatal("rollback did not append exactly one event", n)
 	}
-	if adminProfiles(t, db) != profiles {
-		t.Fatal("rollback rewrote stored profile revisions")
+	// A rollback moves the live switch only: every stored profile revision must be
+	// byte-identical apart from `enabled`, which is live state by design.
+	if adminImmutableProfiles(t, db) != profiles {
+		t.Fatalf("rollback rewrote stored profile revisions: before=%s after=%s", profiles, adminImmutableProfiles(t, db))
 	}
 	for _, relation := range []string{"cap_ai.embedding_generations", "cap_ai.chunk_embeddings", "cap_ai.model_operations"} {
 		if n := schemaCount(t, db, `SELECT count(*) FROM `+relation); n != 0 {
@@ -914,8 +932,10 @@ func TestModelAdminRollbackAndDisable(t *testing.T) {
 	if revision != 4 || profile.Valid || profileRevision.Valid {
 		t.Fatal("disable did not unbind the slot", revision, profile, profileRevision)
 	}
-	if !adminProfileEnabled(t, db, adminEmbedProfile, 1) || !adminProfileEnabled(t, db, adminEmbedProfile, 2) {
-		t.Fatal("disable disabled a reviewed profile instead of the binding")
+	// Unbinding the slot withdraws the binding only: the live deployment revision
+	// stays enabled and the superseded revision stays disabled.
+	if !adminProfileEnabled(t, db, adminEmbedProfile, 1) || adminProfileEnabled(t, db, adminEmbedProfile, 2) {
+		t.Fatal("disable changed the live profile instead of the binding")
 	}
 	if n := adminEventCount(t, db); n != events+2 {
 		t.Fatal("disable did not append exactly one event", n)
@@ -924,7 +944,7 @@ func TestModelAdminRollbackAndDisable(t *testing.T) {
 	if e := db.QueryRow(`SELECT review->>'reason' FROM cap_ai.model_slot_events WHERE capability='EMBEDDING' AND action='DISABLE'`).Scan(&reason); e != nil || reason != "reviewed withdrawal of the embedding binding" {
 		t.Fatal("disable reason not audited", reason, e)
 	}
-	if adminProfiles(t, db) != profiles {
+	if adminImmutableProfiles(t, db) != profiles {
 		t.Fatal("disable rewrote stored profile revisions")
 	}
 }
