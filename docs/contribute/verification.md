@@ -198,3 +198,14 @@ model checksums is an owner-run action with a human execution gate
 ([installation](../operations/installation.md#rebuilding-an-existing-model-installation));
 no qualification run performs it, and a skipped rebuild stays pending rather than
 counting as verified.
+
+The separate `scripts/test-rag.sh real-models` mode requires explicit consent
+through `RAG_REAL_MODELS_OPT_IN=true`, a disposable test database, independently
+reviewed active hosted profiles and PERSONAL approvals, and the actual ingestion
+services. Follow [real hosted qualification](../guides/knowledge/models.md#explicit-real-hosted-qualification)
+for fixture setup, approval UUIDs, protected CLI identity and the approval
+withdrawal performed by the gate. Run its offline guards with
+`python3 -m unittest discover -s scripts/integration -p test_rag_real_models.py -v`.
+Record live results under `.scratch/`, including commit, command, qualified
+provider/model pair and any `NOT_RUN` live revision-switch criterion. This mode
+is excluded from default CI and `make rag-up`.

@@ -1018,3 +1018,75 @@ digest against provider metadata; endpoint or loopback changes require a new
 profile revision and provisioning. Slot reads and fenced embedding lease profile
 reads use narrowly granted gateway functions. Registry enablement alone provides
 no production qualification.
+
+## Explicit real hosted qualification
+
+Run `scripts/test-rag.sh real-models` only in an owner-approved disposable
+installation. Setting `RAG_REAL_MODELS_OPT_IN=true` authorizes synthetic hosted
+requests, possible provider charges and withdrawal of the supplied GENERATE
+processing approval at the end of the test. The runner leaves that approval
+disabled. Restore it only through a fresh, independently reviewed approval.
+
+Use the CLI procedure above to import, verify, review and activate the exact
+EMBEDDING and LLM revisions first. Independently approve PERSONAL content and
+queries for both purposes with `policy approve`. Record the returned approval
+UUIDs. Both approvals must cover the dedicated library app, the `local-only@1`
+source policy, exact profile revisions and their actual processors. Use the same
+opaque `attestation_ref` in both slot activation reviews and supply that reference
+as `RAG_REAL_MODELS_REVIEW_REF`. A provider behind OpenRouter also needs review
+of the pinned underlying processor and routing settings.
+
+Prepare a separate installation whose Ready personal-library app ID begins with
+`ragreal`. Give fixture actors A and B its allowed library role and keep the
+library empty. Actor A uploads the synthetic document. Actor B must have no
+access to A's document. Use running File Service, scanner, parser, cap-ai and
+worker processes with their documented runtime identities and TLS trust.
+
+Supply these environment variables through the protected test environment.
+
+| Variables | Required values |
+| --- | --- |
+| `TEST_DATABASE_URL` | Disposable database name beginning `test_` or ending `_test` |
+| `RAG_TEST_AI_API_URL`, `RAG_TEST_FILE_API_URL` | Actual test service origins |
+| `RAG_TEST_OIDC_TOKEN_A`, `RAG_TEST_OIDC_TOKEN_B` | Valid, distinct authenticated fixture sessions |
+| `RAG_REAL_TEST_APP`, `RAG_REAL_TEST_ROLE` | Dedicated `ragreal` library app and allowed role |
+| `RAG_REAL_EMBED_PROFILE`, `RAG_REAL_EMBED_REVISION` | Exact reviewed active EMBEDDING profile |
+| `RAG_REAL_GENERATE_PROFILE`, `RAG_REAL_GENERATE_REVISION` | Exact reviewed active LLM profile |
+| `RAG_REAL_EMBED_APPROVAL`, `RAG_REAL_GENERATE_APPROVAL` | Actual enabled PERSONAL approval UUIDs |
+| `RAG_REAL_MODELS_REVIEW_REF` | Opaque shared slot review reference |
+| `RAG_REAL_MODEL_CLI` | Path to the built `dxos-model` executable |
+| `RAG_REAL_ADMIN_TOKEN_FILE` | Owner-only operator access-token file accepted by the CLI |
+| `AI_MODEL_APPROVAL_DATABASE_URL` | Protected `dxos_authz` connection used only for approval withdrawal |
+| `CLAMAV_ADDRESS`, `RAG_INTERNAL_AI_URL` | Running scanner and worker's internal AI endpoint |
+| `RAG_PARSER_QUALIFIED`, `RAG_SOURCE_QUALIFIED`, `RAG_METADATA_QUALIFIED` | Qualification gates for the actual ingestion deployment |
+
+The CLI also needs its existing issuer, audience and JWKS configuration. Keep
+vendor keys in the adapter's secret file. The runner uses service tokens and the
+protected approval session, and consumes safe model metadata from PostgreSQL.
+
+```sh
+RAG_REAL_MODELS_OPT_IN=true scripts/test-rag.sh real-models
+```
+
+The gate uploads fresh Markdown through File Service, waits for scanner/parser
+processing and a complete matching vector generation, then requires a document
+that lexical search missed to appear in hybrid retrieval. It requires a grounded
+`BLUE-17` answer with an accessible chunk citation and successful EMBED/GENERATE
+operation evidence. It checks the denied fixture actor and withdraws the
+GENERATE approval before checking that no further generation was dispatched.
+The final output contains safe document, run, generation and profile identities.
+Capture it in a local qualification report under `.scratch/` together with the
+tested commit, command, result and reviewed routing evidence.
+
+Missing prerequisites exit 2 with `NOT_RUN`. A transport or provider failure
+exits 1 and is never retried automatically. A failed run can leave the synthetic
+document and approval withdrawal in place. Inspect the safe operation state and
+prepare another isolated empty fixture before a new qualification attempt.
+
+A second live embedding revision remains a separate owner-run qualification.
+Activate its independently reviewed candidate and approval, keep both adapter
+routes available, allow worker polling to build the new complete generation and
+verify its exact profile revision and dimension before claiming a live switch.
+Record this criterion as `NOT_RUN` when a second reviewed revision is unavailable.
+The deterministic revision-isolation tests cover the code regression. Record
+only provider/model combinations that actually passed the live gate.
