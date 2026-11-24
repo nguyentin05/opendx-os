@@ -355,7 +355,7 @@ func validateTable(app *DXApplication, t *TableDef, tables, commands map[string]
 		}
 		seen := map[string]bool{}
 		for _, p := range group.grants {
-			if !identifier.MatchString(p.Role) || seen[p.Role] || !uniqueNames(p.Columns, identifier) {
+			if !identifier.MatchString(p.Role) || seen[p.Role] || (!p.Columns.all() && !uniqueNames(p.Columns, identifier)) {
 				return fmt.Errorf("invalid permission rule for role %q in %s", p.Role, op)
 			}
 			if err := requireRole("access."+op, p.Role); err != nil {
@@ -375,6 +375,9 @@ func validateTable(app *DXApplication, t *TableDef, tables, commands map[string]
 				return err
 			}
 			for _, c := range p.Columns {
+				if c == AllColumns {
+					break // expanded by ExpandColumns to columns this operation may use
+				}
 				if cols[c] == "" {
 					return fmt.Errorf("unknown permission column %q", c)
 				}
@@ -752,6 +755,9 @@ func checkShape(v any, t reflect.Type) error {
 			}
 		}
 	case reflect.Slice:
+		if _, ok := v.(string); ok && t == reflect.TypeFor[Columns]() {
+			return nil // Columns.UnmarshalJSON accepts only "*"
+		}
 		values, ok := v.([]any)
 		if !ok {
 			return errors.New("expected array")

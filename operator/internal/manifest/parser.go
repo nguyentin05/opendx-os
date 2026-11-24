@@ -30,8 +30,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Parse parses and validates a DXApplication manifest from an io.Reader.
+// Parse parses and validates a DXApplication manifest from an io.Reader and
+// expands its columns: "*" shorthands.
 func Parse(r io.Reader) (*DXApplication, error) {
+	app, err := parse(r)
+	if err != nil {
+		return nil, err
+	}
+	ExpandColumns(app)
+	return app, nil
+}
+
+func parse(r io.Reader) (*DXApplication, error) {
 	rawBytes, err := io.ReadAll(r)
 	if err != nil {
 		return nil, fmt.Errorf("read manifest: %w", err)
@@ -74,14 +84,26 @@ func Parse(r io.Reader) (*DXApplication, error) {
 	return &app, nil
 }
 
-// ParseFile parses and validates a manifest from a file path.
+// ParseFile parses and validates a manifest from a file path and expands its
+// columns: "*" shorthands.
 func ParseFile(path string) (*DXApplication, error) {
+	app, err := ParseFileAsWritten(path)
+	if err != nil {
+		return nil, err
+	}
+	ExpandColumns(app)
+	return app, nil
+}
+
+// ParseFileAsWritten is ParseFile without expanding columns: "*", for
+// export-crd, whose resource keeps the manifest as written.
+func ParseFileAsWritten(path string) (*DXApplication, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open manifest file: %w", err)
 	}
 	defer func() { _ = f.Close() }()
-	app, err := Parse(f)
+	app, err := parse(f)
 	if err != nil {
 		return nil, err
 	}

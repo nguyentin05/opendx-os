@@ -218,6 +218,8 @@ type AccessRule struct {
 	// +optional
 	// +kubebuilder:validation:Enum=own;department;organization
 	Scope string `json:"scope,omitempty"`
+	// Columns the rule allows. ["*"] stands for every column the operation may
+	// use: all columns on select, the business columns on insert and update.
 	// +kubebuilder:validation:MinItems=1
 	Columns []string `json:"columns"`
 	// RecordFilter is a Hasura boolean expression over declared columns.

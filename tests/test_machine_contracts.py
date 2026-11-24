@@ -27,6 +27,14 @@ class MachineContracts(unittest.TestCase):
     def test_registry_snapshot_matches_manifest(self):
         manifest = yaml.safe_load((ROOT / 'contracts/fixtures/procurement.yaml').read_text())
         app = json.loads((ROOT / 'contracts/fixtures/app-ready.json').read_text())
+        # core.apps stores columns: "*" expanded; the operator's
+        # TestAppRegistryFixtureMatchesManifest checks the expansion itself.
+        for table, stored in zip(manifest['spec']['tables'], app['spec']['tables']):
+            for op, rules in table['access'].items():
+                for rule, stored_rule in zip(rules, stored['access'][op]):
+                    if rule.get('columns') == '*':
+                        self.assertIsInstance(stored_rule['columns'], list)
+                        rule['columns'] = stored_rule['columns']
         self.assertEqual(app['spec'], manifest['spec'])
         self.assertEqual(app['app_id'], manifest['metadata']['name'])
         self.assertEqual(app['version'], manifest['metadata']['version'])

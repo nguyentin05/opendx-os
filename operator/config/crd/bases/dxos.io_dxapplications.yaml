@@ -270,6 +270,9 @@ spec:
                               narrowed by a record filter.
                             properties:
                               columns:
+                                description: |-
+                                  Columns the rule allows. ["*"] stands for every column the operation may
+                                  use: all columns on select, the business columns on insert and update.
                                 items:
                                   type: string
                                 minItems: 1
@@ -310,6 +313,9 @@ spec:
                               narrowed by a record filter.
                             properties:
                               columns:
+                                description: |-
+                                  Columns the rule allows. ["*"] stands for every column the operation may
+                                  use: all columns on select, the business columns on insert and update.
                                 items:
                                   type: string
                                 minItems: 1
@@ -350,6 +356,9 @@ spec:
                               narrowed by a record filter.
                             properties:
                               columns:
+                                description: |-
+                                  Columns the rule allows. ["*"] stands for every column the operation may
+                                  use: all columns on select, the business columns on insert and update.
                                 items:
                                   type: string
                                 minItems: 1

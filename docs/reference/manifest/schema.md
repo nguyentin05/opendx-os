@@ -86,6 +86,17 @@ Each rule names a `role`, the `columns` it reads or writes, and optionally a
   `X-Hasura-User-Id`. A preset column is not also in the rule's `columns`.
 - A role has at most one rule per operation, and system columns are never
   writable.
+- `columns: "*"` stands for every column the operation may use: on `select`,
+  every column of the table including system columns; on `insert` and
+  `update`, every business column, minus an `insert` rule's presets. On a child
+  table the parent column stays readable and is still added to `insert` only.
+  The operator expands `"*"` into the concrete list before it generates Hasura
+  permissions and before it stores the spec in `core.apps`, so services and the
+  UI read plain lists. A `DXApplication` resource keeps it as `["*"]`. A column
+  added in a later version is readable or writable by `"*"` rules once that
+  version is installed, and the plan shows the widened permissions. `"*"`
+  cannot be combined with column names, and an omitted or empty `columns` is
+  still refused.
 
 A filter (`recordFilter` on a rule or a command) uses `_and`, `_or` and declared
 columns compared with `_eq` or `_neq`, nested at most 32 levels. Values are

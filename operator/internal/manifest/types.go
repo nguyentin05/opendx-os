@@ -180,7 +180,7 @@ const (
 type AccessRule struct {
 	Role         string            `yaml:"role" json:"role"`
 	Scope        string            `yaml:"scope,omitempty" json:"scope,omitempty"`
-	Columns      []string          `yaml:"columns" json:"columns"`
+	Columns      Columns           `yaml:"columns" json:"columns"`
 	RecordFilter map[string]any    `yaml:"recordFilter,omitempty" json:"recordFilter,omitempty"`
 	Presets      map[string]string `yaml:"presets,omitempty" json:"presets,omitempty"`
 }

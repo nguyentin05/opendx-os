@@ -262,11 +262,19 @@
                       "description": "AccessRule allows one role a set of columns within its scope, optionally\nnarrowed by a record filter.",
                       "properties": {
                         "columns": {
-                          "items": {
-                            "type": "string"
-                          },
-                          "minItems": 1,
-                          "type": "array"
+                          "anyOf": [
+                            {
+                              "description": "Columns the rule allows. [\"*\"] stands for every column the operation may\nuse: all columns on select, the business columns on insert and update.",
+                              "items": {
+                                "type": "string"
+                              },
+                              "minItems": 1,
+                              "type": "array"
+                            },
+                            {
+                              "const": "*"
+                            }
+                          ]
                         },
                         "presets": {
                           "additionalProperties": {
@@ -308,11 +316,19 @@
                       "description": "AccessRule allows one role a set of columns within its scope, optionally\nnarrowed by a record filter.",
                       "properties": {
                         "columns": {
-                          "items": {
-                            "type": "string"
-                          },
-                          "minItems": 1,
-                          "type": "array"
+                          "anyOf": [
+                            {
+                              "description": "Columns the rule allows. [\"*\"] stands for every column the operation may\nuse: all columns on select, the business columns on insert and update.",
+                              "items": {
+                                "type": "string"
+                              },
+                              "minItems": 1,
+                              "type": "array"
+                            },
+                            {
+                              "const": "*"
+                            }
+                          ]
                         },
                         "presets": {
                           "additionalProperties": {
@@ -354,11 +370,19 @@
                       "description": "AccessRule allows one role a set of columns within its scope, optionally\nnarrowed by a record filter.",
                       "properties": {
                         "columns": {
-                          "items": {
-                            "type": "string"
-                          },
-                          "minItems": 1,
-                          "type": "array"
+                          "anyOf": [
+                            {
+                              "description": "Columns the rule allows. [\"*\"] stands for every column the operation may\nuse: all columns on select, the business columns on insert and update.",
+                              "items": {
+                                "type": "string"
+                              },
+                              "minItems": 1,
+                              "type": "array"
+                            },
+                            {
+                              "const": "*"
+                            }
+                          ]
                         },
                         "presets": {
                           "additionalProperties": {
