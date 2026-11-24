@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+#
+# Synthetic qualification declaration for the private LiteLLM transport. It is a
+# fixture, not a qualified route: no model identifier, revision or endpoint below
+# is a real route, and the whole document exists so that one generated proxy
+# configuration can be replayed against the pinned container with disposable local
+# captures instead of a provider.
+#
+# Both endpoints are the qualification capture, reachable only from the test
+# network: `litellm-upstream` is a single-label name (a deployment-local endpoint
+# for the embedding route) and `hosted-capture.invalid` carries a dotted name (the
+# hosted route's synthetic stand-in for a provider endpoint). No request can leave
+# the qualification host by accident, because neither name resolves outside it.
+# The local endpoint is plain HTTP because it is deployment-local; the hosted
+# endpoint is HTTPS with a qualification-only CA, so the hosted leg is exercised
+# over protected transit.
+enabled: true
+embedding:
+  model: hosted_vllm/qualification-embed-v1
+  execution: local
+  api_base: http://litellm-upstream:8081/local
+  revision: qualification-fixture-1
+  dimension: 8
+  indexing_parameters: {input_type: passage}
+  query_parameters: {input_type: query}
+  limits: {max_input_tokens: 4096, max_output_tokens: 1, max_bytes: 65536, timeout_ms: 20000}
+llm:
+  model: openrouter/qualification/model-v1
+  execution: hosted
+  api_base: https://hosted-capture.invalid:8082/hosted/api/v1
+  api_key_env: QUALIFICATION_PROXY_UPSTREAM_KEY
+  revision: qualification-fixture-1
+  routing: {provider: deepinfra, data_collection: deny, zdr: true}
+  limits: {max_input_tokens: 4096, max_output_tokens: 256, max_bytes: 65536, timeout_ms: 20000}

@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Optional local inference overlay: one Ollama container for a deployment that
+# qualifies a local route. Add it together with compose.litellm.yaml; leaving it
+# out means the deployment uses an operator-managed vLLM-compatible endpoint or a
+# hosted route instead.
+#
+# The operator supplies the pinned image reference and pulls the model with native
+# tooling. This file deliberately downloads no weights: a Compose file cannot pin
+# what `ollama pull` resolves to, and an automatic pull would fetch an unpinned
+# model into a reviewed deployment. Provisioning is two explicit steps:
+#
+#   RAG_MODEL_OLLAMA_IMAGE=ollama/ollama@sha256:<pinned digest> \
+#     docker compose -f compose.yaml -f compose.rag.yaml -f compose.models.yaml \
+#       -f compose.litellm.yaml -f compose.ollama.yaml up -d ollama
+#   docker compose ... exec ollama ollama pull <exact model>:<pinned tag>
+#   docker compose ... exec ollama ollama list    # record the digest as evidence
+#
+# Then declare the route. The model identifier in the deployment declaration is
+# `ollama/<exact model>:<pinned tag>` with `execution: local` and
+# `api_base: http://ollama:11434`.
+#
+# What the qualification records about an Ollama route (verified against the pinned
+# proxy, not assumed): the proxy calls Ollama's `/api/embed` for embeddings and
+# moves a reviewed semantic parameter such as `input_type` into Ollama's `options`
+# object, where Ollama defines no such option. An Ollama embedding route therefore
+# carries no index/query distinction: declare a route without semantic parameters,
+# or qualify a vLLM-compatible endpoint that honours them. An Ollama route is also
+# not a way to obtain a `response_format` JSON answer reliably; a generation route
+# on Ollama stays unqualified until a probe proves the grounded answer contract.
+services:
+  ollama:
+    image: ${RAG_MODEL_OLLAMA_IMAGE:?set the pinned Ollama image reference, for example ollama/ollama@sha256:<digest>}
+    restart: unless-stopped
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE]
+    security_opt: [no-new-privileges:true]
+    environment:
+      # Weights live on the native volume, never in an image layer or a bind mount
+      # the operator did not choose.
+      OLLAMA_MODELS: /models
+      OLLAMA_HOST: 0.0.0.0:11434
+    volumes:
+      - ollama-models:/models
+    networks:
+      model-inference:
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    # No ports: the proxy reaches Ollama over the private network only.
+
+volumes:
+  ollama-models:
+    name: dxos-ollama-models
+
+networks:
+  model-inference:
+    name: dxos-model-inference
+    internal: true

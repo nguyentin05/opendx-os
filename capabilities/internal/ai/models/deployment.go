@@ -887,6 +887,25 @@ type proxyLiteLLM struct {
 	Model   string `yaml:"model"`
 	APIBase string `yaml:"api_base,omitempty"`
 	APIKey  string `yaml:"api_key,omitempty"`
+	// Provider is the reviewed provider routing of a hosted route. The pinned
+	// proxy forwards a litellm_params entry it does not treat as an OpenAI
+	// parameter unchanged into the upstream request body, and OpenRouter reads its
+	// provider-routing object from the body, so this is the config-mode shape of
+	// the control (see RenderProxyConfig).
+	Provider *proxyProviderRouting `yaml:"provider,omitempty"`
+}
+
+// proxyProviderRouting is the narrowed reviewed routing. Only and order name
+// exactly the declared provider, fallbacks are refused, parameters must be
+// supported by the selected provider, and the reviewed data policy is restated,
+// so the intermediary cannot route the call elsewhere.
+type proxyProviderRouting struct {
+	Only              []string `yaml:"only"`
+	Order             []string `yaml:"order"`
+	AllowFallbacks    bool     `yaml:"allow_fallbacks"`
+	RequireParameters bool     `yaml:"require_parameters"`
+	DataCollection    string   `yaml:"data_collection"`
+	ZDR               bool     `yaml:"zdr"`
 }
 
 type proxyModelDetail struct {
@@ -899,6 +918,14 @@ type proxyLiteLLMSettings struct {
 	// rather than be silently dropped.
 	DropParams            bool `yaml:"drop_params"`
 	TurnOffMessageLogging bool `yaml:"turn_off_message_logging"`
+	// NumRetries and NumRetriesPerRequest pin the process-level retry settings to
+	// zero. They are the authoritative v1.110.3 spellings of "never retry":
+	// litellm.num_retries is the global retry count a call reads, and
+	// litellm.num_retries_per_request bounds retries across the whole request
+	// (fallbacks included). Neither may be omitted, because their absence is a
+	// default that retries.
+	NumRetries           int `yaml:"num_retries"`
+	NumRetriesPerRequest int `yaml:"num_retries_per_request"`
 }
 
 type proxyGeneralSettings struct {
@@ -917,13 +944,27 @@ type proxyRouterSettings struct {
 // database. A disabled or empty deployment renders no route, so an unused model
 // never starts inference.
 //
-// A route that declares reviewed provider routing is rejected, not rendered: the
-// config-mode key shape of that control could not be confirmed at the pinned
-// version, so the renderer cannot express it. Rendering the route anyway would
-// turn a reviewed data-handling control into an accepted no-op, so this fails
-// closed with ErrDeployment until the shape is confirmed. Telemetry cannot be
-// expressed in the configuration at all: it is an environment requirement of the
-// deployment (ADR 0011).
+// A route that declares reviewed provider routing is rendered with it, as the
+// top-level `provider` entry of its litellm_params. That shape was confirmed
+// against the pinned release rather than guessed: at v1.110.3 a litellm_params
+// entry that is not an OpenAI parameter is copied into the upstream request body
+// unchanged (litellm/utils.py add_provider_specific_params_to_optional_params,
+// which providers outside `litellm.openai_compatible_providers` — openrouter
+// among them — take, and litellm/llms/openai/openai.py, which builds the chat body
+// as `{"model", "messages", **optional_params}`), and OpenRouter reads its
+// provider-routing object from that body. A live pinned container was captured
+// emitting exactly the declared object, so the reviewed data-handling control is
+// expressible and is not an accepted no-op.
+//
+// The proxy cannot enforce that control against a client that holds the proxy
+// credential: a request body may still carry its own `provider` object, and the
+// pinned version forwards it. Admission, not the proxy, is therefore what keeps
+// the reviewed routing in force: the only admitted client is the Go transport,
+// whose request body is fixed (litellm.go) and carries no routing, endpoint,
+// model or credential field.
+//
+// Telemetry cannot be expressed in the configuration at all: it is an environment
+// requirement of the deployment (ADR 0011).
 //
 // The rendered document is a generated artifact: it is private, immutable and
 // never a second editable input. It carries one digest per route — the same
@@ -931,8 +972,13 @@ type proxyRouterSettings struct {
 // exists to review.
 func RenderProxyConfig(d Deployment) ([]byte, error) {
 	config := proxyConfig{
-		ModelList:       []proxyDeployment{},
-		LiteLLMSettings: proxyLiteLLMSettings{DropParams: false, TurnOffMessageLogging: true},
+		ModelList: []proxyDeployment{},
+		LiteLLMSettings: proxyLiteLLMSettings{
+			DropParams:            false,
+			TurnOffMessageLogging: true,
+			NumRetries:            0,
+			NumRetriesPerRequest:  0,
+		},
 		GeneralSettings: proxyGeneralSettings{DisableSpendLogs: true},
 		RouterSettings:  proxyRouterSettings{NumRetries: 0},
 	}
@@ -942,10 +988,9 @@ func RenderProxyConfig(d Deployment) ([]byte, error) {
 		spec    *ModelSpec
 		purpose string
 		mode    string
-		label   string
 	}{
-		{d.Embedding, purposeEmbed, "embedding", "embedding"},
-		{d.LLM, purposeGenerate, "", "llm"},
+		{d.Embedding, purposeEmbed, "embedding"},
+		{d.LLM, purposeGenerate, ""},
 	} {
 		if route.spec == nil {
 			continue
@@ -954,11 +999,6 @@ func RenderProxyConfig(d Deployment) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		if spec.Routing != nil {
-			// The reviewed provider routing cannot be emitted at the pinned
-			// version, so this route must not be rendered as if it had none.
-			return nil, deploymentErr("%s route declares reviewed provider routing that the pinned proxy configuration cannot express", route.label)
-		}
 		if !d.Enabled {
 			continue
 		}
@@ -966,7 +1006,7 @@ func RenderProxyConfig(d Deployment) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		params := proxyLiteLLM{Model: spec.Model, APIBase: spec.APIBase}
+		params := proxyLiteLLM{Model: spec.Model, APIBase: spec.APIBase, Provider: proxyRouting(spec.Routing)}
 		if spec.APIKeyEnv != "" {
 			// The proxy resolves the reference from its own environment; the
 			// secret value is never part of this document.
@@ -983,6 +1023,23 @@ func RenderProxyConfig(d Deployment) ([]byte, error) {
 		return nil, deploymentErr("proxy configuration cannot be rendered")
 	}
 	return append([]byte(proxyConfigHeader), body...), nil
+}
+
+// proxyRouting renders the reviewed routing of a hosted route as the proxy
+// configuration's provider control. A route without reviewed routing sends no
+// provider object at all: an absent control is never invented here.
+func proxyRouting(route *Route) *proxyProviderRouting {
+	if route == nil {
+		return nil
+	}
+	return &proxyProviderRouting{
+		Only:              []string{route.Provider},
+		Order:             []string{route.Provider},
+		AllowFallbacks:    false,
+		RequireParameters: true,
+		DataCollection:    route.DataCollection,
+		ZDR:               route.ZDR,
+	}
 }
 
 // deploymentErr wraps every rejection so a caller can test one error class while

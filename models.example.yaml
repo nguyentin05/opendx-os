@@ -50,8 +50,11 @@ llm:
   # be declared. It is part of the immutable reviewed identity, never a request
   # parameter, and the placeholders below are not a qualified routing decision.
   #
-  # The renderer fails closed while this block is present, because the pinned
-  # LiteLLM version's configuration shape for provider routing is unconfirmed: a
-  # route that declares routing is never rendered as if it had none. T4 settles
-  # that shape before an openrouter.ai route is declared qualified.
+  # The generated proxy configuration renders this block as the top-level
+  # `provider` entry of the route's `litellm_params`, which the pinned LiteLLM
+  # version forwards unchanged in the upstream request body where OpenRouter reads
+  # it. The proxy does not stop a client that holds the proxy credential from
+  # sending its own `provider` object, so the reviewed routing stays in force
+  # because the only admitted client is the Go runtime, whose request body is
+  # fixed and carries no routing field.
   routing: {provider: provider-slug, data_collection: deny, zdr: true}

@@ -56,10 +56,12 @@ query.
 1. **LiteLLM Proxy is the only provider transport.** A single private container,
    pinned by image digest from an official source, performs provider protocol
    translation and inference transport, with its own retries disabled
-   (`router_settings.num_retries: 0`, `num_retries_per_request: 0`) together with
-   its fallbacks, cache, message logging, callbacks and spend logs, so one
-   admitted Go operation still means at most one external dispatch. The proxy
-   becomes shared infrastructure, not a capability-side boundary integration.
+   (`router_settings.num_retries: 0`, `litellm_settings.num_retries: 0` and
+   `litellm_settings.num_retries_per_request: 0`; see
+   [Route constraints](#pinned-proxy-prerequisite)) together with its fallbacks,
+   cache, message logging, callbacks and spend logs, so one admitted Go operation
+   still means at most one external dispatch. The proxy becomes shared
+   infrastructure, not a capability-side boundary integration.
    [Tier boundaries](../architecture/tiers.md) files inference transport today
    under Tier 2, in the capability row for `cap-ai-model-adapter` (line 84), so
    this decision moves transport between tiers: the documentation follow-up in
@@ -235,8 +237,13 @@ query.
     environment, never from a configuration file, an image layer or a command
     line, and it runs in configuration-only mode: no `DATABASE_URL`, no
     `general_settings.store_model_in_db`, no Admin UI, no model, key, team or
-    budget tables. Client-supplied `model`, `api_base`, header, endpoint,
-    routing and credential overrides are rejected; unsupported required
+    budget tables. Client-supplied `model`, `api_base`, header, endpoint and
+    credential overrides are rejected by the pinned version; a client-supplied
+    `provider`, `models` or `route` field is not, so the reviewed routing is
+    protected by admission — only the fixed Go transport, which sends no routing
+    field, holds the proxy credential — and by the qualification comparing the
+    captured upstream routing with the declaration (see
+    [Route constraints](#pinned-proxy-prerequisite)). Unsupported required
     parameters fail instead of being dropped.
 
 ### Who probes and who reconciles
@@ -303,24 +310,86 @@ with no database and no `store_model_in_db` treats the file as the sole source o
 truth.
 
 Route constraints that the deployment must set and the tests must assert:
-`router_settings.num_retries: 0` and `num_retries_per_request: 0` (the router
-default is 2), no `fallbacks`, `context_window_fallbacks` or
-`content_policy_fallbacks`, `litellm_settings.turn_off_message_logging: true`,
+`router_settings.num_retries: 0`, `litellm_settings.num_retries: 0` and
+`litellm_settings.num_retries_per_request: 0` (the router default is 2), no
+`fallbacks`, `context_window_fallbacks` or `content_policy_fallbacks`,
+`litellm_settings.turn_off_message_logging: true`,
 `general_settings.disable_spend_logs: true`, no callbacks or telemetry, no
 prompt/response cache, no virtual keys, teams or budgets. The provider prefixes
 `openrouter/`, `ollama/` and `hosted_vllm/` resolve at this release, and Ollama
 embeddings use `/api/embed`.
+
+The retry line was corrected against the pinned release, because the earlier
+wording named a control that does not exist and would have been silently ignored:
+`num_retries_per_request` is **not** a `litellm.Router` constructor argument at
+`v1.110.3` (`inspect.signature(litellm.Router.__init__)` accepts `num_retries`,
+`retry_after`, `retry_policy` and `model_group_retry_policy`), and an unknown
+`router_settings` key does not fail startup: `proxy_server.py` logs
+"Key 'num_retries_per_request' is not a valid argument for Router.__init__().
+Ignoring this key." and continues, so the deployment would have looked protected
+while retrying. The authoritative spellings are `router_settings.num_retries: 0`
+for the router, `litellm_settings.num_retries: 0` for the module-level count a
+call reads (`litellm/utils.py`), and `litellm_settings.num_retries_per_request: 0`
+for the whole-request bound that includes fallbacks
+(`litellm/litellm_core_utils/core_helpers.py:max_retries_per_request_hit`). All
+three are emitted by the renderer; a live pinned proxy that was given
+`router_settings.num_retries: 3` made four upstream requests for one operation,
+and the generated three-zero configuration made exactly one.
+
+Provider routing has a confirmed configuration shape as well, so a reviewed
+`openrouter` route is no longer rejected by the renderer. At `v1.110.3` a
+`litellm_params` entry that the proxy does not treat as an OpenAI parameter is
+copied into the upstream request body unchanged
+(`litellm/utils.py:add_provider_specific_params_to_optional_params`, the branch
+taken by providers outside `litellm.openai_compatible_providers` — `openrouter`
+among them — and `litellm/llms/openai/openai.py`, which builds the chat body as
+`{"model", "messages", **optional_params}`), and OpenRouter reads its
+provider-routing object from that body. The renderer therefore emits the reviewed
+routing as the top-level `provider` entry of the route's `litellm_params`, and a
+live pinned container was captured forwarding exactly
+`{"only": […], "order": […], "allow_fallbacks": false, "require_parameters": true,
+"data_collection": "deny", "zdr": true}`. The same mechanism is why an unknown or
+misspelled `litellm_params` key is forwarded rather than rejected: the renderer's
+tests pin the exact key set, and the qualification compares the captured upstream
+routing with the reviewed one instead of trusting the file.
+
+Four further behaviours were measured at the pin and are part of the deployment
+contract rather than assumptions:
+
+- The proxy refuses to start with an unset, empty or publicly known master key
+  (`litellm/proxy/auth/master_key_boot_check.py`), so a deployment that forgets the
+  secret fails closed instead of accepting every request.
+- The proxy loads its configuration from `CONFIG_FILE_PATH` or `--config` only
+  when the path ends in `.yaml`/`.yml`; any other name starts a proxy with an
+  empty model list. The qualification asserts the served model list, so a wrongly
+  named mount cannot qualify.
+- A request body may not carry `api_base`, `base_url` or a credential reference:
+  the pinned proxy refuses those before the database read
+  (`litellm/proxy/auth/auth_utils.py:_BANNED_REQUEST_BODY_PARAMS`). A `provider`,
+  `models` or `route` field in the body is **not** banned and replaces the
+  configured routing, so the reviewed routing holds because the only admitted
+  client is the fixed Go transport, not because the proxy filters it. This is why
+  [decision 11](#decision) admits no other client.
+- The proxy follows an upstream redirect (a 307 from a configured `api_base` is
+  followed and answered), stripping the `Authorization` header on the way. A
+  configured endpoint must therefore be trusted and non-redirecting, and a
+  redirecting upstream cannot qualify.
 
 Telemetry is not a `config.yaml` setting at the pinned version: the proxy reads it
 from its own environment (`litellm/proxy/telemetry/settings.py`, prefix
 `LITELLM_TELEMETRY_`), so the renderer cannot express it and its absence from the
 generated file proves nothing. **Owned requirement, T4 (Compose) and T7
 (deployment verification):** the proxy environment must set
-`LITELLM_TELEMETRY_DISABLED=true` — and every equivalent telemetry switch the
-pinned version honours — and the deployment verification must assert it at the
-running container, not only in the declaration. No configuration key is invented
-for this, and the render test must keep asserting that the generated configuration
-contains no telemetry, database or message-logging enable key.
+`LITELLM_TELEMETRY_DISABLED=true`, and the deployment verification must assert it
+at the running container, not only in the declaration. No configuration key is
+invented for this, and the render test must keep asserting that the generated
+configuration contains no telemetry, database or message-logging enable key. At
+this release `LITELLM_TELEMETRY_DISABLED` is the only disable switch: `GROUPS`
+accepts only telemetry group names, `DESTINATION` and `ENDPOINT` configure a sink,
+and no other `*TELEMETRY*` environment variable affects the proxy, so no
+"equivalent" variable is claimed. Compute ships it in `compose.litellm.yaml` and
+asserts it both in the rendered Compose service and by reading the running
+container's environment in the real-container qualification.
 
 Two prerequisites remain unresolved and must be closed before a real route is
 declared qualified; neither may be asserted as done:

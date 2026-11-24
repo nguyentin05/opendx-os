@@ -1,0 +1,120 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Opt-in overlay for the private model proxy. Add it after compose.models.yaml.
+# Leaving it out starts no proxy and leaves every model-calling service unchanged.
+#
+# The proxy is infrastructure, not a capability: it publishes no host port, has no
+# APISIX route, no database, no Admin UI, no Docker socket and no writable path of
+# its own. The two model-calling services reach it only over the private
+# `model-inference` network, and only with the proxy credential. Upstream provider
+# keys exist only in the proxy container: the runtime never holds one.
+#
+# Required deployment settings (each names a private path or file, never a secret
+# value in this file):
+#   RAG_MODEL_LITELLM_IMAGE                pinned image reference (default below)
+#   RAG_MODEL_LITELLM_CONFIG_FILE          the configuration generated from the
+#                                          deployment declaration by
+#                                          models.RenderProxyConfig
+#   RAG_MODEL_LITELLM_SECRET_ENV_FILE      owner-only env file holding
+#                                          LITELLM_MASTER_KEY and the provider key
+#                                          references the configuration names
+#   RAG_MODEL_LITELLM_CREDENTIAL_ENV_FILE  owner-only env file holding the same
+#                                          LITELLM_MASTER_KEY for the runtime
+#
+# Telemetry is an environment requirement, not a configuration key: the pinned
+# proxy reads it from `LITELLM_TELEMETRY_*` (litellm/proxy/telemetry/settings.py),
+# and `LITELLM_TELEMETRY_DISABLED=true` is the veto that keeps a stored consent or
+# a future default from reporting anything. The pinned version honours no other
+# telemetry disable variable, so no equivalent is invented here.
+#
+# Egress is closed by default: `model-inference` is `internal`, so the proxy has no
+# route out of the deployment and a local-only installation cannot reach hosted
+# inference even if a configuration asked it to. Two consequences are deliberate
+# and must be reviewed before a deployment changes them:
+#   * A deployment that declares a hosted route, or a local route whose endpoint
+#     lives outside this Compose project, must attach the proxy to an egress or
+#     external network from its own reviewed overlay. This file does not attach
+#     one, because attaching it by default would make the local-only case
+#     unprovable.
+#   * The proxy publishes no host port. Operators inspect it through the Compose
+#     network only; there is no port to publish.
+services:
+  litellm:
+    image: ${RAG_MODEL_LITELLM_IMAGE:-ghcr.io/berriai/litellm@sha256:1050d2c9ca58399de9cd51df6eb503812af697717f54d2f08c1c30589c75e1f7}
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    # The image defaults to UID 0; the proxy needs no privilege at all.
+    user: "65532:65532"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    env_file:
+      - ${RAG_MODEL_LITELLM_SECRET_ENV_FILE:?set the private env file holding LITELLM_MASTER_KEY and the provider key references}
+    environment:
+      HOME: /tmp
+      # The pinned proxy loads its configuration from this variable and only when
+      # the path ends in .yaml: a differently named mount loads no model at all.
+      CONFIG_FILE_PATH: /run/secrets/litellm-config.yaml
+      # Owned telemetry requirement (ADR 0011): the only disable switch this
+      # release honours.
+      LITELLM_TELEMETRY_DISABLED: "true"
+      # No self-initiated egress. Without these the pinned proxy fetches its model
+      # cost map, blog posts, release notes and autorouter presets from the public
+      # internet at startup, which a local-only deployment must not do. Offline mode
+      # covers every such fetch; the explicit variable names the one that was
+      # observed making real requests.
+      LITELLM_OFFLINE_MODE: "true"
+      LITELLM_LOCAL_MODEL_COST_MAP: "true"
+    secrets:
+      - litellm-config
+    networks:
+      model-inference:
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    # Deliberately absent: ports, expose, volumes, privileged, network_mode,
+    # pid, ipc, DATABASE_URL, STORE_MODEL_IN_DB and every callback or cache.
+
+  cap-ai:
+    environment:
+      RAG_MODEL_LITELLM_ENDPOINT: http://litellm:4000
+    env_file:
+      - ${RAG_MODEL_LITELLM_CREDENTIAL_ENV_FILE:?set the private env file holding the proxy credential for the runtime}
+    networks:
+      model-inference:
+
+  cap-ai-worker:
+    environment:
+      RAG_MODEL_LITELLM_ENDPOINT: http://litellm:4000
+    env_file:
+      - ${RAG_MODEL_LITELLM_CREDENTIAL_ENV_FILE:?set the private env file holding the proxy credential for the runtime}
+    networks:
+      model-inference:
+
+# `internal` is the egress control: a container attached only to this network has
+# no route out of the deployment. See the header before adding an egress network.
+networks:
+  model-inference:
+    name: dxos-model-inference
+    internal: true
+
+secrets:
+  litellm-config:
+    file: ${RAG_MODEL_LITELLM_CONFIG_FILE:?set the generated proxy configuration path}

@@ -762,6 +762,16 @@ type proxyDocument struct {
 			Model   string `yaml:"model"`
 			APIBase string `yaml:"api_base"`
 			APIKey  string `yaml:"api_key"`
+			// Provider is the reviewed routing object. It is decoded as a
+			// test-local shape, so a rename in the renderer fails here.
+			Provider *struct {
+				Only              []string `yaml:"only"`
+				Order             []string `yaml:"order"`
+				AllowFallbacks    bool     `yaml:"allow_fallbacks"`
+				RequireParameters bool     `yaml:"require_parameters"`
+				DataCollection    string   `yaml:"data_collection"`
+				ZDR               bool     `yaml:"zdr"`
+			} `yaml:"provider"`
 		} `yaml:"litellm_params"`
 		ModelInfo struct {
 			ID   string `yaml:"id"`
@@ -771,6 +781,8 @@ type proxyDocument struct {
 	LiteLLMSettings struct {
 		DropParams            *bool      `yaml:"drop_params"`
 		TurnOffMessageLogging *bool      `yaml:"turn_off_message_logging"`
+		NumRetries            *int       `yaml:"num_retries"`
+		NumRetriesPerRequest  *int       `yaml:"num_retries_per_request"`
 		Cache                 proxyClaim `yaml:"cache"`
 	} `yaml:"litellm_settings"`
 	GeneralSettings struct {
@@ -930,6 +942,15 @@ func TestRenderProxyConfig(t *testing.T) {
 	if doc.RouterSettings.NumRetries == nil || *doc.RouterSettings.NumRetries != 0 {
 		t.Fatalf("router_settings.num_retries = %v, want 0", doc.RouterSettings.NumRetries)
 	}
+	// The router kwarg alone is not the whole retry surface: the process-level
+	// global and the whole-request bound must be zero too, because their absence
+	// is a default that retries.
+	if doc.LiteLLMSettings.NumRetries == nil || *doc.LiteLLMSettings.NumRetries != 0 {
+		t.Fatalf("litellm_settings.num_retries = %v, want 0", doc.LiteLLMSettings.NumRetries)
+	}
+	if doc.LiteLLMSettings.NumRetriesPerRequest == nil || *doc.LiteLLMSettings.NumRetriesPerRequest != 0 {
+		t.Fatalf("litellm_settings.num_retries_per_request = %v, want 0", doc.LiteLLMSettings.NumRetriesPerRequest)
+	}
 
 	// Parsed settings, not substrings: cache, the three fallback lists, a
 	// database, message logging and telemetry must all be absent or explicitly
@@ -1023,18 +1044,48 @@ func TestRenderProxyConfig(t *testing.T) {
 		}
 	})
 
-	t.Run("route with reviewed provider routing is not rendered", func(t *testing.T) {
-		// Rendering a route whose routing it cannot express would turn a reviewed
-		// data-handling control into an accepted no-op, so the renderer fails
-		// closed instead, enabled or not.
-		for _, doc := range []string{deploymentBoth, edit(t, deploymentBoth, "enabled: true", "enabled: false")} {
-			_, err := RenderProxyConfig(loadDeployment(t, doc))
-			if !errors.Is(err, ErrDeployment) {
-				t.Fatalf("RenderProxyConfig() = %v, want ErrDeployment for a route with routing", err)
-			}
-			if !strings.Contains(strings.ToLower(err.Error()), "routing") {
-				t.Fatalf("RenderProxyConfig() = %v, want an error naming the routing control", err)
-			}
+	t.Run("route with reviewed provider routing is rendered", func(t *testing.T) {
+		// The config-mode shape of the reviewed routing was confirmed against the
+		// pinned release: a litellm_params entry the proxy does not treat as an
+		// OpenAI parameter reaches the upstream request body unchanged, which is
+		// where OpenRouter reads its provider object. Rendering it is what makes
+		// the reviewed data-handling control real instead of an accepted no-op.
+		raw, doc := renderProxy(t, loadDeployment(t, deploymentBoth))
+		if len(doc.ModelList) != 2 {
+			t.Fatalf("model_list = %d entries, want one per configured purpose\n%s", len(doc.ModelList), raw)
+		}
+		embedding, llm := doc.ModelList[0], doc.ModelList[1]
+		if embedding.LiteLLMParams.Provider != nil {
+			t.Fatalf("embedding litellm_params.provider = %+v, want no routing on a local route", embedding.LiteLLMParams.Provider)
+		}
+		provider := llm.LiteLLMParams.Provider
+		if provider == nil {
+			t.Fatalf("llm litellm_params carries no reviewed routing\n%s", raw)
+		}
+		if len(provider.Only) != 1 || provider.Only[0] != "deepinfra" ||
+			len(provider.Order) != 1 || provider.Order[0] != "deepinfra" {
+			t.Fatalf("routing only/order = %v/%v, want exactly the declared provider", provider.Only, provider.Order)
+		}
+		if provider.AllowFallbacks || !provider.RequireParameters {
+			t.Fatalf("routing allow_fallbacks/require_parameters = %v/%v, want false/true", provider.AllowFallbacks, provider.RequireParameters)
+		}
+		if provider.DataCollection != "deny" || !provider.ZDR {
+			t.Fatalf("routing data_collection/zdr = %q/%v, want the declared data policy", provider.DataCollection, provider.ZDR)
+		}
+
+		// A disabled declaration is still validated and renders no route, so a
+		// switched-off deployment cannot start inference on a routing it did not
+		// review.
+		_, disabled := renderProxy(t, loadDeployment(t, edit(t, deploymentBoth, "enabled: true", "enabled: false")))
+		if len(disabled.ModelList) != 0 {
+			t.Fatalf("model_list = %+v, want no route", disabled.ModelList)
+		}
+
+		// The control is declared, never inferred: a hosted route without reviewed
+		// routing sends no provider object at all.
+		_, plain := renderProxy(t, loadDeployment(t, deploymentRenderable))
+		if plain.ModelList[1].LiteLLMParams.Provider != nil {
+			t.Fatalf("plain llm litellm_params.provider = %+v, want none", plain.ModelList[1].LiteLLMParams.Provider)
 		}
 	})
 
