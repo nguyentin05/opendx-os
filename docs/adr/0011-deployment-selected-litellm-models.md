@@ -318,9 +318,9 @@ declared qualified; neither may be asserted as done:
   identifier and no affected version range for `v1.110.3`, because no such
   attribution could be confirmed. The first committed draft of this ADR (commit
   `cc29f51`, 2026-11-25) cited a high-severity JWT/SSO email-fallback advisory as
-  affecting `< 1.111.0`; that citation was still present when the draft was
-  reviewed and was withdrawn during that review, before this ADR was accepted on
-  2026-11-25, because its identifier resolved to nothing: 404 from both the OSV
+  affecting `< 1.111.0`. That citation was still present at the reviewed
+  baseline and was withdrawn during the review that produced this accepted
+  revision, because its identifier resolved to nothing: 404 from both the OSV
   vulnerability endpoint (`https://api.osv.dev/v1/vulns/<id>`) and the GitHub
   advisory pages, and because the OSV query for the `litellm` PyPI package
   returned no entry matching that description and none with a range reaching
@@ -380,12 +380,15 @@ From [ADR 0009](0009-native-rag-identity-and-source-boundaries.md):
   exclude local inference, and no other clause is read as doing so.
 - The requirement that hosted transport pass through the bounded adapter
   protocol, and any provider-translation responsibility it implies for Go
-  (decision 1). ADR 0009 does not state this requirement at all — neither
-  "adapter" nor "bounded-http-v1" appears anywhere in
-  [ADR 0009](0009-native-rag-identity-and-source-boundaries.md), and no clause of
-  it is read as having stated it, as a decision or otherwise. The requirement to
-  retire is therefore anchored only where it is actually enforced and documented:
-  the strict catalog schema constraint at
+  (decision 1). ADR 0009 does not state this requirement at all: neither
+  "adapter" nor "bounded-http-v1" appears in any decision or contract-amendment
+  row of [ADR 0009](0009-native-rag-identity-and-source-boundaries.md) —
+  `bounded-http-v1` does not occur in the document at all, and the only
+  occurrence of "adapter" is in the status bullet that records this very
+  retirement — and no clause of it is read as having stated the requirement, as
+  a decision or otherwise. The requirement to retire is therefore anchored only
+  where it is actually enforced and documented: the strict catalog schema
+  constraint at
   `capabilities/internal/knowledge/modelprovisioning/catalog.go:52`
   (`boundedAdapter = "bounded-http-v1"`, the only accepted value, rejected at
   `catalog.go:129` for any candidate), the catalog and route requirements in
