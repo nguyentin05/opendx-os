@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 import subprocess
 import sys
 import unittest
@@ -53,6 +54,18 @@ TOOLING_GLOBS = (
     "scripts/**/*.py",
     "scripts/**/*.sh",
     "Makefile",
+)
+
+# A retired path is stale in tooling when it is the package path itself, not a
+# suffix of another module's package. The reference must start a token and be
+# capability-qualified (`capabilities/...`), Go-relative (`./...`), or bare after
+# a quote, whitespace or flag; `operator/internal/knowledge`, for example, is a
+# different package and must not be reported.
+STALE_TOOLING_RE = re.compile(
+    r"(?:^|[\s\"'`(=:,])"
+    r"(?P<package>(?:capabilities/|\./)?(?:"
+    + "|".join(re.escape(rel) for rel in STALE_INTERNAL_PACKAGES)
+    + r"))(?=[/\"'`\s:),;]|$)"
 )
 
 
@@ -126,9 +139,10 @@ class TestContractsAndHygiene(unittest.TestCase):
                 if not path.is_file():
                     continue
                 text = path.read_text(encoding="utf-8", errors="ignore")
-                for rel in STALE_INTERNAL_PACKAGES:
-                    if f"/{rel}" in text or f'"{rel}' in text or f"'{rel}" in text:
-                        tooling_offenders.append(f"{path.relative_to(ROOT).as_posix()} -> {rel}")
+                for match in STALE_TOOLING_RE.finditer(text):
+                    tooling_offenders.append(
+                        f"{path.relative_to(ROOT).as_posix()} -> {match.group('package')}"
+                    )
         self.assertEqual(tooling_offenders, [], f"Stale package path in tooling: {tooling_offenders}")
 
     def test_core_schema_invariants(self) -> None:

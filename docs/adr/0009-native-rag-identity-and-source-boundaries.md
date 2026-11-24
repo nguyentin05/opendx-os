@@ -5,7 +5,7 @@ diataxis: explanation
 audience: [platform-developer, security-reviewer]
 status: active
 owner: platform
-last_reviewed: 2026-11-20
+last_reviewed: 2026-11-25
 ---
 
 # ADR 0009: Native RAG identity and source boundaries
@@ -22,6 +22,18 @@ last_reviewed: 2026-11-20
   `capabilities/internal/knowledge/modelprovisioning/catalog.go:52` and recorded
   in the model guide rather than in any clause of this decision; every other
   decision, including the security decisions, stands.
+  Every capability package path quoted in this record — in the status bullet
+  above and in the contract-amendment table below — is the layout as accepted.
+  The consolidation commit `7d21b6a` relocated `capabilities/internal/knowledge`
+  (with `models`, `modelprovisioning` and `contracts` promoted to siblings) and
+  `capabilities/internal/agent` under `capabilities/internal/ai/`, so those
+  quoted paths now read `capabilities/internal/ai/knowledge/...`,
+  `capabilities/internal/ai/models/...`,
+  `capabilities/internal/ai/modelprovisioning/...` and
+  `capabilities/internal/ai/agent/...`; for example the enforcement anchor named
+  above is live at
+  `capabilities/internal/ai/modelprovisioning/catalog.go:52`. That relocation
+  changed no decision, gate or contract-amendment row recorded here.
 - **Date:** 2026-11-13
 - **Decision owner:** repository/product owner; issue owner `nguyentin05` is the proposed responsible owner, pending identity/assignment confirmation.
 

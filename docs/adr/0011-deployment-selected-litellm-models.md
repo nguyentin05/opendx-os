@@ -23,7 +23,7 @@ last_reviewed: 2026-11-25
 The baseline has two model-management mechanisms that both exist to change the
 active model without a deployment.
 
-1. A private Go service, `capabilities/internal/knowledge/modeladapter` served by
+1. A private Go service, `capabilities/internal/ai/knowledge/modeladapter` served by
    `capabilities/cmd/cap-ai-model-adapter` and started only by the
    `compose.model-adapter.yaml` overlay, translates one reviewed
    `bounded-http-v1` envelope into one OpenAI-compatible upstream call. It owns
@@ -35,7 +35,7 @@ active model without a deployment.
    promote, roll back or disable a "slot" per capability. `cap_ai.model_profiles`
    holds the immutable reviewed profile, `cap_ai.processing_policy_profiles`
    binds policy revisions to exact profile revisions, and
-   `capabilities/internal/knowledge/models` holds the `Gateway`, `Policy`,
+   `capabilities/internal/ai/models` holds the `Gateway`, `Policy`,
    `OperationStore`, `Registry` and `RuntimeResolver` that consume all of it.
 
 Both mechanisms carry coordination that nothing else needs: candidate imports,
@@ -66,7 +66,7 @@ query.
    [Consequences for documentation](#consequences-for-documentation) must record
    that move rather than present a Tier 1 proxy as an existing row. The
    `bounded-http-v1` protocol, its serving package
-   (`internal/knowledge/modeladapter`), its command
+   (`internal/ai/knowledge/modeladapter`), its command
    (`cmd/cap-ai-model-adapter`), its Compose overlay and its TLS/credential
    plumbing are retired. LiteLLM is infrastructure, not an authorization
    service: Go keeps business authorization, model identity, payload and result
@@ -370,7 +370,7 @@ From [ADR 0009](0009-native-rag-identity-and-source-boundaries.md):
   requirements in that row — immutable bindings and digests, no approval
   inherited from activation — survive as digest identity and explicit approval.
 - The implementation-delta row for
-  `capabilities/internal/knowledge/answers.go` combined with the ADR 0010
+  `capabilities/internal/ai/knowledge/answers.go` combined with the ADR 0010
   consequence that shipping a local serving adapter is out of scope, which
   together made qualified local inference unreachable: a deployment could refuse
   local serving instead of selecting it. Decision 10 makes qualified local
@@ -389,7 +389,7 @@ From [ADR 0009](0009-native-rag-identity-and-source-boundaries.md):
   a decision or otherwise. The requirement to retire is therefore anchored only
   where it is actually enforced and documented: the strict catalog schema
   constraint at
-  `capabilities/internal/knowledge/modelprovisioning/catalog.go:52`
+  `capabilities/internal/ai/modelprovisioning/catalog.go:52`
   (`boundedAdapter = "bounded-http-v1"`, the only accepted value, rejected at
   `catalog.go:129` for any candidate), the catalog and route requirements in
   [the model guide](../guides/knowledge/models.md) (the catalog declaration at
@@ -413,7 +413,7 @@ From [ADR 0010](0010-model-operations-without-monetary-admission.md):
   class, resource limits and admin/runtime separation — all of which stand. What
   this ADR retires is the `adapter` key's single accepted value
   (`bounded-http-v1`) as a mandatory element of the successor declaration,
-  anchored at `capabilities/internal/knowledge/modelprovisioning/catalog.go:52`,
+  anchored at `capabilities/internal/ai/modelprovisioning/catalog.go:52`,
   at the model-guide catalog declaration (lines 549-598) and its schema statement
   (lines 1016-1021), rather than at any ADR 0010 clause. The successor
   declaration schema is settled by the migration task; it must keep immutable
@@ -438,13 +438,13 @@ by a reviewed migration; nothing here is dropped by this decision.
 | `cap_ai.model_candidates` | `registry_import_candidates` executed by `dxos_ai_model_catalog`; `registry_guard_history` trigger | `registry_resolve_slot`, `registry_embedding_lease_profile`, `model_admin_list`, `model_admin_change_slot`, `RuntimeResolver.validDeclaration`, integration tests | Retire. No reader survives deployment-selected identity |
 | `cap_ai.global_model_slots` | `model_admin_change_slot`; fixture updates in tests | `registry_resolve_slot` via `Registry.Resolve`/`RuntimeResolver` via `Store.modelBinding`; `agent_model_policy` and `agent_query_model_policy` slot pins; `dxos-model slots`; tests | Retire. `LLMSlotRevision`/`EmbeddingSlotRevision` pins are replaced by the digest identity |
 | `cap_ai.model_slot_events` | `model_admin_change_slot`; `registry_guard_history` trigger | `model_admin_slots`, `model_admin_list`, registry integration tests | Retire with the administration lifecycle |
-| `cap_ai.registry_resolve_slot`, `registry_import_candidates`, `registry_guard_history`, `registry_guard_slot`, `model_admin_session`, `model_admin_actor`, `model_admin_list`, `model_admin_slots`, `model_admin_change_slot` | Deployment identity and Platform Admin sessions | `internal/knowledge/models/{registry,slots}.go`, `modelprovisioning/admin.go`, `cmd/dxos-model` | Retire with their grants to `dxos_ai_gateway`, `dxos_ai_model_catalog` and `dxos_ai_model_admin` |
+| `cap_ai.registry_resolve_slot`, `registry_import_candidates`, `registry_guard_history`, `registry_guard_slot`, `model_admin_session`, `model_admin_actor`, `model_admin_list`, `model_admin_slots`, `model_admin_change_slot` | Deployment identity and Platform Admin sessions | `internal/ai/models/{registry,slots}.go`, `modelprovisioning/admin.go`, `cmd/dxos-model` | Retire with their grants to `dxos_ai_gateway`, `dxos_ai_model_catalog` and `dxos_ai_model_admin` |
 | `cap_ai.registry_embedding_lease_profile` | — | Worker lease resolution | Rewrite to resolve the deployment identity from the lease, keeping lease fencing |
 | `cap_ai.agent_model_policy`, `cap_ai.agent_query_model_policy` | — | `models/authority.go`, AGENT and query approval paths | Retain, replacing slot pins with the digest identity |
 | `cap_ai.model_profiles`, `cap_ai.processing_policies`, `cap_ai.processing_policy_profiles`, `cap_ai.agent_processing_approvals` and events, `cap_ai.embedding_generations`, `cap_ai.chunk_embeddings`, `cap_ai.model_operations` | Deployment and approval identities | Gateway, `Policy`, `OperationStore`, worker, retrieval | Retain; identity derivation changes, meaning does not |
 | `cap_ai.queue_embeddings`, `cap_ai.claim_embedding`, `cap_ai.embedding_work`, `cap_ai.save_embedding`, `cap_ai.finish_embedding`, `cap_ai.fail_embedding`, `cap_ai.search_vectors`, `cap_ai.search_personal_vectors`, `cap_ai.model_policy`, `cap_ai.worker_model_policy`, `cap_ai.personal_processing_approval`, `cap_ai.claim_model_operation`, `cap_ai.begin_model_operation`, `cap_ai.finish_model_operation` | Worker, API and Gateway | Worker, retrieval, answers, authority | Retain. The existing re-embedding job path is reused, not replaced |
-| `internal/knowledge/modeladapter` (8 files), `cmd/cap-ai-model-adapter`, `compose.model-adapter.yaml`, `scripts/check_model_adapter_env.py`, `scripts/integration/test_model_adapter_deployment.py`, `RAG_MODEL_ADAPTER_*` and `MODEL_ADAPTER_*` settings | — | Gateway transport, `modelprovisioning`, deployment tests, the model guide and the Tier descriptions | Retire once the replacement is verified |
-| `internal/knowledge/models/{slots,registry,catalog}.go` and the `activate`/`deactivate`/`slots`/`list`/`inspect` CLI commands, plus the candidate-catalog mode of `import` | Operator and `dxos-model` | Runtime resolution and provisioning tests | Retire. `validate`, the narrowed `import` of decision 9, the retargeted `verify`, the new `status`, `policy approve`, `policy revoke`, `policy suspend` and `policy resume` remain |
+| `internal/ai/knowledge/modeladapter` (8 files), `cmd/cap-ai-model-adapter`, `compose.model-adapter.yaml`, `scripts/check_model_adapter_env.py`, `scripts/integration/test_model_adapter_deployment.py`, `RAG_MODEL_ADAPTER_*` and `MODEL_ADAPTER_*` settings | — | Gateway transport, `modelprovisioning`, deployment tests, the model guide and the Tier descriptions | Retire once the replacement is verified |
+| `internal/ai/models/{slots,registry,catalog}.go` and the `activate`/`deactivate`/`slots`/`list`/`inspect` CLI commands, plus the candidate-catalog mode of `import` | Operator and `dxos-model` | Runtime resolution and provisioning tests | Retire. `validate`, the narrowed `import` of decision 9, the retargeted `verify`, the new `status`, `policy approve`, `policy revoke`, `policy suspend` and `policy resume` remain |
 
 Other documented consequences:
 
