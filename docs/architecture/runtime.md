@@ -37,8 +37,8 @@ versions.
 The GraphQL route accepts at most 256 KiB per request and 600 requests per
 minute per bearer token (per client address without one), and rejects
 JSON-array bodies. Request-serving
-database roles have a 10s statement timeout; Hasura, cap-process, authz and
-cap-hr also have a 30s idle-in-transaction timeout, while background ingestion,
+database roles have a 10-second statement timeout; Hasura, cap-process, authz and
+cap-hr also have a 30-second idle-in-transaction timeout, while background ingestion,
 the knowledge dispatcher, the model gateway, Kestra and migration/test roles
 keep no limit because they run longer operations. Existing installations apply
 `0006_runtime_statement_limits.sql` with
