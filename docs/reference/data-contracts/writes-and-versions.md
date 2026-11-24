@@ -48,4 +48,6 @@ Each command carries an idempotency key. The lock scope includes actor, app, ent
 
 Write the change, audit, and durable event in the same transaction. cap-process writes the event to `core.outbox_events` in the command's transaction, and its publisher delivers it afterwards to the flow the operator deployed for the application (`core.app_workflows`); an HTTP call to Kestra after commit is never the only delivery. The workflow deduplicates each effect by event identity and step (`cap_process.processed_workflow_steps`); a retry after a crash does not create duplicate business effects.
 
+Workflow effects on one record follow event order, not arrival order; see [runtime rules](../runtime-rules.md#identity-roles-and-commands).
+
 Audit serializes per chain (one per application, plus `core`) before reading the chain head and computing the hash, with `pg_advisory_xact_lock(hashtext('dxos.audit:' || chain))` within the transaction. The chain detects a changed or removed row only against a known head: anchoring signed checkpoints outside PostgreSQL is a requirement that is not implemented yet, so the chain does not resist history rewriting by a database superuser.

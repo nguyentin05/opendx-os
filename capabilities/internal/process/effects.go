@@ -57,9 +57,15 @@ func (e *Engine) ExecuteEffect(ctx context.Context, actor *auth.Identity, eventI
 		return nil, err
 	}
 	var app, entityType, entityID, eventType string
+	var entityVersion int64
 	var payload []byte
-	if err = tx.QueryRowContext(ctx, `SELECT app_id,entity_type,entity_id::text,event_type,payload FROM core.outbox_events WHERE id=$1`, eventID).Scan(&app, &entityType, &entityID, &eventType, &payload); err != nil {
+	if err = tx.QueryRowContext(ctx, `SELECT app_id,entity_type,entity_id::text,event_type,entity_version,payload FROM core.outbox_events WHERE id=$1`, eventID).Scan(&app, &entityType, &entityID, &eventType, &entityVersion, &payload); err != nil {
 		return nil, ErrEffectDenied
+	}
+	// Effects for one record serialize even when their events arrive on
+	// different workers. The event lock above only protects one event and step.
+	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "workflow-record:"+app+":"+entityType+":"+entityID); err != nil {
+		return nil, err
 	}
 	a, err := e.apps.Load(ctx, app)
 	if err != nil {
@@ -96,6 +102,22 @@ func (e *Engine) ExecuteEffect(ctx context.Context, actor *auth.Identity, eventI
 		if effect.Fields == nil {
 			return nil, ErrEffectDenied
 		}
+		// complete_work_item records {"completed":n}; a creation records
+		// {"work_item_id":...} or {"skipped":"superseded"}. A later completion
+		// for this record means this older creation must not open an item.
+		var superseded bool
+		if err = tx.QueryRowContext(ctx, `SELECT EXISTS (
+			SELECT 1 FROM cap_process.processed_workflow_steps p
+			JOIN core.outbox_events e ON e.id = p.event_id
+			WHERE e.app_id=$1 AND e.entity_type=$2 AND e.entity_id=$3
+			  AND e.entity_version > $4 AND p.outcome='success' AND p.result ? 'completed'
+		)`, app, entityType, entityID, entityVersion).Scan(&superseded); err != nil {
+			return nil, err
+		}
+		if superseded {
+			result, _ = json.Marshal(map[string]string{"skipped": "superseded"})
+			break
+		}
 		var assignee any
 		if effect.Fields.AssigneeID != "" {
 			var user string
@@ -111,8 +133,8 @@ func (e *Engine) ExecuteEffect(ctx context.Context, actor *auth.Identity, eventI
 		if _, err = tx.ExecContext(ctx, `SELECT set_config('dxos.actor_id',$1,true),set_config('dxos.action',$2,true),set_config('dxos.role',$3,true)`, e.serviceUser, stepName, e.serviceRole); err != nil {
 			return nil, err
 		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO cap_work.work_items(id,app_id,title,description,priority,assignee_id,source_type,source_id,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-			workID, app, effect.Fields.Title, effect.Fields.Description, effect.Fields.Priority, assignee, entityType, entityID, e.serviceUser); err != nil {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO cap_work.work_items(id,app_id,title,description,priority,assignee_id,source_type,source_id,source_version,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+			workID, app, effect.Fields.Title, effect.Fields.Description, effect.Fields.Priority, assignee, entityType, entityID, entityVersion, e.serviceUser); err != nil {
 			return nil, err
 		}
 		result, _ = json.Marshal(map[string]string{"work_item_id": workID})
@@ -122,7 +144,7 @@ func (e *Engine) ExecuteEffect(ctx context.Context, actor *auth.Identity, eventI
 		if effect.Fields != nil {
 			return nil, ErrEffectDenied
 		}
-		update, err := tx.ExecContext(ctx, `UPDATE cap_work.work_items SET board_column='DONE' WHERE app_id=$1 AND source_type=$2 AND source_id=$3 AND board_column<>'DONE'`, app, entityType, entityID)
+		update, err := tx.ExecContext(ctx, `UPDATE cap_work.work_items SET board_column='DONE' WHERE app_id=$1 AND source_type=$2 AND source_id=$3 AND board_column<>'DONE' AND (source_version IS NULL OR source_version < $4)`, app, entityType, entityID, entityVersion)
 		if err != nil {
 			return nil, err
 		}

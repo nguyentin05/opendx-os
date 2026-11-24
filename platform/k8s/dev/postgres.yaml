@@ -123,6 +123,8 @@ spec:
                 path: migrations/core/0005_parent_refusal.sql
               - key: core-0006_runtime_statement_limits.sql
                 path: migrations/core/0006_runtime_statement_limits.sql
+              - key: core-0007_work_item_source_version.sql
+                path: migrations/core/0007_work_item_source_version.sql
               - key: cap_ai-0001_metadata_jobs.sql
                 path: migrations/cap_ai/0001_metadata_jobs.sql
               - key: cap_ai-0002_docir_fts.sql
