@@ -159,7 +159,9 @@ func serve(ctx context.Context, server *http.Server, listener net.Listener, cert
 			_ = server.Close()
 			return serviceInvalid("the TLS listener did not stop cleanly")
 		}
-		<-served
+		if err := <-served; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return serviceInvalid("the TLS listener is not usable")
+		}
 		return nil
 	}
 }

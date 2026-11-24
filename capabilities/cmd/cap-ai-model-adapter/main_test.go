@@ -399,3 +399,21 @@ func boundedBody(t *testing.T, request models.BoundedRequest) string {
 	}
 	return string(raw)
 }
+
+func TestAdapterCanceledStartupReportsInvalidTLS(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	directory := t.TempDir()
+	err = serve(ctx, newServer(http.NotFoundHandler()), listener, filepath.Join(directory, "missing.crt"), filepath.Join(directory, "missing.key"), nil)
+	if err == nil {
+		t.Fatal("cancellation concealed invalid TLS material")
+	}
+	if strings.Contains(err.Error(), directory) {
+		t.Fatal("TLS error disclosed mount path")
+	}
+}

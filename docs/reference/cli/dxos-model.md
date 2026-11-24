@@ -155,7 +155,7 @@ action. No command retries automatically.
 | --- | --- |
 | `validate` | Array of `{profile_id, revision, provider_id, purpose, digest, external?}`, or the route-only array shown above |
 | `import` | `{created, unchanged}` |
-| `verify` | `{profile_id, revision, declaration_digest, purpose, passed, dimension?, citation_ids, usage?, checked_at}` — never response text, endpoint or key |
+| `verify` | `{profile_id, revision, declaration_digest, purpose, passed, dimension?, citation_ids, usage?, checked_at}`, never response text, endpoint or key |
 | `list`, `inspect` | Array of bounded profile metadata: `{profile_id, revision, purpose, execution, provider_id, model_id, dimension, enabled, adapter_key, declaration_digest}` |
 | `slots` | Array of `{capability, slot_revision, profile_id, profile_revision, enabled}` |
 | `activate`, `deactivate` | `{capability, profile_id, profile_revision, slot_revision, action, event_id}` |

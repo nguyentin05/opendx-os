@@ -748,7 +748,7 @@ bin/dxos-model verify --catalog model-catalog.json --profile generate-primary --
 ```
 
 The JSON report carries the profile identity, the declaration digest, the
-dimension and the bounded usage — never response text, an endpoint or a key. A
+dimension and the bounded usage, never response text, an endpoint or a key. A
 transport failure after a possible send exits 6 and is never re-sent: reconcile
 the state before another reviewed attempt.
 

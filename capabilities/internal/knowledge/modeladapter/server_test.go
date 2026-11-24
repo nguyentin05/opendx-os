@@ -925,13 +925,13 @@ func TestBoundedAdapterHandlerConfig(t *testing.T) {
 		}
 		return err
 	}
-	mustReject(t, "an empty bearer", fixture, "", upstream)
-	mustReject(t, "a nil upstream", fixture, adapterToken, nil)
+	_ = mustReject(t, "an empty bearer", fixture, "", upstream)
+	_ = mustReject(t, "a nil upstream", fixture, adapterToken, nil)
 	for name, cfg := range map[string]Config{
 		"empty configuration": {},
 		"no routes":           {SchemaVersion: 1},
 	} {
-		t.Run(name, func(t *testing.T) { mustReject(t, name, cfg, adapterToken, upstream) })
+		t.Run(name, func(t *testing.T) { _ = mustReject(t, name, cfg, adapterToken, upstream) })
 	}
 
 	// A programmatically built route receives the same canonicalization as a file
@@ -977,7 +977,7 @@ func TestBoundedAdapterHandlerConfig(t *testing.T) {
 	}
 
 	duplicated := Config{SchemaVersion: 1, Routes: []Route{programmatic.Routes[0], programmatic.Routes[0]}}
-	mustReject(t, "duplicate route digests", duplicated, adapterToken, upstream)
+	_ = mustReject(t, "duplicate route digests", duplicated, adapterToken, upstream)
 }
 
 // TestBoundedRequestWireCompatibility pins the two halves of one protocol: the

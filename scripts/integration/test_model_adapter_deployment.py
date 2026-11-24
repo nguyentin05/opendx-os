@@ -17,12 +17,15 @@ from __future__ import annotations
 
 import json
 import os
+import runpy
+import stat
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 ADAPTER_OVERLAY = "compose.model-adapter.yaml"
@@ -59,7 +62,6 @@ class ModelAdapterDeploymentTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.renders = 0
         cls.directory = tempfile.TemporaryDirectory()
         cls.workspace = Path(cls.directory.name)
         # Probe the prerequisite before creating fixtures, so a machine without the
@@ -93,8 +95,9 @@ class ModelAdapterDeploymentTest(unittest.TestCase):
     @classmethod
     def write(cls, name, content):
         path = cls.workspace / name
-        path.write_text(content, encoding="utf-8")
-        os.chmod(path, 0o600)
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(content)
         return path
 
     # -- helpers ---------------------------------------------------------
@@ -117,15 +120,13 @@ class ModelAdapterDeploymentTest(unittest.TestCase):
         return values
 
     def compose(self, files, settings=None, quiet=False):
-        """Run compose config against a disposable env file and capture the output."""
-        type(self).renders += 1
-        env_file = self.write("compose-%d.env" % type(self).renders,
-                              "".join("%s=%s\n" % item for item in sorted(settings.items())))
-        arguments = ["docker", "compose", "--env-file", str(env_file)]
+        """Run compose config with fixture settings in its process environment."""
+        arguments = ["docker", "compose", "--env-file", os.devnull]
         for name in files:
             arguments += ["-f", name]
         arguments += ["config", "--quiet"] if quiet else ["config", "--format", "json"]
-        return subprocess.run(arguments, cwd=ROOT, capture_output=True, text=True)
+        return subprocess.run(arguments, cwd=ROOT, env={**os.environ, **settings},
+                              capture_output=True, text=True)
 
     def config(self, files, settings=None):
         """The resolved configuration, asserted to be clean of leaked values."""
@@ -323,8 +324,8 @@ class ModelAdapterDeploymentTest(unittest.TestCase):
         cases = {
             "internal token": "MODEL_ADAPTER_TOKEN=" + OVERRIDE_TOKEN + "\n",
             "adapter setting": "MODEL_ADAPTER_CONFIG_FILE=/run/secrets/other\n",
-            "runtime DSN": "DATABASE_URL=postgres://user:" + DB_PASSWORD + "@db/app\n",
-            "platform namespace": "AI_MODEL_ADMIN_DATABASE_URL=postgres://admin:" + DB_PASSWORD + "@db/app\n",
+            "runtime DSN": "DATABASE_URL=postgres://user@db/app\n",
+            "platform namespace": "AI_MODEL_ADMIN_DATABASE_URL=postgres://admin@db/app\n",
             "repeated key": "OPENAI_API_KEY=" + VENDOR_KEY + "\nOPENAI_API_KEY=" + VENDOR_KEY + "-2\n",
             "not a reference": "lowercase-key=" + VENDOR_KEY + "\n",
         }
@@ -352,12 +353,13 @@ class ModelAdapterDeploymentTest(unittest.TestCase):
                 for canary in CANARIES:
                     self.assertNotIn(canary, result.stderr)
 
-        permissive = self.write("permissive.env", "OPENAI_API_KEY=" + VENDOR_KEY + "\n")
-        os.chmod(permissive, 0o644)
-        result = self.preflight(permissive)
-        self.assertEqual(result.returncode, 2)
-        for canary in CANARIES:
-            self.assertNotIn(canary, result.stderr)
+        # Simulate an unsafe mode without creating a readable credential file.
+        preflight = runpy.run_path(str(PREFLIGHT))
+        info = mock.Mock(st_mode=stat.S_IFREG | stat.S_IRUSR | stat.S_IRGRP,
+                         st_size=self.provider_env.stat().st_size)
+        with mock.patch.object(os, "stat", return_value=info):
+            with self.assertRaisesRegex(preflight["Rejected"], "must not grant group or other access"):
+                preflight["read_pairs"](self.provider_env, "provider")
 
     def test_env_example_documents_opt_in_settings(self):
         """The sample environment names each opt-in setting with no value."""
