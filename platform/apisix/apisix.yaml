@@ -26,7 +26,9 @@ routes:
       limit-count:
         count: 600
         time_window: 60
-        key: remote_addr
+        # Per caller token: behind the UI proxy every browser shares one address.
+        # A request without Authorization falls back to the client address.
+        key: http_authorization
         policy: local
         rejected_code: 429
       serverless-pre-function:
@@ -37,6 +39,12 @@ routes:
               if ngx.req.get_method() == "POST" then
                 ngx.req.read_body()
                 local body = ngx.req.get_body_data()
+                if not body then
+                  -- A body over the in-memory buffer is spooled to a file (at most 256 KiB here).
+                  local path = ngx.req.get_body_file()
+                  local f = path and io.open(path, "rb")
+                  if f then body = f:read("*a"); f:close() end
+                end
                 if body and body:match("^%s*%[") then
                   return 400, { error = { code = "Bad Request", message = "Bad Request" } }
                 end

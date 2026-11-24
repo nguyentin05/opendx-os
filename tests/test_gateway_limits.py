@@ -23,7 +23,7 @@ class GatewayLimits(unittest.TestCase):
         limit = plugins['limit-count']
         self.assertEqual(limit['count'], 600)
         self.assertEqual(limit['time_window'], 60)
-        self.assertEqual(limit['key'], 'remote_addr')
+        self.assertEqual(limit['key'], 'http_authorization')
         self.assertEqual(limit['policy'], 'local')
         self.assertEqual(limit['rejected_code'], 429)
 

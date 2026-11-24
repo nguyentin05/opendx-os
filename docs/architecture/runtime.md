@@ -35,7 +35,8 @@ Dependency manifests and deployment configuration record actual technology
 versions.
 
 The GraphQL route accepts at most 256 KiB per request and 600 requests per
-minute from one client address, and rejects JSON-array bodies. Request-serving
+minute per bearer token (per client address without one), and rejects
+JSON-array bodies. Request-serving
 database roles have a 10s statement timeout; Hasura, cap-process, authz and
 cap-hr also have a 30s idle-in-transaction timeout, while background ingestion,
 the knowledge dispatcher, the model gateway, Kestra and migration/test roles
