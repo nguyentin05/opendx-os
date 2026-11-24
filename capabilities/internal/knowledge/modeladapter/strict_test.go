@@ -14,21 +14,26 @@ import (
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
 )
 
-// This file pins the one property the two strict token walkers must share.
+// This file pins the property the three strict JSON walks in this package must
+// share.
 //
-// ParseConfig (config.go, declarationValue) and decodeRequest (server.go,
-// requestValue) are two hand-written walks over the same JSON token stream. They
-// deliberately differ on exactly one point — requestValue tolerates JSON null for
-// optional request fields, declarationValue tolerates none — and nothing else. A
-// shared corpus keeps them from drifting, so a hardening of one walk cannot be
-// silently missing from the other.
+// ParseConfig (config.go, declarationValue), decodeRequest (server.go,
+// requestValue) and strictDocumentKeys (openai.go, strictValue) are three
+// hand-written walks over the same JSON token stream. The first two deliberately
+// differ on exactly one point — requestValue tolerates JSON null for optional
+// request fields, declarationValue tolerates none — and nothing else. The third
+// walks a vendor response envelope and the generation answer object, so it rejects
+// no null at all and tolerates unknown metadata; it must still reject duplicate
+// keys, case-aliased keys and trailing data exactly as the other two do. A shared
+// corpus keeps them from drifting, so a hardening of one walk cannot be silently
+// missing from another.
 //
-// The corpus documents are shape-compatible per decoder (a route declaration and a
-// request envelope are different documents, and both decoders disallow unknown
-// fields), so each entry provides one document of each shape carrying the same
-// defect. The clean controls below prove that each base document is accepted, which
-// is what makes the rejection attributable to the injected defect rather than to a
-// wrong document shape.
+// The corpus documents are shape-compatible per decoder (a route declaration, a
+// request envelope and an answer object are different documents, and both decoders
+// disallow unknown fields), so each entry provides one document of each shape
+// carrying the same defect. The clean controls below prove that each base document
+// is accepted, which is what makes the rejection attributable to the injected
+// defect rather than to a wrong document shape.
 
 const (
 	// strictConfigLimits is a reviewed limits block inside the Gateway ceilings.
@@ -37,6 +42,9 @@ const (
 	strictRequestLimits = `{"max_input_tokens":4096,"max_output_tokens":1,"max_bytes":16384,"timeout_ms":1000}`
 	// strictRequestModel is the reviewed EMBED model of the corpus envelope.
 	strictRequestModel = "openai/text-embedding-3-small"
+	// strictAnswerDocument is an accepted generation answer object: the exact shape
+	// the adapter requires inside one chat message's content.
+	strictAnswerDocument = `{"text":"The synthetic project code is BLUE-17.","citation_ids":["E1"]}`
 )
 
 // strictConfigDocument is an accepted single-route declaration with the given
@@ -59,16 +67,24 @@ func appendMember(document, member string) string {
 	return document[:len(document)-1] + `,` + member + `}`
 }
 
-// strictDefect is one malformed document pair: the deployment configuration shape
-// and the request envelope shape, each otherwise exactly accepted.
+// strictAnswerAccepted runs the generation-answer walk over one answer document.
+// It is the adapter the shared corpus needs: the answer object reaches
+// strictDocumentKeys as the decoded content string rather than as the whole vendor
+// envelope, so the corpus compares all three walks at the same document boundary.
+func strictAnswerAccepted(document string) bool { return strictDocumentKeys([]byte(document)) }
+
+// strictDefect is one malformed document triple: the deployment configuration
+// shape, the request envelope shape and the generation answer shape, each
+// otherwise exactly accepted.
 type strictDefect struct {
 	name    string
 	config  string
 	request string
+	answer  string
 }
 
 // strictCorpus builds the malformed documents. Every document carries a duplicate
-// key, a case-aliased key or a trailing document, so both decoders reject it for
+// key, a case-aliased key or a trailing document, so all three walks reject it for
 // that reason.
 func strictCorpus() []strictDefect {
 	config, request := strictConfigDocument(strictConfigLimits), strictRequestDocument(strictRequestLimits)
@@ -79,31 +95,41 @@ func strictCorpus() []strictDefect {
 	nestedAlias := func(limits, member, alias string) string {
 		return strings.Replace(limits, member, member+","+alias, 1)
 	}
+	// The reviewed answer object is flat, so its nested variants inject the defect
+	// inside an extra nested object: the walk bounds and checks every object it
+	// meets, not just the top one.
+	answerNestedDuplicate := appendMember(strictAnswerDocument, `"details":{"note":"x","note":"y"}`)
+	answerNestedAlias := appendMember(strictAnswerDocument, `"details":{"Note":"x","note":"y"}`)
 	return []strictDefect{
 		{
 			name:    "duplicate key at root",
 			config:  appendMember(config, `"schema_version":1`),
 			request: appendMember(request, `"model":`+strconv.Quote(strictRequestModel)),
+			answer:  appendMember(strictAnswerDocument, `"text":"second"`),
 		},
 		{
 			name:    "case alias key at root",
 			config:  appendMember(config, `"Schema_Version":1`),
 			request: appendMember(request, `"Model":`+strconv.Quote(strictRequestModel)),
+			answer:  appendMember(strictAnswerDocument, `"Text":"second"`),
 		},
 		{
 			name:    "duplicate key nested",
 			config:  strictConfigDocument(nestedDuplicate(strictConfigLimits, `"max_bytes":65536`)),
 			request: strictRequestDocument(nestedDuplicate(strictRequestLimits, `"max_bytes":16384`)),
+			answer:  answerNestedDuplicate,
 		},
 		{
 			name:    "case alias key nested",
 			config:  strictConfigDocument(nestedAlias(strictConfigLimits, `"timeout_ms":30000`, `"Timeout_MS":30000`)),
 			request: strictRequestDocument(nestedAlias(strictRequestLimits, `"timeout_ms":1000`, `"Timeout_MS":1000`)),
+			answer:  answerNestedAlias,
 		},
 		{
 			name:    "trailing second document",
 			config:  config + ` {}`,
 			request: request + ` {}`,
+			answer:  strictAnswerDocument + ` {}`,
 		},
 		{
 			// The one deliberate container defect: the document is an array, and it
@@ -112,14 +138,16 @@ func strictCorpus() []strictDefect {
 			name:    "top level array",
 			config:  `[` + appendMember(config, `"schema_version":1`) + `]`,
 			request: `[` + appendMember(request, `"model":`+strconv.Quote(strictRequestModel)) + `]`,
+			answer:  `[` + appendMember(strictAnswerDocument, `"text":"second"`) + `]`,
 		},
 	}
 }
 
-// TestStrictDecodersRejectSharedCorpus runs the shared malformed corpus through both
-// strict decoders: duplicate keys, case-aliased keys and trailing documents are
-// rejected by ParseConfig and by decodeRequest for the same document pair, so the
-// two walks cannot diverge on anything but their documented null policy.
+// TestStrictDecodersRejectSharedCorpus runs the shared malformed corpus through all
+// three strict walks: duplicate keys, case-aliased keys and trailing documents are
+// rejected by ParseConfig, by decodeRequest and by the answer-content walk for the
+// same defect, so the walks cannot diverge on anything but their documented null and
+// metadata policies.
 func TestStrictDecodersRejectSharedCorpus(t *testing.T) {
 	// Positive controls: the undefective base documents are accepted, so every
 	// rejection below is caused by its injected defect, not by the document shape.
@@ -128,6 +156,9 @@ func TestStrictDecodersRejectSharedCorpus(t *testing.T) {
 	}
 	if _, ok := decodeRequest([]byte(strictRequestDocument(strictRequestLimits))); !ok {
 		t.Fatal("clean request envelope rejected")
+	}
+	if !strictAnswerAccepted(strictAnswerDocument) {
+		t.Fatal("clean answer object rejected")
 	}
 
 	for _, tc := range strictCorpus() {
@@ -139,6 +170,9 @@ func TestStrictDecodersRejectSharedCorpus(t *testing.T) {
 			}
 			if _, ok := decodeRequest([]byte(tc.request)); ok {
 				t.Fatalf("decodeRequest accepted a document with %s", tc.name)
+			}
+			if strictAnswerAccepted(tc.answer) {
+				t.Fatalf("strictDocumentKeys accepted answer content with %s", tc.name)
 			}
 		})
 	}
