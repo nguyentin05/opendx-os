@@ -26,7 +26,7 @@ in the [benchmark plan](benchmarks.md), using the
   SHA-256 and the image digests before the first check. A new candidate starts a
   new round; results never carry over silently.
 - **Use the verification statuses.** Each check is PASS, FAIL, NOT_RUN or
-  NOT_APPLICABLE as defined in [verification](verification.md#recording-results).
+  NOT_APPLICABLE as defined in [verification](../../contribute/verification.md#recording-results).
   A skipped or partially run check is NOT_RUN with its reason, never PASS.
 - **Every defect fixed gets a regression check.** The fix adds a test that fails
   before it, and the reproduction is repeated on the next candidate.
@@ -48,7 +48,7 @@ in the [benchmark plan](benchmarks.md), using the
 
 | Layer | What it proves | How | Where |
 | --- | --- | --- | --- |
-| Static and unit | Contracts, generators and handlers behave as written | The `ci.yml` jobs listed in [verification](verification.md#continuous-integration) | CI, on the candidate commit |
+| Static and unit | Contracts, generators and handlers behave as written | The `ci.yml` jobs listed in [verification](../../contribute/verification.md#continuous-integration) | CI, on the candidate commit |
 | Database integration | Triggers, roles, migrations and services against real PostgreSQL 17 | `integration` and `parser` jobs | CI |
 | Archive installation | The release builds from source and runs outside the source tree | Download the archive, verify `SHA256SUMS` and the attestation, run `install.sh` into an empty directory, then `scripts/test-installation.sh` | Clean Linux VM |
 | Platform stack | The Compose stack starts and its services answer correctly | `scripts/test-compose.sh`, `test-identity.sh`, `test-platform.sh`, `test-supporting-services.sh`, `test-rag.sh` | Clean Linux VM |
@@ -63,7 +63,7 @@ in the [benchmark plan](benchmarks.md), using the
 
 Copy this table into the campaign's tracking issue for each round and fill one
 row per group. The required evidence for each group is defined in
-[acceptance](../reference/security/acceptance.md#eight-mandatory-acceptance-groups).
+[acceptance](../../reference/security/acceptance.md#eight-mandatory-acceptance-groups).
 
 | ID | Check used | Status | Evidence |
 | --- | --- | --- | --- |

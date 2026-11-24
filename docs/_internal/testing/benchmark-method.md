@@ -13,7 +13,7 @@ last_reviewed: 2026-11-24
 A benchmark result is evidence only when another person can tell exactly what
 was measured, on what, and how, and can run it again. These rules apply to every
 suite in the [benchmark plan](benchmarks.md). They follow the same evidence
-vocabulary as [verification](verification.md#recording-results).
+vocabulary as [verification](../../contribute/verification.md#recording-results).
 
 ## Subject
 
