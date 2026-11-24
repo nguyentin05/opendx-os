@@ -154,7 +154,7 @@ must rebuild a named database on the approved revision, bootstrap it, load valid
 `schema_version: 2` declarations and current model approvals, and start matching
 binaries against it. Do not restore a `cap_ai` dump wholesale onto the rebased
 schema: it reintroduces the removed monetary relations and rows and carries
-operation rows that no longer match. Re-derive model state instead — re-publish
+operation rows that no longer match. Re-derive model state instead—re-publish
 packages, re-register sources, re-import candidates, re-approve processing
 policies and re-issue grants. The scoped rebuild procedure, approved evidence and
 service window are in [installation](../../operations/installation.md#rebuilding-an-existing-model-installation).
