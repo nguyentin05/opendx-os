@@ -47,8 +47,14 @@ for item in platform apps contracts operator capabilities workspace-ui scripts c
     fi
 done
 
+OPERATOR_VERSION=dev
+if [ -f "${REPO_ROOT}/VERSION" ]; then
+    OPERATOR_VERSION="$(head -n 1 "${REPO_ROOT}/VERSION")"
+    [ -n "${OPERATOR_VERSION}" ] || OPERATOR_VERSION=dev
+fi
+
 echo "--> Building dxos-operator binary..."
-(cd "${REPO_ROOT}/operator" && go build -o "${TARGET_DIR}/bin/dxos-operator" ./cmd/dxos-operator)
+(cd "${REPO_ROOT}/operator" && go build -ldflags "-X main.version=${OPERATOR_VERSION}" -o "${TARGET_DIR}/bin/dxos-operator" ./cmd/dxos-operator)
 chmod +x "${TARGET_DIR}/bin/dxos-operator"
 
 echo "--> Building cap-process binary..."

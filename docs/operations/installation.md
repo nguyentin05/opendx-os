@@ -131,8 +131,11 @@ The Compose files:
    `docker compose logs -f operator`.
 
    Without Compose, build the binaries (`make -C operator build` writes
-   `operator/bin/dxos-operator` and `operator/bin/dxos-controller`), then
-   validate and apply application manifests with your own `.env` values:
+   `operator/bin/dxos-operator` and `operator/bin/dxos-controller`). The build
+   stamps the operator version from `git describe --tags --always --dirty`
+   (falling back to `dev`), so `operator/bin/dxos-operator version` reports the
+   built revision. Then validate and apply application manifests with your own
+   `.env` values:
    ```bash
    operator/bin/dxos-operator validate apps/procurement/manifest.yaml
    HASURA_URL=http://localhost:8080 HASURA_ADMIN_SECRET=<HASURA_ADMIN_SECRET> \

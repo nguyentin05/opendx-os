@@ -26,6 +26,7 @@ STAGE_DIR="$(mktemp -d)"
 trap 'rm -rf "${STAGE_DIR}"' EXIT
 
 mkdir -p "${DIST_DIR}" "${STAGE_DIR}/${ARCHIVE_NAME}"
+printf 'v%s\n' "${VERSION#v}" > "${STAGE_DIR}/${ARCHIVE_NAME}/VERSION"
 
 # From a checkout, ship tracked files only, so local secrets (.env.rag),
 # virtualenvs and build output never reach an archive.

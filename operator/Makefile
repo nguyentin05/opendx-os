@@ -17,6 +17,7 @@
 # Derived from the kubebuilder v4 scaffold, trimmed to the targets this project uses.
 
 IMG ?= dxos-operator:dev
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 KUBECTL ?= kubectl
 CONTAINER_TOOL ?= docker
 SHELL = /usr/bin/env bash -o pipefail
@@ -82,7 +83,7 @@ test-controller: envtest ## Run reconcile tests (envtest + PostgreSQL); requires
 ##@ Build
 
 build: ## Build the dxos-operator and dxos-controller binaries into bin/.
-	CGO_ENABLED=0 go build -o $(LOCALBIN)/dxos-operator ./cmd/dxos-operator
+	CGO_ENABLED=0 go build -ldflags "-X main.version=$(VERSION)" -o $(LOCALBIN)/dxos-operator ./cmd/dxos-operator
 	CGO_ENABLED=0 go build -o $(LOCALBIN)/dxos-controller ./cmd/dxos-controller
 
 run: ## Run the controller from the host against the current kubeconfig.
