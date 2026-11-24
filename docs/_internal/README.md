@@ -8,6 +8,7 @@ public pages never link here.
 | --- | --- |
 | `archive/` | Historical demo scenarios and handoff notes kept for context |
 | `evidence/` | Raw verification evidence: logs, JSON, screenshots, run records |
+| `testing/` | Release test plan, benchmark plan and benchmark method (not yet published) |
 | `plans/` | Local implementation plans (also ignored by Git) |
 | `translations/` | Local translations; English remains canonical |
 
