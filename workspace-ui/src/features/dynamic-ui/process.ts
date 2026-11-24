@@ -45,7 +45,7 @@ function historyEntry(value: unknown): HistoryEntry | undefined {
   return {
     at: value.at,
     action: value.action,
-    actor: value.actor as HistoryEntry['actor'],
+    actor: isRecord(value.actor) ? { id: value.actor.id as string, display_name: value.actor.display_name as string } : undefined,
     acting_role: value.acting_role as string | undefined,
     acting_role_description: description,
     version: version as number | undefined,
