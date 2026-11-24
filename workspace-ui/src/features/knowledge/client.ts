@@ -8,7 +8,7 @@ export interface SearchHit {document_id:string;version_id:string;chunk_id:string
 export interface SearchResult {status:string;results:SearchHit[];warnings:string[]}
 export interface ClientContext {token:string;role:string;appID:string;signal:AbortSignal}
 export class KnowledgeRequestError extends Error {
- constructor(readonly status: number, message: string) {
+ constructor(readonly status: number, message: string, readonly code?: string) {
   super(message);
   this.name = 'KnowledgeRequestError';
  }
@@ -26,13 +26,23 @@ export class KnowledgeClient {
   });
   signal.throwIfAborted();
   if (!response.ok) {
+   let code: string | undefined;
+   try {
+    const body = await response.json();
+    if (typeof body?.error?.code === 'string') code = body.error.code;
+   } catch {
+    // A missing or malformed error body keeps the status-only contract.
+   }
    const messages: Record<number, string> = {
     401: 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.', 403: 'Vai trò thư viện của bạn không khả dụng. Hãy chọn vai trò khác hoặc liên hệ quản trị viên.',
     404: 'Quyền xem tài liệu đã thay đổi hoặc không khả dụng.', 409: 'Tài liệu vừa thay đổi. Hãy làm mới rồi thử lại.',
     415: 'Định dạng hoặc quy trình xử lý tài liệu này chưa được hỗ trợ.', 422: 'Tài liệu chưa sạch hoặc chưa xử lý được.',
     503: 'Thư viện cá nhân tạm thời không khả dụng. Hãy thử lại sau ít phút.',
    };
-   throw new KnowledgeRequestError(response.status, messages[response.status] ?? 'Yêu cầu tài liệu thất bại.');
+   const message = code === 'MODEL_CALL_UNCERTAIN'
+    ? 'Chưa xác nhận được kết quả gọi mô hình. Hãy thử lại sau khi kiểm tra các nguồn đã tìm.'
+    : messages[response.status] ?? 'Yêu cầu tài liệu thất bại.';
+   throw new KnowledgeRequestError(response.status, message, code);
   }
   const data = response.status === 204 ? undefined : await response.json();
   signal.throwIfAborted();
@@ -57,4 +67,4 @@ export class KnowledgeClient {
 export interface AppSource {source_id:string;document_id?:string;title?:string;status:'PENDING'|'INDEXING'|'READY'|'FAILED';readable:boolean;manageable:boolean;active_version_available:boolean}
 export interface GrantPage {document_id:string;revision:number;authorization_generation:number;ceiling:{mode:string;allowedRoles:string[];grantsManagedBy:string};pending_publication:boolean;grants:Array<{user_id:string;status:string}>;next_cursor?:string}
 
-export interface AnswerResponse {status:"ANSWERED"|"SEARCH_ONLY"|"NO_EVIDENCE";answer:string|null;results:SearchHit[];citations:SearchHit[];reason?:string;model_profile?:{id:string;revision:number};usage?:{input_tokens:number;output_tokens:number;units:number;pricing_revision:string}}
+export interface AnswerResponse {status:"ANSWERED"|"SEARCH_ONLY"|"NO_EVIDENCE";answer:string|null;results:SearchHit[];citations:SearchHit[];reason?:string;model_profile?:{id:string;revision:number};usage?:{input_tokens:number;output_tokens:number}}

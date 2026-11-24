@@ -28,6 +28,7 @@ const readErrors = {
   unauthenticated: 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.',
   forbidden: 'Vai trò hiện tại không được xem các dòng con này. Hãy chọn vai trò khác hoặc liên hệ quản trị viên.',
   attachment: 'Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.',
+  parent_locked: 'Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.',
   unavailable: 'Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.',
 };
 
@@ -98,8 +99,10 @@ function ChildGridContents({ parent, parentRecord, child, context, onParentChang
       if (!removed) setRemoveError(failure);
     } catch (error) {
       if (controller.signal.aborted) return;
-      const expired = error instanceof GraphQLRequestError && error.kind === 'unauthenticated';
-      setRemoveError(expired ? 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.' : failure);
+      const kind = error instanceof GraphQLRequestError ? error.kind : undefined;
+      setRemoveError(kind === 'unauthenticated' ? 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.'
+        : kind === 'parent_locked' ? 'Hồ sơ cha không còn ở trạng thái cho phép sửa dòng con.'
+          : failure);
     } finally {
       finishWrite?.();
       if (!controller.signal.aborted) {

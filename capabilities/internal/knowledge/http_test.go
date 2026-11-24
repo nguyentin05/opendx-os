@@ -3,7 +3,9 @@
 package knowledge
 
 import (
+	"encoding/json"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge/models"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -20,6 +22,31 @@ func TestHTTPRejectsAuthorityFields(t *testing.T) {
 		if w.Code != 400 {
 			t.Fatalf("unsafe request accepted %d", w.Code)
 		}
+	}
+}
+
+func TestHTTPErrorUncertaintyMapping(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    error
+		status int
+		code   string
+	}{
+		{"uncertain", models.ErrUncertain, 503, "MODEL_CALL_UNCERTAIN"},
+		{"operation binding conflict", models.ErrConflict, 503, "MODEL_CALL_UNCERTAIN"},
+		{"unavailable", models.ErrUnavailable, 503, "MODEL_UNAVAILABLE"},
+		{"resource conflict", ErrConflict, 409, "CONFLICT"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			httpError(w, tc.err)
+			var body struct {
+				Error struct{ Code string }
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || w.Code != tc.status || body.Error.Code != tc.code {
+				t.Fatalf("status=%d body=%s want %d/%s", w.Code, w.Body.String(), tc.status, tc.code)
+			}
+		})
 	}
 }
 

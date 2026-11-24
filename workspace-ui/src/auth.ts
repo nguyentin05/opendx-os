@@ -8,7 +8,7 @@ declare global { interface Window { DXOS_CONFIG?:Config } }
 const config=():Config=>{if(window.DXOS_CONFIG)return window.DXOS_CONFIG;if(['localhost','127.0.0.1'].includes(window.location.hostname))return {issuer:'http://localhost:8085/realms/dxos',clientID:'dxos-portal'};throw new Error('Sign-in configuration is unavailable.');};
 const random=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');
 const redirectURI=()=>window.location.origin+window.location.pathname;
-async function discovery(){const c=config();const issuer=new URL(c.issuer);if(issuer.protocol!=='https:'&&!['localhost','127.0.0.1'].includes(issuer.hostname))throw new Error('Secure sign-in configuration is unavailable.');const r=await fetch(c.issuer.replace(/\/$/,'')+'/.well-known/openid-configuration');if(!r.ok)throw new Error('Sign-in is unavailable.');const data=await r.json() as {issuer:string;authorization_endpoint:string;token_endpoint:string};if(data.issuer.replace(/\/$/,'')!==c.issuer.replace(/\/$/,''))throw new Error('Invalid sign-in configuration.');for(const endpoint of [data.authorization_endpoint,data.token_endpoint])if(new URL(endpoint).origin!==issuer.origin)throw new Error('Invalid sign-in endpoint.');return {config:c,...data}}
+async function discovery(){const c=config();const issuer=new URL(c.issuer);if(issuer.protocol!=='https:'&&!['localhost','127.0.0.1'].includes(issuer.hostname))throw new Error('Secure sign-in configuration is unavailable.');const r=await fetch(c.issuer.replace(/\/$/,'')+'/.well-known/openid-configuration');if(!r.ok)throw new Error('Sign-in is unavailable.');const data=await r.json() as {issuer:string;authorization_endpoint:string;token_endpoint:string;end_session_endpoint?:string};if(data.issuer.replace(/\/$/,'')!==c.issuer.replace(/\/$/,''))throw new Error('Invalid sign-in configuration.');const endpoints=[data.authorization_endpoint,data.token_endpoint];if(data.end_session_endpoint)endpoints.push(data.end_session_endpoint);for(const endpoint of endpoints)if(new URL(endpoint).origin!==issuer.origin)throw new Error('Invalid sign-in endpoint.');return {config:c,...data}}
 interface SignInState {
   verifier: string;
   state: string;
@@ -50,6 +50,7 @@ export async function signIn() {
 export interface SignInTokens {
   token: string;
   expires: number;
+  idToken?: string;
   refreshToken?: string;
   refreshExpires?: number;
 }
@@ -98,7 +99,7 @@ export async function finishSignIn(): Promise<SignInTokens | null> {
   if (!response.ok) throw new Error('Sign-in failed.');
   const token = await response.json() as {
     access_token: string; token_type: string; expires_in: number;
-    refresh_token?: string; refresh_expires_in?: number;
+    id_token?: string; refresh_token?: string; refresh_expires_in?: number;
   };
   if (!token.access_token || token.token_type.toLowerCase() !== 'bearer' || token.expires_in < 1) {
     throw new Error('Sign-in failed.');
@@ -108,6 +109,7 @@ export async function finishSignIn(): Promise<SignInTokens | null> {
   return {
     token: token.access_token,
     expires: now + token.expires_in * 1000,
+    idToken: typeof token.id_token === 'string' && token.id_token ? token.id_token : undefined,
     refreshToken: typeof token.refresh_token === 'string' && token.refresh_token ? token.refresh_token : undefined,
     refreshExpires: typeof token.refresh_expires_in === 'number' && token.refresh_expires_in >= 1
       ? now + token.refresh_expires_in * 1000
@@ -120,6 +122,7 @@ export type RefreshOutcome = 'ok' | 'unavailable' | 'ended';
 interface TokenState {
   access: string;
   accessDeadline: number;
+  idToken?: string;
   refresh?: string;
   refreshDeadline?: number;
   inflight?: Promise<RefreshOutcome>;
@@ -133,6 +136,7 @@ export function registerSession(session: SignInTokens): void {
   tokens.set(session.token, {
     access: session.token,
     accessDeadline: session.expires,
+    idToken: session.idToken,
     refresh: session.refreshToken,
     refreshDeadline: session.refreshExpires,
   });
@@ -143,11 +147,27 @@ export function bearer(token: string): string {
   return 'Bearer ' + (tokens.get(token)?.access ?? token);
 }
 
-export function endSession(token: string): void {
+export function endSession(token: string): string | undefined {
+  const state = tokens.get(token);
   tokens.delete(token);
   const stop = watchers.get(token);
   watchers.delete(token);
   stop?.();
+  return state?.idToken;
+}
+
+// RP-initiated logout ends the Keycloak SSO session, so the next sign-in in this
+// browser asks for a password again. Local state is already cleared; if discovery
+// fails the user stays signed out of the portal only.
+export async function endKeycloakSession(idToken?: string): Promise<void> {
+  let found;
+  try { found = await discovery(); } catch { return; }
+  if (!found.end_session_endpoint) return;
+  const url = new URL(found.end_session_endpoint);
+  if (idToken) url.searchParams.set('id_token_hint', idToken);
+  url.searchParams.set('client_id', found.config.clientID);
+  url.searchParams.set('post_logout_redirect_uri', window.location.origin + '/');
+  window.location.assign(url.toString());
 }
 
 export function sessionDeadlines(token: string): { access: number; refresh?: number } | undefined {
@@ -178,7 +198,7 @@ export async function refreshSession(token: string): Promise<RefreshOutcome> {
 
       const body = await response.json() as {
         access_token: string; token_type: string; expires_in: number;
-        refresh_token?: string; refresh_expires_in?: number;
+        id_token?: string; refresh_token?: string; refresh_expires_in?: number;
       };
       if (tokens.get(token) !== state) return 'ended';
       if (!body.access_token || typeof body.token_type !== 'string'
@@ -189,6 +209,7 @@ export async function refreshSession(token: string): Promise<RefreshOutcome> {
       const now = Date.now();
       state.access = body.access_token;
       state.accessDeadline = now + body.expires_in * 1000;
+      if (typeof body.id_token === 'string' && body.id_token) state.idToken = body.id_token;
       if (typeof body.refresh_token === 'string' && body.refresh_token) state.refresh = body.refresh_token;
       if (typeof body.refresh_expires_in === 'number' && body.refresh_expires_in >= 1) {
         state.refreshDeadline = now + body.refresh_expires_in * 1000;

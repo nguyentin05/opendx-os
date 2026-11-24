@@ -5,7 +5,7 @@ diataxis: how-to
 audience: [operator, platform-developer]
 status: active
 owner: platform
-last_reviewed: 2026-11-18
+last_reviewed: 2026-11-23
 ---
 
 # Optional model retrieval and answers
@@ -49,7 +49,7 @@ the same file order and project name throughout an installation.
    `docker compose --env-file .env --env-file .env.rag -f compose.yaml -f
    compose.rag.yaml up -d --build` (merging the files for older Compose
    releases). It waits for `personal_library` to become `Ready`, sets
-   `AI_AGENT_BILLING_APP_ID=personal_library` and `RAG_AGENT_ENABLED=true`, and
+   `AI_AGENT_PROCESSING_APP_ID=personal_library` and `RAG_AGENT_ENABLED=true`, and
    reruns `up -d`. The UI is at `http://localhost:5173`; the Assistant and
    personal library are on. `scripts/test-compose.sh` and the demo seed remain
    optional follow-ups.
@@ -82,12 +82,12 @@ the same file order and project name throughout an installation.
 6. Before enabling model calls, qualify the bounded adapter, import disabled
    candidates, complete Platform Admin review and activate the exact EMBEDDING
    and/or LLM revisions through the deployment's audited slot procedure.
-   Provision the processing reviews and budget accounts below. Then enable
+   Provision the processing reviews below. Then enable
    `RAG_MODELS_QUALIFIED`, `RAG_MODELS_ENABLED` and
    `RAG_GLOBAL_MODEL_REGISTRY_ENABLED` for the API and worker and recreate
-   them. The agent only resolves global slots. Missing review, binding, budget
-   or adapter keeps the affected operation unavailable. The optional overlays
-   provide no active slot, budget, account identity or provider approval.
+   them. The agent only resolves global slots. Missing review, binding or
+   adapter keeps the affected operation unavailable. The optional overlays
+   provide no active slot, consumer attribution or provider approval.
 
 ### Advanced: bring your own identities
 
@@ -118,14 +118,17 @@ Keycloak clients.
   `RAG_PRIVATE_UPLOAD_ENABLED` for private uploads.
 - Run `docker compose -f compose.yaml -f compose.rag.yaml up -d --build` with
   your env file. Select a registered `Ready` app for
-  `AI_AGENT_BILLING_APP_ID`, set `RAG_AGENT_ENABLED=true`, and rerun the same
+  `AI_AGENT_PROCESSING_APP_ID`, set `RAG_AGENT_ENABLED=true`, and rerun the same
   command. With models off, chat returns owner-scoped lexical evidence.
 
 ## Storage and activation
 
 Apply `cap-ai/0004_models_vectors.sql` explicitly with `scripts/migrate-rag.sh`
 only after pgvector is provisioned. This is additive after package migration 0003;
-never change checksums of applied migrations. Bootstrap skips 0004 unless
+never change checksums of applied migrations, with the single coordinated
+exception recorded in
+[ADR 0010](../../adr/0010-model-operations-without-monetary-admission.md).
+Bootstrap skips 0004 unless
 `RAG_MODELS_SCHEMA_ENABLED=true`; that setting requires an image containing the
 extension. No enabled profiles or provider approvals are seeded. Source guards,
 originals, audit and lexical tables are retained when models are disabled.
@@ -139,6 +142,22 @@ Bootstrap requires both `RAG_MODELS_SCHEMA_ENABLED=true` and
 to false. These schema flags do not enable runtime models or the registry.
 Migration 0005 creates four empty slots and no candidates, enabled profiles,
 provider approvals or bindings. VLM and RERANKING cannot be bound in R1.
+
+### Rebasing an existing installation
+
+`0004` and `0005` were rebased in place for the coordinated baseline
+([ADR 0010](../../adr/0010-model-operations-without-monetary-admission.md)).
+A database that applied the earlier model checksums cannot be upgraded in place:
+both runners detect the conflict before any domain SQL and refuse to proceed, and
+no ledger edit or checksum bypass is an accepted remedy. The installation owner
+must rebuild a named database on the approved revision, bootstrap it, load valid
+`schema_version: 2` declarations and current model approvals, and start matching
+binaries against it. Do not restore a `cap_ai` dump wholesale onto the rebased
+schema: it reintroduces the removed monetary relations and rows and carries
+operation rows that no longer match. Re-derive model state instead—re-publish
+packages, re-register sources, re-import candidates, re-approve processing
+policies and re-issue grants. The scoped rebuild procedure, approved evidence and
+service window are in [installation](../../operations/installation.md#rebuilding-an-existing-model-installation).
 
 The separate `dxos_ai_model_catalog` deployment login may execute only
 `cap_ai.registry_import_candidates(jsonb)` within the registry. It cannot activate
@@ -154,15 +173,15 @@ are also compared, so equal digests never authorize conflicting definitions.
 Activation requires an independently reviewed Platform Admin deployment operation.
 R1 supplies candidate import and runtime slot resolution. The deployment must
 provide its audited promotion/rollback procedure before enabling hosted models.
-Authenticate the Platform Admin, verify the candidate digest, purpose, limits,
-pricing and adapter, and record the review. The administration transaction
+Authenticate the Platform Admin, verify the candidate digest, purpose, limits
+and adapter, and record the review. The administration transaction
 enables the reviewed profile, advances the expected slot revision to bind that
 exact profile ID and revision, and records the actor and action in
 `cap_ai.model_slot_events`. Concurrent revisions require a fresh review of
 the current slot. API, worker, catalog and Gateway logins cannot do this.
 
-The nine model tables hold immutable profile/policy revisions, policy allowlists,
-independent embedding generations and accounting. Policy/profile revisions may
+The model tables hold immutable profile/policy revisions, policy allowlists,
+independent embedding generations and durable operation state. Policy/profile revisions may
 be disabled, but their definitions and allowlist history cannot be rewritten.
 Provision each new approved policy/profile revision through reviewed operations;
 record the audited Platform Admin approval and immutable review metadata in the
@@ -299,7 +318,7 @@ running the disable example. Disable every applicable review when withdrawing al
 a provider/profile, including any separately issued EMBED/GENERATE reviews.
 No direct approval-table writes are needed or granted to this connection. Review
 records contain references to evidence, never credentials, prompts or source text.
-The Gateway rechecks current approval after reservation and call intent; workers
+The Gateway rechecks current approval after the operation claim and dispatch intent; workers
 also recheck the exact lease fence, source snapshot and current owner READ.
 
 Migration `0009_personal_hybrid.sql` records the owner, source authority and exact
@@ -312,8 +331,8 @@ sending the query.
 
 A new approval after withdrawal has a new revision. The worker queues a separate
 build for the currently approved source snapshot, including when the parsed
-content and embedding profile are unchanged. Each build has its own billable job
-identity, and retries of that build keep the same identity. Hybrid search
+content and embedding profile are unchanged. Each build has its own durable
+operation identity, and retries of that build keep the same identity. Hybrid search
 excludes generations tied to a superseded snapshot and pre-0009 PERSONAL
 generations that lack a recorded snapshot. Authorized FTS remains available
 while the current generation builds.
@@ -329,14 +348,14 @@ Use the audited provisioning function above for the following global-query revie
   eligible app where hosted global-query embedding is intended.
 - For AGENT GENERATE, review the exact generation provider and profile revision
   with `purpose` set to `GENERATE`, `query_app_id` set to
-  `AI_AGENT_BILLING_APP_ID`, and `query_classification` set to `PERSONAL`.
+  `AI_AGENT_PROCESSING_APP_ID`, and `query_classification` set to `PERSONAL`.
   Apply this review even when every selected source is APP. Each PERSONAL
   source still needs its matching source-policy review for its library app.
   Each APP source still needs its existing approved processing policy.
 
 Both operations require a current review for the question because any global
-question may contain PERSONAL information. The billing consumer needs its own
-review and budget, while READ and source processing authority come from each
+question may contain PERSONAL information. The processing consumer needs its own
+query review, while READ and source processing authority come from each
 actual source.
 
 ## Deployment configuration
@@ -346,7 +365,7 @@ Enabling requires all of `RAG_MODELS_ENABLED`, `RAG_MODELS_QUALIFIED`,
 `RAG_SOURCE_QUALIFIED`, `RAG_METADATA_QUALIFIED`, `RAG_PARSER_QUALIFIED` to be
 `true`, plus `AI_GATEWAY_DATABASE_URL` and `RAG_MODEL_DEPLOYMENT_FILE`.
 The Gateway connection must log in as `dxos_ai_gateway`, without superuser or
-BYPASSRLS. It executes policy/accounting functions and cannot export chunks,
+BYPASSRLS. It executes the policy and operation-state functions and cannot export chunks,
 change grants or mutate policy. The API and worker keep their existing roles.
 Bootstrap accepts `AI_GATEWAY_DATABASE_PASSWORD` only with the optional schema
 setting. Store secrets in deployment secrets, never in manifests or the browser.
@@ -364,15 +383,15 @@ PERSONAL search use bounded FTS and embedding fusion with qualified profiles.
 PERSONAL hybrid search requires migration 0009. Hosted PERSONAL embedding and
 generation each require a current audited approval for that purpose. Absent or
 unqualified semantic models preserve authorized FTS. PERSONAL-only model
-operations retain the actual registered library app for billing, regardless of
+operations retain the actual registered library app for attribution, regardless of
 UI context.
 
 The HTTP adapter receives a fixed system instruction, model, purpose, bounded
 JSON input and pinned limits. It returns bounded `text`, `vector`,
 `citation_ids`, `usage` and optional `status`; unknown fields reject. An optional
-`X-Request-ID` supports billing reconciliation. This is a deployment adapter
+`X-Request-ID` supports operation attribution. This is a deployment adapter
 protocol, not a claim of compatibility with a vendor's API. Qualify its tokenizer,
-context, output caps, pricing and billing agreement before real use. Input token
+context, output caps and provider-side pricing agreement before real use. Input token
 admission uses a conservative byte bound and a fixed envelope allowance; whole
 chunks are omitted rather than truncating tables to fit. No tools, SQL execution,
 URL fetching or streaming are exposed.
@@ -398,46 +417,77 @@ For new chat, `AGENT` source selection is server-side across all current DB role
 memberships and owner-only PERSONAL sources. The turn accepts only a question. Role claims, client lists and LLM app suggestions confer no authority.
 Existing Hasura/capability APP routes keep ADR 0007's selected-role behavior.
 
-## Budgets and uncertain charges
+## Durable operations and token observations
 
-Provision exactly one active INSTALLATION account (`installation`), APP account
-(app ID) and USER account (user ID, or the genuine worker Core identity for
-background ingestion), with the same pricing revision as the profile. Overlapping
-or missing periods deny reservation. Accounts lock in UUID order in one
-transaction; reservation, allocations and RESERVE events commit together.
-Operation keys bind actor, profile, source/policy fingerprint and payload hash.
-Concurrent/replayed call intent cannot send the same operation twice.
+The platform enforces no monetary ceiling. There are no budget accounts,
+reservations, allocations, usage ledger or priced profiles, and nothing to
+provision before a model call. Spend limits belong to the provider agreement;
+the platform's own controls are the resource bounds (`max_input_tokens`,
+`max_output_tokens`, `max_bytes`, `timeout_ms`), profile enablement, slot
+authority, processing approval and the kill switch.
 
-For cross-app AGENT model operations, configure `AI_AGENT_BILLING_APP_ID` to a
-genuine registered app currently `Ready` and provision its APP budget through
-admin operations. The model call charges that APP account, the requesting
-actor's USER account and INSTALLATION account once. Missing/invalid config,
-missing budget or pricing mismatch denies the model call. This pragmatic MVP
-attribution reuses the APP ledger; a dedicated platform billing scope is
-deferred. The billing consumer requires the independent PERSONAL query review
-described above. Every actual source app and PERSONAL source must pass its own
-READ and processing checks. See
-[canonical billing attribution](../../reference/rag/authorization.md#model-operation-billing-attribution).
-The RAG overlay supplies the configured billing consumer to cap-ai. The public
-APISIX route preserves selected-role behavior for existing knowledge APIs.
+Every model operation keeps exactly one durable `cap_ai.model_operations` row for
+its operation key. Only the model gateway, through
+`cap_ai.claim_model_operation`, `cap_ai.begin_model_operation` and
+`cap_ai.finish_model_operation`, may create or transition it. The row binds the
+actor, attributed app, immutable profile ID/revision, purpose and a fingerprint of
+the authority snapshot and payload, and no model response or source text is
+stored. Direct table and dispatch-token access is revoked from the API, worker and
+catalog roles. Operation keys bind actor, profile, source/policy fingerprint and
+payload hash, so a concurrent or replayed call intent cannot send the same
+operation twice.
 
-Reserve the bounded worst-case input/output price before persisting intent.
-Recheck authority after budget waits and after intent, immediately before send.
-If a call might have been billed, retain UNCERTAIN funds and do not resend that
-operation. An uncertain EMBED job becomes FAILED with
-`MODEL_CHARGE_UNCERTAIN`; it requires operations resolution instead of automatic
-retry. Operation identity for each embedding chunk stays stable across lease
-fences, so a crash after send cannot create an automatic second billed call.
-Other explicitly approved new attempts must be separately accounted.
+For cross-app AGENT model operations, configure `AI_AGENT_PROCESSING_APP_ID` to a
+genuine registered app currently `Ready`; the retired
+`AI_AGENT_BILLING_APP_ID` name is not read. Missing or invalid configuration
+denies the model call. The app is attribution and query-review scope: it requires
+the independent PERSONAL query review described above, but it supplies no budget
+and no source authority. Every actual source app and PERSONAL source must pass
+its own READ and processing checks. See
+[canonical attribution and durable state](../../reference/rag/authorization.md#model-operation-attribution-and-durable-state).
+The RAG overlay supplies the configured consumer to cap-ai. The public APISIX
+route preserves selected-role behavior for existing knowledge APIs.
 
-`models.Reconciler.Once` accepts a deployment-qualified invoice inspector.
-Definitive usage settles once in the original period. Unknown invoice outcomes
-retain funds; the returned unresolved count is an operations escalation, not a
-release instruction. A reconciled overage records the debt and blocks future
-reservation instead of hiding cost. There is no real invoice adapter bundled.
-Usage tables store units/tokens/pricing and opaque request identity, never
-prompts, questions, source text or provider diagnostics. No content READ is
-conferred by accounting; there is no public usage-admin endpoint.
+Recheck authority after the claim, after persisting intent and immediately before
+send. A state that may have been sent (`MAY_HAVE_SENT` or `UNCERTAIN`) is never
+resent by the same or a later attempt. An uncertain EMBED job becomes an
+ingestion job `FAILED` with `error_code` `MODEL_CALL_UNCERTAIN`. That code is
+public, not a private database value: a caller who currently holds READ on the
+job's document sees it from `GET /api/cap/ai/ingestions/{id}`
+(`{"status":"FAILED","error_code":"MODEL_CALL_UNCERTAIN"}`) because the route
+serializes `cap_ai.ingestion_metadata` unchanged, and any other caller keeps the
+concealed `404 NOT_FOUND` with no status and no code. The job state `FAILED` is
+distinct from the durable operation state `UNCERTAIN`: the job says the embedding
+build did not complete, the operation says a call may have been sent and must
+never be resent. Operation identity for each embedding chunk stays stable across
+lease fences, so a crash after send cannot create an automatic second call. Other
+explicitly approved new attempts need their own operation identity.
+
+Token counters are observational. They are recorded, together with an optional
+provider request ID and latency, only for a succeeded operation; `UNCERTAIN` and
+`FAILED_UNSENT` rows carry no counters. There is no reconciler, invoice inspector
+or settlement adapter in this baseline, and no public usage-admin endpoint. No
+content READ is conferred by an operation row.
+
+A stuck operation is an owner-run review, not an automatic transition. The
+`model_operations_stuck` index on `(state, intent_at)` gives the oldest ambiguous
+rows per attributed app; the gateway, API and worker roles cannot read the table,
+so the owner runs the query with owner credentials:
+
+```sql
+SELECT app_id,
+       state,
+       count(*) AS operations,
+       min(intent_at) AS oldest_intent
+FROM cap_ai.model_operations
+WHERE state IN ('MAY_HAVE_SENT', 'UNCERTAIN')
+GROUP BY app_id, state
+ORDER BY oldest_intent;
+```
+
+`intent_at` is null only for a `CLAIMED` row, so every listed row has already
+committed intent. The oldest rows are resolved by the owner against the provider
+agreement; the platform neither resends nor settles them.
 
 ## Answer API
 
@@ -450,8 +500,11 @@ If any becomes unavailable, the response contains no old text, titles, results o
 citations and reason `AUTHORIZATION_CHANGED`. Fabricated citation IDs abstain with
 `UNSUPPORTED_ANSWER`. ID validation establishes provenance, not semantic truth.
 
-Policy/quota/outage returns scoped search-only unless `require_generation=true`,
-which returns 403 POLICY_BLOCKED, 429 QUOTA_EXCEEDED or 503 MODEL_UNAVAILABLE.
+Policy/outage returns scoped search-only unless `require_generation=true`, which
+returns 403 POLICY_BLOCKED or 503 MODEL_UNAVAILABLE. A model call that may have
+been sent returns `SEARCH_ONLY` with reason `MODEL_CALL_UNCERTAIN` (HTTP 200,
+null answer, no citations, no usage), or 503 `MODEL_CALL_UNCERTAIN` with
+`require_generation=true`. There is no quota response.
 No evidence makes no generation call. The app UI shows a grounded answer with
 protected citations, explicit abstention or search-only, and cancels old context
 on app/role change. Missing PERSONAL approval never triggers hosted fallback.
@@ -472,23 +525,27 @@ expose its controls publicly. The runner provisions reviewed fixture policy only
 for its new test app and `rag-test-fake`, never a real processor.
 
 R11/R12/R17/R18/R19/R20 cover scoped vectors, fresh final authority, independent
-readiness, the current personal zero-egress restriction, conservative accounting
-and answers. Those existing cases do not prove the amended approval policy.
+readiness, the current personal zero-egress restriction, durable uncertain
+operations with bounded invocation counts and answers. Those existing cases do not
+prove the amended approval policy.
 The Go integration suite separately exercises approved PERSONAL EMBED/GENERATE, denied unapproved
 source/query egress, disabled/mismatched approval and retention/training-use
 review, per-source multi-role authority, retained owner-only snapshots without
-revoked-context reuse, and exact AGENT INSTALLATION/APP/USER charge attribution.
-Earlier R01–R16 source/package gates remain prerequisites. A deterministic fake gold case
-measures transport, citation/provenance plumbing and latency; it does not qualify
-real language-model groundedness, injection robustness, tokenizer limits or
-invoice reconciliation. Missing real-provider/classification approval leaves
-hosted production enablement blocked. No overall S01–S08 release claim follows.
+revoked-context reuse, and AGENT operation attribution to the configured
+processing app. Earlier R01–R16 source/package gates remain prerequisites. A
+deterministic fake gold case
+measures transport, citation/provenance plumbing, token observation and latency; it
+does not qualify real language-model groundedness, injection robustness,
+tokenizer limits or provider invoicing. The fake LOCAL adapter exercises the
+shared dispatch boundary only; no LOCAL serving adapter ships. Missing
+real-provider/classification approval leaves hosted production enablement
+blocked. No overall S01–S08 release claim follows.
 
 Registry mode reads a strict catalog from `RAG_MODEL_DEPLOYMENT_FILE`:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "providers": [
     {
       "id": "hosted",
@@ -504,8 +561,9 @@ Registry mode reads a strict catalog from `RAG_MODEL_DEPLOYMENT_FILE`:
 An empty `models` array supports runtime startup after deployment provisioning.
 To provision candidates, each model entry has `adapter: "bounded-http-v1"` and
 a `profile` with `id`, `revision`, `purpose`, `execution`, `provider_id`,
-`model_id`, `credential_ref`, `pricing_revision`, and `limits`; EMBED also
-requires `dimension`. Follow the linked canonical contract for validation.
+`model_id`, `credential_ref`, and resource-only `limits`
+(`max_input_tokens`, `max_output_tokens`, `max_bytes`, `timeout_ms`); EMBED also
+requires `dimension`. Monetary fields are not part of schema version 2. Follow the linked canonical contract for validation.
 Startup never imports candidates. Runtime verifies the immutable declaration
 digest against provider metadata; endpoint or loopback changes require a new
 profile revision and provisioning. Slot reads and fenced embedding lease profile

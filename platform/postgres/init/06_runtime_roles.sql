@@ -11,6 +11,21 @@ BEGIN
     EXECUTE format('ALTER ROLE %I NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT',name);
   END LOOP;
 END $$;
+-- Bound request-serving work. Background ingestion, the knowledge dispatcher,
+-- the model gateway and Kestra legitimately run longer operations and keep no
+-- limit. New settings apply when a service opens a new connection.
+DO $$
+DECLARE r text;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['dxos_hasura','dxos_process','dxos_authz','dxos_hr','dxos_ai_api'] LOOP
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname=r) THEN
+      EXECUTE format('ALTER ROLE %I SET statement_timeout = %L', r, '10s');
+      IF r <> 'dxos_ai_api' THEN
+        EXECUTE format('ALTER ROLE %I SET idle_in_transaction_session_timeout = %L', r, '30s');
+      END IF;
+    END IF;
+  END LOOP;
+END $$;
 ALTER ROLE dxos_module_test CREATEDB;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA core, domain TO dxos_process, dxos_hasura, dxos_reader, dxos_caller;

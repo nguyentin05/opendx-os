@@ -21,7 +21,7 @@ export type Message = {
 export type Conversation = { id: string; title: string; created_at?: string };
 const base = "/api/cap/ai/conversations";
 export class AgentError extends Error {
-  constructor(public status: number) {
+  constructor(public status: number, public code?: string) {
     super(String(status));
   }
 }
@@ -36,7 +36,16 @@ export class AgentClient {
     headers.set("Authorization", bearer(this.token));
     if (init.body) headers.set("Content-Type", "application/json");
     const response = await fetch(path, { ...init, headers, signal });
-    if (!response.ok) throw new AgentError(response.status);
+    if (!response.ok) {
+      let code: string | undefined;
+      try {
+        const body = await response.json();
+        if (typeof body?.error?.code === "string") code = body.error.code;
+      } catch {
+        // Keep the status-only contract for a missing or malformed error body.
+      }
+      throw new AgentError(response.status, code);
+    }
     return response.status === 204 ? (undefined as T) : response.json();
   }
   list(signal: AbortSignal, cursor?: string) {
@@ -98,6 +107,8 @@ export class AgentClient {
 }
 export function errorMessage(error: unknown) {
   if (error instanceof AgentError) {
+    if (error.code === "MODEL_CALL_UNCERTAIN")
+      return "Chưa xác định: chưa xác nhận được kết quả gọi mô hình.";
     if (error.status === 503) return "Trợ lý tạm thời không khả dụng.";
     if (error.status === 401)
       return "Phiên đăng nhập không khả dụng. Hãy đăng nhập lại.";

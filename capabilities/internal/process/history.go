@@ -20,10 +20,10 @@ import (
 // HistoryEntry is one audit row projected for the record screen. The payload
 // snapshot is deliberately absent: it can hold columns the caller may not read.
 type HistoryEntry struct {
-	At         time.Time    `json:"at"`
-	Action     string       `json:"action"`
-	Actor      HistoryActor `json:"actor"`
-	ActingRole string       `json:"acting_role"`
+	At         time.Time     `json:"at"`
+	Action     string        `json:"action"`
+	Actor      *HistoryActor `json:"actor,omitempty"`
+	ActingRole string        `json:"acting_role,omitempty"`
 	// RoleDescription is the role's registry description, so the screen can
 	// name roles the viewer does not hold.
 	RoleDescription string  `json:"acting_role_description,omitempty"`
@@ -97,6 +97,14 @@ func (e *Engine) History(ctx context.Context, id *auth.Identity, app, tableName,
 	if !readable {
 		return fail(404)
 	}
+	showActor, err := a.CanSee(table, viewer, row, "created_by")
+	if err != nil {
+		return fail(503)
+	}
+	showStatus, err := a.CanSee(table, viewer, row, "status")
+	if err != nil {
+		return fail(503)
+	}
 
 	// The newest 200 entries, oldest first.
 	rows, err := tx.QueryContext(ctx, `SELECT at,action,actor_id,display_name,acting_role,entity_version,status,role_description FROM (
@@ -112,19 +120,25 @@ func (e *Engine) History(ctx context.Context, id *auth.Identity, app, tableName,
 	entries := []HistoryEntry{}
 	for rows.Next() {
 		var (
-			entry      HistoryEntry
-			actingRole sql.NullString
-			version    sql.NullInt64
-			status     sql.NullString
+			entry           HistoryEntry
+			actor           HistoryActor
+			actingRole      sql.NullString
+			version         sql.NullInt64
+			status          sql.NullString
+			roleDescription string
 		)
-		if err := rows.Scan(&entry.At, &entry.Action, &entry.Actor.ID, &entry.Actor.DisplayName, &actingRole, &version, &status, &entry.RoleDescription); err != nil {
+		if err := rows.Scan(&entry.At, &entry.Action, &actor.ID, &actor.DisplayName, &actingRole, &version, &status, &roleDescription); err != nil {
 			return fail(503)
 		}
-		entry.ActingRole = actingRole.String
+		if showActor {
+			entry.Actor = &actor
+			entry.ActingRole = actingRole.String
+			entry.RoleDescription = roleDescription
+		}
 		if version.Valid {
 			entry.Version = &version.Int64
 		}
-		if table.StateMachine != nil && status.Valid {
+		if showStatus && table.StateMachine != nil && status.Valid {
 			entry.Status = &status.String
 		}
 		entries = append(entries, entry)

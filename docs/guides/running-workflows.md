@@ -50,6 +50,9 @@ A flow calls back with `{"event_id", "step_name"}` using the workflow service
 credential, not a user token. The effect is resolved from the persisted event and
 the manifest and runs at most once per event and step.
 
+Effects on one record follow event order, not the order in which workers call
+back; see [runtime rules](../reference/runtime-rules.md#identity-roles-and-commands).
+
 ## Debug
 
 ```bash

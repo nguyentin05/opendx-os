@@ -85,6 +85,7 @@ Other workflows cover external services and security scans:
 | `keycloak-conformance.yml` | Imports the shipped realm into a disposable Keycloak and checks discovery, JWKS, the `dxos-runtime` audience mapper, token claims from `dxos-portal`, and wrong-password rejection |
 | `release-gate.yml` | Negative tests for the archive gate, then packages a real archive, verifies it, and checks its checksum and install script |
 | `security.yml` | Trivy `fs` and `config` scans that fail on HIGH or CRITICAL findings (accepted findings are listed with a reason in `.trivyignore.yaml`), gitleaks, and govulncheck for both Go modules, which fails on a reachable vulnerability |
+| `images.yml` | Trivy scan of every built image before it is pushed ([images and release](#images-and-release)) |
 | `codeql.yml` | CodeQL analysis of the Go, JavaScript/TypeScript and Python code |
 
 The integration tests create and drop one database per test, so the login must be
@@ -114,9 +115,11 @@ jobs need their own environment.
 ## Images and release
 
 `.github/workflows/images.yml` builds the nine image targets in
-[releasing](releasing.md#3-tag-and-run-the-release-workflow). Pull requests build
-without pushing; pushes to `main` and `v*` tags publish to
-`ghcr.io/nguyentin05/<image>` and attest the image digest.
+[releasing](releasing.md#3-tag-and-run-the-release-workflow). Each image is
+scanned with Trivy before anything is pushed, and the job fails on a HIGH or
+CRITICAL finding that has a fixed version (`.trivyignore.yaml` applies). Pull
+requests build and scan without pushing; pushes to `main` and `v*` tags publish
+to `ghcr.io/nguyentin05/<image>` and attest the image digest.
 `.github/workflows/release.yml` runs only when a `v*` tag is pushed. It
 rejects a tag that is not an ancestor of `main`, warns when the tag is
 lightweight, packs the source tree, runs the archive gate, generates a CycloneDX
@@ -176,5 +179,25 @@ These tests install parsed fixture chunks. The full `models` gate separately
 requires actual worker/parser processing, three authenticated user fixtures,
 two loopback adapter spies and browser state. Its preflight prints each missing
 environment variable and exits 2 before starting the test.
-Deterministic fake responses establish boundary/accounting/citation behavior,
-not real-provider groundedness or invoice qualification.
+Deterministic fake responses establish boundary, operation-state, token and
+citation behavior, not real-provider groundedness or provider invoicing. A fake
+LOCAL case exercises the shared dispatch boundary; it is not evidence that a
+LOCAL serving adapter ships.
+
+The model runner asserts the current baseline rather than the retired one: no
+budget, reservation or usage-ledger setup is performed or required, a successful
+call must be observed as a `SUCCEEDED` operation with its recorded token counters,
+and an ambiguous call must be observed as a durable `UNCERTAIN` operation with
+null counters, no public usage and no second invocation. Schema presence, absence
+of the retired relations, migration checksum refusal and restricted-role
+privileges are qualified by the dedicated Go integration cases instead, so a
+missing stack prerequisite is reported as `NOT_RUN` and never as a pass.
+
+A qualification run also has to record the rollout gate separately from the test
+suite: fresh bootstrap, checksum refusal against an old applied model checksum,
+database privileges, standalone capability behavior and the full-stack fake
+gate. The named-database rebuild for an installation that applied the earlier
+model checksums is an owner-run action with a human execution gate
+([installation](../operations/installation.md#rebuilding-an-existing-model-installation));
+no qualification run performs it, and a skipped rebuild stays pending rather than
+counting as verified.

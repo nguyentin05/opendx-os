@@ -41,7 +41,13 @@ example), one level deep:
 
 Hasura permissions and the triggers `core.enforce_parent` and
 `core.touch_parent` both enforce this; the trigger locks the parent record, so a
-child change and a command on the parent never interleave.
+child change and a command on the parent never interleave. A refused child change
+raises SQLSTATE `23514` (`check_violation`) with the stable prefix
+`the parent record can no longer be changed (status <status>)` or
+`a row cannot move to another parent record`. Existing installations apply
+`0005_parent_refusal.sql` with
+`scripts/migrate-rag.sh --database-url-env DATABASE_URL --scope core --through 0005`
+(see [runtime rules](../runtime-rules.md)).
 
 The process tables of the sample applications:
 

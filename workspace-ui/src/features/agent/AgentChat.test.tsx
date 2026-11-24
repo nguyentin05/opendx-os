@@ -208,7 +208,7 @@ it("can create another conversation after deletion", async () => {
     ).toBe(false),
   );
 });
-it("shows uncertain charge without resending automatically", async () => {
+it("shows the unconfirmed model call without resending automatically", async () => {
   let sent = 0;
   vi.stubGlobal(
     "fetch",
@@ -219,7 +219,7 @@ it("shows uncertain charge without resending automatically", async () => {
           status: "SEARCH_ONLY",
           answer: null,
           citations: [],
-          reason: "MODEL_CHARGE_UNCERTAIN",
+          reason: "MODEL_CALL_UNCERTAIN",
         });
       }
       if (String(input).endsWith("/c1"))
@@ -237,6 +237,40 @@ it("shows uncertain charge without resending automatically", async () => {
   });
   fireEvent.click(screen.getByRole("button", { name: "Gửi" }));
   await screen.findByText(/Chưa xác định/);
+  expect(sent).toBe(1);
+});
+it("shows the public uncertainty HTTP code and does not resubmit on 503", async () => {
+  let sent = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        sent++;
+        return Response.json(
+          {
+            error: {
+              code: "MODEL_CALL_UNCERTAIN",
+              message: "Service Unavailable",
+            },
+          },
+          { status: 503 },
+        );
+      }
+      if (String(input).endsWith("/c1"))
+        return Response.json({ messages: [], next_after_seq: null });
+      return Response.json({
+        conversations: [{ id: "c1", title: "Existing" }],
+        next_cursor: null,
+      });
+    }),
+  );
+  render(<AgentChat token="token" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
+  fireEvent.change(await screen.findByLabelText("Câu hỏi"), {
+    target: { value: "Câu hỏi" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Gửi" }));
+  await screen.findByText(/Chưa xác định: chưa xác nhận được kết quả gọi mô hình/);
   expect(sent).toBe(1);
 });
 it("merges a sent turn with its canonical transcript when paging", async () => {

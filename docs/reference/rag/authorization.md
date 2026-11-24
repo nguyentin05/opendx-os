@@ -5,7 +5,7 @@ diataxis: reference
 audience: [security-reviewer, platform-developer]
 status: active
 owner: platform
-last_reviewed: 2026-11-18
+last_reviewed: 2026-11-23
 ---
 
 # RAG authorization and source trust
@@ -63,12 +63,41 @@ READ is necessary but insufficient for any external processing. Hosted PERSONAL 
 
 Approval binds the processing purpose (`EMBED` or `GENERATE`), provider identity, exact immutable profile revision, permitted source and query classifications, retention and training-use review, approver/time and audit record. The approval, policy and profile must currently be enabled. The server independently validates source classification and query classification; client declarations cannot classify a personal query as non-personal. Mixed APP/PERSONAL context retains PERSONAL handling requirements. A query-only embedding call needs its own applicable query approval, even before any source has been retrieved. Each source must independently match its current processing policy and the chosen provider/profile/purpose; one approved source never approves the rest of a request. Unknown classification, missing authority or disabled/mismatched approval denies egress. Source READ and processing permission are checked immediately before every send and again, for every supplied evidence item, immediately before the non-streaming response.
 
-Treat every global-chat question as potentially PERSONAL during hosted processing, even when searching APP scopes or generating from APP-only evidence. For query-only EMBED, require the exact current PERSONAL query review for the app being searched in addition to ordinary scope and model policy. For grounded AGENT GENERATE, require a separate current PERSONAL query review for the configured billing consumer. Source READ and processing predicates apply independently under each source's actual current app and role.
+Treat every global-chat question as potentially PERSONAL during hosted processing, even when searching APP scopes or generating from APP-only evidence. For query-only EMBED, require the exact current PERSONAL query review for the app being searched in addition to ordinary scope and model policy. For grounded AGENT GENERATE, require a separate current PERSONAL query review for the configured processing consumer. Source READ and processing predicates apply independently under each source's actual current app and role.
 
 Only Platform Admin manages installation-wide model slots and processing approvals; applications and chat requests cannot choose models, providers, endpoints or credentials. The Gateway verifies the exact active slot and revision before dispatching a global query or answer. A slot change requires matching approval for the new profile revision and leaves existing vectors tied to their original profile. With no qualifying approval/model, use authorized PostgreSQL FTS and the documented search-only outcome rather than an unapproved provider. Hosted RERANK and OCR/VLM, and local-model serving, are outside this increment. Documents and model responses remain untrusted data and cannot grant tools, authority or provider URLs.
 
-## Model-operation billing attribution
+## Model-operation attribution and durable state
 
-Every model operation keeps the existing atomic INSTALLATION/APP/USER reservation and accounting invariants. Ordinary APP calls charge their actual app; PERSONAL-only calls charge the genuine registered personal-library app, independent of UI context. Background ingestion retains its genuine worker Core identity for the USER account.
+Billing is not part of this contract. [ADR 0010](../../adr/0010-model-operations-without-monetary-admission.md)
+supersedes ADR 0009 D10 and the reservation/settlement requirements: there are no
+budget accounts, reservations or usage ledger, and an operation is admitted by a
+durable `cap_ai.model_operations` row rather than by a monetary account.
 
-Cross-app `AGENT` model operations charge the requesting actor's USER account, the installation account and one server-configured APP account identified by `AI_AGENT_BILLING_APP_ID`. It must be a genuine registered app currently `Ready`, with an admin-provisioned budget and the profile's pricing revision. Missing/invalid configuration or budget denies the model operation. Do not synthesize an unregistered billing app or select it from request JSON. This reuses the existing APP ledger for MVP; a dedicated platform billing scope is deferred. The billing app is accounting attribution only: model policy must independently authorize every actual source app and each PERSONAL source/query. Charging that app never grants access or substitutes its classification for source/query classifications. Operation identity/fingerprint binds the actual evidence and policy revisions as well as the billed app. Preserve conservative uncertain-charge handling and idempotent settlement.
+Every model operation keeps one durable row per operation key. Only the model
+gateway, through the narrow `claim_model_operation`, `begin_model_operation` and
+`finish_model_operation` interfaces owned by `dxos_ai_owner`, may create or
+transition that row. The row binds the requesting actor, the attributed consumer
+app, the immutable profile ID/revision, the purpose and a fingerprint of the
+authority snapshot and payload. Direct table and dispatch-token access is
+revoked from API, worker and catalog roles. Operation keys remain those the
+platform already derives: the Agent turn identity, the embedding job/chunk
+identity, and per-request answer/query-embedding keys. An operation that may have
+been sent is never sent again.
+
+Ordinary APP calls attribute the operation to their actual app; PERSONAL-only
+calls to the genuine registered personal-library app, independent of UI context.
+Background ingestion retains its genuine worker Core identity for the actor. A
+cross-app `AGENT` generation attributes the operation to the genuine registered
+app currently `Ready` that is configured by `AI_AGENT_PROCESSING_APP_ID`. Missing
+or invalid configuration denies the model operation. Do not synthesize an
+unregistered app or select it from request JSON. The retired
+`AI_AGENT_BILLING_APP_ID` name is not accepted.
+
+The attributed consumer is query-review and audit scope only: model policy must
+independently authorize every actual source app and each PERSONAL source/query.
+Attributing an operation to that app never grants access or substitutes its
+classification for source/query classifications, and never supplies a budget.
+Token counters are observational and recorded only for a succeeded operation.
+The public uncertainty code is `MODEL_CALL_UNCERTAIN`, distinct from
+`MODEL_UNAVAILABLE`; binding conflicts stay internal.

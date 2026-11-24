@@ -47,17 +47,13 @@ func newPersonalHybridFixture(t *testing.T) personalHybridFixture {
 	_, err := db.Exec(`
 INSERT INTO core.user_roles(user_id, role_name)
 VALUES ('11111111-1111-4111-8111-111111111111', 'role_operator');
-INSERT INTO cap_ai.model_profiles(id, revision, purpose, execution, provider_id, model_id, dimension, limits, pricing_revision, enabled)
+INSERT INTO cap_ai.model_profiles(id, revision, purpose, execution, provider_id, model_id, dimension, limits, enabled)
 VALUES ('embed', 1, 'EMBED', 'HOSTED', 'fake', 'fake', 3,
- '{"max_input_tokens":8192,"max_output_tokens":512,"max_bytes":16384,"input_unit_price":1,"output_unit_price":1,"timeout_ms":500}', 'price-1', true);
+ '{"max_input_tokens":8192,"max_output_tokens":512,"max_bytes":16384,"timeout_ms":500}', true);
 INSERT INTO cap_ai.model_candidates(profile_id, revision, adapter_key, declaration_digest, declaration)
 VALUES ('embed', 1, 'bounded-http-v1', repeat('a',64), '{}');
 UPDATE cap_ai.global_model_slots SET profile_id='embed', profile_revision=1, slot_revision=1 WHERE capability='EMBEDDING';
-INSERT INTO cap_ai.budget_accounts(scope, scope_key, period_start, period_end, limit_units, pricing_revision)
-SELECT scope, scope_key, now()-interval '1 day', now()+interval '1 day', 1000000, 'price-1'
-FROM (VALUES ('INSTALLATION','installation'), ('APP','library'),
- ('USER','11111111-1111-4111-8111-111111111111'),
- ('USER','22222222-2222-4222-8222-222222222222')) accounts(scope, scope_key);`)
+`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,8 +70,8 @@ FROM (VALUES ('INSTALLATION','installation'), ('APP','library'),
 	registry := &models.Registry{DB: gatewayDB}
 	spy := &embeddingProvider{}
 	gateway := &models.Gateway{
-		Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: gatewayDB}},
-		Budget: &models.Budget{DB: gatewayDB}, Providers: map[string]models.Provider{"fake": spy},
+		Policy:     &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: gatewayDB}},
+		Operations: &models.OperationStore{DB: gatewayDB}, Providers: map[string]models.Provider{"fake": spy},
 	}
 	s := NewStore(api)
 	worker := workerStore(t, db)
@@ -393,8 +389,8 @@ func TestPersonalHybridMigrationPreservesAppEmbedding(t *testing.T) {
 	gatewayDB := testutil.As(t, u.String(), "dxos_ai_gateway")
 	spy := &embeddingProvider{}
 	gateway := &models.Gateway{
-		Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: gatewayDB}},
-		Budget: &models.Budget{DB: gatewayDB}, Providers: map[string]models.Provider{"fake": spy},
+		Policy:     &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: gatewayDB}},
+		Operations: &models.OperationStore{DB: gatewayDB}, Providers: map[string]models.Provider{"fake": spy},
 	}
 	worker := workerStore(t, db)
 	for _, store := range []*Store{api, worker} {
@@ -422,9 +418,9 @@ func TestPersonalHybridRebuildsAfterApprovalRenewal(t *testing.T) {
 		t.Fatal("first build", err)
 	}
 	var originalJob, originalRun, originalOperation string
-	err := f.db.QueryRow(`SELECT j.id, g.run_id, mr.operation_key
+	err := f.db.QueryRow(`SELECT j.id, g.run_id, mo.operation_key
 	 FROM cap_ai.ingestion_jobs j JOIN cap_ai.embedding_generations g ON g.job_id=j.id
-	 JOIN cap_ai.model_reservations mr ON mr.operation_key LIKE 'embed:' || j.id::text || ':%'
+	 JOIN cap_ai.model_operations mo ON mo.operation_key LIKE 'embed:' || j.id::text || ':%'
 	 WHERE j.version_id=$1 AND g.state='READY'`, doc.VersionID).Scan(&originalJob, &originalRun, &originalOperation)
 	if err != nil {
 		t.Fatal(err)
@@ -450,7 +446,7 @@ func TestPersonalHybridRebuildsAfterApprovalRenewal(t *testing.T) {
 	}
 	var buildCount, originalCount int
 	err = f.db.QueryRow(`SELECT count(*), count(*) FILTER (WHERE operation_key=$1)
-	 FROM cap_ai.model_reservations WHERE operation_key LIKE 'embed:%'`, originalOperation).Scan(&buildCount, &originalCount)
+	 FROM cap_ai.model_operations WHERE operation_key LIKE 'embed:%'`, originalOperation).Scan(&buildCount, &originalCount)
 	if err != nil || buildCount != 2 || originalCount != 1 || f.spy.calls != 2 {
 		t.Fatal("expected exactly one billable operation per authority snapshot", buildCount, originalCount, f.spy.calls, err)
 	}
@@ -486,7 +482,7 @@ func (p *personalEmbeddingVectorProvider) Invoke(_ context.Context, _ models.Pro
 	} else {
 		p.queryCalls++
 	}
-	return models.Result{Vector: vector, Usage: models.Usage{InputTokens: 10}}, nil
+	return models.Result{Vector: vector, Usage: &models.Usage{InputTokens: 10}}, nil
 }
 
 func TestPersonalHybridZeroDocumentVectorFallback(t *testing.T) {

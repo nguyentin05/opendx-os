@@ -6,6 +6,7 @@ package knowledge
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -58,6 +59,15 @@ func emptyAnswer(reason string) AnswerResponse {
 	return AnswerResponse{Status: "SEARCH_ONLY", Reason: reason, Results: []SearchHit{}, Citations: []Citation{}}
 }
 
+// modelReason exposes one sanitized public code for any ambiguous model
+// outcome. A binding conflict is never described with operation details.
+func modelReason(err error) string {
+	if errors.Is(err, models.ErrUncertain) || errors.Is(err, models.ErrConflict) {
+		return models.ErrUncertain.Error()
+	}
+	return err.Error()
+}
+
 func (s *AnswerService) Answer(ctx context.Context, actor *auth.Identity, req AnswerRequest) (AnswerResponse, error) {
 	empty := emptyAnswer("")
 	if actor == nil || s == nil || s.Search == nil {
@@ -96,7 +106,7 @@ func (s *AnswerService) Answer(ctx context.Context, actor *auth.Identity, req An
 		if req.RequireGeneration {
 			return empty, cause
 		}
-		return AnswerResponse{Status: "SEARCH_ONLY", Reason: cause.Error(), Results: result.Results, Citations: []Citation{}}, nil
+		return AnswerResponse{Status: "SEARCH_ONLY", Reason: modelReason(cause), Results: result.Results, Citations: []Citation{}}, nil
 	}
 	profile := s.Profile
 	if s.Resolver != nil {
@@ -212,5 +222,5 @@ func (s *AnswerService) Answer(ctx context.Context, actor *auth.Identity, req An
 	}
 	// Results outside the context were not checked after generation. Return only
 	// the freshly checked evidence. IDs validate provenance, not semantic truth.
-	return AnswerResponse{Status: "ANSWERED", Answer: &generated.Text, Results: evidence, Citations: citations, ModelProfile: &AnswerProfile{ID: profile.ID, Revision: profile.Revision}, Usage: &generated.Usage}, nil
+	return AnswerResponse{Status: "ANSWERED", Answer: &generated.Text, Results: evidence, Citations: citations, ModelProfile: &AnswerProfile{ID: profile.ID, Revision: profile.Revision}, Usage: generated.Usage}, nil
 }

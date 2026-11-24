@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -25,7 +26,7 @@ import (
 func TestRegistryAnswerCurrentDatabaseRevocation(t *testing.T) {
 	db, s, a, profile := semanticFixture(t)
 	// The new revision is independently approved for GENERATE, with no vectors.
-	if _, e := db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,pricing_revision,enabled) SELECT 'gen',revision,'GENERATE',execution,provider_id,model_id,limits,pricing_revision,enabled FROM cap_ai.model_profiles WHERE id='embed';INSERT INTO cap_ai.processing_policy_profiles VALUES('reviewed',1,'gen',1,now());`); e != nil {
+	if _, e := db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,enabled) SELECT 'gen',revision,'GENERATE',execution,provider_id,model_id,limits,enabled FROM cap_ai.model_profiles WHERE id='embed';INSERT INTO cap_ai.processing_policy_profiles VALUES('reviewed',1,'gen',1,now());`); e != nil {
 		t.Fatal(e)
 	}
 	profile.ID = "gen"
@@ -37,14 +38,14 @@ func TestRegistryAnswerCurrentDatabaseRevocation(t *testing.T) {
 		if _, e := db.Exec(`DELETE FROM core.user_roles WHERE user_id=$1`, a.UserID); e != nil {
 			t.Error(e)
 		}
-		json.NewEncoder(w).Encode(models.Result{Text: "Director approval.", CitationIDs: []string{"E1"}, Usage: models.Usage{InputTokens: 10, OutputTokens: 5}})
+		json.NewEncoder(w).Encode(models.Result{Text: "Director approval.", CitationIDs: []string{"E1"}, Usage: &models.Usage{InputTokens: 10, OutputTokens: 5}})
 	}))
 	defer server.Close()
 	provider, e := models.NewHTTPProvider(server.URL, "", true)
 	if e != nil {
 		t.Fatal(e)
 	}
-	g := &models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Budget: &models.Budget{DB: db}, Providers: map[string]models.Provider{"fake": provider}}
+	g := &models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}
 	service := AnswerService{Search: s, Reader: NewPolicy(db), Policy: g.Policy, Gateway: g, Resolver: &fixedResolver{profile: profile}}
 	response, e := service.Answer(context.Background(), a, AnswerRequest{Scope: Scope{Kind: "APP", AppID: "library"}, Query: "Director"})
 	if e != nil || !called || response.Reason != "AUTHORIZATION_CHANGED" || response.Answer != nil || len(response.Results) != 0 || len(response.Citations) != 0 {
@@ -59,7 +60,7 @@ func TestEmbeddingLeaseLossPreservesLexical(t *testing.T) {
 			t.Error(e)
 		}
 	}}
-	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Budget: &models.Budget{DB: db}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
+	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
 	if e := s.EnqueueEmbeddings(context.Background(), a, profile); e != nil {
 		t.Fatal(e)
 	}
@@ -98,16 +99,132 @@ func TestAnswersHTTPContractAndPolicyErrors(t *testing.T) {
 	}
 }
 
+// usageAnswerProvider reports exactly the usage presence the test asks for.
+type usageAnswerProvider struct {
+	usage *models.Usage
+	calls int
+}
+
+func (p *usageAnswerProvider) Invoke(context.Context, models.Profile, models.Payload) (models.Result, error) {
+	p.calls++
+	return models.Result{Text: "Director approval", CitationIDs: []string{"E1"}, Usage: p.usage}, nil
+}
+
+// The live HTTP answer path must keep the zero-versus-nil usage distinction the
+// provider boundary decodes: a reported zero pair is serialized, absent usage is
+// omitted from the public response body.
+func TestAnswersUsageResponseShape(t *testing.T) {
+	db, s, a, _ := semanticFixture(t)
+	if _, e := db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,enabled) SELECT 'local-gen',revision,'GENERATE','LOCAL',provider_id,model_id,limits,enabled FROM cap_ai.model_profiles WHERE id='embed';INSERT INTO cap_ai.processing_policy_profiles VALUES('reviewed',1,'local-gen',1,now());`); e != nil {
+		t.Fatal(e)
+	}
+	generate := models.Profile{ID: "local-gen", Revision: 1, Purpose: "GENERATE", Execution: "LOCAL",
+		ProviderID: "fake", ModelID: "fake", Enabled: true,
+		Limits: models.Limits{MaxInputTokens: 8192, MaxOutputTokens: 512, MaxBytes: 16384, TimeoutMS: 500}}
+	for _, test := range []struct {
+		name     string
+		usage    *models.Usage
+		contains string
+	}{
+		{name: "reported zero", usage: &models.Usage{}, contains: `"usage":{"input_tokens":0,"output_tokens":0}`},
+		{name: "no usage", usage: nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			provider := &usageAnswerProvider{usage: test.usage}
+			g := &models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}
+			s.ConfigureModels(g, models.Profile{}, generate)
+			r := httptest.NewRequest("POST", "/api/cap/ai/answers", strings.NewReader(`{"scope":{"kind":"APP","app_id":"library"},"query":"Director"}`))
+			r = r.WithContext(auth.WithIdentity(r.Context(), a))
+			w := httptest.NewRecorder()
+			s.Handler().ServeHTTP(w, r)
+			body := w.Body.String()
+			if w.Code != 200 || provider.calls != 1 {
+				t.Fatalf("live answer: code=%d calls=%d body=%s", w.Code, provider.calls, body)
+			}
+			if !strings.Contains(body, `"status":"ANSWERED"`) {
+				t.Fatalf("answer not generated: %s", body)
+			}
+			if test.contains == "" {
+				if strings.Contains(body, `"usage"`) {
+					t.Fatalf("absent usage serialized: %s", body)
+				}
+				return
+			}
+			if !strings.Contains(body, test.contains) {
+				t.Fatalf("usage shape lost in response: %s", body)
+			}
+		})
+	}
+}
+
+type uncertainAnswerProvider struct{ calls int }
+
+func (p *uncertainAnswerProvider) Invoke(context.Context, models.Profile, models.Payload) (models.Result, error) {
+	p.calls++
+	return models.Result{}, errors.New("provider timeout")
+}
+
+// A possibly sent answer generation is public uncertainty: optional generation
+// returns 200 SEARCH_ONLY with only the current authorized results, and
+// require_generation reaches the same sanitized 503 code.
+func TestAnswersUncertaintyPublicContract(t *testing.T) {
+	db, s, a, _ := semanticFixture(t)
+	if _, e := db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,enabled) SELECT 'local-gen',revision,'GENERATE','LOCAL',provider_id,model_id,limits,enabled FROM cap_ai.model_profiles WHERE id='embed';INSERT INTO cap_ai.processing_policy_profiles VALUES('reviewed',1,'local-gen',1,now());`); e != nil {
+		t.Fatal(e)
+	}
+	generate := models.Profile{ID: "local-gen", Revision: 1, Purpose: "GENERATE", Execution: "LOCAL",
+		ProviderID: "fake", ModelID: "fake", Enabled: true,
+		Limits: models.Limits{MaxInputTokens: 8192, MaxOutputTokens: 512, MaxBytes: 16384, TimeoutMS: 500}}
+	provider := &uncertainAnswerProvider{}
+	g := &models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}
+	s.ConfigureModels(g, models.Profile{}, generate)
+	for _, tc := range []struct {
+		name, body string
+		status     int
+	}{
+		{"optional generation", `{"scope":{"kind":"APP","app_id":"library"},"query":"Director"}`, 200},
+		{"required generation", `{"scope":{"kind":"APP","app_id":"library"},"query":"Director","require_generation":true}`, 503},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest("POST", "/api/cap/ai/answers", strings.NewReader(tc.body))
+			r = r.WithContext(auth.WithIdentity(r.Context(), a))
+			w := httptest.NewRecorder()
+			s.Handler().ServeHTTP(w, r)
+			body := w.Body.String()
+			if w.Code != tc.status || strings.Contains(body, "MODEL_UNAVAILABLE") {
+				t.Fatalf("status=%d body=%s", w.Code, body)
+			}
+			if tc.status == 503 {
+				if !strings.Contains(body, `"code":"MODEL_CALL_UNCERTAIN"`) {
+					t.Fatalf("sanitized uncertainty missing: %s", body)
+				}
+				return
+			}
+			for _, want := range []string{`"status":"SEARCH_ONLY"`, `"reason":"MODEL_CALL_UNCERTAIN"`, `"answer":null`, `"citations":[]`, `"chunk_id":"`} {
+				if !strings.Contains(body, want) {
+					t.Fatalf("missing %s in %s", want, body)
+				}
+			}
+			if strings.Contains(body, `"usage"`) {
+				t.Fatalf("uncertain answer exposed usage: %s", body)
+			}
+		})
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls=%d", provider.calls)
+	}
+}
+
 type localAnswerProvider struct{ calls int }
 
 func (p *localAnswerProvider) Invoke(context.Context, models.Profile, models.Payload) (models.Result, error) {
 	p.calls++
-	return models.Result{Text: "Director approval", CitationIDs: []string{"E1"}, Usage: models.Usage{InputTokens: 10, OutputTokens: 5}}, nil
+	return models.Result{Text: "Director approval", CitationIDs: []string{"E1"}, Usage: &models.Usage{InputTokens: 10, OutputTokens: 5}}, nil
 }
 func TestQualifiedLocalPersonalAnswer(t *testing.T) {
 	db, s, a, profile := semanticFixture(t)
 	activateText(t, s, workerStore(t, db), a, fileID, "local-personal", "Director approval private evidence")
-	if _, e := db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,pricing_revision,enabled) SELECT 'local-gen',revision,'GENERATE','LOCAL',provider_id,model_id,limits,pricing_revision,enabled FROM cap_ai.model_profiles WHERE id='embed';INSERT INTO cap_ai.processing_policy_profiles VALUES('local-only',1,'local-gen',1,now());`); e != nil {
+	if _, e := db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,enabled) SELECT 'local-gen',revision,'GENERATE','LOCAL',provider_id,model_id,limits,enabled FROM cap_ai.model_profiles WHERE id='embed';INSERT INTO cap_ai.processing_policy_profiles VALUES('local-only',1,'local-gen',1,now());`); e != nil {
 		t.Fatal(e)
 	}
 	profile.ID = "local-gen"
@@ -115,7 +232,7 @@ func TestQualifiedLocalPersonalAnswer(t *testing.T) {
 	profile.Execution = "LOCAL"
 	profile.Dimension = 0
 	provider := &localAnswerProvider{}
-	g := &models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Budget: &models.Budget{DB: db}, Providers: map[string]models.Provider{"fake": provider}}
+	g := &models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}
 	service := AnswerService{Search: s, Reader: NewPolicy(db), Policy: g.Policy, Gateway: g, Resolver: &fixedResolver{profile: profile}}
 	response, e := service.Answer(context.Background(), a, AnswerRequest{Scope: Scope{Kind: "PERSONAL"}, Query: "Director", RequireGeneration: true})
 	if e != nil || response.Status != "ANSWERED" || provider.calls != 1 {
@@ -172,7 +289,7 @@ func TestHostedPersonalAnswerAuditedApproval(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,pricing_revision,enabled) SELECT 'hosted-gen',revision,'GENERATE','HOSTED',provider_id,model_id,limits,pricing_revision,enabled FROM cap_ai.model_profiles WHERE id='embed';
+	if _, err := db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,enabled) SELECT 'hosted-gen',revision,'GENERATE','HOSTED',provider_id,model_id,limits,enabled FROM cap_ai.model_profiles WHERE id='embed';
  INSERT INTO cap_ai.model_candidates(profile_id,revision,adapter_key,declaration_digest,declaration) VALUES('hosted-gen',1,'bounded-http-v1',repeat('a',64),'{}');
  UPDATE cap_ai.global_model_slots SET profile_id='hosted-gen',profile_revision=1,slot_revision=1 WHERE capability='LLM';
  INSERT INTO core.user_roles(user_id,role_name) VALUES('11111111-1111-4111-8111-111111111111','role_operator');`); err != nil {
@@ -188,7 +305,7 @@ func TestHostedPersonalAnswerAuditedApproval(t *testing.T) {
 	admin := testutil.As(t, u.String(), "dxos_authz")
 	api := testutil.As(t, u.String(), "dxos_ai_api")
 	provider := &localAnswerProvider{}
-	g := &models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: gateway}}, Budget: &models.Budget{DB: gateway}, Providers: map[string]models.Provider{"fake": provider}}
+	g := &models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: gateway}}, Operations: &models.OperationStore{DB: gateway}, Providers: map[string]models.Provider{"fake": provider}}
 	service := AnswerService{Search: s, Reader: NewPolicy(api), Policy: g.Policy, Gateway: g, Resolver: &models.Registry{DB: gateway}}
 	req := AnswerRequest{Scope: Scope{Kind: "PERSONAL"}, Query: "Director", RequireGeneration: true}
 	if _, err := service.Answer(context.Background(), a, req); err != models.ErrPolicy || provider.calls != 0 {

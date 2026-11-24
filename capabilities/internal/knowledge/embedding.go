@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/lib/pq"
@@ -127,7 +128,7 @@ func (s *Store) BuildEmbeddings(ctx context.Context, lease Lease, profile models
 		}
 		op := models.Operation{Key: "embed:" + lease.JobID + ":" + work.Chunk.ID, AppID: work.AppID, ScopeKind: scopeKind, Purpose: "EMBED", ProfileID: profile.ID, ProfileRevision: profile.Revision, Sources: []ReadScope{work.Scope}, Lease: &models.LeaseRef{JobID: lease.JobID, WorkerID: lease.WorkerID, RunID: lease.RunID, Fence: lease.Fence}}
 		result, err := s.gateway.Call(ctx, &auth.Identity{UserID: lease.WorkerID}, op, models.Payload{Texts: []string{work.Chunk.Text}})
-		uncertain = err == models.ErrUncertain || err == models.ErrConflict
+		uncertain = errors.Is(err, models.ErrUncertain) || errors.Is(err, models.ErrConflict)
 		if err != nil {
 			return err
 		}

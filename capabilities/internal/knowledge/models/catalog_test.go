@@ -6,6 +6,7 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -14,7 +15,7 @@ import (
 	"testing"
 )
 
-const catalogFixture = `{"schema_version":1,"providers":[{"id":"provider","adapter":"bounded-http-v1","endpoint":"https://adapter.invalid/invoke","credential_ref":"MODEL_KEY"}],"models":[{"adapter":"bounded-http-v1","profile":{"id":"embed","revision":1,"purpose":"EMBED","execution":"HOSTED","provider_id":"provider","model_id":"model","credential_ref":"MODEL_KEY","dimension":3,"limits":{"max_input_tokens":100,"max_output_tokens":100,"max_bytes":1024,"input_unit_price":0,"output_unit_price":1,"timeout_ms":1000},"pricing_revision":"p1","enabled":false}}]}`
+const catalogFixture = `{"schema_version":2,"providers":[{"id":"provider","adapter":"bounded-http-v1","endpoint":"https://adapter.invalid/invoke","credential_ref":"MODEL_KEY"}],"models":[{"adapter":"bounded-http-v1","profile":{"id":"embed","revision":1,"purpose":"EMBED","execution":"HOSTED","provider_id":"provider","model_id":"model","credential_ref":"MODEL_KEY","dimension":3,"limits":{"max_input_tokens":100,"max_output_tokens":100,"max_bytes":1024,"timeout_ms":1000},"enabled":false}}]}`
 
 func TestParseCatalogStrict(t *testing.T) {
 	c, e := ParseCatalog([]byte(catalogFixture))
@@ -22,7 +23,7 @@ func TestParseCatalogStrict(t *testing.T) {
 		t.Fatalf("valid: %+v %v", c, e)
 	}
 	cases := map[string]string{"trailing": catalogFixture + ` {}`, "oversize": catalogFixture + strings.Repeat(" ", 65537), "null": "null"}
-	changes := [][2]string{{`"schema_version":1`, `"schema_version":2`}, {`"schema_version":1`, `"schema_version":1,"extra":true`}, {`"revision":1`, `"revision":1,"revision":2`}, {`"revision":1`, `"revision":1,"Revision":2`}, {`"adapter":"bounded-http-v1"`, `"adapter":"openai"`}, {`"provider_id":"provider"`, `"provider_id":"missing"`}, {`"credential_ref":"MODEL_KEY"`, `"credential_ref":"OTHER_KEY"`}, {`"enabled":false`, `"enabled":true`}, {`"HOSTED"`, `"LOCAL"`}, {`"EMBED"`, `"VLM"`}, {`"dimension":3`, `"dimension":0`}, {`"dimension":3`, `"dimension":16001`}, {`"input_unit_price":0`, `"input_unit_price":-1`}, {`"input_unit_price":0,`, ``}, {`"input_unit_price":0`, `"input_unit_price":null`}, {`"pricing_revision":"p1"`, `"pricing_revision":""`}, {`"max_bytes":1024`, `"max_bytes":1048577`}, {`"timeout_ms":1000`, `"timeout_ms":120001`}, {`"max_input_tokens":100`, `"max_input_tokens":0`}, {`"revision":1`, `"revision":0`}, {`https://adapter.invalid/invoke`, `/invoke`}, {`https://adapter.invalid/invoke`, `https://adapter.invalid/?redirect=x`}, {`https://adapter.invalid/invoke`, `https://user:password@adapter.invalid`}, {`"max_bytes":1024`, `"max_bytes":1024,"extra":1`}}
+	changes := [][2]string{{`"schema_version":2`, `"schema_version":1`}, {`"schema_version":2`, `"schema_version":2,"extra":true`}, {`"revision":1`, `"revision":1,"revision":2`}, {`"revision":1`, `"revision":1,"Revision":2`}, {`"adapter":"bounded-http-v1"`, `"adapter":"openai"`}, {`"provider_id":"provider"`, `"provider_id":"missing"`}, {`"credential_ref":"MODEL_KEY"`, `"credential_ref":"OTHER_KEY"`}, {`"enabled":false`, `"enabled":true`}, {`"HOSTED"`, `"LOCAL"`}, {`"EMBED"`, `"VLM"`}, {`"dimension":3`, `"dimension":0`}, {`"dimension":3`, `"dimension":16001`}, {`"timeout_ms":1000`, `"timeout_ms":1000,"input_unit_price":1`}, {`"timeout_ms":1000`, `"timeout_ms":1000,"output_unit_price":null`}, {`"enabled":false`, `"enabled":false,"pricing_revision":"p1"`}, {`"max_bytes":1024`, `"max_bytes":1048577`}, {`"timeout_ms":1000`, `"timeout_ms":120001`}, {`"max_input_tokens":100`, `"max_input_tokens":0`}, {`"max_input_tokens":100`, `"max_input_tokens":null`}, {`"revision":1`, `"revision":0`}, {`https://adapter.invalid/invoke`, `/invoke`}, {`https://adapter.invalid/invoke`, `https://adapter.invalid/?redirect=x`}, {`https://adapter.invalid/invoke`, `https://user:password@adapter.invalid`}, {`"max_bytes":1024`, `"max_bytes":1024,"extra":1`}}
 	for _, p := range changes {
 		cases[p[1]] = strings.Replace(catalogFixture, p[0], p[1], 1)
 	}
@@ -102,5 +103,37 @@ func TestCatalogGenerationDimensionAndOffline(t *testing.T) {
 	defer close()
 	if e != nil || g != nil {
 		t.Fatalf("legacy OFF: %v", e)
+	}
+}
+
+// The strict catalog contract is version 2 and carries no monetary fields.
+func TestCatalogV2Contract(t *testing.T) {
+	catalog, err := ParseCatalog([]byte(catalogFixture))
+	if err != nil || catalog.SchemaVersion != 2 || len(catalog.Models) != 1 {
+		t.Fatalf("v2 catalog rejected: %+v %v", catalog, err)
+	}
+	// Version 1 is refused before the body is interpreted, however malformed.
+	for _, raw := range []string{
+		`{"schema_version":1,"providers":[],"models":[]}`,
+		`{"schema_version":1,"not_a_catalog":true}`,
+		strings.Replace(catalogFixture, `"schema_version":2`, `"schema_version":1`, 1),
+	} {
+		got, err := ParseCatalog([]byte(raw))
+		if !errors.Is(err, ErrCatalogVersion) || len(got.Models) != 0 || len(got.Providers) != 0 {
+			t.Fatalf("v1 catalog accepted or not diagnosed: %v", err)
+		}
+	}
+	for _, raw := range []string{
+		strings.Replace(catalogFixture, `"timeout_ms":1000`, `"timeout_ms":1000,"input_unit_price":0`, 1),
+		strings.Replace(catalogFixture, `"enabled":false`, `"enabled":false,"pricing_revision":"p1"`, 1),
+	} {
+		if _, err := ParseCatalog([]byte(raw)); err == nil || errors.Is(err, ErrCatalogVersion) {
+			t.Fatalf("legacy price field accepted: %v", err)
+		}
+	}
+	for _, change := range [][2]string{{`"max_bytes":1024`, `"max_bytes":0`}, {`"max_output_tokens":100`, `"max_output_tokens":0`}, {`"timeout_ms":1000`, `"timeout_ms":0`}} {
+		if _, err := ParseCatalog([]byte(strings.Replace(catalogFixture, change[0], change[1], 1))); err == nil {
+			t.Fatalf("invalid bound accepted: %s", change[1])
+		}
 	}
 }

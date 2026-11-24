@@ -44,6 +44,10 @@ const (
 
 var knownCapabilities = []string{CapProcess, CapHR, CapWork, CapData, CapAI}
 
+// SupportedColumnTypes are the SQL types a business column may declare. The
+// capabilities registry keeps the same list; the two modules release separately.
+var SupportedColumnTypes = []string{"uuid", "text", "date", "numeric(14,2)", "numeric(4,2)"}
+
 // RoleName is the shape of every role name. The role_ prefix keeps
 // application roles away from names Hasura treats as privileged (admin).
 var RoleName = regexp.MustCompile(`^role_[a-z0-9_]+$`)
@@ -303,10 +307,19 @@ func validateTable(app *DXApplication, t *TableDef, tables, commands map[string]
 		cols[name] = typ
 	}
 	for _, c := range t.Columns {
+		if !identifier.MatchString(c.Name) {
+			return fmt.Errorf("column %q: invalid identifier; use a lowercase SQL identifier", c.Name)
+		}
 		// status and org_unit_id stay reserved on every table, so adding a
 		// state machine or cap-hr later cannot collide with a business column.
-		if !identifier.MatchString(c.Name) || cols[c.Name] != "" || c.Name == "org_unit_id" || c.Name == "status" || !oneOf(c.Type, "uuid", "text", "date", "numeric(14,2)", "numeric(4,2)") {
-			return fmt.Errorf("invalid, duplicate or system column %q", c.Name)
+		if system[c.Name] != "" || c.Name == "status" || c.Name == "org_unit_id" {
+			return fmt.Errorf("column %q: reserved name; the operator manages this column", c.Name)
+		}
+		if cols[c.Name] != "" {
+			return fmt.Errorf("column %q: duplicate column", c.Name)
+		}
+		if !oneOf(c.Type, SupportedColumnTypes...) {
+			return fmt.Errorf("column %q: unsupported type %q; supported types are %s", c.Name, c.Type, strings.Join(SupportedColumnTypes, ", "))
 		}
 		cols[c.Name] = c.Type
 		if c.Check != "" && !validCheck(c) {

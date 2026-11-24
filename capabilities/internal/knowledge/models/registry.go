@@ -120,7 +120,7 @@ func (r *Registry) Reconcile(ctx context.Context, catalog Catalog) (ReconcileRep
 }
 
 func declarationProfile(p Profile) map[string]any {
-	profile := map[string]any{"id": p.ID, "revision": p.Revision, "purpose": p.Purpose, "execution": p.Execution, "provider_id": p.ProviderID, "model_id": p.ModelID, "limits": p.Limits, "pricing_revision": p.PricingRevision}
+	profile := map[string]any{"id": p.ID, "revision": p.Revision, "purpose": p.Purpose, "execution": p.Execution, "provider_id": p.ProviderID, "model_id": p.ModelID, "limits": p.Limits}
 	if p.Purpose == "EMBED" {
 		profile["dimension"] = p.Dimension
 	}

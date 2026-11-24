@@ -31,7 +31,7 @@ func registryFixture(t *testing.T) (*sql.DB, *Registry, Catalog) {
 	}
 	u.Path = "/" + name
 	r := &Registry{DB: testutil.As(t, u.String(), "dxos_ai_model_catalog")}
-	c := Catalog{SchemaVersion: 1, Providers: []ProviderConfig{{ID: "test", Adapter: "bounded-http-v1", Endpoint: "https://example.invalid"}}, Models: []CandidateDeclaration{{Adapter: "bounded-http-v1", Profile: Profile{ID: "candidate", Revision: 1, Purpose: "GENERATE", Execution: "HOSTED", ProviderID: "test", ModelID: "model", PricingRevision: "p1", Limits: Limits{MaxInputTokens: 100, MaxOutputTokens: 100, MaxBytes: 1024, TimeoutMS: 1000}}}}}
+	c := Catalog{SchemaVersion: 2, Providers: []ProviderConfig{{ID: "test", Adapter: "bounded-http-v1", Endpoint: "https://example.invalid"}}, Models: []CandidateDeclaration{{Adapter: "bounded-http-v1", Profile: Profile{ID: "candidate", Revision: 1, Purpose: "GENERATE", Execution: "HOSTED", ProviderID: "test", ModelID: "model", Limits: Limits{MaxInputTokens: 100, MaxOutputTokens: 100, MaxBytes: 1024, TimeoutMS: 1000}}}}}
 	return db, r, c
 }
 func registryState(t *testing.T, db *sql.DB) string {
@@ -178,5 +178,61 @@ func TestRegistrySanitizedDeclarationAndValidation(t *testing.T) {
 	c.Models = []CandidateDeclaration{}
 	if got, err := r.Reconcile(ctx, c); err != nil || got != (ReconcileReport{}) {
 		t.Fatal(got, err)
+	}
+}
+
+// The strict registry import is a version 2 contract: repeat imports preserve
+// identity and digest, and no edit can overwrite an existing revision.
+func TestRegistrySanitizedStrictV2Import(t *testing.T) {
+	db, r, c := registryFixture(t)
+	ctx := context.Background()
+	c.Providers[0].CredentialRef = "MODEL_KEY"
+	c.Models[0].Profile.CredentialRef = "MODEL_KEY"
+	if got, err := r.Reconcile(ctx, c); err != nil || got != (ReconcileReport{Created: 1}) {
+		t.Fatal(got, err)
+	}
+	var digest string
+	if err := db.QueryRow(`SELECT declaration_digest FROM cap_ai.model_candidates WHERE profile_id='candidate' AND revision=1`).Scan(&digest); err != nil || len(digest) != 64 {
+		t.Fatal(digest, err)
+	}
+	for i := 0; i < 2; i++ {
+		if got, err := r.Reconcile(ctx, c); err != nil || got != (ReconcileReport{Unchanged: 1}) {
+			t.Fatal("repeat import", i, got, err)
+		}
+	}
+	var repeat string
+	if err := db.QueryRow(`SELECT declaration_digest FROM cap_ai.model_candidates WHERE profile_id='candidate' AND revision=1`).Scan(&repeat); err != nil || repeat != digest {
+		t.Fatal("repeat import changed the digest", repeat, err)
+	}
+	changes := []func(Catalog){
+		func(c Catalog) { c.Models[0].Profile.Limits.MaxBytes = 2048 },
+		func(c Catalog) {
+			c.Providers[0].CredentialRef = "OTHER_KEY"
+			c.Models[0].Profile.CredentialRef = "OTHER_KEY"
+		},
+	}
+	for _, change := range changes {
+		changed := c
+		changed.Models = append([]CandidateDeclaration(nil), c.Models...)
+		change(changed)
+		if _, err := r.Reconcile(ctx, changed); !errors.Is(err, ErrConflict) {
+			t.Fatal("changed declaration overwrote immutable revision", err)
+		}
+	}
+	retired := c
+	retired.SchemaVersion = 1
+	if _, err := r.Reconcile(ctx, retired); !errors.Is(err, ErrCatalogVersion) {
+		t.Fatal("retired catalog version accepted", err)
+	}
+	legacy := c
+	legacy.Providers = c.Providers
+	legacy.Models = []CandidateDeclaration{{Adapter: "bounded-http-v1", Profile: c.Models[0].Profile}}
+	legacy.Models[0].Profile.Limits.MaxBytes = 0
+	if _, err := r.Reconcile(ctx, legacy); !errors.Is(err, ErrPolicy) {
+		t.Fatal("invalid v2 bounds accepted", err)
+	}
+	var candidates int
+	if err := db.QueryRow(`SELECT count(*) FROM cap_ai.model_candidates WHERE profile_id='candidate'`).Scan(&candidates); err != nil || candidates != 1 {
+		t.Fatal("failed import changed candidates", candidates, err)
 	}
 }

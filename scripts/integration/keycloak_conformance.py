@@ -25,8 +25,13 @@ dxos-runtime audience mapper, and the realm's signing keys.
 from __future__ import annotations
 
 import base64
+import hashlib
+import html
+import http.cookiejar
 import json
 import os
+import re
+import secrets
 import sys
 import urllib.error
 import urllib.parse
@@ -45,6 +50,133 @@ SERVICE_CLIENTS = [
     ("dxos-file-service", "33333333-3333-4333-8333-000000000002"),
     ("dxos-rag-dispatcher", "33333333-3333-4333-8333-000000000003"),
 ]
+REDIRECT_URI = "http://localhost:5173/"
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+class LoopbackCookies(http.cookiejar.DefaultCookiePolicy):
+    """Send Secure cookies over plain http, as browsers do for a loopback host."""
+
+    def return_ok_secure(self, cookie, request):
+        return True
+
+
+def browser_opener():
+    return urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar(LoopbackCookies())),
+        NoRedirect(),
+    )
+
+
+def browser_request(opener, url, data=None):
+    headers = {"Accept": "text/html,application/json"}
+    body = None
+    if data is not None:
+        body = urllib.parse.urlencode(data).encode()
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+    req = urllib.request.Request(url, data=body, headers=headers)
+    try:
+        return opener.open(req, timeout=30)
+    except urllib.error.HTTPError as error:
+        return error
+
+
+def response_body(response):
+    try:
+        return response.read().decode("utf-8", "replace")
+    finally:
+        try:
+            response.close()
+        except Exception:
+            pass
+
+
+def attributes(tag):
+    return {match.group(1).lower(): html.unescape(match.group(2))
+            for match in re.finditer(r'([A-Za-z0-9:_-]+)\s*=\s*"([^"]*)"', tag)}
+
+
+def login_form(page):
+    for tag in re.findall(r"<form\b[^>]*>", page, re.IGNORECASE):
+        form = attributes(tag)
+        if form.get("id") != "kc-form-login":
+            continue
+        hidden = {}
+        for input_tag in re.findall(r"<input\b[^>]*>", page, re.IGNORECASE):
+            field = attributes(input_tag)
+            if field.get("type", "").lower() == "hidden" and field.get("name"):
+                hidden[field["name"]] = field.get("value", "")
+        return form.get("action"), hidden
+    return None, {}
+
+
+def browser_login(discovery):
+    """Establish a real authorization-code session and return its id token."""
+    opener = browser_opener()
+    verifier = secrets.token_urlsafe(64)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    state = secrets.token_urlsafe(16)
+    auth_url = discovery["authorization_endpoint"] + "?" + urllib.parse.urlencode({
+        "client_id": CLIENT_ID,
+        "redirect_uri": REDIRECT_URI,
+        "response_type": "code",
+        "scope": "openid profile email",
+        "state": state,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+    })
+    response = browser_request(opener, auth_url)
+    if response.code != 200:
+        return None, f"authorization page returned {response.code}"
+    page = response_body(response)
+    action, hidden = login_form(page)
+    if not action:
+        return None, "authorization page has no login form"
+    fields = dict(hidden, username=USERNAME, password=PASSWORD)
+    response = browser_request(opener, urllib.parse.urljoin(auth_url, action), fields)
+    location = response.headers.get("Location", "") if response.code in (301, 302, 303, 307, 308) else ""
+    if not location:
+        return None, f"login returned {response.code} without a redirect"
+    code = urllib.parse.parse_qs(urllib.parse.urlparse(location).query).get("code", [None])[0]
+    if not code:
+        return None, f"login redirect has no code: {location}"
+    token = request(discovery["token_endpoint"], {
+        "grant_type": "authorization_code",
+        "client_id": CLIENT_ID,
+        "redirect_uri": REDIRECT_URI,
+        "code": code,
+        "code_verifier": verifier,
+    }, form=True)
+    id_token = token.get("id_token")
+    if not id_token:
+        return None, "authorization-code token response has no id_token"
+    return (opener, id_token, auth_url), None
+
+
+def check_logout(discovery, opener, id_token, auth_url):
+    endpoint = discovery.get("end_session_endpoint")
+    if not endpoint:
+        return "discovery document lacks end_session_endpoint"
+    query = urllib.parse.urlencode({
+        "id_token_hint": id_token,
+        "client_id": CLIENT_ID,
+        "post_logout_redirect_uri": REDIRECT_URI,
+    })
+    response = browser_request(opener, endpoint + "?" + query)
+    location = response.headers.get("Location", "") if response.code in (301, 302, 303, 307, 308) else ""
+    if not location:
+        return f"logout returned {response.code}, expected a redirect"
+    if not urllib.parse.urljoin(endpoint, location).startswith(REDIRECT_URI):
+        return f"logout redirected to {location!r}"
+    response = browser_request(opener, auth_url)
+    page = response_body(response)
+    if response.code != 200 or "kc-form-login" not in page:
+        return f"authorization after logout returned {response.code} without the login form"
+    return None
 
 
 def request(path, data=None, token=None, form=False, method=None):
@@ -82,7 +214,7 @@ def main():
     discovery = request(f"/realms/{REALM}/.well-known/openid-configuration")
     issuer = f"{BASE}/realms/{REALM}"
     check(discovery.get("issuer") == issuer, f"issuer is {discovery.get('issuer')!r}, expected {issuer!r}")
-    for key in ("authorization_endpoint", "token_endpoint", "jwks_uri"):
+    for key in ("authorization_endpoint", "token_endpoint", "end_session_endpoint", "jwks_uri"):
         check(bool(discovery.get(key)), f"discovery document lacks {key}")
 
     jwks = request(discovery["jwks_uri"])
@@ -233,6 +365,18 @@ def main():
         )
 
         try:
+            session, error = browser_login(discovery)
+            if error:
+                errors.append(f"RP-initiated logout check: {error}")
+            else:
+                opener, id_token, auth_url = session
+                error = check_logout(discovery, opener, id_token, auth_url)
+                if error:
+                    errors.append(f"RP-initiated logout check: {error}")
+        except Exception as error:
+            errors.append(f"RP-initiated logout check failed: {error}")
+
+        try:
             request(
                 f"/realms/{REALM}/protocol/openid-connect/token",
                 {
@@ -261,7 +405,7 @@ def main():
 
     print(
         "[keycloak-conformance] PASS: realm discovery, JWKS, audience mapper, portal and service-client token claims, "
-        "brute-force and password policy, admin-only profile edits, and wrong-password rejection verified."
+        "brute-force and password policy, admin-only profile edits, wrong-password rejection, and RP-initiated logout verified."
     )
     return 0
 

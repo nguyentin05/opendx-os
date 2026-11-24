@@ -92,6 +92,13 @@ The Compose files:
    effect within `ROLE_CACHE_TTL` (default `5s`), with no new token
    ([ADR 0007](../adr/0007-keycloak-authenticates-platform-authorizes.md)).
 
+   The Workspace UI sends a `Content-Security-Policy` that lets the browser call
+   only its own origin and the Keycloak origin in `DXOS_OIDC_ORIGIN` (default
+   `http://localhost:8085`). If Keycloak is served from another origin, set
+   `DXOS_OIDC_ORIGIN` in the environment of `docker compose` (for example
+   `DXOS_OIDC_ORIGIN=https://id.example.org`), or as a container environment
+   variable when you run the image elsewhere.
+
    For a demo organization, run `scripts/seed-demo.py seed`. It creates three
    departments and six Keycloak accounts (password `DEMO_PASSWORD`, default
    `Demo@2026`) with procurement, maintenance and timesheet roles (and the
@@ -142,6 +149,52 @@ The Compose files:
    DATABASE_URL='postgres://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:5432/<POSTGRES_DB>?sslmode=disable' \
    operator/bin/dxos-operator apply apps/procurement/manifest.yaml
    ```
+
+## Rebuilding an existing model installation
+
+The optional model migrations `cap_ai/0004_models_vectors.sql` and
+`0005_model_registry.sql` were rebased for the coordinated baseline
+([ADR 0010](../adr/0010-model-operations-without-monetary-admission.md)). An
+installation that applied the earlier checksums must rebuild, not upgrade.
+
+What changes for that installation:
+
+- both migration runners refuse an old applied model checksum before any domain
+  SQL, with or without the optional schema flags, and exit non-zero;
+- the model capability has no budget, reservation, allocation, usage ledger or
+  priced-profile objects, and a fixed set of durable operation rows instead;
+- model calls are admitted by durable operation state, not by an account;
+- the Agent consumer setting is `AI_AGENT_PROCESSING_APP_ID`; the retired
+  `AI_AGENT_BILLING_APP_ID` is not read;
+- catalog documents must declare `schema_version: 2` without price fields.
+
+What the owner must do, for the named target only:
+
+1. Inventory the actual installation (Compose project, kind cluster, CI or shared
+   development target) and record the applied `cap-ai` versions and checksums.
+2. Confirm scope with the responsible human and stop only the services that use
+   that database; verify writes have ceased. This document triggers no drop, no
+   volume removal, no ledger edit and no checksum bypass.
+3. If the retained data matters, take a backup and prove its recoverability in an
+   isolated target before any rebuild. Keep the old stack and its recovery path
+   available.
+4. Provision or rebuild a named database on the approved revision, bootstrap it
+   with the required capability and schema settings, and point the matching
+   binaries, configuration and catalog revision at it.
+5. Re-derive the model capability state: re-publish application packages,
+   re-register knowledge sources, re-import `schema_version: 2` candidates,
+   re-approve processing policies and re-issue document grants.
+6. Do not restore legacy application data wholesale over the rebased schema. A
+   full `cap_ai` dump reinstates the removed monetary relations and rows and
+   carries operation rows that no longer match the schema. Data in other
+   capability schemas follows that schema owner's own migration decision; it is
+   never a justification for restoring `cap_ai`.
+7. Verify before resuming traffic: schema objects and grants, the operation
+   interfaces, model qualification, catalog v2 acceptance, lexical fallback and
+   the smoke checks against the named target. Record the revision and results.
+
+The rebuild is a human execution gate. Plan an interruption window with each
+owner and record it with the confirmation; no automated reset is provided.
 
 ## Kubernetes Operator (development cluster)
 

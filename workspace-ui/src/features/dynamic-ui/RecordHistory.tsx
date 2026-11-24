@@ -67,7 +67,7 @@ export function RecordHistory({ table, app, context, recordID, version }: {
           {current.entries.map((entry, index) => (
             <li key={entry.at + ':' + entry.action + ':' + index}>
               <span>{atLabel(entry.at)}</span>
-              {' · '}<span>{entry.actor.display_name}</span>
+              {entry.actor && <>{' · '}<span>{entry.actor.display_name}</span></>}
               {' · '}<span>{actionLabel(table, entry.action)}</span>
               {entry.status && <>{' · '}<span>{stateLabel(table, entry.status)}</span></>}
               {entry.acting_role && <>{' · '}<span>{entry.acting_role_description || roleLabel(app, entry.acting_role)}</span></>}

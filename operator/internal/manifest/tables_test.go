@@ -61,7 +61,7 @@ func TestValidateRejectsInconsistentTables(t *testing.T) {
 		}, "duplicate command"},
 		{"plain table with actions", func(a *manifest.DXApplication) { second(a).UI.Actions = []string{"submit"} }, "ui.actions"},
 		{"process table without actions", func(a *manifest.DXApplication) { a.Spec.Tables[0].UI.Actions = nil }, "ui.actions"},
-		{"status as a business column", func(a *manifest.DXApplication) { second(a).Columns[0].Name = "status" }, "system column"},
+		{"status as a business column", func(a *manifest.DXApplication) { second(a).Columns[0].Name = "status" }, "reserved name"},
 		{"table without select rules", func(a *manifest.DXApplication) { second(a).Access.Select = nil }, "missing access.select"},
 		{"foreign key to an undeclared table", func(a *manifest.DXApplication) {
 			fks := a.Spec.Tables[0].ForeignKeys
@@ -180,7 +180,7 @@ func TestValidateChildTables(t *testing.T) {
 		{"parent column named like a system column", func(a *manifest.DXApplication) { child(a).BelongsTo.Column = "created_by" }, "invalid belongsTo column"},
 		{"parent column declared as a business column", func(a *manifest.DXApplication) {
 			child(a).Columns = append(child(a).Columns, manifest.ColumnDef{Name: "request_id", Type: "uuid"})
-		}, "system column"},
+		}, "reserved name"},
 		{"parent column writable", func(a *manifest.DXApplication) {
 			child(a).Access.Update[0].Columns = append(child(a).Access.Update[0].Columns, "request_id")
 		}, "cannot be writable"},
