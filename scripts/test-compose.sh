@@ -152,6 +152,10 @@ probe cap-process "http://localhost:${CAP_PROCESS_PORT:-8091}/healthz" 200
 probe keycloak "http://localhost:${KEYCLOAK_PORT:-8085}/realms/dxos" 200
 probe gateway "http://localhost:${APISIX_GATEWAY_PORT:-9080}/realms/dxos" 200
 probe workspace-ui "http://localhost:${WORKSPACE_UI_PORT:-5173}/" 200
+headers="$(curl -sI -m 10 "http://localhost:${WORKSPACE_UI_PORT:-5173}/" | tr -d '\r' || true)"
+for header in "Content-Security-Policy: .*frame-ancestors 'none'" 'X-Content-Type-Options: nosniff' 'Referrer-Policy: no-referrer' 'Server: nginx$'; do
+    if grep -qi "^${header}" <<<"$headers"; then pass "workspace-ui sends ${header}"; else fail "workspace-ui is missing ${header}"; fi
+done
 # Kestra's API sits behind basic auth: 401 without credentials means it is serving.
 probe kestra "http://localhost:${KESTRA_PORT:-8082}/api/v1/configs" 401
 # Without a Keycloak token nothing is served: authz answers 401, and Hasura
