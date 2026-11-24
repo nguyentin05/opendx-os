@@ -393,84 +393,48 @@ func TestProvisioningAdminIntegration(t *testing.T) {
 
 	digest := provisioningDigest(t, db, provisionGenerate, 1)
 
-	t.Run("promote", func(t *testing.T) {
-		beforeApprovals := provisioningState(t, db, provisionApprovalSQL)
-		change, err := admin.ChangeSlot(ctx, "operator", SlotChange{
-			Slot: "LLM", ExpectedRevision: 0, Action: "PROMOTE", ProfileID: provisionGenerate,
-			Revision: 1, ReviewedDigest: digest,
-			Review: provisioningReview(provisionGenerate, 1, digest, "GENERATE", 0),
-		})
-		if err != nil {
-			t.Fatalf("promote: %v", err)
-		}
-		var result struct {
-			Capability      string  `json:"capability"`
-			ProfileID       *string `json:"profile_id"`
-			ProfileRevision *int64  `json:"profile_revision"`
-			SlotRevision    int64   `json:"slot_revision"`
-			Action          string  `json:"action"`
-			EventID         string  `json:"event_id"`
-		}
-		if err = json.Unmarshal(change, &result); err != nil {
-			t.Fatalf("promote result %s: %v", change, err)
-		}
-		if result.Capability != "LLM" || result.Action != "PROMOTE" || result.SlotRevision != 1 ||
-			result.ProfileID == nil || *result.ProfileID != provisionGenerate || result.ProfileRevision == nil ||
-			*result.ProfileRevision != 1 || len(result.EventID) != 36 {
-			t.Fatalf("promote result = %+v", result)
-		}
-
-		revision, profile, profileRevision, enabled := provisioningSlot(t, db, "LLM")
-		if revision != 1 || !profile.Valid || profile.String != provisionGenerate ||
-			!profileRevision.Valid || profileRevision.Int64 != 1 || !enabled {
-			t.Fatalf("slot = %d %v %v %v", revision, profile, profileRevision, enabled)
-		}
-		reviews := provisioningEventReviews(t, db, "LLM")
-		if len(reviews) != 1 || !strings.Contains(reviews[0], `"attestation_ref"`) || !strings.Contains(reviews[0], `"passed": true`) {
-			t.Fatalf("event reviews = %v", reviews)
-		}
-		// The other slots and the approvals are untouched by a promotion.
-		if revision, profile, _, _ := provisioningSlot(t, db, "EMBEDDING"); revision != 0 || profile.Valid {
-			t.Fatalf("embedding slot = %d %v", revision, profile)
-		}
-		if after := provisioningState(t, db, provisionApprovalSQL); after != beforeApprovals {
-			t.Fatalf("promotion changed the approvals:\n%s\n%s", beforeApprovals, after)
-		}
-	})
-
-	t.Run("stale expectation and denied actors", func(t *testing.T) {
+	// The obsolete slot mutator is closed: 0013 revokes its execute grant, so no
+	// administration or approval session can move live model authority through it.
+	// The command reports the refusal and leaves the registry, the slots and the
+	// audit trail untouched; T9 removes the interface and this command together.
+	t.Run("retired slot mutator is closed", func(t *testing.T) {
 		before := provisioningState(t, db, provisionStateSQL)
-		valid := SlotChange{
-			Slot: "LLM", ExpectedRevision: 0, Action: "PROMOTE", ProfileID: provisionGenerate,
-			Revision: 1, ReviewedDigest: digest,
-			Review: provisioningReview(provisionGenerate, 1, digest, "GENERATE", 0),
-		}
-		if _, err := admin.ChangeSlot(ctx, "operator", valid); !errors.Is(err, ErrConflict) {
-			t.Fatalf("stale expectation = %v, want a conflict", err)
-		}
-		for _, token := range []string{"plain", "inactive", "revoked", "unknown"} {
-			change := valid
-			change.ExpectedRevision = 1
-			if _, err := admin.ChangeSlot(ctx, token, change); !errors.Is(err, ErrDenied) {
-				t.Fatalf("%s could change a slot: %v", token, err)
+		beforeApprovals := provisioningState(t, db, provisionApprovalSQL)
+		for name, change := range map[string]SlotChange{
+			"promote": {
+				Slot: "LLM", ExpectedRevision: 0, Action: "PROMOTE", ProfileID: provisionGenerate,
+				Revision: 1, ReviewedDigest: digest,
+				Review: provisioningReview(provisionGenerate, 1, digest, "GENERATE", 0),
+			},
+			"disable": {
+				Slot: "LLM", ExpectedRevision: 0, Action: "DISABLE",
+				Review: []byte(`{"reason":"review withdrawn"}`),
+			},
+		} {
+			if _, err := admin.ChangeSlot(ctx, "operator", change); !errors.Is(err, ErrDenied) {
+				t.Fatalf("%s: %v, want a denial", name, err)
+			}
+			if _, err := approvals.ChangeSlot(ctx, "operator", change); !errors.Is(err, ErrDenied) {
+				t.Fatalf("approval session %s: %v, want a denial", name, err)
+			}
+			for _, token := range []string{"plain", "inactive", "revoked", "unknown"} {
+				if _, err := admin.ChangeSlot(ctx, token, change); !errors.Is(err, ErrDenied) {
+					t.Fatalf("%s could %s: %v", token, name, err)
+				}
 			}
 		}
-		// A review that does not match the stored digest is rejected as invalid.
-		tampered := valid
-		tampered.ExpectedRevision = 1
-		tampered.ReviewedDigest = strings.Repeat("b", 64)
-		tampered.Review = provisioningReview(provisionGenerate, 1, strings.Repeat("b", 64), "GENERATE", 0)
-		if _, err := admin.ChangeSlot(ctx, "operator", tampered); !errors.Is(err, ErrInvalid) {
-			t.Fatalf("tampered review = %v, want invalid", err)
-		}
-		// The approval session is not the slot administrator either.
-		change := valid
-		change.ExpectedRevision = 1
-		if _, err := approvals.ChangeSlot(ctx, "operator", change); !errors.Is(err, ErrDenied) {
-			t.Fatalf("approval session changed a slot: %v", err)
-		}
 		if after := provisioningState(t, db, provisionStateSQL); after != before {
-			t.Fatalf("a rejected change altered the registry:\n%s\n%s", before, after)
+			t.Fatalf("a denied slot change altered the registry:\n%s\n%s", before, after)
+		}
+		// Nothing was written: the slot stays unbound and no audit event exists.
+		if revision, profile, profileRevision, enabled := provisioningSlot(t, db, "LLM"); revision != 0 || profile.Valid || profileRevision.Valid || enabled {
+			t.Fatalf("a denied slot change wrote the slot: %d %v %v %v", revision, profile, profileRevision, enabled)
+		}
+		if reviews := provisioningEventReviews(t, db, "LLM"); len(reviews) != 0 {
+			t.Fatalf("a denied slot change appended an audit event: %v", reviews)
+		}
+		if after := provisioningState(t, db, provisionApprovalSQL); after != beforeApprovals {
+			t.Fatalf("a denied slot change altered the approvals:\n%s\n%s", beforeApprovals, after)
 		}
 	})
 
@@ -556,41 +520,6 @@ func TestProvisioningAdminIntegration(t *testing.T) {
 		}
 		if _, err := admin.Revoke(ctx, "operator", approval, "review withdrawn"); !errors.Is(err, ErrDenied) {
 			t.Fatalf("model administrator revoked: %v", err)
-		}
-	})
-
-	t.Run("deactivate", func(t *testing.T) {
-		beforeApprovals := provisioningState(t, db, provisionApprovalSQL)
-		change, err := admin.ChangeSlot(ctx, "operator", SlotChange{
-			Slot: "LLM", ExpectedRevision: 1, Action: "DISABLE",
-			Review: []byte(`{"reason":"review withdrawn"}`),
-		})
-		if err != nil {
-			t.Fatalf("deactivate: %v", err)
-		}
-		var result struct {
-			SlotRevision int64   `json:"slot_revision"`
-			ProfileID    *string `json:"profile_id"`
-			Action       string  `json:"action"`
-		}
-		if err = json.Unmarshal(change, &result); err != nil || result.Action != "DISABLE" ||
-			result.SlotRevision != 2 || result.ProfileID != nil {
-			t.Fatalf("deactivate result = %s (%v)", change, err)
-		}
-		revision, profile, profileRevision, enabled := provisioningSlot(t, db, "LLM")
-		if revision != 2 || profile.Valid || profileRevision.Valid || enabled {
-			t.Fatalf("disabled slot = %d %v %v %v", revision, profile, profileRevision, enabled)
-		}
-		reviews := provisioningEventReviews(t, db, "LLM")
-		if len(reviews) != 2 || !strings.Contains(reviews[1], `"reason": "review withdrawn"`) {
-			t.Fatalf("event reviews = %v", reviews)
-		}
-		// Deactivation leaves the profile and the processing approval history alone.
-		if after := provisioningState(t, db, provisionApprovalSQL); after != beforeApprovals {
-			t.Fatalf("deactivation changed the approvals:\n%s\n%s", beforeApprovals, after)
-		}
-		if revision, _, _, _ := provisioningSlot(t, db, "LLM"); revision != 2 {
-			t.Fatalf("disable revision = %d", revision)
 		}
 	})
 }

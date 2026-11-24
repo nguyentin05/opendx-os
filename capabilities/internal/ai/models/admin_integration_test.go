@@ -12,9 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/lib/pq"
 
@@ -96,55 +94,6 @@ UPDATE core.users SET status='DISABLED' WHERE id='33333333-3333-4333-8333-333333
 	return db, dsn
 }
 
-// adminQualification is the Task 4 ProbeReport shape: identity, verdict, the one
-// synthetic citation set and bounded usage counters, with no content or secrets.
-func adminQualification(profile string, revision int64, digest, purpose string, dimension, inputTokens, outputTokens int) string {
-	q := fmt.Sprintf(`{"profile_id":%q,"revision":%d,"declaration_digest":%q,"purpose":%q,"passed":true,"checked_at":"2026-11-24T10:00:00.123456Z"`,
-		profile, revision, digest, purpose)
-	if purpose == "EMBED" {
-		q += fmt.Sprintf(`,"dimension":%d`, dimension)
-	} else {
-		q += `,"citation_ids":["E1"]`
-	}
-	return q + fmt.Sprintf(`,"usage":{"input_tokens":%d,"output_tokens":%d}}`, inputTokens, outputTokens)
-}
-
-func adminReview(profile string, revision int64, digest, purpose string, dimension int) string {
-	return fmt.Sprintf(`{"declaration_digest":%q,"qualification":%s,"attestation_ref":"review/2026-11-24/model-board-17"}`,
-		digest, adminQualification(profile, revision, digest, purpose, dimension, 10, 0))
-}
-
-type adminChangeArgs struct {
-	Actor    any
-	Slot     any
-	Expected any
-	Action   any
-	Profile  any
-	Revision any
-	Digest   any
-	Review   any
-}
-
-func adminChange(conn *sql.DB, args adminChangeArgs) (map[string]any, error) {
-	var raw sql.NullString
-	if err := conn.QueryRow(`SELECT cap_ai.model_admin_change_slot($1,$2::text,$3::bigint,$4::text,$5::text,$6::bigint,$7::text,$8::jsonb)`,
-		args.Actor, args.Slot, args.Expected, args.Action, args.Profile, args.Revision, args.Digest, args.Review).Scan(&raw); err != nil {
-		return nil, err
-	}
-	var out map[string]any
-	if err := json.Unmarshal([]byte(raw.String), &out); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func adminPromote(conn *sql.DB, slot string, expected int64, profile string, revision int64, digest, review string) (map[string]any, error) {
-	return adminChange(conn, adminChangeArgs{
-		Actor: adminOperatorID, Slot: slot, Expected: expected, Action: "PROMOTE",
-		Profile: profile, Revision: revision, Digest: digest, Review: review,
-	})
-}
-
 func adminCode(err error) string {
 	var pqErr *pq.Error
 	if errors.As(err, &pqErr) {
@@ -175,67 +124,6 @@ func adminState(t *testing.T, db *sql.DB) string {
 		t.Fatal(e)
 	}
 	return state
-}
-
-func adminProfiles(t *testing.T, db *sql.DB) string {
-	t.Helper()
-	var profiled string
-	if e := db.QueryRow(`SELECT coalesce(string_agg(to_jsonb(p)::text,'|' ORDER BY p.id,p.revision),'') FROM cap_ai.model_profiles p`).Scan(&profiled); e != nil {
-		t.Fatal(e)
-	}
-	return profiled
-}
-
-// adminImmutableProfiles snapshots every profile row except the live switch, so an
-// assertion can distinguish "history was rewritten" from "the live revision moved".
-func adminImmutableProfiles(t *testing.T, db *sql.DB) string {
-	t.Helper()
-	var profiled string
-	if e := db.QueryRow(`SELECT coalesce(string_agg((to_jsonb(p)-'enabled')::text,'|' ORDER BY p.id,p.revision),'') FROM cap_ai.model_profiles p`).Scan(&profiled); e != nil {
-		t.Fatal(e)
-	}
-	return profiled
-}
-
-func adminSlotBinding(t *testing.T, db *sql.DB, capability string) (int64, sql.NullString, sql.NullInt64) {
-	t.Helper()
-	var revision int64
-	var profile sql.NullString
-	var profileRevision sql.NullInt64
-	if e := db.QueryRow(`SELECT slot_revision,profile_id,profile_revision FROM cap_ai.global_model_slots WHERE capability=$1`, capability).Scan(&revision, &profile, &profileRevision); e != nil {
-		t.Fatalf("%s slot: %v", capability, e)
-	}
-	return revision, profile, profileRevision
-}
-
-func adminEventCount(t *testing.T, db *sql.DB) int {
-	t.Helper()
-	return schemaCount(t, db, `SELECT count(*) FROM cap_ai.model_slot_events`)
-}
-
-func adminProfileEnabled(t *testing.T, db *sql.DB, profile string, revision int64) bool {
-	t.Helper()
-	return schemaBool(t, db, `SELECT enabled FROM cap_ai.model_profiles WHERE id=$1 AND revision=$2`, profile, revision)
-}
-
-// adminWaitForLock blocks until the administration mutation is waiting on a
-// lock, so a concurrent authority change is committed while it is serialized.
-func adminWaitForLock(t *testing.T, db *sql.DB) {
-	t.Helper()
-	deadline := time.Now().Add(20 * time.Second)
-	for {
-		var waiting int
-		if e := db.QueryRow(`SELECT count(*) FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE '%model_admin_change_slot%'`).Scan(&waiting); e != nil {
-			t.Fatal(e)
-		}
-		if waiting > 0 {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("administration mutation never serialized with the authority change")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
 }
 
 // adminCatalogSnapshot pins every object the additive migration owns, so a
@@ -438,11 +326,15 @@ func TestModelAdminPrivileges(t *testing.T) {
 	if !schemaBool(t, db, `SELECT has_schema_privilege('dxos_ai_model_admin','cap_ai','USAGE')`) {
 		t.Fatal("administration login cannot reach the capability schema")
 	}
-	// Only the dedicated login may execute the interfaces.
+	// Only the dedicated login may execute the read-only interfaces. The obsolete
+	// slot mutator is closed: it keeps its definition for T9 but no role can
+	// execute it, so the legacy login cannot move live model authority.
 	if !schemaBool(t, db, `SELECT has_function_privilege('dxos_ai_model_admin','cap_ai.model_admin_list(uuid,text,bigint,text,bigint,integer)','EXECUTE')
-		AND has_function_privilege('dxos_ai_model_admin','cap_ai.model_admin_slots(uuid)','EXECUTE')
-		AND has_function_privilege('dxos_ai_model_admin','cap_ai.model_admin_change_slot(uuid,text,bigint,text,text,bigint,text,jsonb)','EXECUTE')`) {
+		AND has_function_privilege('dxos_ai_model_admin','cap_ai.model_admin_slots(uuid)','EXECUTE')`) {
 		t.Fatal("administration login cannot execute its own interfaces")
+	}
+	if schemaBool(t, db, `SELECT has_function_privilege('dxos_ai_model_admin','cap_ai.model_admin_change_slot(uuid,text,bigint,text,text,bigint,text,jsonb)','EXECUTE')`) {
+		t.Fatal("the obsolete slot mutator is still executable by the administration login")
 	}
 	if n := schemaCount(t, db, `SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace,
 		unnest(ARRAY['dxos_process','dxos_hasura','dxos_authz','dxos_hr','dxos_reader','dxos_caller','dxos_module_test','dxos_ai_api','dxos_ai_worker','dxos_ai_dispatcher','dxos_ai_gateway','dxos_ai_model_catalog']) AS runtime_role
@@ -536,455 +428,83 @@ func TestModelAdminPrivileges(t *testing.T) {
 	adminConn.Close()
 }
 
-func TestModelAdminPromotionAndAudit(t *testing.T) {
+// The obsolete slot mutator is closed. A legacy `dxos_ai_model_admin` session
+// with a current role_operator could still flip `model_profiles.enabled` for the
+// live deployment revision, withdraw the live route or pre-empt a reconciliation
+// without ever recording a deployment selection. The definition stays for T9 to
+// drop together with its CLI and its slot history; the execute grant does not.
+func TestModelAdminLegacySlotMutatorRevoked(t *testing.T) {
 	db, dsn := adminFixture(t)
 	admin := testutil.As(t, dsn, "dxos_ai_model_admin")
-	before := adminState(t, db)
-	validLLM := adminReview(adminLLMProfile, 1, adminLLMDigest, "GENERATE", 0)
-	validEmbed := adminReview(adminEmbedProfile, 1, adminEmbedDigest, "EMBED", 8)
-	denied := []struct {
-		name string
-		args adminChangeArgs
-		code string
-	}{
-		{"non-operator", adminChangeArgs{adminPlainID, "LLM", int64(0), "PROMOTE", adminLLMProfile, int64(1), adminLLMDigest, validLLM}, "42501"},
-		{"inactive-operator", adminChangeArgs{adminInactiveID, "LLM", int64(0), "PROMOTE", adminLLMProfile, int64(1), adminLLMDigest, validLLM}, "42501"},
-		{"revoked-operator", adminChangeArgs{adminRevokedID, "LLM", int64(0), "PROMOTE", adminLLMProfile, int64(1), adminLLMDigest, validLLM}, "42501"},
-		{"vlm-slot", adminChangeArgs{adminOperatorID, "VLM", int64(0), "PROMOTE", adminLLMProfile, int64(1), adminLLMDigest, validLLM}, "22023"},
-		{"reranking-slot", adminChangeArgs{adminOperatorID, "RERANKING", int64(0), "PROMOTE", adminLLMProfile, int64(1), adminLLMDigest, validLLM}, "22023"},
-		{"unknown-action", adminChangeArgs{adminOperatorID, "LLM", int64(0), "SET", adminLLMProfile, int64(1), adminLLMDigest, validLLM}, "22023"},
-		{"negative-expected-revision", adminChangeArgs{adminOperatorID, "LLM", int64(-1), "PROMOTE", adminLLMProfile, int64(1), adminLLMDigest, validLLM}, "22023"},
-		{"missing-expected-revision", adminChangeArgs{adminOperatorID, "LLM", nil, "PROMOTE", adminLLMProfile, int64(1), adminLLMDigest, validLLM}, "22023"},
-		{"missing-review", adminChangeArgs{adminOperatorID, "LLM", int64(0), "PROMOTE", adminLLMProfile, int64(1), adminLLMDigest, nil}, "22023"},
-		{"review-not-an-object", adminChangeArgs{adminOperatorID, "LLM", int64(0), "PROMOTE", adminLLMProfile, int64(1), adminLLMDigest, "[]"}, "22023"},
-		{"extra-review-key", adminChangeArgs{adminOperatorID, "LLM", int64(0), "PROMOTE", adminLLMProfile, int64(1), adminLLMDigest, `{"endpoint":"https://provider.invalid",` + validLLM[1:]}, "22023"},
-		{"tampered-review-digest", adminChangeArgs{adminOperatorID, "LLM", int64(0), "PROMOTE", adminLLMProfile, int64(1), adminLLMDigest,
-			strings.Replace(validLLM, adminLLMDigest, strings.Repeat("f", 64), 1)}, "22023"},
-		{"unreviewed-digest", adminChangeArgs{adminOperatorID, "LLM", int64(0), "PROMOTE", adminLLMProfile, int64(1), strings.Repeat("e", 64),
-			strings.Replace(validLLM, adminLLMDigest, strings.Repeat("e", 64), -1)}, "22023"},
-		{"unapproved-qualification", adminChangeArgs{adminOperatorID, "LLM", int64(0), "PROMOTE", adminLLMProfile, int64(1), adminLLMDigest,
-			strings.Replace(validLLM, `"passed":true`, `"passed":false`, 1)}, "22023"},
-		{"purpose-mismatch", adminChangeArgs{adminOperatorID, "EMBEDDING", int64(0), "PROMOTE", adminLLMProfile, int64(1), adminLLMDigest, validLLM}, "22023"},
-		{"dimension-mismatch", adminChangeArgs{adminOperatorID, "EMBEDDING", int64(0), "PROMOTE", adminEmbedProfile, int64(1), adminEmbedDigest,
-			strings.Replace(validEmbed, `"dimension":8`, `"dimension":4`, 1)}, "22023"},
-		{"wrong-citation", adminChangeArgs{adminOperatorID, "LLM", int64(0), "PROMOTE", adminLLMProfile, int64(1), adminLLMDigest,
-			strings.Replace(validLLM, `["E1"]`, `["E2"]`, 1)}, "22023"},
-		{"usage-over-limit", adminChangeArgs{adminOperatorID, "LLM", int64(0), "PROMOTE", adminLLMProfile, int64(1), adminLLMDigest,
-			strings.Replace(validLLM, `"input_tokens":10`, `"input_tokens":5000`, 1)}, "22023"},
-		{"unknown-qualification-key", adminChangeArgs{adminOperatorID, "LLM", int64(0), "PROMOTE", adminLLMProfile, int64(1), adminLLMDigest,
-			strings.Replace(validLLM, `"passed":true`, `"passed":true,"raw_prompt":"secret"`, 1)}, "22023"},
-		{"credential-like-attestation", adminChangeArgs{adminOperatorID, "LLM", int64(0), "PROMOTE", adminLLMProfile, int64(1), adminLLMDigest,
-			strings.Replace(validLLM, "review/2026-11-24/model-board-17", "https://board.example/review", 1)}, "22023"},
-		{"gateway-ceiling-exceeded", adminChangeArgs{adminOperatorID, "LLM", int64(0), "PROMOTE", adminWideProfile, int64(1), adminWideDigest,
-			adminReview(adminWideProfile, 1, adminWideDigest, "GENERATE", 0)}, "22023"},
-		{"rollback-without-history", adminChangeArgs{adminOperatorID, "EMBEDDING", int64(0), "ROLLBACK", adminEmbedProfile, int64(2), adminEmbed2Digest,
-			adminReview(adminEmbedProfile, 2, adminEmbed2Digest, "EMBED", 8)}, "22023"},
-		{"unknown-profile", adminChangeArgs{adminOperatorID, "LLM", int64(0), "PROMOTE", "missing", int64(1), adminLLMDigest, validLLM}, "22023"},
+	embed := readModelProfile(t, db, adminEmbedProfile, 1)
+	generate := readModelProfile(t, db, adminLLMProfile, 1)
+	applySelection(t, db, DeploymentSelection{Embedding: &embed, Generation: &generate})
+	if !profileEnabled(t, db, adminEmbedProfile, 1) || !profileEnabled(t, db, adminLLMProfile, 1) {
+		t.Fatal("the fixture did not select a live deployment")
 	}
-	for _, tc := range denied {
-		t.Run(tc.name, func(t *testing.T) {
-			_, e := adminChange(admin, tc.args)
-			adminRequireCode(t, e, tc.code)
-			if adminState(t, db) != before {
-				t.Fatal("a denied request changed slot, profile or audit state")
-			}
-		})
+
+	// The definition survives: dropping it belongs to T9, with its CLI.
+	if !schemaBool(t, db, `SELECT to_regprocedure('cap_ai.model_admin_change_slot(uuid,text,bigint,text,text,bigint,text,jsonb)') IS NOT NULL`) {
+		t.Fatal("the obsolete slot mutator was removed instead of closed")
 	}
-	// A valid, fully reviewed disabled HOSTED candidate binds the LLM slot once.
-	result, e := adminPromote(admin, "LLM", 0, adminLLMProfile, 1, adminLLMDigest, validLLM)
-	if e != nil {
-		t.Fatalf("promotion: %v", e)
-	}
-	for key, want := range map[string]any{"capability": "LLM", "profile_id": adminLLMProfile, "profile_revision": float64(1), "slot_revision": float64(1), "action": "PROMOTE"} {
-		if result[key] != want {
-			t.Fatalf("%s=%v, want %v: %v", key, result[key], want, result)
-		}
-	}
-	if id, ok := result["event_id"].(string); !ok || id == "" {
-		t.Fatalf("promotion did not report its audit event: %v", result)
-	}
-	revision, profile, profileRevision := adminSlotBinding(t, db, "LLM")
-	if revision != 1 || !profile.Valid || profile.String != adminLLMProfile || profileRevision.Int64 != 1 {
-		t.Fatal("promotion did not bind the exact profile revision", revision, profile, profileRevision)
-	}
-	if !adminProfileEnabled(t, db, adminLLMProfile, 1) {
-		t.Fatal("promotion did not enable the reviewed profile")
-	}
-	if n := adminEventCount(t, db); n != 1 {
-		t.Fatal("promotion did not append exactly one audit event", n)
-	}
-	var eventRevision int64
-	var eventActor, eventAction, eventReview string
-	if e := db.QueryRow(`SELECT slot_revision,actor_id::text,action,review::text FROM cap_ai.model_slot_events WHERE capability='LLM'`).Scan(&eventRevision, &eventActor, &eventAction, &eventReview); e != nil {
-		t.Fatal(e)
-	}
-	if eventRevision != 1 || eventActor != adminOperatorID || eventAction != "PROMOTE" {
-		t.Fatal("audit event does not carry the committed transition", eventRevision, eventActor, eventAction)
-	}
-	for _, want := range []string{adminLLMDigest, "review/2026-11-24/model-board-17", `"passed": true`} {
-		if !strings.Contains(eventReview, want) {
-			t.Fatal("audit review omitted human review evidence", want, eventReview)
-		}
-	}
-	for _, secret := range []string{"ADMIN_TEST_KEY", "https://", "credential_ref", "endpoint"} {
-		if strings.Contains(eventReview, secret) {
-			t.Fatal("audit review stored protected content", secret)
-		}
-	}
-	if n := schemaCount(t, db, `SELECT count(*) FROM cap_ai.global_model_slots WHERE capability IN('EMBEDDING','VLM','RERANKING') AND slot_revision=0 AND profile_id IS NULL`); n != 3 {
-		t.Fatal("promotion touched another slot", n)
-	}
-	// Promotion is not a processing approval: the two authorities stay separate.
-	if n := schemaCount(t, db, `SELECT count(*) FROM cap_ai.agent_processing_approvals`); n != 0 {
-		t.Fatal("promotion created a processing approval", n)
-	}
-	// The same review a second time is a stale expectation, never a second event.
-	if _, e := adminPromote(admin, "LLM", 0, adminLLMProfile, 1, adminLLMDigest, validLLM); adminCode(e) != "40001" {
-		t.Fatal("stale expected revision was accepted", e)
-	}
-	if n := adminEventCount(t, db); n != 1 {
-		t.Fatal("a stale expectation appended an audit event", n)
-	}
-	// The embedding slot uses the same audited contract with its own purpose.
-	if _, e := adminPromote(admin, "EMBEDDING", 0, adminEmbedProfile, 1, adminEmbedDigest, validEmbed); e != nil {
-		t.Fatalf("embedding promotion: %v", e)
-	}
-	revision, _, profileRevision = adminSlotBinding(t, db, "EMBEDDING")
-	if revision != 1 || profileRevision.Int64 != 1 {
-		t.Fatal("embedding slot not bound", revision, profileRevision)
-	}
-	// Exact inspection is bounded; page mode is a strict (id, revision) cursor.
-	var inspected, page []map[string]any
-	if e := admin.QueryRow(`SELECT cap_ai.model_admin_list($1,$2,$3,NULL,NULL,NULL)::text`, adminOperatorID, adminLLMProfile, 1).Scan(jsonList{&inspected}); e != nil {
-		t.Fatalf("exact inspect: %v", e)
-	}
-	if len(inspected) != 1 || inspected[0]["profile_id"] != adminLLMProfile || inspected[0]["revision"] != float64(1) ||
-		inspected[0]["adapter_key"] != "bounded-http-v1" || inspected[0]["declaration_digest"] != adminLLMDigest ||
-		inspected[0]["enabled"] != true || inspected[0]["purpose"] != "GENERATE" || inspected[0]["execution"] != "HOSTED" {
-		t.Fatal("exact inspect is not the bounded reviewed metadata", inspected)
-	}
-	if e := admin.QueryRow(`SELECT cap_ai.model_admin_list($1,NULL,NULL,NULL,NULL,2)::text`, adminOperatorID).Scan(jsonList{&page}); e != nil {
-		t.Fatalf("first page: %v", e)
-	}
-	if len(page) != 2 || page[0]["profile_id"] != adminEmbedProfile || page[0]["revision"] != float64(1) || page[1]["revision"] != float64(2) {
-		t.Fatal("first page is not ordered by profile and revision", page)
-	}
-	var next []map[string]any
-	if e := admin.QueryRow(`SELECT cap_ai.model_admin_list($1,NULL,NULL,$2,$3,2)::text`, adminOperatorID, adminEmbedProfile, 2).Scan(jsonList{&next}); e != nil {
-		t.Fatalf("second page: %v", e)
-	}
-	if len(next) != 2 || next[0]["profile_id"] != adminLLMProfile || next[1]["profile_id"] != adminWideProfile {
-		t.Fatal("cursor page is not strictly after the last revision", next)
-	}
-	for _, bad := range []struct {
-		name string
-		args []any
-	}{
-		{"half-exact-cursor", []any{adminOperatorID, adminLLMProfile, nil, nil, nil, nil}},
-		{"half-revision-cursor", []any{adminOperatorID, nil, int64(1), nil, nil, nil}},
-		{"half-page-cursor", []any{adminOperatorID, nil, nil, adminLLMProfile, nil, nil}},
-		{"page-too-small", []any{adminOperatorID, nil, nil, nil, nil, int64(0)}},
-		{"page-too-large", []any{adminOperatorID, nil, nil, nil, nil, int64(101)}},
+	// No role reaches it. PUBLIC was revoked by the ownership block and every
+	// deployment and administration login lost its grant.
+	for _, role := range []string{
+		"dxos_ai_model_admin", "dxos_ai_model_catalog", "dxos_ai_gateway", "dxos_ai_worker",
+		"dxos_ai_api", "dxos_ai_dispatcher", "dxos_authz", "dxos_process", "dxos_reader",
 	} {
-		var ignored []map[string]any
-		e := admin.QueryRow(`SELECT cap_ai.model_admin_list($1,$2,$3,$4,$5,$6)::text`, bad.args...).Scan(jsonList{&ignored})
-		if e == nil {
-			t.Fatal("invalid list bounds accepted", bad.name)
+		if schemaBool(t, db, `SELECT has_function_privilege($1,'cap_ai.model_admin_change_slot(uuid,text,bigint,text,text,bigint,text,jsonb)','EXECUTE')`, role) {
+			t.Fatal("a role can still execute the obsolete slot mutator", role)
 		}
-		adminRequireCode(t, e, "22023")
 	}
-}
 
-// jsonList keeps a jsonb payload in one Scan destination.
-type jsonList struct{ rows *[]map[string]any }
-
-func (j jsonList) Scan(value any) error {
-	raw, ok := value.([]byte)
-	if !ok {
-		if text, isText := value.(string); isText {
-			raw = []byte(text)
-		} else if value == nil {
-			return nil
-		} else {
-			return fmt.Errorf("unexpected jsonb value %T", value)
-		}
-	}
-	return json.Unmarshal(raw, j.rows)
-}
-
-func TestModelAdminConcurrentCAS(t *testing.T) {
-	db, dsn := adminFixture(t)
-	first := testutil.As(t, dsn, "dxos_ai_model_admin")
-	second := testutil.As(t, dsn, "dxos_ai_model_admin")
-	review := adminReview(adminLLMProfile, 1, adminLLMDigest, "GENERATE", 0)
-	eventCountBefore := adminEventCount(t, db)
-	const expectedRevision = int64(0)
-	start := make(chan struct{})
-	results := make(chan error, 2)
-	var wg sync.WaitGroup
-	for _, conn := range []*sql.DB{first, second} {
-		wg.Add(1)
-		go func(conn *sql.DB) {
-			defer wg.Done()
-			<-start
-			_, e := adminPromote(conn, "LLM", expectedRevision, adminLLMProfile, 1, adminLLMDigest, review)
-			results <- e
-		}(conn)
-	}
-	close(start)
-	wg.Wait()
-	close(results)
-	succeeded, conflicted := 0, 0
-	for e := range results {
-		switch adminCode(e) {
-		case "":
-			if e == nil {
-				succeeded++
-			}
-		case "40001":
-			conflicted++
-		default:
-			t.Fatalf("unexpected concurrent outcome: %v", e)
-		}
-	}
-	slotRevisionAfter, profile, profileRevision := adminSlotBinding(t, db, "LLM")
-	eventCountAfter := adminEventCount(t, db)
-	if slotRevisionAfter != expectedRevision+1 || eventCountAfter != eventCountBefore+1 {
-		t.Fatal("non-atomic slot transition")
-	}
-	if succeeded != 1 || conflicted != 1 {
-		t.Fatal("stale slot revision was accepted")
-	}
-	if !profile.Valid || profile.String != adminLLMProfile || profileRevision.Int64 != 1 {
-		t.Fatal("the winning request did not bind the exact revision", profile, profileRevision)
-	}
-}
-
-func TestModelAdminAuthorityRevocation(t *testing.T) {
-	t.Run("revoked-before-call", func(t *testing.T) {
-		db, dsn := adminFixture(t)
-		admin := testutil.As(t, dsn, "dxos_ai_model_admin")
-		before := adminState(t, db)
-		if _, e := db.Exec(`DELETE FROM core.user_roles WHERE user_id=$1 AND role_name='role_operator'`, adminOperatorID); e != nil {
-			t.Fatal(e)
-		}
-		afterRevoke := adminState(t, db)
-		_, e := adminPromote(admin, "LLM", 0, adminLLMProfile, 1, adminLLMDigest, adminReview(adminLLMProfile, 1, adminLLMDigest, "GENERATE", 0))
-		adminRequireCode(t, e, "42501")
-		if adminState(t, db) != afterRevoke || afterRevoke != before {
-			t.Fatal("a revoked operator changed state")
-		}
-	})
-	t.Run("inactive-before-call", func(t *testing.T) {
-		db, dsn := adminFixture(t)
-		admin := testutil.As(t, dsn, "dxos_ai_model_admin")
-		before := adminState(t, db)
-		if _, e := db.Exec(`UPDATE core.users SET status='DISABLED' WHERE id=$1`, adminOperatorID); e != nil {
-			t.Fatal(e)
-		}
-		afterDisable := adminState(t, db)
-		_, e := adminPromote(admin, "LLM", 0, adminLLMProfile, 1, adminLLMDigest, adminReview(adminLLMProfile, 1, adminLLMDigest, "GENERATE", 0))
-		adminRequireCode(t, e, "42501")
-		if adminState(t, db) != afterDisable || afterDisable != before {
-			t.Fatal("an inactive operator changed state")
-		}
-	})
-	t.Run("role-revoked-while-waiting", func(t *testing.T) {
-		db, dsn := adminFixture(t)
-		admin := testutil.As(t, dsn, "dxos_ai_model_admin")
-		before := adminState(t, db)
-		tx, e := db.Begin()
-		if e != nil {
-			t.Fatal(e)
-		}
-		defer func() { _ = tx.Rollback() }()
-		if _, e = tx.Exec(`DELETE FROM core.user_roles WHERE user_id=$1 AND role_name='role_operator'`, adminOperatorID); e != nil {
-			t.Fatal(e)
-		}
-		results := make(chan error, 1)
-		go func() {
-			_, err := adminPromote(admin, "LLM", 0, adminLLMProfile, 1, adminLLMDigest, adminReview(adminLLMProfile, 1, adminLLMDigest, "GENERATE", 0))
-			results <- err
-		}()
-		adminWaitForLock(t, db)
-		if e = tx.Commit(); e != nil {
-			t.Fatal(e)
-		}
-		adminRequireCode(t, <-results, "42501")
-		if adminState(t, db) != before {
-			t.Fatal("a concurrently revoked operator changed state")
-		}
-	})
-	t.Run("actor-disabled-while-waiting", func(t *testing.T) {
-		db, dsn := adminFixture(t)
-		admin := testutil.As(t, dsn, "dxos_ai_model_admin")
-		before := adminState(t, db)
-		tx, e := db.Begin()
-		if e != nil {
-			t.Fatal(e)
-		}
-		defer func() { _ = tx.Rollback() }()
-		if _, e = tx.Exec(`UPDATE core.users SET status='DISABLED' WHERE id=$1`, adminOperatorID); e != nil {
-			t.Fatal(e)
-		}
-		results := make(chan error, 1)
-		go func() {
-			_, err := adminPromote(admin, "LLM", 0, adminLLMProfile, 1, adminLLMDigest, adminReview(adminLLMProfile, 1, adminLLMDigest, "GENERATE", 0))
-			results <- err
-		}()
-		adminWaitForLock(t, db)
-		if e = tx.Commit(); e != nil {
-			t.Fatal(e)
-		}
-		adminRequireCode(t, <-results, "42501")
-		if adminState(t, db) != before {
-			t.Fatal("a concurrently inactive operator changed state")
-		}
-	})
-}
-
-func TestModelAdminRollbackAndDisable(t *testing.T) {
-	db, dsn := adminFixture(t)
-	admin := testutil.As(t, dsn, "dxos_ai_model_admin")
-	first := adminReview(adminEmbedProfile, 1, adminEmbedDigest, "EMBED", 8)
-	second := adminReview(adminEmbedProfile, 2, adminEmbed2Digest, "EMBED", 8)
-	if _, e := adminPromote(admin, "EMBEDDING", 0, adminEmbedProfile, 1, adminEmbedDigest, first); e != nil {
-		t.Fatalf("first promotion: %v", e)
-	}
-	if _, e := adminPromote(admin, "EMBEDDING", 1, adminEmbedProfile, 2, adminEmbed2Digest, second); e != nil {
-		t.Fatalf("second promotion: %v", e)
-	}
-	// Only one revision of a purpose may be live at a time: the newer promotion
-	// withdraws the older live revision and both immutable revisions stay stored.
-	if n := schemaCount(t, db, `SELECT count(*) FROM cap_ai.model_profiles WHERE id=$1 AND enabled`, adminEmbedProfile); n != 1 {
-		t.Fatal("promotions did not leave exactly one live revision", n)
-	}
-	if n := schemaCount(t, db, `SELECT count(*) FROM cap_ai.model_profiles WHERE id=$1 AND enabled AND revision=2`, adminEmbedProfile); n != 1 {
-		t.Fatal("the newest reviewed revision is not the live one", n)
-	}
-	events := adminEventCount(t, db)
-	profiles := adminImmutableProfiles(t, db)
-	// An explicitly reviewed older binding is restored at a new slot revision.
-	result, e := adminChange(admin, adminChangeArgs{
-		Actor: adminOperatorID, Slot: "EMBEDDING", Expected: int64(2), Action: "ROLLBACK",
-		Profile: adminEmbedProfile, Revision: int64(1), Digest: adminEmbedDigest, Review: first,
-	})
-	if e != nil {
-		t.Fatalf("rollback: %v", e)
-	}
-	if result["action"] != "ROLLBACK" || result["slot_revision"] != float64(3) || result["profile_revision"] != float64(1) {
-		t.Fatalf("rollback did not report the new binding: %v", result)
-	}
-	revision, profile, profileRevision := adminSlotBinding(t, db, "EMBEDDING")
-	if revision != 3 || !profile.Valid || profile.String != adminEmbedProfile || profileRevision.Int64 != 1 {
-		t.Fatal("rollback did not restore the reviewed revision", revision, profile, profileRevision)
-	}
-	if n := adminEventCount(t, db); n != events+1 {
-		t.Fatal("rollback did not append exactly one event", n)
-	}
-	// A rollback moves the live switch only: every stored profile revision must be
-	// byte-identical apart from `enabled`, which is live state by design.
-	if adminImmutableProfiles(t, db) != profiles {
-		t.Fatalf("rollback rewrote stored profile revisions: before=%s after=%s", profiles, adminImmutableProfiles(t, db))
-	}
-	for _, relation := range []string{"cap_ai.embedding_generations", "cap_ai.chunk_embeddings", "cap_ai.model_operations"} {
-		if n := schemaCount(t, db, `SELECT count(*) FROM `+relation); n != 0 {
-			t.Fatal("rollback touched vectors or operations", relation, n)
-		}
-	}
-	afterRollback := adminState(t, db)
-	// Disable requires exactly one bounded operational reason and nothing else.
-	for _, bad := range []adminChangeArgs{
-		{Actor: adminOperatorID, Slot: "EMBEDDING", Expected: int64(3), Action: "DISABLE", Review: nil},
-		{Actor: adminOperatorID, Slot: "EMBEDDING", Expected: int64(3), Action: "DISABLE", Review: `{"reason":""}`},
-		{Actor: adminOperatorID, Slot: "EMBEDDING", Expected: int64(3), Action: "DISABLE", Review: `{"reason":"withdrawn","extra":true}`},
-		{Actor: adminOperatorID, Slot: "EMBEDDING", Expected: int64(3), Action: "DISABLE", Review: `{"reason":["withdrawn"]}`},
-		{Actor: adminOperatorID, Slot: "EMBEDDING", Expected: int64(3), Action: "DISABLE", Profile: adminEmbedProfile, Review: `{"reason":"withdrawn"}`},
-		{Actor: adminOperatorID, Slot: "EMBEDDING", Expected: int64(3), Action: "DISABLE", Revision: int64(1), Review: `{"reason":"withdrawn"}`},
-		{Actor: adminOperatorID, Slot: "EMBEDDING", Expected: int64(3), Action: "DISABLE", Digest: adminEmbedDigest, Review: `{"reason":"withdrawn"}`},
+	// The legacy administration session cannot enable another revision, withdraw
+	// the live route, roll the live revision back or race a reconciliation.
+	live := adminState(t, db)
+	events := deploymentEvents(t, db)
+	for _, statement := range []string{
+		`SELECT cap_ai.model_admin_change_slot($1,'EMBEDDING',0,'PROMOTE','admin-embed',2,repeat('3',64),NULL)`,
+		`SELECT cap_ai.model_admin_change_slot($1,'LLM',0,'PROMOTE','admin-llm',1,repeat('1',64),NULL)`,
+		`SELECT cap_ai.model_admin_change_slot($1,'EMBEDDING',0,'ROLLBACK','admin-embed',1,repeat('2',64),NULL)`,
+		`SELECT cap_ai.model_admin_change_slot($1,'LLM',0,'DISABLE',NULL,NULL,NULL,'{"reason":"withdraw the live route"}')`,
 	} {
-		_, e := adminChange(admin, bad)
-		adminRequireCode(t, e, "22023")
-		if adminState(t, db) != afterRollback {
-			t.Fatal("a rejected disable changed state")
+		var out any
+		adminRequireCode(t, admin.QueryRow(statement, adminOperatorID).Scan(&out), "42501")
+	}
+	if adminState(t, db) != live || deploymentEvents(t, db) != events {
+		t.Fatal("a revoked administration call changed live authority")
+	}
+	if !profileEnabled(t, db, adminEmbedProfile, 1) || !profileEnabled(t, db, adminLLMProfile, 1) ||
+		profileEnabled(t, db, adminEmbedProfile, 2) {
+		t.Fatal("the live deployment revision moved")
+	}
+	if n := countRows(t, db, `SELECT count(*) FROM cap_ai.global_model_slots
+		WHERE slot_revision <> 0 OR profile_id IS NOT NULL OR profile_revision IS NOT NULL`); n != 0 {
+		t.Fatal("the obsolete slot bookkeeping was written", n)
+	}
+
+	// The administration login keeps its read-only interfaces: the sanitized
+	// deployment status still reports the live selection and no secret.
+	var raw []byte
+	if err := admin.QueryRow(`SELECT cap_ai.model_deployment_status()`).Scan(&raw); err != nil {
+		t.Fatalf("administration status read: %v", err)
+	}
+	var status DeploymentStatus
+	if err := json.Unmarshal(raw, &status); err != nil || !status.Enabled || status.LiveProfiles != 2 {
+		t.Fatalf("deployment status = %s (%v)", raw, err)
+	}
+	for _, secret := range []string{"ADMIN_TEST_KEY", "credential_ref", "endpoint", "https://"} {
+		if strings.Contains(string(raw), secret) {
+			t.Fatalf("deployment status disclosed %q: %s", secret, raw)
 		}
 	}
-	// A stale expectation is a conflict, and a disable never rewinds a revision.
-	if _, e := adminChange(admin, adminChangeArgs{
-		Actor: adminOperatorID, Slot: "EMBEDDING", Expected: int64(2), Action: "DISABLE", Review: `{"reason":"withdrawn"}`,
-	}); adminCode(e) != "40001" {
-		t.Fatal("stale expectation was not a conflict", e)
-	}
-	if adminState(t, db) != afterRollback {
-		t.Fatal("a conflicted disable changed state")
-	}
-	result, e = adminChange(admin, adminChangeArgs{
-		Actor: adminOperatorID, Slot: "EMBEDDING", Expected: int64(3), Action: "DISABLE",
-		Review: `{"reason":"reviewed withdrawal of the embedding binding"}`,
-	})
-	if e != nil {
-		t.Fatalf("disable: %v", e)
-	}
-	if result["slot_revision"] != float64(4) || result["action"] != "DISABLE" || result["profile_id"] != nil || result["profile_revision"] != nil {
-		t.Fatalf("disable did not report the unbound slot: %v", result)
-	}
-	revision, profile, profileRevision = adminSlotBinding(t, db, "EMBEDDING")
-	if revision != 4 || profile.Valid || profileRevision.Valid {
-		t.Fatal("disable did not unbind the slot", revision, profile, profileRevision)
-	}
-	// Unbinding the slot withdraws the binding only: the live deployment revision
-	// stays enabled and the superseded revision stays disabled.
-	if !adminProfileEnabled(t, db, adminEmbedProfile, 1) || adminProfileEnabled(t, db, adminEmbedProfile, 2) {
-		t.Fatal("disable changed the live profile instead of the binding")
-	}
-	if n := adminEventCount(t, db); n != events+2 {
-		t.Fatal("disable did not append exactly one event", n)
-	}
-	var reason string
-	if e := db.QueryRow(`SELECT review->>'reason' FROM cap_ai.model_slot_events WHERE capability='EMBEDDING' AND action='DISABLE'`).Scan(&reason); e != nil || reason != "reviewed withdrawal of the embedding binding" {
-		t.Fatal("disable reason not audited", reason, e)
-	}
-	if adminImmutableProfiles(t, db) != profiles {
-		t.Fatal("disable rewrote stored profile revisions")
-	}
-}
 
-func TestModelAdminAtomicAuditFailure(t *testing.T) {
-	db, dsn := adminFixture(t)
-	admin := testutil.As(t, dsn, "dxos_ai_model_admin")
-	before := adminState(t, db)
-	// A disposable test-only trigger forces the audit insert to fail after the
-	// profile enable and the slot rebind have already been applied.
-	if _, e := db.Exec(`CREATE FUNCTION cap_ai.test_reject_slot_event() RETURNS trigger
-		LANGUAGE plpgsql SET search_path = pg_catalog AS $$
-		BEGIN
-		  RAISE EXCEPTION 'test audit failure';
-		END $$`); e != nil {
-		t.Fatal(e)
+	// A live deployment is unaffected by the closed mutator: reconciliation stays
+	// idempotent and never approves processing on its own.
+	if again := applySelection(t, db, DeploymentSelection{Embedding: &embed, Generation: &generate}); again.Changed {
+		t.Fatalf("an identical reconciliation was not idempotent: %+v", again)
 	}
-	t.Cleanup(func() { _, _ = db.Exec(`DROP FUNCTION IF EXISTS cap_ai.test_reject_slot_event() CASCADE`) })
-	if _, e := db.Exec(`CREATE TRIGGER test_reject_slot_event BEFORE INSERT ON cap_ai.model_slot_events
-		FOR EACH ROW EXECUTE FUNCTION cap_ai.test_reject_slot_event()`); e != nil {
-		t.Fatal(e)
-	}
-	_, e := adminPromote(admin, "LLM", 0, adminLLMProfile, 1, adminLLMDigest, adminReview(adminLLMProfile, 1, adminLLMDigest, "GENERATE", 0))
-	if e == nil {
-		t.Fatal("a failed audit insert was reported as a committed transition")
-	}
-	if !strings.Contains(e.Error(), "test audit failure") {
-		t.Fatalf("unexpected failure: %v", e)
-	}
-	if adminProfileEnabled(t, db, adminLLMProfile, 1) {
-		t.Fatal("the profile enable was not rolled back with the audit insert")
-	}
-	revision, profile, _ := adminSlotBinding(t, db, "LLM")
-	if revision != 0 || profile.Valid {
-		t.Fatal("the slot binding was not rolled back with the audit insert", revision, profile)
-	}
-	if n := adminEventCount(t, db); n != 0 {
-		t.Fatal("the failed audit insert left an event", n)
-	}
-	if adminState(t, db) != before {
-		t.Fatal("an atomic failure left partial administration state")
+	if n := countRows(t, db, `SELECT count(*) FROM cap_ai.agent_processing_approvals`); n != 0 {
+		t.Fatal("a reconciliation created a processing approval", n)
 	}
 }

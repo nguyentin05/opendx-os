@@ -5,6 +5,7 @@ package models
 
 import (
 	"context"
+	"errors"
 	"github.com/opendx-os/opendx-os/capabilities/internal/ai/contracts"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"testing"
@@ -151,4 +152,31 @@ func (a fingerprintAuthority) Current(_ context.Context, _ *auth.Identity, op Op
 	profile := a.profile
 	profile.ID, profile.Revision, profile.Purpose = op.ProfileID, op.ProfileRevision, op.Purpose
 	return Decision{Profile: profile, PolicyRevision: 7, Allowed: true, QueryClassification: "NON_PERSONAL"}, nil
+}
+
+// The retired slot revisions are dead fields, not ignored hints: a caller that
+// still sets one — including the personal query-approval path, which used to
+// return before looking at them — is denied instead of silently accepted.
+func TestRetiredSlotRevisionsAreDenied(t *testing.T) {
+	f := &policyFixture{personal: true, approved: true, classification: "PERSONAL"}
+	p := Policy{Authority: f, Enabled: true}
+	actor := &auth.Identity{UserID: "actor"}
+	query := Operation{Key: "query", AppID: "app", ScopeKind: "PERSONAL", Purpose: "EMBED", ProfileID: "approved",
+		ProfileRevision: 1, QueryClassification: "PERSONAL", RequirePersonalQueryApproval: true}
+	if _, err := p.Check(context.Background(), actor, query); err != nil {
+		t.Fatalf("the personal query approval was denied without a retired field: %v", err)
+	}
+	for _, change := range []struct {
+		name string
+		op   func(*Operation)
+	}{
+		{"embedding slot revision", func(o *Operation) { o.EmbeddingSlotRevision = 1 }},
+		{"llm slot revision", func(o *Operation) { o.LLMSlotRevision = 1 }},
+	} {
+		op := query
+		change.op(&op)
+		if _, err := p.Check(context.Background(), actor, op); !errors.Is(err, ErrPolicy) {
+			t.Fatalf("%s was ignored on a personal query approval: %v", change.name, err)
+		}
+	}
 }

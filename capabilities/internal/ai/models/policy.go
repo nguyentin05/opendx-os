@@ -65,7 +65,10 @@ func (op Operation) validScope() bool {
 			return false
 		}
 		if op.RequirePersonalQueryApproval {
-			return op.Purpose == "EMBED" && len(op.Sources) == 0 && op.Lease == nil
+			// The retired slot revisions are dead authority, never an ignored
+			// hint: a caller that still sets one is denied instead of silently
+			// accepted, so a stale caller fails closed.
+			return op.Purpose == "EMBED" && op.EmbeddingSlotRevision == 0 && len(op.Sources) == 0 && op.Lease == nil
 		}
 		return op.EmbeddingSlotRevision == 0 && len(op.Sources) <= 50
 	case "AGENT":

@@ -998,11 +998,13 @@ END
 $$;
 
 -- ---------------------------------------------------------------------------
--- Legacy slot administration still records slot history for the CLI until T9,
--- but it is no longer model authority: only a deployment selection is. It is
--- re-emitted here for one reason: enabling a profile must keep the new
--- one-enabled-per-purpose invariant, so the previously enabled revision of the
--- same purpose is withdrawn in the same statement.
+-- Legacy slot administration is no longer authority: only a deployment
+-- selection is. The function is re-emitted here for one reason only — enabling a
+-- profile must keep the new one-enabled-per-purpose invariant, so the previously
+-- enabled revision of the same purpose is withdrawn in the same statement — and
+-- every execute grant on it is revoked below. The definition (and its
+-- `model_slot_events` history) stays until T9 drops the obsolete interface
+-- together with its CLI.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION cap_ai.model_admin_change_slot(
     actor uuid,
@@ -1218,7 +1220,8 @@ $$;
 -- Ownership and reachability. The deployment events table stays inside the owner
 -- boundary; only the four narrow interfaces below are reachable, and the
 -- superseded slot-revision interfaces lose their execute grants here (the
--- functions themselves stay until T9).
+-- functions themselves stay until T9). The obsolete slot mutator is closed to
+-- every role: it is dead code that only T9 removes.
 DO $$
 DECLARE
   r record;
@@ -1245,6 +1248,12 @@ BEGIN
     EXECUTE format('REVOKE ALL ON FUNCTION cap_ai.reconcile_deployment_models(jsonb) FROM %I', g.rolname);
     EXECUTE format('REVOKE ALL ON FUNCTION cap_ai.suspend_model_calls(uuid) FROM %I', g.rolname);
     EXECUTE format('REVOKE ALL ON FUNCTION cap_ai.model_deployment_status() FROM %I', g.rolname);
+    -- The obsolete slot mutator keeps its definition and its audit history but
+    -- loses every execute grant: a `dxos_ai_model_admin` session with a current
+    -- role_operator could still flip `model_profiles.enabled` for the live
+    -- deployment revision, withdraw the live route or pre-empt a reconciliation
+    -- without ever recording a deployment selection.
+    EXECUTE format('REVOKE ALL ON FUNCTION cap_ai.model_admin_change_slot(uuid,text,bigint,text,text,bigint,text,jsonb) FROM %I', g.rolname);
   END LOOP;
   -- Superseded slot-revision authority and the unbound claim interface are closed.
   EXECUTE 'REVOKE ALL ON FUNCTION cap_ai.agent_model_policy(uuid,text,text,bigint,bigint,jsonb) FROM dxos_ai_gateway';

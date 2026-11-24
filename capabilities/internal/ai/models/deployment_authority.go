@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/lib/pq"
 )
@@ -84,12 +85,14 @@ type DeploymentStatus struct {
 // deploymentDeclaration is the exact key set cap_ai.reconcile_deployment_models
 // accepts. Client-side state (Enabled, an absent GENERATE dimension, a zero
 // revision) can never be smuggled into the declaration.
-func deploymentDeclaration(p Profile) (map[string]any, error) {
-	if p.ID == "" || p.Revision < 1 || p.Purpose == "" {
-		return nil, ErrPolicy
-	}
-	if p.Purpose != "EMBED" && p.Purpose != "GENERATE" {
-		return nil, ErrPolicy
+//
+// field and purpose identify the selection field the profile came from, and the
+// profile must carry exactly that purpose: a GENERATE profile in the Embedding
+// field (or the reverse) would otherwise be reconciled as the other purpose, so
+// the caller would select something it never declared.
+func deploymentDeclaration(p Profile, field, purpose string) (map[string]any, error) {
+	if p.ID == "" || p.Revision < 1 || p.Purpose != purpose {
+		return nil, fmt.Errorf("deployment selection: %s requires purpose %q, got purpose %q: %w", field, purpose, p.Purpose, ErrPolicy)
 	}
 	if p.Execution != "LOCAL" && p.Execution != "HOSTED" {
 		return nil, ErrPolicy
@@ -128,11 +131,21 @@ func ReconcileDeployment(ctx context.Context, db *sql.DB, selection DeploymentSe
 		return report, ErrUnavailable
 	}
 	profiles := make([]map[string]any, 0, 2)
-	for _, profile := range []*Profile{selection.Embedding, selection.Generation} {
-		if profile == nil {
+	// Each field means exactly one purpose. The pairing is checked here, not in
+	// the database: the payload carries the purpose, so a mismatched field would
+	// silently select the other purpose instead of being refused.
+	for _, field := range []struct {
+		name    string
+		purpose string
+		profile *Profile
+	}{
+		{"Embedding", "EMBED", selection.Embedding},
+		{"Generation", "GENERATE", selection.Generation},
+	} {
+		if field.profile == nil {
 			continue
 		}
-		declaration, err := deploymentDeclaration(*profile)
+		declaration, err := deploymentDeclaration(*field.profile, field.name, field.purpose)
 		if err != nil {
 			return report, err
 		}

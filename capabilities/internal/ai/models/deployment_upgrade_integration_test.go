@@ -12,7 +12,6 @@
 package models
 
 import (
-	"context"
 	"database/sql"
 	"strings"
 	"testing"
@@ -330,6 +329,3 @@ func TestDeploymentMigrationPaths(t *testing.T) {
 		t.Fatal("a bootstrap without the model schema installed deployment authority")
 	}
 }
-
-// keep context imported for the shared helpers used above.
-var _ = context.Background

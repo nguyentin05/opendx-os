@@ -186,11 +186,13 @@ func TestRegistryRuntimeCatalogWithoutCandidates(t *testing.T) {
 	}
 }
 
-// Promotion and runtime selection use different logins and independent providers.
+// Resolution reads the installation binding and the exact profile, so the two
+// purposes keep independent providers. The binding is a fixture here: slot
+// administration is closed (0013 revokes its execute grant), and T6 removes the
+// slot lookup from Registry.Resolve entirely.
 func TestRegistryIndependentHostedSlots(t *testing.T) {
 	db, dsn := adminFixture(t)
 	catalogLogin := testutil.As(t, dsn, "dxos_ai_model_catalog")
-	admin := testutil.As(t, dsn, "dxos_ai_model_admin")
 	registry := &Registry{DB: testutil.As(t, dsn, "dxos_ai_gateway")}
 	catalog := Catalog{SchemaVersion: 2, Providers: []ProviderConfig{
 		{ID: "embed-only", Adapter: "bounded-http-v1", Endpoint: "https://embed.invalid/v1/routes/old/call", CredentialRef: "EMBED_TOKEN"},
@@ -215,8 +217,12 @@ func TestRegistryIndependentHostedSlots(t *testing.T) {
 			t.Fatal("unreviewed slot available", err)
 		}
 		p := catalog.Models[i].Profile
-		digest := DeclarationDigest(p, "bounded-http-v1", catalog.Providers[i])
-		if _, err := adminPromote(admin, string(slot), 0, p.ID, p.Revision, digest, adminReview(p.ID, p.Revision, digest, p.Purpose, p.Dimension)); err != nil {
+		if _, err := db.Exec(`UPDATE cap_ai.model_profiles SET enabled=true WHERE id=$1 AND revision=$2`,
+			p.ID, p.Revision); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`UPDATE cap_ai.global_model_slots SET profile_id=$1,profile_revision=$2,slot_revision=1 WHERE capability=$3`,
+			p.ID, p.Revision, string(slot)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -234,7 +240,12 @@ func TestRegistryIndependentHostedSlots(t *testing.T) {
 	if embed.Profile.Purpose != "EMBED" || generate.Profile.Purpose != "GENERATE" {
 		t.Fatal("slot purpose mismatch")
 	}
-	if _, err := adminChange(admin, adminChangeArgs{Actor: adminOperatorID, Slot: "LLM", Expected: 1, Action: "DISABLE", Review: `{"reason":"synthetic qualification"}`}); err != nil {
+	// Withdrawing the LLM binding (a fixture write, since the mutator is closed)
+	// leaves the embedding route exactly as it was.
+	if _, err := db.Exec(`UPDATE cap_ai.model_profiles SET enabled=false WHERE id=$1 AND revision=1`, generate.Profile.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE cap_ai.global_model_slots SET profile_id=NULL,profile_revision=NULL,slot_revision=2 WHERE capability='LLM'`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := registry.Resolve(context.Background(), CapabilityLLM); !errors.Is(err, ErrUnavailable) {

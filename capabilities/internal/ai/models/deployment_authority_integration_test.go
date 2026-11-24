@@ -292,6 +292,20 @@ func TestDeploymentReconcile(t *testing.T) {
 		t.Fatal("a rejected declaration appended an audit event")
 	}
 
+	// A field paired with the wrong purpose never reaches the database: the payload
+	// carries the purpose, so it would otherwise select the other purpose.
+	for _, mismatched := range []DeploymentSelection{
+		{Embedding: &generate},
+		{Generation: &a},
+	} {
+		if _, err := ReconcileDeployment(context.Background(), deployment, mismatched); !errors.Is(err, ErrPolicy) {
+			t.Fatalf("a mismatched selection field = %v, want ErrPolicy", err)
+		}
+	}
+	if !profileEnabled(t, db, "embed-b", 1) || !profileEnabled(t, db, "gen-a", 1) || deploymentEvents(t, db) != afterChange {
+		t.Fatal("a mismatched selection field changed live authority")
+	}
+
 	// An immutable revision conflict rolls the whole batch back.
 	conflict := `{"profiles":[
 	 {"id":"embed-d","revision":1,"purpose":"EMBED","execution":"LOCAL","provider_id":"local","model_id":"m","dimension":4,` + limits + `},
@@ -666,7 +680,6 @@ func TestDeploymentSuspend(t *testing.T) {
 // profile is neither dispatched nor able to block the current one, and a wrong
 // fence is rejected.
 func TestEmbeddingClaimDeploymentProfile(t *testing.T) {
-	ctx := context.Background()
 	db, admin, _, _ := personalFixture(t, "EMBED")
 	approvePersonal(t, admin, "EMBED")
 	// The parsed run must carry chunks for an embedding generation to be built.
@@ -777,5 +790,4 @@ SET session_replication_role=origin`)
 		runtime := personalLogin(t, db, role)
 		wantSQLState(t, runtime.QueryRow(`SELECT cap_ai.claim_embedding($1,$2,$3)`, personalActor, "personal-next", 1).Scan(&ignored), "42501")
 	}
-	_ = ctx
 }
