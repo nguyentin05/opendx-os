@@ -316,6 +316,9 @@ services:
         legal: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    environment:
+      # Keycloak origin the browser may call (Content-Security-Policy connect-src).
+      DXOS_OIDC_ORIGIN: ${DXOS_OIDC_ORIGIN:-http://localhost:8085}
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${WORKSPACE_UI_PORT:-5173}:8080"
     depends_on:
