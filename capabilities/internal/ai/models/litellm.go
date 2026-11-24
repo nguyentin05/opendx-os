@@ -98,8 +98,12 @@ type liteLLMRoute struct {
 // fragment or path, and HTTPS unless the host is deployment-local. A blank
 // credential is refused because the proxy admits only an authenticated client.
 //
-// Construction validates every declared route through the deployment grammar, so
-// a route this transport serves is exactly a route RenderProxyConfig renders.
+// Construction validates every declared route through the deployment grammar and
+// requires the installation switch to be on, so a route this transport serves is
+// exactly a route RenderProxyConfig renders: RenderProxyConfig renders no route
+// at all for a disabled deployment, and a disabled installation therefore gets no
+// provider here either. A caller that ends up without a provider fails closed,
+// because Invoke on a nil provider returns ErrUnavailable.
 func NewLiteLLMProvider(endpoint, secret string, routes Deployment) (*LiteLLMProvider, error) {
 	base, host, err := canonicalDeploymentEndpoint(endpoint, true)
 	if err != nil {
@@ -114,6 +118,13 @@ func NewLiteLLMProvider(endpoint, secret string, routes Deployment) (*LiteLLMPro
 	}
 	if problem := liteLLMCredentialProblem(secret); problem != "" {
 		return nil, liteLLMPolicyError(problem)
+	}
+	if !routes.Enabled {
+		// The installation switch is the deployment's, not the profile's: a
+		// Profile derived from a declared route is always Enabled, so this is the
+		// only place the switch is read. Refusing here means a disabled
+		// installation cannot hold a dispatchable route at all.
+		return nil, liteLLMPolicyError("deployment is not enabled")
 	}
 	provider := &LiteLLMProvider{
 		endpoint: base,
@@ -372,7 +383,9 @@ func (p *LiteLLMProvider) post(ctx context.Context, path string, body any, profi
 	if err != nil {
 		return nil, "", ErrUnavailable
 	}
-	if len(encoded) > profile.Limits.MaxBytes+litellmResultAllowance {
+	if len(encoded) > profile.Limits.MaxBytes {
+		// The request is bounded by the declared byte ceiling itself; the result
+		// allowance above is room for the answer, never for the request.
 		return nil, "", liteLLMPolicyError("translated request exceeds the byte ceiling")
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint+path, bytes.NewReader(encoded))
@@ -392,6 +405,14 @@ func (p *LiteLLMProvider) post(ctx context.Context, path string, body any, profi
 	defer func() { _ = response.Body.Close() }()
 	// Bounded opaque request ID only; transport diagnostics never leave the Gateway.
 	requestID := liteLLMRequestID(response.Header.Get("X-Request-ID"))
+	if response.StatusCode >= 300 && response.StatusCode < 400 {
+		// A redirect names a destination the review never qualified. The client
+		// does not follow it (CheckRedirect above returns ErrUseLastResponse), and
+		// the route cannot be served through it either: the call fails instead of
+		// being replayed against the Location. An upstream that redirects therefore
+		// cannot qualify as a route.
+		return nil, requestID, liteLLMDecline("proxy answered with a redirect")
+	}
 	if response.StatusCode != http.StatusOK {
 		// The error body is never read: an upstream error message is not returned,
 		// logged or recorded.

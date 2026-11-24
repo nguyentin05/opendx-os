@@ -10,9 +10,22 @@ fixture of real data or a service: it records exactly what the proxy sends and
 answers with a synthetic body selected by the ``mode`` file in ``--state-dir``.
 
 Everything the runner needs travels through ``--state-dir``, so the runner never
-has to reach into the container or publish a port: it writes ``mode`` and reads
-``requests.jsonl``. Each request is one JSON line with the listener, the path, the
-authorization header and the body.
+has to reach into the container or publish a port: it writes ``mode`` (and, for
+``redirect``, ``redirect``) and reads ``requests.jsonl``. Each request is one JSON
+line with the listener, the path, the authorization header and the body.
+
+Every mode below is exercised by ``test_litellm_deployment.py``; none is dead:
+
+* ``ok`` — the reviewed synthetic answer;
+* ``status503`` and ``status429`` — one request, no retry;
+* ``slow`` — a one-second caller deadline expires against a six-second answer,
+  and a retry would appear as a second request;
+* ``redirect`` — a 307 to the ``redirect`` file's target, which is then answered
+  normally under ``/redirected`` so a followed redirect costs exactly one extra
+  request and the capture cannot loop;
+* ``wrong-dimension``, ``unknown-citation``, ``tool-call`` and ``truncated`` —
+  defective answers the proxy forwards unchanged, so the strict reading that
+  refuses them is provably the Go transport's.
 """
 
 from __future__ import annotations
@@ -27,6 +40,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # The synthetic embedding width the qualification declaration declares.
 DIMENSION = 8
+# REDIRECT_PREFIX is the path a "redirect" answer sends the caller to. A request
+# under it is answered normally, so following the 307 is observable exactly once.
+REDIRECT_PREFIX = "/redirected"
 # slow mode holds the answer long enough for a one-second caller deadline to
 # expire, so a retry would be visible as a second request.
 SLOW_SECONDS = 6.0
@@ -79,7 +95,10 @@ class Handler(BaseHTTPRequestHandler):
         if mode == "status429":
             self._send({"error": {"message": "capture rate limit", "type": "rate_limit"}}, 429)
             return
-        if mode == "redirect":
+        if mode == "redirect" and not self.path.startswith(REDIRECT_PREFIX):
+            # The reviewed path answers 307 once; the redirected path below answers
+            # normally, so a followed redirect is exactly one extra recorded request
+            # and the capture cannot loop.
             target = ""
             try:
                 with open(os.path.join(self.state.directory, "redirect"), encoding="utf-8") as handle:

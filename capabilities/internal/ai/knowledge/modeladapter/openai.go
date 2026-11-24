@@ -35,9 +35,14 @@ const (
 	// embeddingsPath and chatCompletionsPath are the only two upstream paths. A
 	// route's canonical base URL is joined to one of them; no caller value ever
 	// reaches the destination.
-	embeddingsPath              = "/embeddings"
-	chatCompletionsPath         = "/chat/completions"
-	generationSystemInstruction = models.BoundedSystemInstruction + ` Return a JSON object with exactly "text" (a string) and "citation_ids" (an array of supplied evidence IDs).`
+	embeddingsPath      = "/embeddings"
+	chatCompletionsPath = "/chat/completions"
+	// generationSystemInstruction is the shared fixed instruction, not a second
+	// copy of it: the bounded-http-v1 adapter and the LiteLLM transport serve the
+	// same bytes from models.GenerationSystemInstruction, so the two paths cannot
+	// drift apart. TestGenerationInstructionIsShared asserts the binding across
+	// packages.
+	generationSystemInstruction = models.GenerationSystemInstruction
 
 	// Bound the production transport. The per-call context deadline (derived from
 	// the reviewed route ceiling) is the effective limit; these are the floor

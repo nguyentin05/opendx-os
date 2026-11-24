@@ -51,6 +51,19 @@
 #     unprovable.
 #   * The proxy publishes no host port. Operators inspect it through the Compose
 #     network only; there is no port to publish.
+#
+# Transit from the runtime to the proxy is plaintext HTTP carrying a bearer
+# credential. ADR 0011 accepts that as existing trusted infrastructure: the
+# credential authenticates the client, `model-inference` is `internal` so the hop
+# never leaves the host's bridge, and the network attaches only the proxy and the
+# two model-calling services, neither of which publishes a port. It is
+# authenticated but not encrypted, and the operator's threat model decides
+# whether that is enough: a deployment that requires encryption adds a reviewed
+# overlay (T7) that terminates TLS at the proxy and points
+# RAG_MODEL_LITELLM_ENDPOINT at https; this file does not claim to carry one and
+# ships no CA or certificate secret. The proxy's own upstream hop is a separate
+# setting: a hosted route's `api_base` is HTTPS and the proxy verifies it against
+# the image trust store.
 services:
   litellm:
     image: ${RAG_MODEL_LITELLM_IMAGE:-ghcr.io/berriai/litellm@sha256:1050d2c9ca58399de9cd51df6eb503812af697717f54d2f08c1c30589c75e1f7}
@@ -80,7 +93,11 @@ services:
       LITELLM_OFFLINE_MODE: "true"
       LITELLM_LOCAL_MODEL_COST_MAP: "true"
     secrets:
-      - litellm-config
+      # The target is the mount name inside /run/secrets, so it must equal the
+      # basename of CONFIG_FILE_PATH: a differently named target is mounted at
+      # /run/secrets/<source> and the pinned proxy loads no route at all.
+      - source: litellm-config
+        target: litellm-config.yaml
     networks:
       model-inference:
     healthcheck:

@@ -278,30 +278,40 @@ func TestLiteLLMEmbedding(t *testing.T) {
 		payload Payload
 		reply   func(w http.ResponseWriter, r *http.Request)
 		send    bool
+		// want is the exact error class of this case. A refusal before dispatch
+		// is ErrPolicy; a dispatch whose answer cannot be read exactly is
+		// ErrUnavailable. Neither class is accepted in place of the other.
+		want error
 	}{
 		{
 			name:    "query and texts together",
 			payload: Payload{Query: "q", Texts: []string{"t"}},
+			want:    ErrPolicy,
 		},
 		{
 			name:    "no input",
 			payload: Payload{},
+			want:    ErrPolicy,
 		},
 		{
 			name:    "two chunks",
 			payload: Payload{Texts: []string{"a", "b"}},
+			want:    ErrPolicy,
 		},
 		{
 			name:    "empty chunk",
 			payload: Payload{Texts: []string{""}},
+			want:    ErrPolicy,
 		},
 		{
 			name:    "evidence on an embedding",
 			payload: Payload{Texts: []string{"t"}, Evidence: []Evidence{{ID: "doc-1", Text: "source"}}},
+			want:    ErrPolicy,
 		},
 		{
 			name:    "evidence beyond the gateway bound",
 			payload: Payload{Texts: []string{"t"}, Evidence: make([]Evidence, 9)},
+			want:    ErrPolicy,
 		},
 		{
 			name:    "malformed json",
@@ -310,6 +320,7 @@ func TestLiteLLMEmbedding(t *testing.T) {
 				_, _ = w.Write([]byte(`{"model":`))
 			},
 			send: true,
+			want: ErrUnavailable,
 		},
 		{
 			name:    "two vectors",
@@ -318,6 +329,7 @@ func TestLiteLLMEmbedding(t *testing.T) {
 				_, _ = w.Write([]byte(fmt.Sprintf(`{"model":%q,"data":[{"index":0,"embedding":[0.1]},{"index":0,"embedding":[0.1]}]}`, alias)))
 			},
 			send: true,
+			want: ErrUnavailable,
 		},
 		{
 			name:    "vector index one",
@@ -326,6 +338,7 @@ func TestLiteLLMEmbedding(t *testing.T) {
 				_, _ = w.Write([]byte(fmt.Sprintf(`{"model":%q,"data":[{"index":1,"embedding":[0.1]}]}`, alias)))
 			},
 			send: true,
+			want: ErrUnavailable,
 		},
 		{
 			name:    "absent vector index",
@@ -334,6 +347,7 @@ func TestLiteLLMEmbedding(t *testing.T) {
 				_, _ = w.Write([]byte(fmt.Sprintf(`{"model":%q,"data":[{"embedding":[0.1]}]}`, alias)))
 			},
 			send: true,
+			want: ErrUnavailable,
 		},
 		{
 			name:    "wrong dimension",
@@ -342,6 +356,7 @@ func TestLiteLLMEmbedding(t *testing.T) {
 				_, _ = w.Write([]byte(embeddingBody(alias, vector(profile.Dimension-1))))
 			},
 			send: true,
+			want: ErrUnavailable,
 		},
 		{
 			name:    "non finite coordinate",
@@ -350,6 +365,7 @@ func TestLiteLLMEmbedding(t *testing.T) {
 				_, _ = w.Write([]byte(fmt.Sprintf(`{"model":%q,"data":[{"index":0,"embedding":[1e999]}]}`, alias)))
 			},
 			send: true,
+			want: ErrUnavailable,
 		},
 		{
 			name:    "null coordinate",
@@ -358,6 +374,7 @@ func TestLiteLLMEmbedding(t *testing.T) {
 				_, _ = w.Write([]byte(fmt.Sprintf(`{"model":%q,"data":[{"index":0,"embedding":[null]}]}`, alias)))
 			},
 			send: true,
+			want: ErrUnavailable,
 		},
 		{
 			name:    "unexpected alias",
@@ -366,6 +383,7 @@ func TestLiteLLMEmbedding(t *testing.T) {
 				_, _ = w.Write([]byte(embeddingBody("dxos-embed-other", vector(profile.Dimension))))
 			},
 			send: true,
+			want: ErrUnavailable,
 		},
 		{
 			name:    "absent alias",
@@ -374,6 +392,7 @@ func TestLiteLLMEmbedding(t *testing.T) {
 				_, _ = w.Write([]byte(fmt.Sprintf(`{"data":[{"index":0,"embedding":%s}]}`, mustJSON(vector(profile.Dimension)))))
 			},
 			send: true,
+			want: ErrUnavailable,
 		},
 		{
 			name:    "duplicate case aliased key",
@@ -382,6 +401,7 @@ func TestLiteLLMEmbedding(t *testing.T) {
 				_, _ = w.Write([]byte(fmt.Sprintf(`{"model":%q,"Model":%q,"data":[{"index":0,"embedding":%s}]}`, alias, alias, mustJSON(vector(profile.Dimension)))))
 			},
 			send: true,
+			want: ErrUnavailable,
 		},
 		{
 			name:    "string usage counter",
@@ -390,6 +410,7 @@ func TestLiteLLMEmbedding(t *testing.T) {
 				_, _ = w.Write([]byte(fmt.Sprintf(`{"model":%q,"data":[{"index":0,"embedding":%s}],"usage":{"prompt_tokens":"7"}}`, alias, mustJSON(vector(profile.Dimension)))))
 			},
 			send: true,
+			want: ErrUnavailable,
 		},
 		{
 			name:    "usage claims generated output",
@@ -398,6 +419,7 @@ func TestLiteLLMEmbedding(t *testing.T) {
 				_, _ = w.Write([]byte(fmt.Sprintf(`{"model":%q,"data":[{"index":0,"embedding":%s}],"usage":{"prompt_tokens":2,"completion_tokens":5}}`, alias, mustJSON(vector(profile.Dimension)))))
 			},
 			send: true,
+			want: ErrUnavailable,
 		},
 		{
 			name:    "usage above the input ceiling",
@@ -406,6 +428,7 @@ func TestLiteLLMEmbedding(t *testing.T) {
 				_, _ = w.Write([]byte(fmt.Sprintf(`{"model":%q,"data":[{"index":0,"embedding":%s}],"usage":{"prompt_tokens":%d}}`, alias, mustJSON(vector(profile.Dimension)), profile.Limits.MaxInputTokens+1)))
 			},
 			send: true,
+			want: ErrUnavailable,
 		},
 		{
 			name:    "oversized response",
@@ -414,6 +437,7 @@ func TestLiteLLMEmbedding(t *testing.T) {
 				_, _ = w.Write([]byte(`{"model":"` + alias + `","padding":"` + strings.Repeat("a", profile.Limits.MaxBytes+65536) + `"}`))
 			},
 			send: true,
+			want: ErrUnavailable,
 		},
 		{
 			name:    "redirect is not followed",
@@ -423,6 +447,7 @@ func TestLiteLLMEmbedding(t *testing.T) {
 				w.WriteHeader(http.StatusTemporaryRedirect)
 			},
 			send: true,
+			want: ErrUnavailable,
 		},
 		{
 			name:    "rate limited",
@@ -431,6 +456,7 @@ func TestLiteLLMEmbedding(t *testing.T) {
 				w.WriteHeader(http.StatusTooManyRequests)
 			},
 			send: true,
+			want: ErrUnavailable,
 		},
 		{
 			name:    "upstream unavailable",
@@ -439,6 +465,7 @@ func TestLiteLLMEmbedding(t *testing.T) {
 				w.WriteHeader(http.StatusServiceUnavailable)
 			},
 			send: true,
+			want: ErrUnavailable,
 		},
 		{
 			name:    "server error",
@@ -447,6 +474,7 @@ func TestLiteLLMEmbedding(t *testing.T) {
 				w.WriteHeader(http.StatusInternalServerError)
 			},
 			send: true,
+			want: ErrUnavailable,
 		},
 	}
 	for _, test := range rejected {
@@ -464,8 +492,8 @@ func TestLiteLLMEmbedding(t *testing.T) {
 			if err == nil {
 				t.Fatal("Invoke() = nil, want a rejection")
 			}
-			if !errors.Is(err, ErrUnavailable) && !errors.Is(err, ErrPolicy) {
-				t.Fatalf("Invoke() = %v, want ErrUnavailable or ErrPolicy", err)
+			if !errors.Is(err, test.want) {
+				t.Fatalf("Invoke() = %v, want %v for this case", err, test.want)
 			}
 			wantRequests := 0
 			if test.send {
@@ -486,6 +514,31 @@ func TestLiteLLMEmbedding(t *testing.T) {
 		}
 		if capture.count() != 0 {
 			t.Fatalf("upstream requests = %d, want none", capture.count())
+		}
+	})
+
+	t.Run("translated request is bounded by the byte ceiling", func(t *testing.T) {
+		capture := &upstreamCapture{}
+		capture.reply = func(w http.ResponseWriter, r *http.Request) bool {
+			_, _ = w.Write([]byte(embeddingBody(alias, vector(profile.Dimension))))
+			return true
+		}
+		provider, _ := newLiteLLMTestProvider(t, capture, d)
+		// A request of exactly MaxBytes is still admitted; one byte more is refused.
+		// The result allowance is room for the answer and never widens the request.
+		atCeiling := json.RawMessage(`"` + strings.Repeat("a", profile.Limits.MaxBytes-2) + `"`)
+		if _, _, err := provider.post(context.Background(), litellmEmbeddingsPath, atCeiling, profile); err != nil {
+			t.Fatalf("post(at the byte ceiling) = %v, want one dispatch", err)
+		}
+		if capture.count() != 1 {
+			t.Fatalf("upstream requests = %d, want 1", capture.count())
+		}
+		beyond := json.RawMessage(`"` + strings.Repeat("a", profile.Limits.MaxBytes-1) + `"`)
+		if _, _, err := provider.post(context.Background(), litellmEmbeddingsPath, beyond, profile); !errors.Is(err, ErrPolicy) {
+			t.Fatalf("post(beyond the byte ceiling) = %v, want ErrPolicy", err)
+		}
+		if capture.count() != 1 {
+			t.Fatalf("upstream requests = %d, want the oversized request refused before dispatch", capture.count())
 		}
 	})
 
@@ -992,10 +1045,123 @@ func TestLiteLLMTransportErrorsAreStatic(t *testing.T) {
 	assertSanitized(t, callErr, Payload{})
 }
 
-// TestLiteLLMGenerationInstructionIsShared pins the fixed generation instruction
-// to the shared constant, so the bounded-http-v1 adapter and the proxy transport
-// cannot serve two different instructions.
-func TestLiteLLMGenerationInstructionIsShared(t *testing.T) {
+// purposeCall is the fixed path, one acceptable answer body and one acceptable
+// payload for a purpose, so a test that only cares about the failure it induces
+// does not restate them.
+func purposeCall(purpose, alias string, profile Profile) (string, string, Payload) {
+	if purpose == "EMBED" {
+		return litellmEmbeddingsPath, embeddingBody(alias, vector(profile.Dimension)), Payload{Texts: []string{"chunk"}}
+	}
+	return litellmChatPath, chatBody(alias, litellmTestAnswer),
+		Payload{Query: "q", Evidence: []Evidence{{ID: "doc-1", Text: "source"}}}
+}
+
+// TestLiteLLMRedirectsCannotServe proves a 3xx from the proxy is a refusal and
+// never a second destination: the Location is not contacted, exactly one request
+// reaches the configured origin, and no result is obtained through the redirect.
+func TestLiteLLMRedirectsCannotServe(t *testing.T) {
+	d := loadDeployment(t, deploymentBoth)
+	for _, purpose := range []string{"EMBED", "GENERATE"} {
+		t.Run(purpose, func(t *testing.T) {
+			profile, alias := routeFor(t, d, purpose)
+			path, answer, payload := purposeCall(purpose, alias, profile)
+			// elsewhere answers correctly for the reviewed path: a followed redirect
+			// would yield a successful result through a destination the review never
+			// saw, which is exactly what admission must prevent.
+			elsewhere := &upstreamCapture{}
+			elsewhere.reply = func(w http.ResponseWriter, r *http.Request) bool {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(answer))
+				return true
+			}
+			target := httptest.NewServer(elsewhere)
+			t.Cleanup(target.Close)
+
+			proxy := &upstreamCapture{}
+			proxy.reply = func(w http.ResponseWriter, r *http.Request) bool {
+				w.Header().Set("Location", target.URL+path)
+				w.WriteHeader(http.StatusTemporaryRedirect)
+				return true
+			}
+			provider, _ := newLiteLLMTestProvider(t, proxy, d)
+			result, err := provider.Invoke(context.Background(), profile, payload)
+			if !errors.Is(err, ErrUnavailable) {
+				t.Fatalf("Invoke() = %v, want ErrUnavailable for a redirect", err)
+			}
+			if proxy.count() != 1 {
+				t.Fatalf("requests to the configured origin = %d, want exactly 1", proxy.count())
+			}
+			if elsewhere.count() != 0 {
+				t.Fatalf("the redirect target received %d requests, want none", elsewhere.count())
+			}
+			if result.Text != "" || len(result.Vector) != 0 || len(result.CitationIDs) != 0 || result.Usage != nil {
+				t.Fatalf("result = %+v, want no result through a redirect", result)
+			}
+			assertSanitized(t, err, payload)
+		})
+	}
+}
+
+// TestLiteLLMDisabledInstallationCannotDispatch proves the installation switch is
+// read. RenderProxyConfig renders no route for a disabled deployment, so no
+// provider exists for one either: construction refuses and the caller's fallback
+// fails closed before any network call.
+func TestLiteLLMDisabledInstallationCannotDispatch(t *testing.T) {
+	disabled := loadDeployment(t, edit(t, deploymentBoth, "enabled: true", "enabled: false"))
+	if disabled.Enabled {
+		t.Fatal("the fixture is enabled; the test cannot prove the switch")
+	}
+	capture := &upstreamCapture{}
+	server := httptest.NewServer(capture)
+	t.Cleanup(server.Close)
+
+	provider, err := NewLiteLLMProvider(server.URL, litellmTestSecret, disabled)
+	if !errors.Is(err, ErrPolicy) {
+		t.Fatalf("NewLiteLLMProvider(disabled) = %v, want ErrPolicy", err)
+	}
+	if provider != nil {
+		t.Fatalf("NewLiteLLMProvider(disabled) = %v, want no provider", provider)
+	}
+	// The same declaration renders no route, so a served route and a rendered
+	// route stay the same set.
+	rendered, renderErr := RenderProxyConfig(disabled)
+	if renderErr != nil {
+		t.Fatalf("RenderProxyConfig(disabled) = %v, want a document with no route", renderErr)
+	}
+	alias, aliasErr := disabled.Embedding.Alias("EMBED")
+	if aliasErr != nil {
+		t.Fatalf("Alias(EMBED) = %v", aliasErr)
+	}
+	if strings.Contains(string(rendered), alias) {
+		t.Fatalf("a disabled deployment rendered the route %q\n%s", alias, rendered)
+	}
+	// A caller that ends up without a provider fails closed: both purposes and
+	// every payload shape return ErrUnavailable, and nothing is sent.
+	embedProfile, _ := routeFor(t, disabled, "EMBED")
+	genProfile, _ := routeFor(t, disabled, "GENERATE")
+	for _, call := range []struct {
+		profile Profile
+		payload Payload
+	}{
+		{embedProfile, Payload{Texts: []string{"chunk"}}},
+		{embedProfile, Payload{Query: "question"}},
+		{genProfile, Payload{Query: "q", Evidence: []Evidence{{ID: "doc-1", Text: "source"}}}},
+	} {
+		if _, callErr := provider.Invoke(context.Background(), call.profile, call.payload); !errors.Is(callErr, ErrUnavailable) {
+			t.Fatalf("Invoke() without a provider = %v, want ErrUnavailable", callErr)
+		}
+	}
+	if capture.count() != 0 {
+		t.Fatalf("upstream requests = %d, want none for a disabled installation", capture.count())
+	}
+}
+
+// TestLiteLLMGenerationInstructionIsShared pins the instruction the transport
+// serves: it extends the bounded instruction with the exact answer object and
+// carries no format verb. The cross-package binding to the adapter is asserted by
+// modeladapter.TestGenerationInstructionIsShared, which can compare the two
+// packages without an import cycle.
+func TestLiteLLMGenerationInstruction(t *testing.T) {
 	if !strings.HasPrefix(GenerationSystemInstruction, BoundedSystemInstruction) {
 		t.Fatalf("GenerationSystemInstruction = %q, want it to extend BoundedSystemInstruction", GenerationSystemInstruction)
 	}
@@ -1050,9 +1216,12 @@ func TestLiteLLMResultShapesMatchGateway(t *testing.T) {
 const qualificationFixture = "../../../../scripts/integration/fixtures/litellm-deployment.yaml"
 
 // qualificationEmission is what the qualification runner is given: the digest of
-// the generated proxy configuration and the exact requests the transport sends.
-// The runner replays those bytes, so the qualifier exercises the real transport
-// contract instead of a hand-written copy of it.
+// the generated proxy configuration and the JSON request bodies the transport
+// emitted. The runner sends those bodies rather than re-typing one, so the
+// qualifier exercises the real transport contract instead of a hand-written copy
+// of it. The replay is JSON-equivalent, not byte-identical: the runner parses each
+// body and re-serializes it, which preserves every key and value but not the
+// original byte order.
 type qualificationEmission struct {
 	ConfigSHA256 string               `json:"config_sha256"`
 	Routes       []qualificationRoute `json:"routes"`

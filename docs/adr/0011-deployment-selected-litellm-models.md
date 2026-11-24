@@ -244,7 +244,11 @@ query.
     field, holds the proxy credential — and by the qualification comparing the
     captured upstream routing with the declaration (see
     [Route constraints](#pinned-proxy-prerequisite)). Unsupported required
-    parameters fail instead of being dropped.
+    parameters fail instead of being dropped. The hop from the admitted clients to
+    the proxy is plaintext HTTP on that private, `internal` network carrying the
+    master-key bearer credential — authenticated but not encrypted — and is
+    accepted as existing trusted infrastructure per
+    [Transit between the runtime and the proxy](#transit-between-the-runtime-and-the-proxy).
 
 ### Who probes and who reconciles
 
@@ -332,9 +336,16 @@ for the router, `litellm_settings.num_retries: 0` for the module-level count a
 call reads (`litellm/utils.py`), and `litellm_settings.num_retries_per_request: 0`
 for the whole-request bound that includes fallbacks
 (`litellm/litellm_core_utils/core_helpers.py:max_retries_per_request_hit`). All
-three are emitted by the renderer; a live pinned proxy that was given
-`router_settings.num_retries: 3` made four upstream requests for one operation,
-and the generated three-zero configuration made exactly one.
+three are emitted by the renderer, and all three are needed. Two measurements at
+the pin, now asserted in the committed qualification suite
+(`test_retry_control_shows_the_generated_settings_are_the_control`), show why:
+raising **only** `router_settings.num_retries` to `3` still made exactly one
+upstream request for one operation, because the module-level count a call reads
+is still `litellm_settings.num_retries: 0`; raising **all three** retry settings
+to `3` made three upstream requests for the same operation, while the generated
+three-zero configuration made exactly one. The earlier revision of this paragraph
+reported four requests for the router-only case; that figure could not be
+reproduced against the generated configuration and is withdrawn.
 
 Provider routing has a confirmed configuration shape as well, so a reviewed
 `openrouter` route is no longer rejected by the renderer. At `v1.110.3` a
@@ -421,6 +432,41 @@ declared qualified; neither may be asserted as done:
 - **No published image signature.** No cosign signature or OCI referrer exists
   for the pinned index digest, so provenance rests on the registry digest plus
   the image's own release label. Signature verification stays open.
+
+### Transit between the runtime and the proxy
+
+The hop from `cap-ai`, `cap-ai-worker` and the one-shot prober to the proxy is
+plaintext HTTP carrying a bearer credential: `RAG_MODEL_LITELLM_ENDPOINT` is
+`http://litellm:4000` over the `dxos-model-inference` network. **This ADR accepts
+that as existing trusted infrastructure rather than as TLS, and records it
+explicitly so it is not later mistaken for a protected hop.**
+
+- It is **authenticated**: every request carries the `LITELLM_MASTER_KEY` bearer
+  credential, and the pinned proxy refuses to start with an unset, empty or
+  publicly known key, so an unauthenticated client cannot use the proxy at all.
+- It is **not encrypted**: that credential and the payload travel as cleartext on
+  the host's private bridge.
+- The exposure is bounded by the network rather than by a cipher:
+  `model-inference` is `internal: true` and attaches only `litellm`, `cap-ai` and
+  `cap-ai-worker`; the proxy publishes no host port, has no APISIX route, no Admin
+  UI and no database, so the hop has no off-host path and no other admitted
+  client. A process that can read the bridge on the Docker host is inside the
+  deployment's trust boundary, and this decision does not claim otherwise.
+- **TLS is deferred, not dismissed.** A deployment whose threat model includes a
+  hostile process on the same Docker host adds a reviewed overlay in T7 that
+  terminates TLS at the proxy (or fronts it with the existing ingress) and points
+  `RAG_MODEL_LITELLM_ENDPOINT` at `https`. T4 adds no TLS, and
+  `compose.litellm.yaml` ships **no CA, certificate or key secret**: its only file
+  secret is the generated proxy configuration. The qualification CA described
+  under [Pinned proxy prerequisite](#pinned-proxy-prerequisite) is a
+  qualification-only trust anchor for the synthetic hosted capture; it is created
+  by the runner, is never part of the overlay and proves nothing about this hop.
+
+The proxy's own upstream hop is separate. A hosted route's `api_base` is HTTPS and
+the pinned proxy verifies the peer certificate against its trust store — the
+qualification has to install its synthetic CA through `SSL_CERT_FILE` for the
+hosted leg to be served at all — while a local route is plain HTTP to a
+deployment-local endpoint, under the same trusted-host assumption as this hop.
 
 ### Route qualification status
 

@@ -8,8 +8,14 @@ claims, instead of reading a configuration and inferring behaviour:
 
 * the exact upstream model, path and index/query parameters of each route;
 * exactly one upstream request per admitted operation, including on 429, 503, a
-  timeout and an unreadable answer;
+  timeout and an unreadable answer, with a retry-enabled control proxy that makes
+  four so the measurement cannot be vacuous;
+* the generated retry, routing and configuration wiring, including that the
+  configuration secret is mounted at the path the proxy loads;
 * no silent fallback, route override or parameter dropping;
+* that an upstream redirect cannot qualify a route, and that a defective answer
+  (wrong dimension, unknown citation, tool call, truncation) is forwarded
+  unchanged for the strict transport to refuse;
 * rejected unauthenticated and direct public requests;
 * no payload, answer or credential marker in the proxy log;
 * no hosted destination for a local route, and mixed local/hosted routes stay
@@ -27,9 +33,12 @@ Prerequisites (a missing one is reported as NOT_RUN, never as a pass):
   rendered and emitted by the Go implementation under test rather than re-typed
   here.
 
-Only synthetic data is used. Every request body is replayed byte-for-byte from the
-emission of ``TestLiteLLMQualificationFixture``, so this suite cannot drift from
-the transport it qualifies.
+Only synthetic data is used. Every request this suite sends is built from the
+emission of ``TestLiteLLMQualificationFixture``, so the suite cannot drift from
+the transport it qualifies: it never re-types a body. The replay is
+JSON-equivalent rather than byte-identical, because Python parses each emitted
+body into an object and re-serializes it; every key and value is the transport's
+own, the original byte order is not.
 """
 
 from __future__ import annotations
@@ -58,6 +67,10 @@ IMAGE = os.environ.get(
     "ghcr.io/berriai/litellm@sha256:1050d2c9ca58399de9cd51df6eb503812af697717f54d2f08c1c30589c75e1f7",
 )
 INDEX_DIGEST = "sha256:1050d2c9ca58399de9cd51df6eb503812af697717f54d2f08c1c30589c75e1f7"
+# The release the pinned digest was built from. It is read from the image's own
+# environment (LITELLM_RELEASE_TAG) and from the running container, so the suite
+# asserts a version and not only a digest.
+RELEASE_TAG = "v1.110.3"
 COMPOSE_FILES = ("compose.yaml", "compose.rag.yaml", "compose.models.yaml", "compose.litellm.yaml")
 COMPOSE_OLLAMA = ("compose.yaml", "compose.rag.yaml", "compose.models.yaml", "compose.litellm.yaml",
                   "compose.ollama.yaml")
@@ -164,7 +177,7 @@ class LiteLLMQualificationTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
-        for name in (PROXY, CAPTURE, PROXY + "-drifted", PROXY + "-unnamed"):
+        for name in (PROXY, CAPTURE, PROXY + "-drifted", PROXY + "-unnamed", PROXY + "-retry"):
             docker("rm", "-f", name)
         docker("network", "rm", NETWORK)
         cls.directory.cleanup()
@@ -339,9 +352,13 @@ class LiteLLMQualificationTest(unittest.TestCase):
             finally:
                 error.close()
 
+    def request_for(self, name: str) -> dict:
+        """The emitted transport request of one qualification case."""
+        return next(item for item in self.emission["requests"] if item["name"] == name)
+
     def replay(self, name: str, **overrides) -> tuple[int, bytes]:
-        """Replay one emitted transport request, optionally with extra fields."""
-        request = next(item for item in self.emission["requests"] if item["name"] == name)
+        """Send one emitted transport request, optionally with extra fields."""
+        request = self.request_for(name)
         body = dict(request["body"])
         body.update(overrides)
         return self.post(request["path"], body)
@@ -349,23 +366,35 @@ class LiteLLMQualificationTest(unittest.TestCase):
     def route_for(self, alias: str) -> dict:
         return next(route for route in self.emission["routes"] if route["alias"] == alias)
 
+    def route_of(self, purpose: str) -> dict:
+        """The declared route of one purpose, independent of emission order."""
+        return next(route for route in self.emission["routes"] if route["purpose"] == purpose)
+
+    def route_for_request(self, name: str) -> dict:
+        """The declared route one qualification request addresses."""
+        return self.route_for(self.request_for(name)["alias"])
+
+    def path_for(self, purpose: str) -> str:
+        """The upstream path a route's reviewed endpoint implies for its purpose."""
+        base_path = urllib.parse.urlsplit(self.route_of(purpose)["api_base"]).path.rstrip("/")
+        return base_path + ("/embeddings" if purpose == "EMBED" else "/chat/completions")
+
     def expectations(self, name: str) -> dict:
         """The reviewed expectation of one emitted request, read off the declaration."""
-        request = next(item for item in self.emission["requests"] if item["name"] == name)
+        request = self.request_for(name)
         route = self.route_for(request["alias"])
         if route["purpose"] == "EMBED":
             parameters = route["query_parameters"] if name == "embed-query" else route["passage_parameters"]
-            base_path = urllib.parse.urlsplit(route["api_base"]).path.rstrip("/")
             return {
                 "listener": "local",
-                "path": base_path + "/embeddings",
+                "path": self.path_for("EMBED"),
                 "model": route["upstream_body_model"],
                 "parameters": parameters or {},
                 "keys": set(EMBEDDING_KEYS[:2]) | set((parameters or {}).keys()),
             }
         return {
             "listener": "hosted",
-            "path": "/hosted/api/v1/chat/completions",
+            "path": self.path_for("GENERATE"),
             "model": route["upstream_body_model"],
             "provider": {
                 "only": [route["routing"]["provider"]],
@@ -446,14 +475,22 @@ class LiteLLMQualificationTest(unittest.TestCase):
     # -- image and deployment shape --------------------------------------
 
     def test_pinned_image_and_release(self):
-        """The container that qualifies is the pinned index digest, not a tag."""
+        """The container that qualifies is the pinned digest and the reviewed release."""
         inspected = json.loads(docker("image", "inspect", IMAGE).stdout)[0]
         digests = [entry for entry in inspected.get("RepoDigests") or [] if INDEX_DIGEST in entry]
         self.assertTrue(digests, "the image does not carry the pinned index digest")
         running = json.loads(docker("inspect", PROXY).stdout)[0]
         self.assertEqual(running["Image"], inspected["Id"], "the proxy does not run the pinned image")
-        labels = (inspected.get("Config") or {}).get("Labels") or {}
-        self.assertIn("litellm", json.dumps(labels).lower())
+        # The version, not only the digest: the image reports the release it was
+        # built from, and the running proxy must still report the same one.
+        image_environment = (inspected.get("Config") or {}).get("Env") or []
+        self.assertIn("LITELLM_RELEASE_TAG=" + RELEASE_TAG, image_environment,
+                      "the pinned image does not report the reviewed release; it is digest-pinned only")
+        reported = docker("exec", PROXY, "python", "-c",
+                          "import os;print(os.environ.get('LITELLM_RELEASE_TAG', ''))")
+        self.assertEqual(reported.returncode, 0, reported.stderr)
+        self.assertEqual(reported.stdout.strip(), RELEASE_TAG,
+                         "the running proxy does not report the reviewed release")
 
     def test_compose_overlay_is_private(self):
         """The overlay publishes nothing, stores nothing and disables telemetry."""
@@ -496,8 +533,19 @@ class LiteLLMQualificationTest(unittest.TestCase):
             self.assertNotIn("QUALIFICATION_PROXY_UPSTREAM_KEY", rendered)
             self.assertNotIn("LITELLM_MASTER_KEY", rendered, "%s received the proxy credential" % name)
             self.assertNotIn("litellm:4000", rendered, "%s gained the proxy endpoint" % name)
-        # The generated configuration is mounted read-only, and only there.
+        # The generated configuration is mounted read-only, and only there. A
+        # secret declares both halves of its wiring: the source names the local
+        # file and the target is the mount name inside /run/secrets. The target
+        # must therefore equal the basename of CONFIG_FILE_PATH — a source-only
+        # entry mounts at /run/secrets/<source> and the pinned proxy loads no route
+        # at all.
         self.assertEqual([item["source"] for item in proxy["secrets"]], ["litellm-config"])
+        targets = [item["target"] for item in proxy["secrets"]]
+        config_path = environment["CONFIG_FILE_PATH"]
+        self.assertEqual(targets, [config_path.rsplit("/", 1)[-1]],
+                         "the configuration secret is not mounted at the basename of CONFIG_FILE_PATH")
+        self.assertEqual("/run/secrets/" + targets[0], config_path,
+                         "the rendered secret target is not the path the proxy loads")
 
         # The optional local overlay adds the operator-provisioned runtime and no
         # automatic weight download.
@@ -542,6 +590,7 @@ class LiteLLMQualificationTest(unittest.TestCase):
         """The index and query inputs reach the local endpoint with their parameters."""
         self.set_mode("ok")
         for name in ("embed-passage", "embed-query"):
+            route = self.route_for_request(name)
             with self.subTest(case=name):
                 self.reset_capture()
                 status, body = self.replay(name)
@@ -551,8 +600,7 @@ class LiteLLMQualificationTest(unittest.TestCase):
                 self.assert_reviewed(name, records[0])
                 payload = json.loads(body)
                 self.assertEqual(len(payload["data"]), 1)
-                self.assertEqual(len(payload["data"][0]["embedding"]), self.route_for(
-                    self.emission["requests"][0]["alias"])["dimension"])
+                self.assertEqual(len(payload["data"][0]["embedding"]), route["dimension"])
 
     def test_hosted_generation_route_is_exact(self):
         """The generation request carries the reviewed routing and nothing else."""
@@ -582,7 +630,7 @@ class LiteLLMQualificationTest(unittest.TestCase):
         rendered = self.config.read_text(encoding="utf-8")
         for forbidden in ("openrouter.ai", "api.openai.com", "anthropic.com", "generativelanguage"):
             self.assertNotIn(forbidden, rendered, "the generated configuration names %s" % forbidden)
-        local_base = self.route_for(self.emission["routes"][0]["alias"])["api_base"]
+        local_base = self.route_of("EMBED")["api_base"]
         self.assertTrue(local_base.startswith("http://" + LOCAL_ALIAS + ":"),
                         "the local endpoint is not a single-label deployment-local origin")
 
@@ -605,6 +653,157 @@ class LiteLLMQualificationTest(unittest.TestCase):
                 self.assertEqual(len(records), 1,
                                  "%s produced %d upstream requests, want exactly 1" % (mode, len(records)))
         self.set_mode("ok")
+
+    def test_upstream_redirect_cannot_qualify(self):
+        """A 3xx from a configured endpoint moves the call off the reviewed route.
+
+        The pinned proxy follows an upstream redirect, so the redirect is not
+        invisible and not ignorable: the request that answers is at a path the
+        review never named. Qualification compares the *answered* request with the
+        reviewed route, so a redirecting endpoint leaves the route unqualified and no
+        grounded or embedding answer is accepted through one.
+        """
+        targets = {
+            "embed-passage": "http://%s:8081/redirected/api/v1/embeddings" % LOCAL_ALIAS,
+            "generate": "https://%s:8082/redirected/api/v1/chat/completions" % HOSTED_ALIAS,
+        }
+        for name, target in targets.items():
+            expected = self.expectations(name)
+            with self.subTest(case=name):
+                self.set_mode("redirect")
+                (self.state / "redirect").write_text(target + "\n", encoding="utf-8")
+                self.reset_capture()
+                try:
+                    status, _ = self.replay(name)
+                finally:
+                    self.set_mode("ok")
+                    (self.state / "redirect").write_text("", encoding="utf-8")
+                records = self.captured()
+                self.assertGreaterEqual(len(records), 1, "the proxy sent no upstream request at all")
+                answered = records[-1]
+                problems = self.reviewed_problems(answered, expected)
+                self.assertTrue(problems, "an answer obtained through a redirect qualified: %s"
+                                % json.dumps(answered))
+                self.assertTrue(any("path" in problem for problem in problems),
+                                "the redirect was not visible in the qualification: %s" % problems)
+                if status == 200:
+                    # The proxy followed the redirect and served the synthetic answer
+                    # from the redirected path. That path is exactly what disqualifies
+                    # the route: the product of a redirect is never a qualified result.
+                    self.assertNotEqual(answered["path"], expected["path"],
+                                        "the redirected request reached the reviewed path")
+                else:
+                    # The proxy refused instead of following: also unqualified.
+                    self.assertGreaterEqual(status, 400,
+                                            "the proxy answered %d for a redirecting endpoint" % status)
+
+    def test_malformed_upstream_answers_are_forwarded_unfixed(self):
+        """Wrong dimension, unknown citation, tool call and truncation arrive intact.
+
+        The proxy repairs, pads, truncates and strips nothing: each defective answer
+        reaches the admitted client unchanged, so the reviewed Go transport's strict
+        reading is the control that refuses it (the refusal itself is asserted in the
+        Go suite). Every case costs exactly one upstream request, so a silent repair
+        or a retry would be visible here.
+        """
+        cases = (
+            ("wrong-dimension", "embed-passage"),
+            ("unknown-citation", "generate"),
+            ("tool-call", "generate"),
+            ("truncated", "generate"),
+        )
+        for mode, name in cases:
+            with self.subTest(mode=mode):
+                self.set_mode(mode)
+                self.reset_capture()
+                status, body = self.replay(name)
+                self.assertEqual(status, 200, "the proxy hid a %s answer: %s" % (mode, body[:400]))
+                records = self.captured()
+                self.assertEqual(len(records), 1,
+                                 "%s produced %d upstream requests, want exactly 1" % (mode, len(records)))
+                self.assert_reviewed(name, records[0])
+                answer = json.loads(body)
+                if mode == "wrong-dimension":
+                    width = len(answer["data"][0]["embedding"])
+                    self.assertEqual(width, self.route_of("EMBED")["dimension"] + 1,
+                                     "the proxy changed the vector width to %d" % width)
+                elif mode == "unknown-citation":
+                    content = json.loads(answer["choices"][0]["message"]["content"])
+                    self.assertEqual(content["citation_ids"], ["doc-not-supplied"],
+                                     "the proxy dropped or rewrote a citation the caller never supplied")
+                elif mode == "tool-call":
+                    message = answer["choices"][0]["message"]
+                    self.assertTrue(message.get("tool_calls"), "the proxy stripped a tool call")
+                else:
+                    self.assertEqual(answer["choices"][0]["finish_reason"], "length",
+                                     "the proxy rewrote a truncated finish reason")
+        self.set_mode("ok")
+
+    def retried_upstream_requests(self, name: str, overrides) -> int:
+        """One operation against a proxy built from the generated file with retries overridden."""
+        config = json.loads(json.dumps(self._parse_config(self.config.read_bytes())))
+        for section, key, value in overrides:
+            config[section][key] = value
+        path = self.workspace / ("retry-control-%s.yaml" % name)
+        path.write_text(self._render_config(config), encoding="utf-8")
+        os.chmod(path, 0o644)
+        container = PROXY + "-retry-" + name
+        try:
+            self._run_proxy(container, path, CONFIG_TARGET)
+            url = self._base_url(container)
+            self._await_proxy(container)
+            self.set_mode("status503")
+            self.reset_capture()
+            request = self.request_for("generate")
+            status, _ = self.post(request["path"], request["body"], base_url=url)
+            self.assertGreaterEqual(status, 500, "the control proxy answered %d" % status)
+            return len(self.captured())
+        finally:
+            docker("rm", "-f", container)
+            self.set_mode("ok")
+
+    def test_retry_control_shows_the_generated_settings_are_the_control(self):
+        """One operation costs one upstream request only because three settings say so.
+
+        The control runs are committed rather than reported once, so the claim stays
+        reproducible. Two measurements are recorded because they differ:
+
+        * raising only ``router_settings.num_retries`` changes nothing — the
+          module-level count is what a call reads, and the generated
+          ``litellm_settings.num_retries: 0`` still governs;
+        * raising all three retry settings makes one operation cost three upstream
+          requests instead of one.
+
+        That is why the renderer emits all three zeroes, and why "no retries" is not
+        a claim about one key.
+        """
+        config = self._parse_config(self.config.read_bytes())
+        self.assertEqual(config["router_settings"]["num_retries"], 0,
+                         "the generated configuration does not disable router retries")
+        self.assertEqual(config["litellm_settings"]["num_retries"], 0,
+                         "the generated configuration does not disable call retries")
+        self.assertEqual(config["litellm_settings"]["num_retries_per_request"], 0,
+                         "the generated configuration does not disable whole-request retries")
+        router_only = self.retried_upstream_requests(
+            "router", [("router_settings", "num_retries", 3)])
+        retrying = self.retried_upstream_requests("all", [
+            ("router_settings", "num_retries", 3),
+            ("litellm_settings", "num_retries", 3),
+            ("litellm_settings", "num_retries_per_request", 3),
+        ])
+        self.set_mode("status503")
+        self.reset_capture()
+        self.replay("generate")
+        generated = len(self.captured())
+        self.set_mode("ok")
+        self.assertEqual(router_only, 1,
+                         "raising only router_settings.num_retries made %d upstream requests, want 1"
+                         % router_only)
+        self.assertEqual(retrying, 3,
+                         "raising all three retry settings made %d upstream requests, want 3"
+                         % retrying)
+        self.assertEqual(generated, 1,
+                         "the generated configuration made %d upstream requests" % generated)
 
     def test_no_silent_parameter_dropping(self):
         """The proxy honours every generated setting: it ignores none of them."""
@@ -647,7 +846,7 @@ class LiteLLMQualificationTest(unittest.TestCase):
         for name, (key, case) in cases.items():
             with self.subTest(case=name):
                 self.reset_capture()
-                request = next(item for item in self.emission["requests"] if item["name"] == "generate")
+                request = self.request_for("generate")
                 body = dict(request["body"])
                 if case == "unknown-model":
                     body["model"] = "dxos-llm-unknown"
@@ -733,7 +932,7 @@ class LiteLLMQualificationTest(unittest.TestCase):
         # model and the reviewed routing is gone. The qualifier must refuse it.
         edited = json.loads(json.dumps(config))
         for entry in edited["model_list"]:
-            if entry["model_info"]["id"] == self.route_for(self.emission["routes"][1]["alias"])["profile_id"]:
+            if entry["model_info"]["id"] == self.route_of("GENERATE")["profile_id"]:
                 entry["litellm_params"]["model"] = "openrouter/qualification/edited-v1"
                 entry["litellm_params"].pop("provider", None)
         edited_path = self.workspace / "edited-config.yaml"
@@ -744,7 +943,7 @@ class LiteLLMQualificationTest(unittest.TestCase):
             self._await_proxy(PROXY + "-drifted")
             self.set_mode("ok")
             self.reset_capture()
-            request = next(item for item in self.emission["requests"] if item["name"] == "generate")
+            request = self.request_for("generate")
             status, _ = self.post(request["path"], request["body"], base_url=url)
             self.assertEqual(status, 200)
             records = self.captured()
@@ -768,7 +967,7 @@ class LiteLLMQualificationTest(unittest.TestCase):
             with urllib.request.urlopen(request, timeout=30) as response:
                 models = json.load(response)["data"]
             self.assertEqual(models, [], "a configuration without a .yaml suffix still loaded routes")
-            request = next(item for item in self.emission["requests"] if item["name"] == "generate")
+            request = self.request_for("generate")
             status, _ = self.post(request["path"], request["body"], base_url=url)
             self.assertGreaterEqual(status, 400, "an unloaded configuration served a route")
         finally:
