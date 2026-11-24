@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Opt-in overlay for the bundled hosted-model adapter. Add it after
+# compose.models.yaml; leaving it out keeps the existing external-endpoint path
+# and starts no adapter. See docs/guides/knowledge/models.md.
+#
+# The adapter is a Tier 2 boundary integration: it publishes no host port and has
+# no APISIX route, no database connection and no Docker socket. The Gateway and
+# worker reach it only through the private Compose network at
+# https://cap-ai-model-adapter:8443, and only with a trusted CA bundle.
+services:
+  cap-ai-model-adapter:
+    build:
+      context: ./capabilities
+      additional_contexts:
+        legal: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: cap-ai-model-adapter
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    # Order matters: the provider file is read first and the internal token file
+    # second, so a provider file that wrongly repeats MODEL_ADAPTER_TOKEN still
+    # loses to the deployment's own token. The preflight script rejects that
+    # collision before the stack starts.
+    env_file:
+      - ${RAG_MODEL_ADAPTER_CREDENTIAL_ENV_FILE:?set the adapter-only provider credential env file}
+      - ${RAG_MODEL_CREDENTIAL_ENV_FILE:?set the private internal adapter token env file}
+    environment:
+      MODEL_ADAPTER_CONFIG_FILE: /run/secrets/model-adapter-config
+      MODEL_ADAPTER_TLS_CERT_FILE: /run/secrets/model-adapter-tls-cert
+      MODEL_ADAPTER_TLS_KEY_FILE: /run/secrets/model-adapter-tls-key
+      MODEL_ADAPTER_LISTEN: ":8443"
+    secrets:
+      - model-adapter-config
+      - model-adapter-tls-cert
+      - model-adapter-tls-key
+
+  cap-ai:
+    environment:
+      SSL_CERT_FILE: /run/secrets/model-adapter-ca
+    volumes:
+      - type: bind
+        source: ${RAG_MODEL_ADAPTER_CA_FILE:?set the CA bundle that trusts the bundled adapter certificate}
+        target: /run/secrets/model-adapter-ca
+        read_only: true
+
+  cap-ai-worker:
+    environment:
+      SSL_CERT_FILE: /run/secrets/model-adapter-ca
+    volumes:
+      - type: bind
+        source: ${RAG_MODEL_ADAPTER_CA_FILE:?set the CA bundle that trusts the bundled adapter certificate}
+        target: /run/secrets/model-adapter-ca
+        read_only: true
+
+secrets:
+  model-adapter-config:
+    file: ${RAG_MODEL_ADAPTER_CONFIG_FILE:?set the reviewed adapter route configuration file}
+  model-adapter-tls-cert:
+    file: ${RAG_MODEL_ADAPTER_TLS_CERT_FILE:?set the adapter TLS certificate file}
+  model-adapter-tls-key:
+    file: ${RAG_MODEL_ADAPTER_TLS_KEY_FILE:?set the adapter TLS private key file}

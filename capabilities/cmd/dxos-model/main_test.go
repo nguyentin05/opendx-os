@@ -522,6 +522,166 @@ func TestCLIValidationAndExitCodes(t *testing.T) {
 	})
 }
 
+// TestCLIRouteOnlyValidation covers the additive offline route-only mode: with
+// --adapter-config and no --catalog, validate reports what each configured route
+// serves before any catalog exists. The expected digest and path are computed with
+// the adapter's own helpers, so the command cannot ship a second canonicalization.
+// No database, catalog or network is involved; the environment supplies a
+// database URL that must never be read.
+func TestCLIRouteOnlyValidation(t *testing.T) {
+	_, configPath := cliFixtures(t)
+	config, err := modeladapter.ParseConfig([]byte(configJSON))
+	if err != nil {
+		t.Fatalf("configuration fixture: %v", err)
+	}
+	type wantRoute struct {
+		digest string
+		path   string
+	}
+	wants := make([]wantRoute, 0, len(config.Routes))
+	for _, route := range config.Routes {
+		digest, err := modeladapter.RouteDigest(route)
+		if err != nil {
+			t.Fatalf("route digest: %v", err)
+		}
+		path, err := modeladapter.RoutePath(route)
+		if err != nil {
+			t.Fatalf("route path: %v", err)
+		}
+		wants = append(wants, wantRoute{digest: digest, path: path})
+	}
+	if len(wants) != 2 || wants[0].path == wants[1].path {
+		t.Fatalf("fixture must declare two distinct routes: %+v", wants)
+	}
+
+	// The environment carries a DSN only to prove the command never reads it.
+	getenv := func(string) string { return testDSN }
+
+	t.Run("human output", func(t *testing.T) {
+		code, stdout, stderr := runCLI(t, []string{"validate", "--adapter-config", configPath}, getenv)
+		if code != 0 || stderr != "" {
+			t.Fatalf("route-only validate exit = %d stderr %q", code, stderr)
+		}
+		lines := strings.Split(strings.TrimSpace(stdout), "\n")
+		// One route line and one model line per configured route.
+		if len(lines) != 4 {
+			t.Fatalf("route-only output = %q", lines)
+		}
+		for index, want := range wants {
+			routeLine := lines[index*2]
+			if !strings.HasPrefix(routeLine, "route digest="+want.digest+" path="+want.path+" ") {
+				t.Fatalf("route line %q lacks digest %s and path %s", routeLine, want.digest, want.path)
+			}
+			if len(want.digest) != 64 || !strings.HasSuffix(want.path, "/call") {
+				t.Fatalf("unexpected derived route identity: %+v", want)
+			}
+			for _, field := range []string{"protocol_version=1", "type=openai-compatible", "base_url=https://", "credential_ref="} {
+				if !strings.Contains(routeLine, field) {
+					t.Fatalf("route line %q lacks %q", routeLine, field)
+				}
+			}
+		}
+		// The embedding rule carries its exact dimension and limits.
+		embedRule := lines[1]
+		for _, field := range []string{
+			"model openai/text-embedding-3-small", "purpose=EMBED", "dimension=1536",
+			"max_input_tokens=8191", "max_output_tokens=1", "max_bytes=65536", "timeout_ms=30000",
+		} {
+			if !strings.Contains(embedRule, field) {
+				t.Fatalf("embedding rule %q lacks %q", embedRule, field)
+			}
+		}
+		// GENERATE has no dimension, so the field is absent rather than zero.
+		generateRule := lines[3]
+		if !strings.Contains(generateRule, "model openai/gpt-4o-mini") || !strings.Contains(generateRule, "purpose=GENERATE") {
+			t.Fatalf("generation rule = %q", generateRule)
+		}
+		if strings.Contains(generateRule, "dimension=") {
+			t.Fatalf("generation rule reports a dimension: %q", generateRule)
+		}
+		// No secret value, no DSN and no activation claim reaches the transcript.
+		assertNoCanary(t, stdout, stderr)
+		if strings.Contains(stdout, "postgres://") || strings.Contains(strings.ToLower(stdout), "enabled=") {
+			t.Fatalf("route-only output leaked a dependency or an activation claim: %q", stdout)
+		}
+	})
+
+	t.Run("json output is stable", func(t *testing.T) {
+		code, stdout, stderr := runCLI(t, []string{"validate", "--adapter-config", configPath, "--json"}, getenv)
+		if code != 0 || stderr != "" {
+			t.Fatalf("json route-only exit = %d stderr %q", code, stderr)
+		}
+		var routes []map[string]any
+		if err := json.Unmarshal([]byte(stdout), &routes); err != nil {
+			t.Fatalf("json route-only output: %v (%q)", err, stdout)
+		}
+		if len(routes) != len(wants) {
+			t.Fatalf("json routes = %d", len(routes))
+		}
+		for index, want := range wants {
+			route := routes[index]
+			if route["digest"] != want.digest || route["path"] != want.path {
+				t.Fatalf("route %d = %+v, want digest %s path %s", index, route, want.digest, want.path)
+			}
+			for _, field := range []string{"protocol_version", "type", "base_url", "credential_ref", "models"} {
+				if _, ok := route[field]; !ok {
+					t.Fatalf("route %d lacks %s: %+v", index, field, route)
+				}
+			}
+			rules, ok := route["models"].([]any)
+			if !ok || len(rules) != 1 {
+				t.Fatalf("route %d models = %+v", index, route["models"])
+			}
+			rule, _ := rules[0].(map[string]any)
+			for _, field := range []string{"model_id", "purpose", "limits"} {
+				if _, ok := rule[field]; !ok {
+					t.Fatalf("route %d rule lacks %s: %+v", index, field, rule)
+				}
+			}
+			limits, _ := rule["limits"].(map[string]any)
+			if limits["max_input_tokens"] == nil || limits["timeout_ms"] == nil {
+				t.Fatalf("route %d limits = %+v", index, rule["limits"])
+			}
+			_, hasDimension := rule["dimension"]
+			if (rule["purpose"] == "EMBED") != hasDimension {
+				t.Fatalf("route %d rule dimension presence = %+v", index, rule)
+			}
+		}
+		// The same declaration renders the same bytes every time.
+		code, again, stderr := runCLI(t, []string{"validate", "--adapter-config", configPath, "--json"}, getenv)
+		if code != 0 || stderr != "" || again != stdout {
+			t.Fatalf("route-only output is not stable: %q vs %q", stdout, again)
+		}
+		assertNoCanary(t, stdout, stderr)
+	})
+
+	t.Run("neither flag is an argument error", func(t *testing.T) {
+		for _, args := range [][]string{{"validate"}, {"validate", "--json"}, {"validate", "--adapter-origin", testAdapterOrigin}} {
+			code, stdout, stderr := runCLI(t, args, getenv)
+			if code != 2 || stdout != "" {
+				t.Fatalf("%v exit = %d stdout %q", args, code, stdout)
+			}
+			if !strings.HasPrefix(stderr, "dxos-model: MODEL_CLI_ARGUMENTS") {
+				t.Fatalf("%v label = %q", args, stderr)
+			}
+			assertNoCanary(t, stdout, stderr)
+		}
+	})
+
+	t.Run("a catalog keeps the binding check", func(t *testing.T) {
+		catalogPath, configPath := cliFixtures(t)
+		code, stdout, stderr := runCLI(t, []string{"validate", "--catalog", catalogPath, "--adapter-config", configPath}, getenv)
+		if code != 0 || stderr != "" {
+			t.Fatalf("catalog validate exit = %d stderr %q", code, stderr)
+		}
+		// Both flags select the existing catalog cross-check: one line per
+		// candidate, not the route-only summary.
+		if lines := strings.Split(strings.TrimSpace(stdout), "\n"); len(lines) != 2 || strings.HasPrefix(lines[0], "route digest=") {
+			t.Fatalf("catalog + config output = %q", lines)
+		}
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Authenticated management commands
 // ---------------------------------------------------------------------------

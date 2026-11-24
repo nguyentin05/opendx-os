@@ -180,9 +180,17 @@ production mutation route and grants no such administration permission.
 | Embedding query and index generation | Resolve EMBEDDING, pin exact revision/dimensions, preserve independent lexical readiness |
 | Answer service | Resolve LLM and distinguish unavailable models from policy denial; preserve scoped fallback and final authorization |
 | Future evaluation worker | Consume the same slot/revision identity and existing policy/accounting gates; no separate model override |
-| Future admin route | Separate Platform Admin authorization and audited lifecycle; no production mutation in R1 |
+| Deployment administration CLI | `dxos-model` is the restricted administration extension: authenticated operator, dedicated deployment logins, audited SQL functions. It is an out-of-band tool, not a route |
 | Model provisioning role | Narrow candidate import only, no activation or blanket table writes |
 | App Shell/UI | No model selector or credentials; display existing unavailable/search-only outcomes and discard stale context |
+
+The administration extension adds no HTTP surface. There is no public mutation
+route, no Admin UI and no automatic activation: `dxos-model` runs in a protected
+deployment context with a token file or stdin, and each mutation is a
+transactional SQL function that verifies the exact session, the current Core
+`role_operator` and the expected slot revision before it writes. Startup and
+`validate`/`import` never promote; a synthetic `verify` probe never promotes and
+never grants processing. See the [CLI contract](../cli/dxos-model.md).
 
 Review the contract with the registry OFF and ON: OFF preserves legacy exact
 profile references; ON uses a single DB slot authority even when file references

@@ -5,7 +5,7 @@ diataxis: explanation
 audience: [platform-developer, operator]
 status: active
 owner: platform
-last_reviewed: 2026-11-23
+last_reviewed: 2026-11-24
 ---
 
 # Control plane
@@ -42,6 +42,32 @@ a new required column, or an undeclared live column blocks publication with a
 structured error while the previous version keeps serving. A removed state
 still used by records is refused the same way. CHECK constraints are not
 compared yet.
+
+## Model provisioning CLI
+
+`dxos-model` is a second out-of-band control-plane tool, in the capabilities Go
+module, for the optional hosted-model path
+([CLI reference](../reference/cli/dxos-model.md)). An operator runs the binary
+explicitly in a protected deployment context to validate and import model catalog
+declarations, make one synthetic verification call, and perform audited model-slot
+and PERSONAL processing-approval changes.
+
+It is not an Operator dependency and not a resident service:
+
+- the `operator` service does not run it, wait for it or call it, and no Runtime
+  or reconciliation path imports its package;
+- Runtime services read published configuration and database slots, so a
+  `dxos-model` run is never on a request path;
+- it is not deployed as a container in the base stack. The optional
+  `compose.model-adapter.yaml` overlay starts only the model adapter, never the
+  CLI;
+- it holds no application identity and no long-lived credential: each invocation
+  authenticates one verified operator token and opens exactly one restricted
+  deployment login, then exits.
+
+The model adapter itself is a Tier 2 boundary integration, not part of the control
+plane: it translates the existing bounded protocol to one reviewed upstream call
+and owns no database, identity or policy decision.
 
 ## Install, upgrade, and uninstall
 

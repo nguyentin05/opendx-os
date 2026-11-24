@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -112,6 +113,7 @@ and administers the model registry and the personal processing approvals.
 
 Usage:
   dxos-model validate --catalog FILE [--adapter-config FILE] [--adapter-origin URL] [--json]
+  dxos-model validate --adapter-config FILE [--json]
   dxos-model import   --catalog FILE [--json]
   dxos-model verify   --catalog FILE --profile ID --revision N [--json]
 
@@ -129,6 +131,13 @@ Usage:
             the bundled adapter origin must match its reviewed route exactly.
             --adapter-origin (default ` + defaultAdapterOrigin + `) is the offline
             cross-check origin, never a probe destination.
+            Without --catalog, --adapter-config alone selects the route-only mode:
+            it prints each configured route's digest, its served path
+            /v1/routes/<digest>/call and its non-secret model identifiers,
+            purposes, dimensions and limits. It reads no catalog, opens no
+            database and makes no network call, so an operator can compute the
+            route path before declaring the catalog. Supplying neither flag is an
+            argument error.
   import    Declares the catalog's disabled candidates through the restricted
             catalog login named by ` + catalogDatabaseEnv + `. The value must be a
             URL-form PostgreSQL DSN starting with postgres:// or postgresql://;
@@ -269,7 +278,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 	return fail(stderr, invalidArgs("unknown command"))
 }
 
-// runValidate performs the offline cross-check.
+// runValidate performs the offline cross-check, or the route-only derivation when
+// no catalog is supplied. Both modes are offline: they read the named files and
+// return. Nothing here opens a database, resolves a secret or makes a call.
 func runValidate(args []string, stdout, stderr io.Writer) int {
 	set := newFlagSet("validate")
 	catalogPath := set.String("catalog", "", "catalog file")
@@ -279,15 +290,24 @@ func runValidate(args []string, stdout, stderr io.Writer) int {
 	if code, done := parseFlags(set, args, stdout, stderr); done {
 		return code
 	}
-	if strings.TrimSpace(*catalogPath) == "" {
-		return fail(stderr, invalidArgs("validate requires --catalog"))
+	hasCatalog := strings.TrimSpace(*catalogPath) != ""
+	hasConfig := strings.TrimSpace(*adapterConfigPath) != ""
+	switch {
+	case !hasCatalog && !hasConfig:
+		// Neither mode was selected, so there is nothing to validate. This stays an
+		// invocation failure, not a catalog rejection.
+		return fail(stderr, invalidArgs("validate requires --catalog, --adapter-config, or both"))
+	case !hasCatalog:
+		// Route-only: a catalog does not exist yet, and the operator needs the
+		// digest and served path before it can be declared.
+		return runValidateRoutes(*adapterConfigPath, *asJSON, stdout, stderr)
 	}
 	catalog, err := modelprovisioning.LoadCatalog(*catalogPath)
 	if err != nil {
 		return fail(stderr, err)
 	}
 	var config *modeladapter.Config
-	if strings.TrimSpace(*adapterConfigPath) != "" {
+	if hasConfig {
 		parsed, err := loadAdapterConfig(*adapterConfigPath)
 		if err != nil {
 			return fail(stderr, err)
@@ -420,6 +440,103 @@ func runVerify(ctx context.Context, args []string, getenv func(string) string, s
 type importSummary struct {
 	Created   int `json:"created"`
 	Unchanged int `json:"unchanged"`
+}
+
+// routeDeclaration is one configured route as the route-only mode reports it: the
+// reviewed, non-secret metadata a catalog declaration needs. The digest and the
+// path are produced by the adapter's own helpers, and no credential value is read
+// or printed — credential_ref is the environment reference only.
+type routeDeclaration struct {
+	Digest          string           `json:"digest"`
+	Path            string           `json:"path"`
+	ProtocolVersion int              `json:"protocol_version"`
+	Type            string           `json:"type"`
+	BaseURL         string           `json:"base_url"`
+	CredentialRef   string           `json:"credential_ref"`
+	Models          []routeModelRule `json:"models"`
+}
+
+// routeModelRule is one served model rule: identity, purpose, exact dimension and
+// the reviewed resource ceilings.
+type routeModelRule struct {
+	ModelID   string        `json:"model_id"`
+	Purpose   string        `json:"purpose"`
+	Dimension int           `json:"dimension,omitempty"`
+	Limits    models.Limits `json:"limits"`
+}
+
+// runValidateRoutes is the offline route-only mode of validate. It parses the
+// reviewed adapter configuration, derives each route's digest and served path with
+// modeladapter.RouteDigest and modeladapter.RoutePath, and prints the non-secret
+// model rules. It opens no catalog, database or network connection.
+func runValidateRoutes(path string, asJSON bool, stdout, stderr io.Writer) int {
+	config, err := loadAdapterConfig(path)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	routes, err := routeDeclarations(config)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	if asJSON {
+		return writeJSON(stdout, stderr, routes)
+	}
+	writeRouteDeclarations(stdout, routes)
+	return exitOK
+}
+
+// routeDeclarations derives one summary per configured route. Model rules are
+// ordered by (model_id, purpose) — the same order the route digest canonicalizes —
+// so the report is stable whatever order the declaration used.
+func routeDeclarations(config modeladapter.Config) ([]routeDeclaration, error) {
+	declarations := make([]routeDeclaration, 0, len(config.Routes))
+	for _, route := range config.Routes {
+		digest, err := modeladapter.RouteDigest(route)
+		if err != nil {
+			return nil, invalidArgs("the adapter configuration is not valid")
+		}
+		path, err := modeladapter.RoutePath(route)
+		if err != nil {
+			return nil, invalidArgs("the adapter configuration is not valid")
+		}
+		rules := append([]modeladapter.ModelRule(nil), route.Models...)
+		sort.Slice(rules, func(i, j int) bool {
+			if rules[i].ModelID != rules[j].ModelID {
+				return rules[i].ModelID < rules[j].ModelID
+			}
+			return rules[i].Purpose < rules[j].Purpose
+		})
+		models := make([]routeModelRule, 0, len(rules))
+		for _, rule := range rules {
+			models = append(models, routeModelRule{
+				ModelID: rule.ModelID, Purpose: rule.Purpose, Dimension: rule.Dimension, Limits: rule.Limits,
+			})
+		}
+		declarations = append(declarations, routeDeclaration{
+			Digest: digest, Path: path,
+			ProtocolVersion: route.ProtocolVersion, Type: route.Type,
+			BaseURL: route.BaseURL, CredentialRef: route.CredentialRef, Models: models,
+		})
+	}
+	return declarations, nil
+}
+
+// writeRouteDeclarations prints one route line and one line per served model rule.
+// The leading token keeps the two levels distinguishable without a parser.
+func writeRouteDeclarations(stdout io.Writer, routes []routeDeclaration) {
+	for _, route := range routes {
+		_, _ = fmt.Fprintf(stdout, "route digest=%s path=%s protocol_version=%d type=%s base_url=%s credential_ref=%s\n",
+			route.Digest, route.Path, route.ProtocolVersion, route.Type, route.BaseURL, route.CredentialRef)
+		for _, rule := range route.Models {
+			line := fmt.Sprintf("model %s purpose=%s", rule.ModelID, rule.Purpose)
+			if rule.Dimension > 0 {
+				line += fmt.Sprintf(" dimension=%d", rule.Dimension)
+			}
+			line += fmt.Sprintf(" max_input_tokens=%d max_output_tokens=%d max_bytes=%d timeout_ms=%d",
+				rule.Limits.MaxInputTokens, rule.Limits.MaxOutputTokens, rule.Limits.MaxBytes, rule.Limits.TimeoutMS)
+			_, _ = fmt.Fprintln(stdout, line)
+		}
+	}
 }
 
 // loadAdapterConfig reads the reviewed route declaration with a hard cap. Parse

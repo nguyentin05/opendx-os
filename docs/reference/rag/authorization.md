@@ -5,7 +5,7 @@ diataxis: reference
 audience: [security-reviewer, platform-developer]
 status: active
 owner: platform
-last_reviewed: 2026-11-23
+last_reviewed: 2026-11-24
 ---
 
 # RAG authorization and source trust
@@ -66,6 +66,53 @@ Approval binds the processing purpose (`EMBED` or `GENERATE`), provider identity
 Treat every global-chat question as potentially PERSONAL during hosted processing, even when searching APP scopes or generating from APP-only evidence. For query-only EMBED, require the exact current PERSONAL query review for the app being searched in addition to ordinary scope and model policy. For grounded AGENT GENERATE, require a separate current PERSONAL query review for the configured processing consumer. Source READ and processing predicates apply independently under each source's actual current app and role.
 
 Only Platform Admin manages installation-wide model slots and processing approvals; applications and chat requests cannot choose models, providers, endpoints or credentials. The Gateway verifies the exact active slot and revision before dispatching a global query or answer. A slot change requires matching approval for the new profile revision and leaves existing vectors tied to their original profile. With no qualifying approval/model, use authorized PostgreSQL FTS and the documented search-only outcome rather than an unapproved provider. Hosted RERANK and OCR/VLM, and local-model serving, are outside this increment. Documents and model responses remain untrusted data and cannot grant tools, authority or provider URLs.
+
+## Trusted deployment boundary
+
+Model administration is a deployment operation, not a request path. `dxos-model`
+runs out of band in a protected administrative environment; it adds no Admin API,
+no public mutation route and no resident service. It is a trusted deployment
+client, not a remote access security boundary: an actor who holds the
+administration database credential already has infrastructure privilege, so the
+host, the token file and the environment files are protected as deployment
+secrets. Environment files are not encrypted.
+
+Identity is verified twice, for different reasons:
+
+| Layer | What it establishes |
+| --- | --- |
+| `dxos-model` | The access token's signature, issuer, audience and expiry, through the existing verifier and `OIDC_ISSUER_URL`/`OIDC_JWKS_URL`/`OIDC_AUDIENCE`. The verified subject is the only actor; there is no `--actor` flag and no token value flag |
+| Database function | The exact deployment session and the current business authority: an ACTIVE Core user holding `role_operator` now, checked inside the mutating transaction and serialized against the authority rows |
+
+JWT role claims grant nothing here. A revoked or disabled operator is refused even
+with a valid token, and the token is never stored or logged. Each command opens
+exactly one login:
+
+| Login | Commands | Boundary |
+| --- | --- | --- |
+| `dxos_ai_model_catalog` | `import` | Importer only; cannot activate, change a slot or read protected knowledge |
+| `dxos_ai_model_admin` | `list`, `inspect`, `slots`, `activate`, `deactivate` | Administration functions only; `session_user` and the role setting must be exactly this login, and no table writes are granted |
+| `dxos_authz` | `policy approve`, `policy revoke` | The only session the existing PERSONAL approval functions execute for; the runtime, Gateway, worker and catalog logins cannot call them |
+
+Runtime logins (API, worker, dispatcher, Gateway) keep their existing rights and
+cannot manage models. The adapter holds no database credential at all.
+
+Independent human review and probe evidence are distinct, and neither replaces the
+other. A `verify` run is one bounded synthetic request that shows the exact
+reviewed route answers the existing protocol with a valid dimension or citation;
+it qualifies no provider and approves nothing. The activation review carries that
+report as `qualification` **and** a separate `attestation_ref` naming an
+independently recorded human review. The database checks that both name the same
+profile, revision, purpose and declaration digest as the stored candidate before
+it writes. A passing probe with no human attestation is refused; an attestation
+without matching probe evidence is refused.
+
+Slot activation and processing approval are also separate. Activation enables the
+reviewed profile and binds the exact revision to `EMBEDDING` or `LLM`; it never
+approves hosted PERSONAL egress, and `cap_ai.approve_agent_processing` is not
+called from it. Conversely, an approval never binds or advances a slot. A new slot
+revision still requires its own current approval for that revision, and existing
+vectors remain tied to the profile revision and dimension that produced them.
 
 ## Model-operation attribution and durable state
 
