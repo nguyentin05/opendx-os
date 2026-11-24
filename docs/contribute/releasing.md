@@ -81,7 +81,8 @@ also rejects a run started or re-run by another account.
 2. packs `dist/dxos-open-core-X.Y.Z.tar.gz` with `scripts/package_release.sh`,
    runs `scripts/release/verify-archive.sh` so the archive is refused when it
    carries local-only material or lacks a component the installer needs, and
-   writes `dist/SHA256SUMS`;
+   writes `dist/SHA256SUMS`; the archive root also carries a `VERSION` file,
+   which `scripts/install.sh` uses to stamp the built `dxos-operator`;
 3. generates `dist/opendx-os-X.Y.Z.cdx.json` with `anchore/sbom-action`;
 4. attests the tarball and SBOM with `actions/attest-build-provenance`;
 5. uploads the assets to the existing draft release, or creates a draft with

@@ -115,6 +115,16 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.licenses=Apache-2.0
 
+      - name: Derive operator version
+        id: operator-version
+        if: matrix.image == 'opendx-operator'
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and push
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -123,7 +133,9 @@ jobs:
           file: ${{ matrix.file }}
           # The repository root, for the license files every image carries.
           build-contexts: legal=.
-          build-args: ${{ matrix.build-args }}
+          # A GitHub expression cannot shorten github.sha, so the operator's
+          # version comes from the step above; every other image keeps its matrix args.
+          build-args: ${{ matrix.image == 'opendx-operator' && format('VERSION={0}', steps.operator-version.outputs.value) || matrix.build-args }}
           platforms: linux/amd64
           # Pull requests build the image but never publish it.
           push: ${{ github.event_name != 'pull_request' }}

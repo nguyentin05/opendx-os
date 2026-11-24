@@ -28,6 +28,16 @@ import (
 	"github.com/opendx-os/opendx-os/operator/internal/reconcile"
 )
 
+func TestCLIVersion(t *testing.T) {
+	var out, errOut bytes.Buffer
+	if code := runCLI([]string{"version"}, &out, &errOut, nil, nil); code != 0 {
+		t.Fatalf("version command exit = %d: %s", code, errOut.String())
+	}
+	if got := strings.TrimSpace(out.String()); got != "dxos-operator dev (DX-OS Open-Core OLP 2026)" {
+		t.Fatalf("version output = %q", got)
+	}
+}
+
 func TestCLIValidateAndPlan(t *testing.T) {
 	fixture := filepath.Join("..", "..", "..", "apps", "procurement", "manifest.yaml")
 
