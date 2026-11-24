@@ -179,6 +179,17 @@ func (g *Gateway) record(ctx context.Context, key, fingerprint, token string, f 
 	return err == nil && applied
 }
 
+// ValidResult is the Gateway result boundary as a pure predicate. It exists so
+// offline tooling can apply exactly the checks a dispatch applies — one
+// implementation, so a verification tool cannot drift from the Gateway or quietly
+// relax it. It is a passthrough: the dispatch path still calls validResult.
+func ValidResult(profile Profile, result Result) bool { return validResult(profile, result) }
+
+// WithinLimits is the Gateway usage ceiling as a pure predicate, a passthrough for
+// the same reason as ValidResult: absent usage is trusted as "not reported" and
+// present usage must be non-negative inside both declared ceilings.
+func WithinLimits(usage *Usage, profile Profile) bool { return withinLimits(usage, profile) }
+
 func withinLimits(usage *Usage, profile Profile) bool {
 	if usage == nil {
 		return true

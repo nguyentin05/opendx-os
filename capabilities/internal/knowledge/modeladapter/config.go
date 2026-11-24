@@ -431,8 +431,31 @@ func canonicalBaseURL(raw string) (string, string, error) {
 	return "https://" + rendered + path, host, nil
 }
 
+// Origin canonicalizes the origin a URL addresses: the HTTPS scheme and its
+// canonical authority only, with the host lowercased and a default port collapsed.
+// The path is deliberately ignored, so one destination has exactly one spelling
+// whether a caller wrote a trailing slash, a route path or nothing at all.
+// Credentials, a query, a fragment and an opaque URL are rejected rather than
+// normalized, because each can denote a destination the review did not see.
+//
+// It is the only origin canonicalization: the adapter's own origin check and the
+// offline catalog cross-check both compare through it.
+func Origin(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.RawFragment != "" || u.Opaque != "" {
+		return "", invalid("origin must be an HTTPS origin")
+	}
+	_, rendered, ok := authority(u)
+	if !ok {
+		return "", invalid("origin must be an HTTPS origin")
+	}
+	return "https://" + rendered, nil
+}
+
 // normalizeOrigin canonicalizes the bundled adapter origin to scheme://host so a
-// default port, a trailing slash or host case cannot create a second origin.
+// default port, a trailing slash or host case cannot create a second origin. A
+// declared path other than "/" is a configuration mistake, not an origin, so it is
+// rejected here and not merely ignored.
 func normalizeOrigin(raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.RawFragment != "" || u.Opaque != "" {
@@ -441,11 +464,7 @@ func normalizeOrigin(raw string) (string, error) {
 	if u.Path != "" && u.Path != "/" {
 		return "", invalid("adapter origin must not carry a path")
 	}
-	_, rendered, ok := authority(u)
-	if !ok {
-		return "", invalid("adapter origin must be an HTTPS origin")
-	}
-	return "https://" + rendered, nil
+	return Origin(raw)
 }
 
 // authority returns the canonical lowercase host and its rendered form. One
