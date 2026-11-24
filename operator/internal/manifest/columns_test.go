@@ -32,7 +32,7 @@ func TestValidateColumnRefusalReasons(t *testing.T) {
 		{
 			"reserved system column",
 			func(a *DXApplication) { a.Spec.Tables[0].Columns[0].Name = "id" },
-			[]string{`column "id": reserved name`, "id, created_by, version, created_at, updated_at, status, org_unit_id"},
+			[]string{`column "id": reserved name`},
 		},
 		{
 			"status reserved on a plain table",

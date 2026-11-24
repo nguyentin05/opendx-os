@@ -101,17 +101,6 @@ var SharedTables = map[string]SharedTable{
 	},
 }
 
-// reservedColumnNames lists the names a business column may not use on t. The
-// operator-managed columns are included even when this table does not carry
-// them, because status and org_unit_id are reserved on every table.
-func reservedColumnNames(t *TableDef) []string {
-	names := []string{"id", "created_by", "version", "created_at", "updated_at", "status", "org_unit_id"}
-	if t.IsChild() {
-		names = append(names, t.BelongsTo.Column)
-	}
-	return names
-}
-
 // SystemColumns returns the operator-managed columns of one of the
 // application's tables and their manifest types. org_unit_id exists only when
 // the application declares cap-hr and the table is not a child table, status
@@ -324,7 +313,7 @@ func validateTable(app *DXApplication, t *TableDef, tables, commands map[string]
 		// status and org_unit_id stay reserved on every table, so adding a
 		// state machine or cap-hr later cannot collide with a business column.
 		if system[c.Name] != "" || c.Name == "status" || c.Name == "org_unit_id" {
-			return fmt.Errorf("column %q: reserved name; the operator manages %s", c.Name, strings.Join(reservedColumnNames(t), ", "))
+			return fmt.Errorf("column %q: reserved name; the operator manages this column", c.Name)
 		}
 		if cols[c.Name] != "" {
 			return fmt.Errorf("column %q: duplicate column", c.Name)
