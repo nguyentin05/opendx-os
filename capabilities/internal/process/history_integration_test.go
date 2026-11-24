@@ -7,6 +7,7 @@ package process
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http/httptest"
 	"strings"
@@ -15,6 +16,51 @@ import (
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/testutil"
 )
+
+func setRequestSelectColumns(t *testing.T, db *sql.DB, columns []string) {
+	t.Helper()
+	var raw []byte
+	if err := db.QueryRow(`SELECT spec FROM core.apps WHERE app_id=$1`, testutil.AppID).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var spec map[string]any
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		t.Fatal(err)
+	}
+	tables, ok := spec["tables"].([]any)
+	if !ok {
+		t.Fatal("app spec has no tables")
+	}
+	for _, rawTable := range tables {
+		table, ok := rawTable.(map[string]any)
+		if !ok || table["name"] != "domain.procurement_requests" {
+			continue
+		}
+		access, ok := table["access"].(map[string]any)
+		if !ok {
+			continue
+		}
+		rules, ok := access["select"].([]any)
+		if !ok {
+			continue
+		}
+		for _, rawRule := range rules {
+			rule, ok := rawRule.(map[string]any)
+			if ok && rule["role"] == "role_procurement_requester" {
+				rule["columns"] = columns
+				updated, err := json.Marshal(spec)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.Exec(`UPDATE core.apps SET spec=$1 WHERE app_id=$2`, string(updated), testutil.AppID); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+		}
+	}
+	t.Fatal("requester select rule not found")
+}
 
 func TestRecordHistoryFollowsAccessAndProjectsOnlyStatus(t *testing.T) {
 	o := newOrg(t)
@@ -96,6 +142,74 @@ func TestRecordHistoryFollowsAccessAndProjectsOnlyStatus(t *testing.T) {
 		actor, ok := entry["actor"].(map[string]any)
 		if !ok || len(actor) != 2 || actor["id"] == nil || actor["display_name"] == nil {
 			t.Fatalf("actor = %v", entry["actor"])
+		}
+	}
+
+	// A role can read the record without reading created_by; the actor, acting
+	// role and role description are then omitted, while status remains.
+	setRequestSelectColumns(t, o.p.Admin, []string{"id", "status", "version"})
+	withoutActor, status, err := o.engine.History(context.Background(), owner, testutil.AppID, o.p.Table, id)
+	if err != nil || status != 200 {
+		t.Fatalf("history without actor = %d %v", status, err)
+	}
+	for _, entry := range withoutActor.Entries {
+		if entry.Actor != nil || entry.ActingRole != "" || entry.RoleDescription != "" {
+			t.Fatalf("actor fields visible without created_by: %+v", entry)
+		}
+		if entry.Status == nil {
+			t.Fatalf("status hidden although readable: %+v", entry)
+		}
+	}
+	body, err = json.Marshal(withoutActor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var projectedWithoutActor map[string]any
+	if err := json.Unmarshal(body, &projectedWithoutActor); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range projectedWithoutActor["entries"].([]any) {
+		entry := raw.(map[string]any)
+		for _, key := range []string{"actor", "acting_role", "acting_role_description"} {
+			if _, ok := entry[key]; ok {
+				t.Fatalf("%s present without created_by: %s", key, body)
+			}
+		}
+		if _, ok := entry["status"]; !ok {
+			t.Fatalf("status missing although readable: %s", body)
+		}
+	}
+
+	// A role can read created_by without reading status; the actor remains and
+	// status is omitted.
+	setRequestSelectColumns(t, o.p.Admin, []string{"id", "created_by", "version"})
+	withoutStatus, status, err := o.engine.History(context.Background(), owner, testutil.AppID, o.p.Table, id)
+	if err != nil || status != 200 {
+		t.Fatalf("history without status = %d %v", status, err)
+	}
+	for _, entry := range withoutStatus.Entries {
+		if entry.Actor == nil || entry.ActingRole == "" {
+			t.Fatalf("actor fields hidden with created_by: %+v", entry)
+		}
+		if entry.Status != nil {
+			t.Fatalf("status visible without status: %+v", entry)
+		}
+	}
+	body, err = json.Marshal(withoutStatus)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var projectedWithoutStatus map[string]any
+	if err := json.Unmarshal(body, &projectedWithoutStatus); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range projectedWithoutStatus["entries"].([]any) {
+		entry := raw.(map[string]any)
+		if _, ok := entry["actor"]; !ok {
+			t.Fatalf("actor missing although readable: %s", body)
+		}
+		if _, ok := entry["status"]; ok {
+			t.Fatalf("status present without status: %s", body)
 		}
 	}
 
