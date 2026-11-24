@@ -24,8 +24,8 @@ export class ProcessHistoryError extends Error {
 export interface HistoryEntry {
   at: string;
   action: string;
-  actor: { id: string; display_name: string };
-  acting_role: string;
+  actor?: { id: string; display_name: string };
+  acting_role?: string;
   acting_role_description?: string;
   version?: number;
   status?: string;
@@ -33,10 +33,10 @@ export interface HistoryEntry {
 
 function historyEntry(value: unknown): HistoryEntry | undefined {
   if (!isRecord(value) || typeof value.at !== 'string' || Number.isNaN(Date.parse(value.at))
-    || typeof value.action !== 'string' || !value.action
-    || !isRecord(value.actor) || typeof value.actor.id !== 'string' || !value.actor.id
-    || typeof value.actor.display_name !== 'string'
-    || typeof value.acting_role !== 'string') return;
+    || typeof value.action !== 'string' || !value.action) return;
+  if (value.actor !== undefined && (!isRecord(value.actor) || typeof value.actor.id !== 'string' || !value.actor.id
+    || typeof value.actor.display_name !== 'string')) return;
+  if (value.acting_role !== undefined && typeof value.acting_role !== 'string') return;
   const version = value.version;
   if (version !== undefined && (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1)) return;
   if (value.status !== undefined && typeof value.status !== 'string') return;
@@ -45,8 +45,8 @@ function historyEntry(value: unknown): HistoryEntry | undefined {
   return {
     at: value.at,
     action: value.action,
-    actor: { id: value.actor.id, display_name: value.actor.display_name },
-    acting_role: value.acting_role,
+    actor: value.actor as HistoryEntry['actor'],
+    acting_role: value.acting_role as string | undefined,
     acting_role_description: description,
     version: version as number | undefined,
     status: value.status as string | undefined,
