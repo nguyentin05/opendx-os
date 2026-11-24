@@ -86,7 +86,7 @@ func TestHostedEmbeddingRevisionIsolation(t *testing.T) {
 	worker := workerStore(t, db)
 	worker.ConfigureModels(gateway, profile, models.Profile{})
 	ctx := context.Background()
-	if err = api.EnqueueEmbeddings(ctx, actor, profile); err != nil {
+	if err = api.EnqueueEmbeddings(ctx, actor); err != nil {
 		t.Fatal(err)
 	}
 	lease, err := worker.ClaimEmbedding(ctx, ownerID, models.Profile{ID: "embed", Revision: 1})
@@ -101,20 +101,23 @@ func TestHostedEmbeddingRevisionIsolation(t *testing.T) {
 	}
 	// Same model identity, independently versioned profile and vector dimension.
 	limits, _ := json.Marshal(profile.Limits)
-	if _, err = db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,dimension,limits,enabled) VALUES('embed',2,'EMBED','HOSTED','fake','fake',5,$1,true)`, string(limits)); err != nil {
+	if _, err = db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,dimension,limits,enabled) VALUES('embed',2,'EMBED','HOSTED','fake','fake',5,$1,false)`, string(limits)); err != nil {
 		t.Fatal(err)
 	}
 	newer := profile
 	newer.Revision = 2
 	newer.Dimension = 5
-	if err = api.EnqueueEmbeddings(ctx, actor, newer); err != nil {
+	// The new revision is declared and reviewed but is not the deployment selection
+	// yet, so nothing is queued for it and the worker cannot claim it.
+	api.ConfigureModels(gateway, newer, models.Profile{})
+	if err = api.EnqueueEmbeddings(ctx, actor); err != nil {
 		t.Fatal(err)
 	}
-	if lease, err = worker.ClaimEmbedding(ctx, ownerID, models.Profile{ID: "embed", Revision: 1}); err != nil || lease != nil {
-		t.Fatal("unapproved revision scheduled", lease, err)
+	if lease, err = worker.ClaimEmbedding(ctx, ownerID, newer); err != nil || lease != nil {
+		t.Fatal("unselected revision scheduled", lease, err)
 	}
 	if calls.Load() != 1 {
-		t.Fatal("unapproved revision dispatched")
+		t.Fatal("unselected revision dispatched")
 	}
 	if _, err = db.Exec(`INSERT INTO cap_ai.processing_policy_profiles(policy_id,policy_version,model_profile_id,profile_revision) VALUES('reviewed',1,'embed',2)`); err != nil {
 		t.Fatal(err)
@@ -128,6 +131,9 @@ func TestHostedEmbeddingRevisionIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	gateway.Providers["fake"] = wideProvider
+	// Revision 2 becomes the live selection; revision 1 keeps its own job and
+	// vectors but is no longer claimable.
+	selectDeployment(t, db, newer)
 	worker.ConfigureModels(gateway, newer, models.Profile{})
 	if err = (&Worker{Store: worker, WorkerID: ownerID}).Once(ctx); err != nil {
 		t.Fatal(err)
@@ -160,6 +166,7 @@ func TestHostedAdapterGatewayRegression(t *testing.T) {
 			profile.ID = "gen"
 			profile.Purpose = "GENERATE"
 			profile.Dimension = 0
+			selectDeployment(t, db, profile)
 			var calls atomic.Int32
 			vendor := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls.Add(1)
@@ -211,7 +218,7 @@ func TestHostedAdapterGatewayRegression(t *testing.T) {
 				t.Fatal(err)
 			}
 			gateway := &models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}
-			service := AnswerService{Search: search, Reader: NewPolicy(db), Policy: gateway.Policy, Gateway: gateway, Resolver: &fixedResolver{profile: profile}}
+			service := AnswerService{Search: search, Reader: NewPolicy(db), Policy: gateway.Policy, Gateway: gateway, Profile: profile}
 			if scenario == "revoked-before" {
 				if _, err = db.Exec(`DELETE FROM core.user_roles WHERE user_id=$1`, actor.UserID); err != nil {
 					t.Fatal(err)
@@ -236,11 +243,11 @@ func TestHostedAdapterGatewayRegression(t *testing.T) {
 	}
 }
 
-// Exercise provider selection through startup, reviewed slots and a recovered
-// PERSONAL lease, with different credentials on both adapter TLS listeners.
+// Exercise provider selection through the deployment selection and a recovered
+// PERSONAL lease, with different credentials on both adapter TLS listeners. The
+// retired slot path is not used: the live selection is the authority.
 func TestHostedRuntimeIndependentProvidersAndPinnedLease(t *testing.T) {
 	f := newPersonalHybridFixture(t)
-	applyHybridFixtureMigrations(t, f.db, "0011_model_administration.sql", "0012_personal_admin_authority_locks.sql")
 	var oldCalls, newCalls, generateCalls atomic.Int32
 	embedVendor := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		vector := []float32{1, 0, 0}
@@ -324,153 +331,116 @@ func TestHostedRuntimeIndependentProvidersAndPinnedLease(t *testing.T) {
 	prior := http.DefaultTransport
 	http.DefaultTransport = embedAdapter.Client().Transport
 	defer func() { http.DefaultTransport = prior }()
-	catalog := models.Catalog{SchemaVersion: 2, Models: []models.CandidateDeclaration{}}
-	routes := []modeladapter.Route{oldRoute, newRoute, chatRoute}
-	for i, id := range []string{"embed-old", "embed-new", "chat-provider"} {
-		path, e := modeladapter.RoutePath(routes[i])
-		if e != nil {
-			t.Fatal(e)
-		}
-		origin, ref := embedAdapter.URL, []string{"TOKEN_OLD", "TOKEN_NEW", "TOKEN_CHAT"}[i]
-		if i == 2 {
-			origin = chatAdapter.URL
-		}
-		provider := models.ProviderConfig{ID: id, Adapter: "bounded-http-v1", Endpoint: origin + path, CredentialRef: ref}
-		catalog.Providers = append(catalog.Providers, provider)
-		profile := models.Profile{ID: "hosted-embed", Revision: int64(i + 2), Purpose: "EMBED", Execution: "HOSTED", ProviderID: id, ModelID: "fake", CredentialRef: ref, Dimension: routes[i].Models[0].Dimension, Limits: limits}
-		if i == 2 {
-			profile.ID = "hosted-chat"
-			profile.Revision = 1
-			profile.Purpose = "GENERATE"
-		}
-		catalog.Models = append(catalog.Models, models.CandidateDeclaration{Adapter: "bounded-http-v1", Profile: profile})
+	oldPath, err := modeladapter.RoutePath(oldRoute)
+	if err != nil {
+		t.Fatal(err)
 	}
+	newPath, err := modeladapter.RoutePath(newRoute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chatPath, err := modeladapter.RoutePath(chatRoute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldProvider, err := models.NewHTTPProvider(embedAdapter.URL+oldPath, "internal-embed", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newProvider, err := models.NewHTTPProvider(embedAdapter.URL+newPath, "internal-embed", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chatProvider, err := models.NewHTTPProvider(chatAdapter.URL+chatPath, "internal-chat", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldProfile := models.Profile{ID: "hosted-embed", Revision: 2, Purpose: "EMBED", Execution: "HOSTED", ProviderID: "embed-old", ModelID: "fake", CredentialRef: "TOKEN_OLD", Dimension: 3, Limits: limits}
+	newProfile := models.Profile{ID: "hosted-embed", Revision: 3, Purpose: "EMBED", Execution: "HOSTED", ProviderID: "embed-new", ModelID: "fake", CredentialRef: "TOKEN_NEW", Dimension: 5, Limits: limits}
+	chatProfile := models.Profile{ID: "hosted-chat", Revision: 1, Purpose: "GENERATE", Execution: "HOSTED", ProviderID: "chat-provider", ModelID: "fake", CredentialRef: "TOKEN_CHAT", Limits: limits}
+	// Both purposes are independently configured and independently provided; the
+	// embedding purpose starts on the older revision.
+	selectDeployment(t, f.db, oldProfile, chatProfile)
+	f.db.Exec(`INSERT INTO cap_ai.processing_policy_profiles(policy_id,policy_version,model_profile_id,profile_revision) VALUES('local-only',1,'hosted-embed',2) ON CONFLICT DO NOTHING`)
 	var database string
 	if err = f.db.QueryRow(`SELECT current_database()`).Scan(&database); err != nil {
 		t.Fatal(err)
 	}
-	dsn, e := url.Parse(os.Getenv("TEST_DATABASE_URL"))
-	if e != nil {
-		t.Fatal(e)
-	}
-	dsn.Path = "/" + database
-	importer := &models.Registry{DB: testutil.As(t, dsn.String(), "dxos_ai_model_catalog")}
-	if _, err = importer.Reconcile(context.Background(), catalog); err != nil {
+	gatewayDSN, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	admin := testutil.As(t, dsn.String(), "dxos_ai_model_admin")
-	promote := func(i int, expected int) {
-		t.Helper()
-		p := catalog.Models[i].Profile
-		digest := models.DeclarationDigest(p, "bounded-http-v1", catalog.Providers[i])
-		qualification := map[string]any{"profile_id": p.ID, "revision": p.Revision, "declaration_digest": digest, "purpose": p.Purpose, "passed": true, "checked_at": "2026-11-24T10:00:00Z", "usage": map[string]int{"input_tokens": 10, "output_tokens": 0}}
-		slot := "EMBEDDING"
-		if p.Purpose == "EMBED" {
-			qualification["dimension"] = p.Dimension
-		} else {
-			slot = "LLM"
-			qualification["citation_ids"] = []string{"E1"}
-		}
-		review, _ := json.Marshal(map[string]any{"declaration_digest": digest, "qualification": qualification, "attestation_ref": "fixture/dual-provider"})
-		if _, err = admin.Exec(`SELECT cap_ai.model_admin_change_slot($1,$2,$3,'PROMOTE',$4,$5,$6,$7::jsonb)`, f.owner.UserID, slot, expected, p.ID, p.Revision, digest, string(review)); err != nil {
-			t.Fatal(err)
-		}
-		policy, _ := json.Marshal(map[string]any{"profile_id": p.ID, "profile_revision": p.Revision, "provider_id": p.ProviderID, "purpose": p.Purpose, "source_policy_id": "local-only", "source_policy_version": 1, "source_classification": "PERSONAL", "query_app_id": "library", "query_classification": "PERSONAL", "retention_evidence": "fixture", "training_use_evidence": "fixture", "region_evidence": "fixture"})
+	gatewayDSN.Path = "/" + database
+	gatewayDSN.User = url.User("dxos_ai_gateway")
+	gateway := &models.Gateway{
+		Policy:     &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: testutil.As(t, gatewayDSN.String(), "dxos_ai_gateway")}},
+		Operations: &models.OperationStore{DB: testutil.As(t, gatewayDSN.String(), "dxos_ai_gateway")},
+		Providers:  map[string]models.Provider{"embed-old": oldProvider, "embed-new": newProvider, "chat-provider": chatProvider},
+	}
+	for _, store := range []*Store{f.api, f.worker} {
+		store.ConfigureModels(gateway, oldProfile, chatProfile)
+	}
+	for _, approval := range []struct {
+		profile models.Profile
+	}{{oldProfile}, {chatProfile}} {
+		policy, _ := json.Marshal(map[string]any{"profile_id": approval.profile.ID, "profile_revision": approval.profile.Revision, "provider_id": approval.profile.ProviderID, "purpose": approval.profile.Purpose, "source_policy_id": "local-only", "source_policy_version": 1, "source_classification": "PERSONAL", "query_app_id": "library", "query_classification": "PERSONAL", "retention_evidence": "fixture", "training_use_evidence": "fixture", "region_evidence": "fixture"})
 		if _, err = f.admin.Exec(`SELECT cap_ai.approve_agent_processing($1,$2::jsonb)`, f.owner.UserID, string(policy)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	promote(0, 1)
-	promote(2, 0)
-	runtimeCatalog := catalog
-	runtimeCatalog.Models = []models.CandidateDeclaration{}
-	path := t.TempDir() + "/runtime.json"
-	writeCatalog := func() {
-		t.Helper()
-		raw, _ := json.Marshal(runtimeCatalog)
-		if err = os.WriteFile(path, raw, 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	writeCatalog()
-	gatewayDSN := *dsn
-	gatewayDSN.User = url.User("dxos_ai_gateway")
-	env := map[string]string{"RAG_MODELS_ENABLED": "true", "RAG_MODELS_QUALIFIED": "true", "RAG_SOURCE_QUALIFIED": "true", "RAG_METADATA_QUALIFIED": "true", "RAG_PARSER_QUALIFIED": "true", "RAG_GLOBAL_MODEL_REGISTRY_ENABLED": "true", "AI_GATEWAY_DATABASE_URL": gatewayDSN.String(), "RAG_MODEL_DEPLOYMENT_FILE": path}
-	getenv := func(k string) string {
-		if value, ok := env[k]; ok {
-			return value
-		}
-		return secrets[k]
-	}
-	gateway, embed, generate, resolver, closeDB, err := models.RuntimeFromEnvironment(context.Background(), getenv)
-	defer closeDB()
-	if err != nil || embed.ID != "" || generate.ID != "" || resolver == nil {
-		t.Fatal("runtime startup", err)
-	}
-	for _, store := range []*Store{f.api, f.worker} {
-		store.ConfigureModels(gateway, models.Profile{}, models.Profile{})
-		store.ConfigureModelResolver(resolver)
-	}
 	f.activate(t, f.owner, "dual-provider", "The synthetic project code is BLUE-17.")
-	if err = f.api.EnqueueEmbeddings(context.Background(), f.owner, models.Profile{}); err != nil {
+	if err = f.api.EnqueueEmbeddings(context.Background(), f.owner); err != nil {
 		t.Fatal(err)
 	}
-	lease, err := f.worker.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
+	lease, err := f.worker.ClaimEmbedding(context.Background(), ownerID, oldProfile)
 	if err != nil || lease == nil {
 		t.Fatal(lease, err)
 	}
 	var work embeddingWork
-	if err = decodeRow(f.worker.db.QueryRow(`SELECT cap_ai.embedding_work($1,$2,$3,$4,'hosted-embed',2)`, lease.JobID, lease.WorkerID, lease.Fence, lease.RunID), &work); err != nil {
+	if err = decodeRow(f.worker.db.QueryRow(`SELECT cap_ai.embedding_work($1,$2,$3,$4,$5,$6)`, lease.JobID, lease.WorkerID, lease.Fence, lease.RunID, oldProfile.ID, oldProfile.Revision), &work); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = f.db.Exec(`UPDATE cap_ai.ingestion_jobs SET lease_until=now()-interval '1 second',next_attempt_at=now() WHERE id=$1`, lease.JobID); err != nil {
 		t.Fatal(err)
 	}
-	promote(1, 2)
+	// The deployment moves to the newer revision while the older lease is free. The
+	// worker holding the older profile cannot resume another revision's job, so the
+	// old lease is recovered by the old route exactly once.
 	if err = (&Worker{Store: f.worker, WorkerID: ownerID}).Once(context.Background()); err != nil {
 		t.Fatal("recover old lease", err)
 	}
 	if oldCalls.Load() != 1 || newCalls.Load() != 0 || generateCalls.Load() != 0 {
 		t.Fatal("old lease changed provider", oldCalls.Load(), newCalls.Load(), generateCalls.Load())
 	}
+	// Selecting the newer revision makes its route the live one, and the older
+	// profile can no longer claim or dispatch.
+	selectDeployment(t, f.db, newProfile, chatProfile)
+	policy, _ := json.Marshal(map[string]any{"profile_id": newProfile.ID, "profile_revision": newProfile.Revision, "provider_id": newProfile.ProviderID, "purpose": newProfile.Purpose, "source_policy_id": "local-only", "source_policy_version": 1, "source_classification": "PERSONAL", "query_app_id": "library", "query_classification": "PERSONAL", "retention_evidence": "fixture", "training_use_evidence": "fixture", "region_evidence": "fixture"})
+	if _, err = f.admin.Exec(`SELECT cap_ai.approve_agent_processing($1,$2::jsonb)`, f.owner.UserID, string(policy)); err != nil {
+		t.Fatal(err)
+	}
+	f.db.Exec(`INSERT INTO cap_ai.processing_policy_profiles(policy_id,policy_version,model_profile_id,profile_revision) VALUES('local-only',1,'hosted-embed',3) ON CONFLICT DO NOTHING`)
+	if _, err = f.db.Exec(`UPDATE cap_ai.ingestion_jobs SET state='PENDING',next_attempt_at=now() WHERE id=$1`, lease.JobID); err != nil {
+		t.Fatal(err)
+	}
+	if stale, err := f.worker.ClaimEmbedding(context.Background(), ownerID, oldProfile); err != nil || stale != nil {
+		t.Fatal("superseded profile claimed a job", stale, err)
+	}
+	for _, store := range []*Store{f.api, f.worker} {
+		store.ConfigureModels(gateway, newProfile, chatProfile)
+	}
 	if err = (&Worker{Store: f.worker, WorkerID: ownerID}).Once(context.Background()); err != nil {
 		t.Fatal("build new revision", err)
 	}
-	service := AnswerService{Search: f.api, Reader: NewPolicy(f.api.db), Policy: gateway.Policy, Gateway: gateway, Resolver: resolver}
+	if oldCalls.Load() != 1 || newCalls.Load() != 1 || generateCalls.Load() != 0 {
+		t.Fatal("new revision used the old provider", oldCalls.Load(), newCalls.Load(), generateCalls.Load())
+	}
+	service := AnswerService{Search: f.api, Reader: NewPolicy(f.api.db), Policy: gateway.Policy, Gateway: gateway, Profile: chatProfile}
 	answer, err := service.Answer(context.Background(), f.owner, AnswerRequest{Scope: Scope{Kind: "PERSONAL"}, Query: "BLUE", RequireGeneration: true})
 	if err != nil || answer.Status != "ANSWERED" || answer.Answer == nil || !strings.Contains(*answer.Answer, "BLUE-17") {
 		t.Fatal("runtime answer", answer, err)
 	}
 	if oldCalls.Load() != 1 || newCalls.Load() != 2 || generateCalls.Load() != 1 {
 		t.Fatal("runtime provider dispatch mismatch", oldCalls.Load(), newCalls.Load(), generateCalls.Load())
-	}
-	if _, err = f.db.Exec(`UPDATE cap_ai.ingestion_jobs SET state='PENDING',next_attempt_at=now() WHERE id=$1`, lease.JobID); err != nil {
-		t.Fatal(err)
-	}
-	pinned, err := f.worker.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
-	if err != nil || pinned == nil {
-		t.Fatal(pinned, err)
-	}
-	ref := models.LeaseRef{JobID: pinned.JobID, WorkerID: pinned.WorkerID, Fence: pinned.Fence, RunID: pinned.RunID}
-	if p, e := resolver.ResolveEmbeddingLease(context.Background(), ref); e != nil || p.ProviderID != "embed-old" || p.Revision != 2 {
-		t.Fatal("pinned provider lost", p, e)
-	}
-	handler, err = modeladapter.NewHandler(modeladapter.Config{SchemaVersion: 1, Routes: []modeladapter.Route{newRoute}}, "internal-embed", upstream)
-	if err != nil {
-		t.Fatal(err)
-	}
-	embedHandler.Store(handler)
-	runtimeCatalog.Providers = runtimeCatalog.Providers[1:]
-	writeCatalog()
-	_, _, _, removed, closeRemoved, err := models.RuntimeFromEnvironment(context.Background(), getenv)
-	defer closeRemoved()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = removed.ResolveEmbeddingLease(context.Background(), ref); err != models.ErrUnavailable {
-		t.Fatal("removed old provider retained lease availability", err)
-	}
-	if oldCalls.Load() != 1 || newCalls.Load() != 2 || generateCalls.Load() != 1 {
-		t.Fatal("removed lease caused dispatch")
 	}
 }

@@ -12,8 +12,9 @@ import (
 	"github.com/opendx-os/opendx-os/capabilities/internal/ai/models"
 )
 
+// Store carries the fixed deployment profiles the installation was configured
+// with. There is no resolver: a purpose is either configured or unavailable.
 type Store struct {
-	modelResolver                 ModelResolver
 	gateway                       *models.Gateway
 	embedProfile, generateProfile models.Profile
 	dispatcherStore               *Store

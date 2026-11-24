@@ -60,7 +60,7 @@ func applyModelAuthority(t *testing.T, db *sql.DB) {
 		"0008_personal_model_processing.sql", "0007_agent_scopes.sql", "0009_personal_hybrid.sql",
 		"0010_agent_model_authority.sql",
 		"0011_model_administration.sql", "0012_personal_admin_authority_locks.sql",
-		"0013_deployment_models.sql",
+		"0013_deployment_models.sql", "0014_model_deployment_index_status.sql",
 	} {
 		raw, err := os.ReadFile("../../../../platform/postgres/migrations/cap_ai/" + migration)
 		if err != nil {

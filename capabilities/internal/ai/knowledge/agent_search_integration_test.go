@@ -21,8 +21,6 @@ import (
 
 func TestGlobalAppSearchRequiresExactPersonalQueryReview(t *testing.T) {
 	db, api, actor, profile := semanticFixture(t)
-	applyHybridFixtureMigrations(t, db, "0005_model_registry.sql", "0007_agent_scopes.sql",
-		"0008_personal_model_processing.sql", "0009_personal_hybrid.sql", "0010_agent_model_authority.sql")
 	var name string
 	if err := db.QueryRow(`SELECT current_database()`).Scan(&name); err != nil {
 		t.Fatal(err)
@@ -43,11 +41,10 @@ INSERT INTO core.user_roles(user_id, role_name) VALUES($1, 'role_operator');`, a
 INSERT INTO core.apps(app_id,display_name,version,status,spec)
 VALUES ('elsewhere','Other app','1','Ready','{}');
 INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,dimension,limits,enabled)
-SELECT 'other-embed',revision,purpose,execution,provider_id,model_id,dimension,limits,enabled
+SELECT 'other-embed',revision,purpose,execution,provider_id,model_id,dimension,limits,false
 FROM cap_ai.model_profiles WHERE id='embed';
 INSERT INTO cap_ai.model_candidates(profile_id,revision,adapter_key,declaration_digest,declaration)
-VALUES ('embed',1,'bounded-http-v1',repeat('a',64),'{}'),('other-embed',1,'bounded-http-v1',repeat('b',64),'{}');
-UPDATE cap_ai.global_model_slots SET profile_id='embed',profile_revision=1,slot_revision=1 WHERE capability='EMBEDDING';`); err != nil {
+VALUES ('embed',1,'bounded-http-v1',repeat('a',64),'{}'),('other-embed',1,'bounded-http-v1',repeat('b',64),'{}');`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -57,11 +54,10 @@ UPDATE cap_ai.global_model_slots SET profile_id='embed',profile_revision=1,slot_
 		Operations: &models.OperationStore{DB: gatewayDB}, Providers: map[string]models.Provider{"fake": spy},
 	}
 	api.ConfigureModels(gateway, profile, models.Profile{})
-	api.ConfigureModelResolver(&models.Registry{DB: gatewayDB})
 	worker := workerStore(t, db)
 	worker.ConfigureModels(gateway, profile, models.Profile{})
 	ctx := context.Background()
-	if err := api.EnqueueEmbeddings(ctx, actor, profile); err != nil {
+	if err := api.EnqueueEmbeddings(ctx, actor); err != nil {
 		t.Fatal(err)
 	}
 	lease, err := worker.ClaimEmbedding(ctx, actor.UserID, models.Profile{ID: "embed", Revision: 1})
@@ -123,10 +119,16 @@ UPDATE cap_ai.global_model_slots SET profile_id='embed',profile_revision=1,slot_
 		t.Fatalf("authority snapshot exposed in search JSON: %s, %v", encoded, err)
 	}
 
-	for _, change := range []struct{ name, binding string }{
-		{"withdrawal", "profile_id=NULL,profile_revision=NULL"},
-		{"switch", "profile_id='other-embed',profile_revision=1"},
-		{"same-profile rebinding", "profile_id='embed',profile_revision=1"},
+	// A deployment change during the reservation must revoke the pending dispatch:
+	// the authority is re-read after the claim, never cached from the resolution.
+	other := profile
+	other.ID = "other-embed"
+	for _, change := range []struct {
+		name  string
+		apply func()
+	}{
+		{"withdrawal", func() { selectDeployment(t, db) }},
+		{"switch", func() { selectDeployment(t, db, other) }},
 	} {
 		t.Run(change.name, func(t *testing.T) {
 			req := req
@@ -136,12 +138,7 @@ UPDATE cap_ai.global_model_slots SET profile_id='embed',profile_revision=1,slot_
 				t.Fatal(err)
 			}
 			before := spy.queryCalls
-			defer func() {
-				if _, err := db.Exec(`UPDATE cap_ai.global_model_slots SET profile_id='embed',profile_revision=1,
-                 slot_revision=slot_revision+1 WHERE capability='EMBEDDING'`); err != nil {
-					t.Fatal(err)
-				}
-			}()
+			defer func() { selectDeployment(t, db, profile) }()
 			waitCtx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
 			tx, err := db.BeginTx(waitCtx, nil)
@@ -182,10 +179,7 @@ UPDATE cap_ai.global_model_slots SET profile_id='embed',profile_revision=1,slot_
 				case <-ticker.C:
 				}
 			}
-			if _, err := db.ExecContext(waitCtx, `UPDATE cap_ai.global_model_slots SET `+change.binding+
-				`,slot_revision=slot_revision+1 WHERE capability='EMBEDDING'`); err != nil {
-				t.Fatal(err)
-			}
+			change.apply()
 			if err := tx.Commit(); err != nil {
 				t.Fatal(err)
 			}
@@ -205,18 +199,16 @@ UPDATE cap_ai.global_model_slots SET profile_id='embed',profile_revision=1,slot_
 
 	t.Run("withdrawal after dispatch", func(t *testing.T) {
 		provider := &embeddingProvider{before: func() {
-			if _, err := db.Exec(`UPDATE cap_ai.global_model_slots SET profile_id=NULL,profile_revision=NULL,
-             slot_revision=slot_revision+1 WHERE capability='EMBEDDING'`); err != nil {
+			// A privileged write can withdraw the live switch; granting authority
+			// still needs the deployment login's selection.
+			if _, err := db.Exec(`UPDATE cap_ai.model_profiles SET enabled=false WHERE id='embed' AND revision=1`); err != nil {
 				t.Error(err)
 			}
 		}}
 		gateway.Providers["fake"] = provider
 		defer func() {
 			gateway.Providers["fake"] = spy
-			if _, err := db.Exec(`UPDATE cap_ai.global_model_slots SET profile_id='embed',profile_revision=1,
-             slot_revision=slot_revision+1 WHERE capability='EMBEDDING'`); err != nil {
-				t.Fatal(err)
-			}
+			selectDeployment(t, db, profile)
 		}()
 		got, err := api.Search(ctx, actor, req) // The unmatched query has only a semantic result.
 		if err != nil || got.Status != "LEXICAL_ONLY" || len(got.Results) != 0 || provider.calls != 1 {

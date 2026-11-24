@@ -27,7 +27,7 @@ func TestIngestionUncertainStatusPublicContract(t *testing.T) {
 	db, s, a, profile := semanticFixture(t)
 	provider := &embeddingProvider{fail: true}
 	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
-	if e := s.EnqueueEmbeddings(ctx, a, profile); e != nil {
+	if e := s.EnqueueEmbeddings(ctx, a); e != nil {
 		t.Fatal(e)
 	}
 	lease, e := s.ClaimEmbedding(ctx, ownerID, models.Profile{ID: "embed", Revision: 1})

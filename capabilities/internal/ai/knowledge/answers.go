@@ -47,12 +47,11 @@ type ModelCaller interface {
 	Call(context.Context, *auth.Identity, models.Operation, models.Payload) (models.Result, error)
 }
 type AnswerService struct {
-	Resolver ModelResolver
-	Search   AnswerSearch
-	Reader   AnswerReader
-	Policy   ModelPolicy
-	Gateway  ModelCaller
-	Profile  models.Profile
+	Search  AnswerSearch
+	Reader  AnswerReader
+	Policy  ModelPolicy
+	Gateway ModelCaller
+	Profile models.Profile
 }
 
 func emptyAnswer(reason string) AnswerResponse {
@@ -108,15 +107,11 @@ func (s *AnswerService) Answer(ctx context.Context, actor *auth.Identity, req An
 		}
 		return AnswerResponse{Status: "SEARCH_ONLY", Reason: modelReason(cause), Results: result.Results, Citations: []Citation{}}, nil
 	}
+	// The generation route is the fixed configured profile, not a runtime lookup.
+	// Its exact current authority is re-checked below and again after the model
+	// returns.
 	profile := s.Profile
-	if s.Resolver != nil {
-		binding, resolveErr := s.Resolver.Resolve(ctx, models.CapabilityLLM)
-		if resolveErr != nil {
-			return fallback(resolveErr)
-		}
-		profile = binding.Profile
-	}
-	if s.Gateway == nil || s.Policy == nil || profile.ID == "" {
+	if s.Gateway == nil || s.Policy == nil || profile.ID == "" || profile.Purpose != "GENERATE" {
 		return fallback(models.ErrPolicy)
 	}
 	modelApp := req.Scope.AppID

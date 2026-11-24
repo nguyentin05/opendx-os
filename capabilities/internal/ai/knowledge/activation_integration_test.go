@@ -19,7 +19,7 @@ import (
 
 func derivedFixture(t *testing.T) (*sql.DB, *sql.DB, *auth.Identity) {
 	db, api, a := metadataFixture(t)
-	raw, e := os.ReadFile("../../../platform/postgres/migrations/cap_ai/0002_docir_fts.sql")
+	raw, e := os.ReadFile("../../../../platform/postgres/migrations/cap_ai/0002_docir_fts.sql")
 	if e != nil {
 		t.Fatal(e)
 	}

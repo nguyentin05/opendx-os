@@ -293,6 +293,10 @@ INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,mode
 	}
 }
 
+// registryCandidate is one candidate declaration payload used only to prove that a
+// runtime login cannot import candidates.
+const registryCandidate = `{"candidates":[{"adapter_key":"hosted-test","declaration_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","profile":{"id":"registry-test","revision":1,"purpose":"GENERATE","execution":"HOSTED","provider_id":"test","model_id":"model-test","credential_ref":"TEST_KEY","limits":{"max_input_tokens":100,"max_output_tokens":100,"max_bytes":1024,"timeout_ms":1000}}}]}`
+
 func TestRegistryDatabasePrivileges(t *testing.T) {
 	db := modelDB(t, true)
 	applyRegistry(t, db)

@@ -72,8 +72,7 @@ func newEndToEndChat(t *testing.T) endToEndChat {
 	f.addPackage(t, "facilities", "role_facilities", "Locker policy for onboarding.")
 	f.addPersonal(t, "Journal checklist for onboarding.")
 	sources := f.retrieval.Search.(*knowledge.Store)
-	sources.ConfigureModels(f.gateway, models.Profile{}, models.Profile{})
-	sources.ConfigureModelResolver(f.resolver)
+	sources.ConfigureModels(f.gateway, models.Profile{}, f.profile)
 	verifier, token := signedChatIdentity(t, f.actor.UserID)
 	handler := NewHandler(ChatAuthenticator{Verifier: verifier, DB: f.store.DB}, f.store, f.orchestrator(f.retrieval), f.retrieval.Scopes, sources)
 	w := chatRequest(handler, "POST", ConversationsPath, token, "", `{"title":"Onboarding"}`)
@@ -170,16 +169,21 @@ func TestAgentEndToEndMissingApprovalDoesNotCallProvider(t *testing.T) {
 		t.Run(missing, func(t *testing.T) {
 			c := newEndToEndChat(t)
 			// Make ordinary selected-app query embedding available. The same
-			// question in global chat needs its own PERSONAL query review.
-			turnSQL(t, c.db, `INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,dimension,limits,enabled)
-                SELECT 'fixture-embed',1,'EMBED',execution,provider_id,'fixture-embed',3,limits,true
-                FROM cap_ai.model_profiles WHERE id='fixture-llm';
-                INSERT INTO cap_ai.model_candidates(profile_id,revision,adapter_key,declaration_digest,declaration)
-                VALUES('fixture-embed',1,'bounded-http-v1',repeat('b',64),'{}');
-                UPDATE cap_ai.global_model_slots SET profile_id='fixture-embed',profile_revision=1,slot_revision=1 WHERE capability='EMBEDDING';
-                INSERT INTO cap_ai.processing_policy_profiles(policy_id,policy_version,model_profile_id,profile_revision)
+			// question in global chat needs its own PERSONAL query review. The
+			// embedding route is a second declared purpose of the same deployment,
+			// recorded through the same reconciliation path as the generation route.
+			embed := models.Profile{ID: "fixture-embed", Revision: 1, Purpose: "EMBED", Execution: "HOSTED",
+				ProviderID: "fixture-adapter", ModelID: "fixture-embed", Dimension: 3, Enabled: true,
+				Limits: models.Limits{MaxInputTokens: 4096, MaxOutputTokens: 64, MaxBytes: 8192, TimeoutMS: 1500}}
+			selectDeployment(t, c.db, c.profile, embed)
+			turnSQL(t, c.db, `INSERT INTO cap_ai.processing_policy_profiles(policy_id,policy_version,model_profile_id,profile_revision)
                 VALUES('procurement',1,'fixture-embed',1);
 `)
+			// The runtime binds every declared purpose on the same private proxy, so
+			// the embedding route is dispatchable exactly like the generation route.
+			c.gateway.Routes[embed.ID] = embed
+			sources := c.retrieval.Search.(*knowledge.Store)
+			sources.ConfigureModels(c.gateway, embed, c.profile)
 			ordinary, err := c.retrieval.Search.Search(t.Context(), &auth.Identity{UserID: c.actor.UserID, Role: "role_procurement"},
 				knowledge.SearchRequest{Scope: knowledge.Scope{Kind: "APP", AppID: "procurement"}, Query: "onboarding", Retrieval: "HYBRID"})
 			if err != nil || ordinary.Status != "HYBRID" || c.call(t).Query != "onboarding" {

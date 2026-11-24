@@ -58,13 +58,6 @@ type Operation struct {
 	ProfileRevision                                                int64
 	Sources                                                        []contracts.ReadScope
 	Lease                                                          *LeaseRef
-	// LLMSlotRevision and EmbeddingSlotRevision are retired slot authority. The
-	// database no longer accepts a slot revision as a binding: an operation is
-	// authorized only by its exact ProfileID/ProfileRevision while that revision
-	// is the current deployment selection. Both fields must stay zero and carry
-	// no authority; they remain declared only until the slot types are deleted.
-	LLMSlotRevision       int64 `json:"llm_slot_revision,omitempty"`
-	EmbeddingSlotRevision int64 `json:"embedding_slot_revision,omitempty"`
 	// AgentSources apply only to AGENT generation. AppID is its configured processing consumer.
 	AgentSources []AgentSourceProof `json:"agent_sources,omitempty"`
 	// RequirePersonalQueryApproval narrows query-only global EMBED processing.

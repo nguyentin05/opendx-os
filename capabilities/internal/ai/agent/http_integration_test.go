@@ -60,7 +60,7 @@ func TestChatHTTPCannotReadForeignConversation(t *testing.T) {
 	scopes := &PostgresScopeResolver{DB: apiDB}
 	reader := knowledge.NewPolicy(apiDB)
 	sourceStore := knowledge.NewStore(apiDB)
-	reply := NewOrchestrator(store, NewWorkingMemory(nil, 0), &RetrievalCoordinator{Scopes: scopes, Search: sourceStore, Reader: reader}, reader, nil, nil, "")
+	reply := NewOrchestrator(store, NewWorkingMemory(nil, 0), &RetrievalCoordinator{Scopes: scopes, Search: sourceStore, Reader: reader}, reader, models.Profile{}, nil, "")
 	h := NewHandler(ChatAuthenticator{Verifier: chatSubjectVerifier{}, DB: apiDB}, store, reply, scopes, sourceStore)
 	conv := createChatConversation(t, h, "Owner-only title")
 	path := testChatPath + "/" + conv.ID
@@ -137,7 +137,7 @@ func TestChatHTTPIdempotentPost(t *testing.T) {
 		<-resume
 		return RetrievalResult{SearchStatus: "LEXICAL_ONLY"}, nil
 	})
-	reply := NewOrchestrator(store, NewWorkingMemory(nil, 0), retrieve, knowledge.NewPolicy(apiDB), nil, nil, "")
+	reply := NewOrchestrator(store, NewWorkingMemory(nil, 0), retrieve, knowledge.NewPolicy(apiDB), models.Profile{}, nil, "")
 	h := NewHandler(ChatAuthenticator{Verifier: chatSubjectVerifier{}, DB: apiDB}, store, reply, scopes, sourceStore)
 	conv := createChatConversation(t, h, "Idempotent")
 	path := testChatPath + "/" + conv.ID
@@ -195,7 +195,7 @@ func TestChatHTTPProtectedCrossAppCitation(t *testing.T) {
 	f.addPackage(t, "facilities", "role_facilities", "Laptop storage requires a locked cabinet.")
 	scopes := f.retrieval.Scopes
 	sourceStore := f.retrieval.Search.(*knowledge.Store)
-	reply := NewOrchestrator(f.store, NewWorkingMemory(nil, 0), f.retrieval, f.reader, nil, nil, "agent_processing")
+	reply := NewOrchestrator(f.store, NewWorkingMemory(nil, 0), f.retrieval, f.reader, models.Profile{}, nil, "agent_processing")
 	h := NewHandler(ChatAuthenticator{Verifier: chatSubjectVerifier{}, DB: f.store.DB}, f.store, reply, scopes, sourceStore)
 	conv := createChatConversation(t, h, "Cross-app")
 	path := testChatPath + "/" + conv.ID
@@ -308,8 +308,8 @@ func TestChatHTTPUncertainTurnReturns200AndReplay(t *testing.T) {
 	f := newAgentTurnFixture(t, provider)
 	f.addPackage(t, "procurement", "role_procurement", "New hires can request a laptop.")
 	f.approveGeneration(t, "agent_processing", "reviewed processing fixture")
-	checker := NewSourcePolicyChecker(f.reader, f.resolver, f.gateway.Policy, "agent_processing")
-	reply := NewOrchestrator(f.store, NewWorkingMemory(checker, 0), f.retrieval, f.reader, f.resolver, f.gateway, "agent_processing")
+	checker := NewSourcePolicyChecker(f.reader, f.profile, f.gateway.Policy, "agent_processing")
+	reply := NewOrchestrator(f.store, NewWorkingMemory(checker, 0), f.retrieval, f.reader, f.profile, f.gateway, "agent_processing")
 	h := NewHandler(ChatAuthenticator{Verifier: chatSubjectVerifier{}, DB: f.store.DB}, f.store, reply, f.retrieval.Scopes, f.retrieval.Search.(*knowledge.Store))
 	conv := createChatConversation(t, h, "Uncertain turn")
 	path := testChatPath + "/" + conv.ID
@@ -410,9 +410,9 @@ func TestChatHTTPDisabledPersonalHistoryStaysOutOfGeneration(t *testing.T) {
 		scopes := SourceKindGate{ScopeResolver: f.retrieval.Scopes, AppEnabled: true, PersonalEnabled: personal}
 		retrieval := *f.retrieval
 		retrieval.Scopes = scopes
-		checker := NewSourcePolicyChecker(f.reader, f.resolver, f.gateway.Policy, "agent_processing")
+		checker := NewSourcePolicyChecker(f.reader, f.profile, f.gateway.Policy, "agent_processing")
 		memory := NewWorkingMemory(scopes.FilterHistory(checker), 0)
-		reply := NewOrchestrator(f.store, memory, &retrieval, f.reader, f.resolver, f.gateway, "agent_processing")
+		reply := NewOrchestrator(f.store, memory, &retrieval, f.reader, f.profile, f.gateway, "agent_processing")
 		return NewHandler(ChatAuthenticator{Verifier: chatSubjectVerifier{}, DB: f.store.DB},
 			f.store, reply, scopes, f.retrieval.Search.(*knowledge.Store))
 	}

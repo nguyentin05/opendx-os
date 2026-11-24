@@ -32,7 +32,7 @@ type agentTurnFixture struct {
 	reader    *knowledge.Policy
 	retrieval *RetrievalCoordinator
 	gateway   *models.Gateway
-	resolver  *models.Registry
+	profile   models.Profile
 }
 
 func turnSQL(t *testing.T, db *sql.DB, query string, args ...any) {
@@ -45,16 +45,16 @@ func turnSQL(t *testing.T, db *sql.DB, query string, args ...any) {
 func newAgentTurnFixture(t *testing.T, provider models.Provider) agentTurnFixture {
 	t.Helper()
 	db := agentDB(t)
-	for _, filename := range []string{
-		"0004_models_vectors.sql", "0005_model_registry.sql", "0007_agent_scopes.sql",
-		"0008_personal_model_processing.sql", "0009_personal_hybrid.sql", "0010_agent_model_authority.sql",
-	} {
-		raw, err := os.ReadFile("../../../platform/postgres/migrations/cap_ai/" + filename)
+	// 0007_agent_scopes.sql is part of applyDeploymentAuthority below, so it is
+	// applied exactly once, in ledger order, by the deployment-authority chain.
+	for _, filename := range []string{"0004_models_vectors.sql", "0005_model_registry.sql"} {
+		raw, err := os.ReadFile(capAIMigrations + "/" + filename)
 		if err != nil {
 			t.Fatal(err)
 		}
 		turnSQL(t, db, string(raw))
 	}
+	applyDeploymentAuthority(t, db)
 	var name string
 	if err := db.QueryRow("SELECT current_database()").Scan(&name); err != nil {
 		t.Fatal(err)
@@ -72,11 +72,19 @@ func newAgentTurnFixture(t *testing.T, provider models.Provider) agentTurnFixtur
 		INSERT INTO core.apps(app_id,display_name,version,status,spec) VALUES('agent_processing','Agent Processing','1','Ready','{}');
 		INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,limits,enabled)
 		VALUES('fixture-llm',1,'GENERATE','HOSTED','fixture-adapter','fixture-llm',
-		'{"max_input_tokens":4096,"max_output_tokens":64,"max_bytes":8192,"timeout_ms":1500}',true);
+		'{"max_input_tokens":4096,"max_output_tokens":64,"max_bytes":8192,"timeout_ms":1500}',false);
 		INSERT INTO cap_ai.model_candidates(profile_id,revision,adapter_key,declaration_digest,declaration)
 		VALUES('fixture-llm',1,'bounded-http-v1',repeat('a',64),'{}');
-		UPDATE cap_ai.global_model_slots SET profile_id='fixture-llm', profile_revision=1, slot_revision=1 WHERE capability='LLM';
 `)
+	// The generation route is the live deployment selection, recorded through the
+	// same reconciliation path the deployment uses.
+	// Enabled is the runtime identity of a selected route: the database row comes
+	// back enabled because the selection above made it current, and the fixed profile
+	// must be exactly that row or the Gateway refuses it.
+	profile := models.Profile{ID: "fixture-llm", Revision: 1, Purpose: "GENERATE", Execution: "HOSTED", ProviderID: "fixture-adapter", ModelID: "fixture-llm",
+		Enabled: true,
+		Limits:  models.Limits{MaxInputTokens: 4096, MaxOutputTokens: 64, MaxBytes: 8192, TimeoutMS: 1500}}
+	selectDeployment(t, db, profile)
 	search := knowledge.NewStore(apiDB)
 	if err := search.ConfigurePackages(true, t.TempDir()); err != nil {
 		t.Fatal(err)
@@ -85,11 +93,14 @@ func newAgentTurnFixture(t *testing.T, provider models.Provider) agentTurnFixtur
 	gateway := &models.Gateway{
 		Policy:     &models.Policy{Authority: models.DatabaseAuthority{DB: gatewayDB}, Enabled: true},
 		Operations: &models.OperationStore{DB: gatewayDB}, Providers: map[string]models.Provider{"fixture-adapter": provider},
+		// The fixed configured route set, exactly as the runtime binds it: a
+		// database decision for any other profile is refused before the claim.
+		Routes: map[string]models.Profile{profile.ID: profile},
 	}
 	return agentTurnFixture{
 		db: db, admin: admin, actor: Actor{alice}, store: &PostgresConversationStore{DB: apiDB}, reader: reader,
 		retrieval: &RetrievalCoordinator{Scopes: &PostgresScopeResolver{DB: apiDB}, Search: search, Reader: reader},
-		gateway:   gateway, resolver: &models.Registry{DB: gatewayDB},
+		gateway:   gateway, profile: profile,
 	}
 }
 
@@ -167,8 +178,8 @@ func (f agentTurnFixture) addChunk(t *testing.T, run, text string) {
 }
 
 func (f agentTurnFixture) orchestrator(retriever Retriever) *Orchestrator {
-	memory := NewWorkingMemory(NewSourcePolicyChecker(f.reader, f.resolver, f.gateway.Policy, "agent_processing"), 0)
-	return NewOrchestrator(f.store, memory, retriever, f.reader, f.resolver, f.gateway, "agent_processing")
+	memory := NewWorkingMemory(NewSourcePolicyChecker(f.reader, f.profile, f.gateway.Policy, "agent_processing"), 0)
+	return NewOrchestrator(f.store, memory, retriever, f.reader, f.profile, f.gateway, "agent_processing")
 }
 
 func TestAgentTurnIdempotencyAndUncertainCall(t *testing.T) {
@@ -413,14 +424,17 @@ func TestAgentTurnRequiresCurrentModelBinding(t *testing.T) {
 	f := newAgentTurnFixture(t, provider)
 	f.addPackage(t, "procurement", "role_procurement", "New hires can request a laptop.")
 	f.approveGeneration(t, "agent_processing", "reviewed fixture")
-	turnSQL(t, f.db, `UPDATE cap_ai.global_model_slots SET profile_id=NULL,profile_revision=NULL,slot_revision=slot_revision+1 WHERE capability='LLM'`)
+	// Withdraw the deployment selection while the declaration, the profile row and
+	// the processing approval all stay in place. Only a current selection is model
+	// authority, so the same exact profile is no longer dispatchable.
+	selectDeployment(t, f.db)
 	o := f.orchestrator(f.retrieval)
 	conversation, err := f.store.Create(t.Context(), f.actor, "Laptop policy")
 	if err != nil {
 		t.Fatal(err)
 	}
 	got, err := o.Reply(t.Context(), f.actor, TurnRequest{conversation.ID, "binding withdrawn", "laptop"})
-	if err != nil || got.Status != "SEARCH_ONLY" || got.Reason != models.ErrUnavailable.Error() ||
+	if err != nil || got.Status != "SEARCH_ONLY" || got.Reason != models.ErrPolicy.Error() ||
 		got.Answer != nil || len(got.Citations) != 1 || sends.Load() != 0 {
 		t.Fatalf("missing binding did not preserve safe search: %+v, err=%v, sends=%d", got, err, sends.Load())
 	}
@@ -431,11 +445,11 @@ func TestAgentTurnRequiresCurrentModelBinding(t *testing.T) {
 	}
 }
 
-func TestAgentTurnSlotWithdrawalWhileReserving(t *testing.T) {
+func TestAgentTurnDeploymentWithdrawalWhileReserving(t *testing.T) {
 	var sends atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		sends.Add(1)
-		_, _ = w.Write([]byte(`{"text":"Old slot answer","citation_ids":["E1"],"usage":{"input_tokens":3,"output_tokens":2}}`))
+		_, _ = w.Write([]byte(`{"text":"Old deployment answer","citation_ids":["E1"],"usage":{"input_tokens":3,"output_tokens":2}}`))
 	}))
 	defer server.Close()
 	provider, err := models.NewHTTPProvider(server.URL, "", true)
@@ -467,7 +481,7 @@ func TestAgentTurnSlotWithdrawalWhileReserving(t *testing.T) {
 	reply := make(chan outcome, 1)
 	o := f.orchestrator(f.retrieval)
 	go func() {
-		out, err := o.Reply(ctx, f.actor, TurnRequest{conversation.ID, "slot withdrawn", "laptop"})
+		out, err := o.Reply(ctx, f.actor, TurnRequest{conversation.ID, "deployment withdrawn", "laptop"})
 		reply <- outcome{out, err}
 	}()
 	ticker := time.NewTicker(10 * time.Millisecond)
@@ -491,24 +505,22 @@ func TestAgentTurnSlotWithdrawalWhileReserving(t *testing.T) {
 		case <-ticker.C:
 		}
 	}
-	// Withdraw the slot from a separate committed session while the claim is
-	// blocked. The old model profile and processing approvals stay enabled.
-	if _, err := f.db.ExecContext(ctx, `UPDATE cap_ai.global_model_slots SET
-		profile_id=NULL,profile_revision=NULL,slot_revision=slot_revision+1 WHERE capability='LLM'`); err != nil {
-		t.Fatal(err)
-	}
+	// Withdraw the deployment selection from a separate committed session while the
+	// claim is blocked. The declaration, the profile row and the processing
+	// approvals stay in place; only the live selection is gone.
+	selectDeployment(t, f.db)
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
 	got := <-reply
 	if got.err != nil || got.result.Status != "SEARCH_ONLY" || got.result.Reason != "AUTHORIZATION_CHANGED" ||
 		got.result.Answer != nil || len(got.result.Citations) != 0 || sends.Load() != 0 {
-		t.Fatalf("withdrawn slot reached provider: reply=%+v, err=%v, sends=%d", got.result, got.err, sends.Load())
+		t.Fatalf("withdrawn deployment reached provider: reply=%+v, err=%v, sends=%d", got.result, got.err, sends.Load())
 	}
 	var state, code string
 	var usage int
 	err = f.db.QueryRowContext(ctx, `SELECT state,coalesce(error_code,''),(input_tokens IS NOT NULL)::int FROM cap_ai.model_operations`).Scan(&state, &code, &usage)
 	if err != nil || state != "FAILED_UNSENT" || code != "AUTHORITY_CHANGED" || usage != 0 {
-		t.Fatalf("withdrawn slot not recorded as unsent: state=%s code=%s usage=%d err=%v", state, code, usage, err)
+		t.Fatalf("withdrawn deployment not recorded as unsent: state=%s code=%s usage=%d err=%v", state, code, usage, err)
 	}
 }

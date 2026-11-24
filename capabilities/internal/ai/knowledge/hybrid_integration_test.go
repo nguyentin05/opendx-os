@@ -9,7 +9,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/capabilities/internal/ai/knowledge/docir"
 	"github.com/opendx-os/opendx-os/capabilities/internal/ai/models"
@@ -46,24 +45,44 @@ func semanticFixture(t *testing.T) (*sql.DB, *Store, *auth.Identity, models.Prof
 	if e = worker.Activate(ctx, *lease, lease.RunID); e != nil {
 		t.Fatal(e)
 	}
-	raw, e := os.ReadFile("../../../platform/postgres/migrations/cap_ai/0004_models_vectors.sql")
-	if e != nil {
-		t.Fatal(e)
+	for _, migration := range []string{"0004_models_vectors.sql", "0005_model_registry.sql"} {
+		raw, e := os.ReadFile(capAIMigrations + "/" + migration)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if _, e = db.Exec(string(raw)); e != nil {
+			t.Fatalf("%s: %v", migration, e)
+		}
 	}
-	if _, e = db.Exec(string(raw)); e != nil {
-		t.Fatal(e)
-	}
-	profile := models.Profile{ID: "embed", Revision: 1, Purpose: "EMBED", Execution: "HOSTED", ProviderID: "fake", ModelID: "fake", Dimension: 3, Enabled: true, Limits: models.Limits{MaxInputTokens: 8192, MaxOutputTokens: 512, MaxBytes: 16384, TimeoutMS: 500}}
+	profile := models.Profile{ID: "embed", Revision: 1, Purpose: "EMBED", Execution: "HOSTED", ProviderID: "fake", ModelID: "fake", Dimension: 3, Limits: models.Limits{MaxInputTokens: 8192, MaxOutputTokens: 512, MaxBytes: 16384, TimeoutMS: 500}}
 	limits, _ := json.Marshal(profile.Limits)
-	_, e = db.Exec(strings.NewReplacer("$1", pq.QuoteLiteral(string(limits)), "$2", pq.QuoteLiteral(ownerID)).Replace(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,dimension,limits,enabled) VALUES('embed',1,'EMBED','HOSTED','fake','fake',3,$1,true);
+	_, e = db.Exec(strings.NewReplacer("$1", pq.QuoteLiteral(string(limits)), "$2", pq.QuoteLiteral(ownerID)).Replace(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,dimension,limits,enabled) VALUES('embed',1,'EMBED','HOSTED','fake','fake',3,$1,false);
  INSERT INTO cap_ai.processing_policies(id,version,execution,classification,approved_by,approved_at,enabled,query_app_id,provider_id,retention_approved) VALUES('reviewed',1,'APPROVED_PROVIDER','NON_PERSONAL',$2,now(),true,'library','fake',true);
  INSERT INTO cap_ai.processing_policy_profiles(policy_id,policy_version,model_profile_id,profile_revision) VALUES('reviewed',1,'embed',1);
  UPDATE cap_ai.knowledge_documents SET processing_policy_id='reviewed',processing_policy_version=1,policy_revision=policy_revision+1;`))
 	if e != nil {
 		t.Fatal(e)
 	}
+	// The deployment-authority chain and the exact live selection replace the
+	// legacy slot. Nothing else in the fixture selects the model.
+	applyDeploymentAuthority(t, db)
+	residentProfile(t, db, profile)
 	return db, s, a, profile
 }
+
+// dimensionProvider answers with a vector of the requested profile's dimension, so
+// a fixture can move between revisions with different widths.
+type dimensionProvider struct{ calls int }
+
+func (p *dimensionProvider) Invoke(_ context.Context, profile models.Profile, _ models.Payload) (models.Result, error) {
+	p.calls++
+	vector := make([]float32, profile.Dimension)
+	if len(vector) > 0 {
+		vector[0] = 1
+	}
+	return models.Result{Vector: vector, Usage: &models.Usage{InputTokens: 10}}, nil
+}
+
 func repeatHash(char string) string {
 	s := ""
 	for i := 0; i < 64; i++ {
@@ -92,7 +111,7 @@ func TestEmbeddingReadinessIndependent(t *testing.T) {
 	db, s, a, profile := semanticFixture(t)
 	provider := &embeddingProvider{fail: true}
 	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
-	if e := s.EnqueueEmbeddings(context.Background(), a, profile); e != nil {
+	if e := s.EnqueueEmbeddings(context.Background(), a); e != nil {
 		t.Fatal(e)
 	}
 	lease, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
@@ -115,7 +134,7 @@ func TestScopedExactVectorRanking(t *testing.T) {
 	db, s, a, profile := semanticFixture(t)
 	provider := &embeddingProvider{}
 	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
-	if e := s.EnqueueEmbeddings(context.Background(), a, profile); e != nil {
+	if e := s.EnqueueEmbeddings(context.Background(), a); e != nil {
 		t.Fatal(e)
 	}
 	lease, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
@@ -151,7 +170,7 @@ func TestUncertainEmbeddingIsNotAutomaticallyRetried(t *testing.T) {
 	db, s, a, profile := semanticFixture(t)
 	provider := &embeddingProvider{fail: true}
 	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
-	if e := s.EnqueueEmbeddings(context.Background(), a, profile); e != nil {
+	if e := s.EnqueueEmbeddings(context.Background(), a); e != nil {
 		t.Fatal(e)
 	}
 	lease, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
@@ -173,7 +192,7 @@ func TestEmbeddingCrashAfterSendDoesNotResend(t *testing.T) {
 	db, s, a, profile := semanticFixture(t)
 	provider := &embeddingProvider{before: func() { panic("simulated worker loss after provider accepted") }}
 	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
-	if e := s.EnqueueEmbeddings(context.Background(), a, profile); e != nil {
+	if e := s.EnqueueEmbeddings(context.Background(), a); e != nil {
 		t.Fatal(e)
 	}
 	lease, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
@@ -215,180 +234,102 @@ func TestSlowSemanticFailurePreservesLexical(t *testing.T) {
 func TestRegistrySemanticFailurePreservesFTS(t *testing.T) {
 	db, s, actor, profile := semanticFixture(t)
 	provider := &embeddingProvider{fail: true}
-	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}, models.Profile{}, models.Profile{})
-	s.ConfigureModelResolver(&fixedResolver{profile: profile})
-	if err := s.EnqueueEmbeddings(context.Background(), actor, models.Profile{ID: "request-cannot-select"}); err != nil {
-		t.Fatal("enqueue did not resolve global binding", err)
+	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
+	if err := s.EnqueueEmbeddings(context.Background(), actor); err != nil {
+		t.Fatal(err)
 	}
 	result, err := s.Search(context.Background(), actor, SearchRequest{Scope: Scope{Kind: "APP", AppID: "library"}, Query: "Director", Retrieval: "HYBRID"})
 	if err != nil || len(result.Results) != 1 || result.Status != "LEXICAL_ONLY" || provider.calls != 1 {
 		t.Fatal(result, err, provider.calls)
 	}
-	s.ConfigureModelResolver(&fixedResolver{err: models.ErrUnavailable})
+	// An installation with no configured embedding purpose makes no model call and
+	// keeps the same lexical answer.
+	s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}, models.Profile{}, models.Profile{})
 	result, err = s.Search(context.Background(), actor, SearchRequest{Scope: Scope{Kind: "APP", AppID: "library"}, Query: "Director", Retrieval: "HYBRID"})
 	if err != nil || len(result.Results) != 1 || provider.calls != 1 {
 		t.Fatal("unbound fallback", result, err, provider.calls)
 	}
 }
 
-func TestRegistryEmbeddingLeaseRecoveryPinsOriginalRevision(t *testing.T) {
-	for _, unset := range []bool{false, true} {
-		t.Run(fmt.Sprint("unset=", unset), func(t *testing.T) {
-			db, s, actor, profile := semanticFixture(t)
-			raw, err := os.ReadFile("../../../platform/postgres/migrations/cap_ai/0005_model_registry.sql")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err = db.Exec(string(raw)); err != nil {
-				t.Fatal(err)
-			}
-			var fixtureDB string
-			if err = db.QueryRow("SELECT current_database()").Scan(&fixtureDB); err != nil {
-				t.Fatal(err)
-			}
-			fixtureURL, _ := url.Parse(os.Getenv("TEST_DATABASE_URL"))
-			fixtureURL.Path = "/" + fixtureDB
-			importer := &models.Registry{DB: testutil.As(t, fixtureURL.String(), "dxos_ai_model_catalog")}
-			catalog := models.Catalog{SchemaVersion: 2, Providers: []models.ProviderConfig{{ID: "fake", Adapter: "bounded-http-v1", Endpoint: "https://example.invalid"}}, Models: []models.CandidateDeclaration{}}
-			for _, revision := range []int64{2, 3} {
-				candidate := profile
-				candidate.Revision = revision
-				candidate.Enabled = false
-				if revision == 3 {
-					candidate.Dimension = 5
-				}
-				catalog.Models = append(catalog.Models, models.CandidateDeclaration{Profile: candidate, Adapter: "bounded-http-v1"})
-			}
-			if _, err = importer.Reconcile(context.Background(), catalog); err != nil {
-				t.Fatal(err)
-			}
-			if _, err = db.Exec(`UPDATE cap_ai.model_profiles SET enabled=true;
- INSERT INTO cap_ai.processing_policy_profiles(policy_id,policy_version,model_profile_id,profile_revision) VALUES('reviewed',1,'embed',2),('reviewed',1,'embed',3);
- UPDATE cap_ai.global_model_slots SET profile_id='embed',profile_revision=2,slot_revision=1 WHERE capability='EMBEDDING'`); err != nil {
-				t.Fatal(err)
-			}
-			profile.Revision = 2
-			provider := &embeddingProvider{}
-			gateway := &models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}
-			s.ConfigureModels(gateway, models.Profile{}, models.Profile{})
-			if err = s.EnqueueEmbeddings(context.Background(), actor, profile); err != nil {
-				t.Fatal(err)
-			}
-			worker := workerStore(t, db)
-			worker.ConfigureModels(gateway, models.Profile{}, models.Profile{})
-			first, err := worker.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
-			if err != nil || first == nil {
-				t.Fatal(first, err)
-			}
-			var started embeddingWork
-			if err = decodeRow(worker.db.QueryRow(`SELECT cap_ai.embedding_work($1,$2,$3,$4,'embed',2)`, first.JobID, first.WorkerID, first.Fence, first.RunID), &started); err != nil {
-				t.Fatal(err)
-			}
-			if _, err = db.Exec(`UPDATE cap_ai.ingestion_jobs SET lease_until=now()-interval '1 second' WHERE id=$1;`, first.JobID); err != nil {
-				t.Fatal(err)
-			}
-			if _, err = db.Exec(`UPDATE cap_ai.global_model_slots SET profile_revision=3,slot_revision=2 WHERE capability='EMBEDDING'`); err != nil {
-				t.Fatal(err)
-			}
-			var database string
-			if err = db.QueryRow(`SELECT current_database()`).Scan(&database); err != nil {
-				t.Fatal(err)
-			}
-			u, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			u.Path = "/" + database
-			registry := &models.Registry{DB: testutil.As(t, u.String(), "dxos_ai_gateway")}
-			worker.ConfigureModelResolver(registry)
-			// An unset current slot must not prevent recovery of an existing pinned job.
-			if unset {
-				if _, err = db.Exec(`UPDATE cap_ai.global_model_slots SET profile_id=NULL,profile_revision=NULL,slot_revision=3 WHERE capability='EMBEDDING'`); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if err = (&Worker{Store: worker, WorkerID: ownerID}).Once(context.Background()); err != nil {
-				t.Fatal("resume", err)
-			}
-			var revision int
-			var dimension int
-			var state string
-			if err = db.QueryRow(`SELECT profile_revision,dimension,state FROM cap_ai.embedding_generations WHERE id=$1`, started.GenerationID).Scan(&revision, &dimension, &state); err != nil || revision != 2 || dimension != 3 || state != "READY" || provider.calls != 1 {
-				t.Fatal(revision, dimension, state, provider.calls, err)
-			}
-			// The lease resolver also rechecks current policy and profile availability.
-			if _, err = db.Exec(`UPDATE cap_ai.ingestion_jobs SET state='PENDING',next_attempt_at=now() WHERE id=$1`, first.JobID); err != nil {
-				t.Fatal(err)
-			}
-			lease, err := worker.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
-			if err != nil || lease == nil {
-				t.Fatal(lease, err)
-			}
-			ref := models.LeaseRef{JobID: lease.JobID, WorkerID: lease.WorkerID, RunID: lease.RunID, Fence: lease.Fence}
-			// Restart with providers only: both slot and recovered lease must reject
-			// changed connection metadata before dispatching to any provider.
-			for _, drift := range []string{"unchanged", "endpoint", "loopback"} {
-				config := catalog
-				config.Models = []models.CandidateDeclaration{}
-				if drift == "endpoint" {
-					config.Providers = []models.ProviderConfig{{ID: "fake", Adapter: "bounded-http-v1", Endpoint: "https://changed.invalid"}}
-				}
-				if drift == "loopback" {
-					config.Providers = []models.ProviderConfig{{ID: "fake", Adapter: "bounded-http-v1", Endpoint: "https://example.invalid", LoopbackTest: true}}
-				}
-				data, _ := json.Marshal(config)
-				file := t.TempDir() + "/catalog.json"
-				if err = os.WriteFile(file, data, 0600); err != nil {
-					t.Fatal(err)
-				}
-				gatewayURL := *fixtureURL
-				gatewayURL.User = url.User("dxos_ai_gateway")
-				env := map[string]string{"RAG_MODELS_ENABLED": "true", "RAG_MODELS_QUALIFIED": "true", "RAG_SOURCE_QUALIFIED": "true", "RAG_METADATA_QUALIFIED": "true", "RAG_PARSER_QUALIFIED": "true", "RAG_GLOBAL_MODEL_REGISTRY_ENABLED": "true", "RAG_MODEL_TEST_MODE": "true", "AI_GATEWAY_DATABASE_URL": gatewayURL.String(), "RAG_MODEL_DEPLOYMENT_FILE": file}
-				_, _, _, runtime, closeRuntime, runtimeErr := models.RuntimeFromEnvironment(context.Background(), func(k string) string { return env[k] })
-				if runtimeErr != nil {
-					t.Fatal(drift, runtimeErr)
-				}
-				_, runtimeErr = runtime.ResolveEmbeddingLease(context.Background(), ref)
-				closeRuntime()
-				if drift == "unchanged" && runtimeErr != nil || drift != "unchanged" && runtimeErr != models.ErrUnavailable {
-					t.Fatal(drift, runtimeErr)
-				}
-				if provider.calls != 1 {
-					t.Fatal("unexpected egress", provider.calls)
-				}
-			}
-
-			current, resolveErr := registry.ResolveEmbeddingLease(context.Background(), ref)
-			if resolveErr != nil {
-				t.Fatal(resolveErr)
-			}
-			stale := ref
-			stale.Fence--
-			if _, err = registry.ResolveEmbeddingLease(context.Background(), stale); err == nil {
-				t.Fatal("stale lease resolved")
-			}
-			if _, err = db.Exec(`UPDATE cap_ai.model_profiles SET enabled=false WHERE id=$1 AND revision=$2`, current.ID, current.Revision); err != nil {
-				t.Fatal(err)
-			}
-			if _, err = registry.ResolveEmbeddingLease(context.Background(), ref); err == nil {
-				t.Fatal("disabled profile resolved")
-			}
-			if _, err = db.Exec(`UPDATE cap_ai.model_profiles SET enabled=true WHERE id=$1 AND revision=$2`, current.ID, current.Revision); err != nil {
-				t.Fatal(err)
-			}
-			for _, role := range []string{"dxos_ai_api", "dxos_ai_worker", "dxos_ai_model_catalog"} {
-				var allowed bool
-				if err = db.QueryRow(`SELECT has_function_privilege($1,'cap_ai.registry_embedding_lease_profile(uuid,text,bigint,uuid)','EXECUTE')`, role).Scan(&allowed); err != nil || allowed {
-					t.Fatal("lease resolver privilege", role, allowed, err)
-				}
-			}
-			if _, err = db.Exec(`UPDATE cap_ai.processing_policies SET enabled=false WHERE id='reviewed'`); err != nil {
-				t.Fatal(err)
-			}
-			if _, err = registry.ResolveEmbeddingLease(context.Background(), ref); err == nil {
-				t.Fatal("revoked policy recovered")
-			}
-		})
+// TestEmbeddingLeasePinsDeploymentRevision replaces the retired slot-lease
+// resolution cases. A job queued for a superseded revision is never claimed by any
+// worker — not by the superseded profile and not by the current one — so a lease
+// can no longer recover a route the deployment stopped selecting. The remaining
+// security cases (the unreachable resolver interface and the revoked processing
+// review) are asserted against the deployment authority.
+func TestEmbeddingLeasePinsDeploymentRevision(t *testing.T) {
+	db, s, actor, profile := semanticFixture(t)
+	limits, _ := json.Marshal(profile.Limits)
+	newer := profile
+	newer.Revision = 2
+	newer.Dimension = 5
+	if _, err := db.Exec(`INSERT INTO cap_ai.model_profiles(id,revision,purpose,execution,provider_id,model_id,dimension,limits,enabled)
+		VALUES('embed',2,'EMBED','HOSTED','fake','fake',5,$1,false)`, string(limits)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO cap_ai.processing_policy_profiles(policy_id,policy_version,model_profile_id,profile_revision)
+		VALUES('reviewed',1,'embed',2)`); err != nil {
+		t.Fatal(err)
+	}
+	provider := &dimensionProvider{}
+	gateway := &models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}}, Operations: &models.OperationStore{DB: gatewayLogin(t, db)}, Providers: map[string]models.Provider{"fake": provider}}
+	// Revision 1 is still the live selection: its job is queued.
+	s.ConfigureModels(gateway, profile, models.Profile{})
+	if err := s.EnqueueEmbeddings(context.Background(), actor); err != nil {
+		t.Fatal(err)
+	}
+	// The deployment moves to revision 2.
+	selectDeployment(t, db, newer)
+	worker := workerStore(t, db)
+	if stale, err := worker.ClaimEmbedding(context.Background(), ownerID, profile); err != nil || stale != nil {
+		t.Fatal("the superseded revision still claims its job", stale, err)
+	}
+	if foreign, err := worker.ClaimEmbedding(context.Background(), ownerID, newer); err != nil || foreign != nil {
+		t.Fatal("the current revision claimed a superseded job", foreign, err)
+	}
+	// The current revision builds its own job and pins its own identity.
+	s.ConfigureModels(gateway, newer, models.Profile{})
+	worker.ConfigureModels(gateway, newer, models.Profile{})
+	if err := s.EnqueueEmbeddings(context.Background(), actor); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := worker.ClaimEmbedding(context.Background(), ownerID, newer)
+	if err != nil || lease == nil {
+		t.Fatal(lease, err)
+	}
+	if err = worker.BuildEmbeddings(context.Background(), *lease, newer); err != nil {
+		t.Fatal(err)
+	}
+	var revision, dimension int
+	var state string
+	if err = db.QueryRow(`SELECT profile_revision,dimension,state FROM cap_ai.embedding_generations WHERE job_id=$1`, lease.JobID).Scan(&revision, &dimension, &state); err != nil || revision != 2 || dimension != 5 || state != "READY" {
+		t.Fatal(revision, dimension, state, err)
+	}
+	// The retired lease resolver is unreachable for every runtime login.
+	// No runtime Go path calls the retired lease resolver, and no non-gateway
+	// runtime login can execute it. (The gateway keeps the 0005 grant until T9
+	// removes the function; it has no caller.)
+	for _, role := range []string{"dxos_ai_api", "dxos_ai_worker", "dxos_ai_model_catalog"} {
+		var allowed bool
+		if err = db.QueryRow(`SELECT has_function_privilege($1,'cap_ai.registry_embedding_lease_profile(uuid,text,bigint,uuid)','EXECUTE')`, role).Scan(&allowed); err != nil || allowed {
+			t.Fatal("lease resolver privilege", role, allowed, err)
+		}
+	}
+	// A revoked processing review denies the next build.
+	if _, err = db.Exec(`UPDATE cap_ai.ingestion_jobs SET state='PENDING',next_attempt_at=now() WHERE id=$1`, lease.JobID); err != nil {
+		t.Fatal(err)
+	}
+	again, err := worker.ClaimEmbedding(context.Background(), ownerID, newer)
+	if err != nil || again == nil {
+		t.Fatal(again, err)
+	}
+	if _, err = db.Exec(`UPDATE cap_ai.processing_policies SET enabled=false WHERE id='reviewed'`); err != nil {
+		t.Fatal(err)
+	}
+	// The dispatch is refused before any egress once the review is withdrawn.
+	calls := provider.calls
+	if err = worker.BuildEmbeddings(context.Background(), *again, newer); err == nil || provider.calls != calls {
+		t.Fatal("revoked review recovered", err, provider.calls)
 	}
 }
 
@@ -429,7 +370,7 @@ func TestEmbeddingClaimedOperationLeaseRecovery(t *testing.T) {
 		store := &models.OperationStore{DB: gatewayLogin(t, db)}
 		s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}},
 			Operations: store, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
-		if e := s.EnqueueEmbeddings(context.Background(), actor, profile); e != nil {
+		if e := s.EnqueueEmbeddings(context.Background(), actor); e != nil {
 			t.Fatal(e)
 		}
 		first, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
@@ -482,7 +423,7 @@ func TestEmbeddingClaimedOperationLeaseRecovery(t *testing.T) {
 		store := &models.OperationStore{DB: gatewayLogin(t, db)}
 		s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}},
 			Operations: store, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
-		if e := s.EnqueueEmbeddings(context.Background(), actor, profile); e != nil {
+		if e := s.EnqueueEmbeddings(context.Background(), actor); e != nil {
 			t.Fatal(e)
 		}
 		first, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
@@ -537,7 +478,7 @@ func TestEmbeddingIntentBlocksLeaseRecovery(t *testing.T) {
 		store := &models.OperationStore{DB: gatewayLogin(t, db)}
 		s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}},
 			Operations: store, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
-		if e := s.EnqueueEmbeddings(context.Background(), actor, profile); e != nil {
+		if e := s.EnqueueEmbeddings(context.Background(), actor); e != nil {
 			t.Fatal(e)
 		}
 		first, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})
@@ -595,7 +536,7 @@ func TestEmbeddingIntentBlocksLeaseRecovery(t *testing.T) {
 		store := &models.OperationStore{DB: gatewayLogin(t, db)}
 		s.ConfigureModels(&models.Gateway{Policy: &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: db}},
 			Operations: store, Providers: map[string]models.Provider{"fake": provider}}, profile, models.Profile{})
-		if e := s.EnqueueEmbeddings(context.Background(), actor, profile); e != nil {
+		if e := s.EnqueueEmbeddings(context.Background(), actor); e != nil {
 			t.Fatal(e)
 		}
 		first, e := s.ClaimEmbedding(context.Background(), ownerID, models.Profile{ID: "embed", Revision: 1})

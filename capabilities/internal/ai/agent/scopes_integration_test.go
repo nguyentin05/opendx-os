@@ -27,7 +27,7 @@ func (v subjectVerifier) VerifySubject(context.Context, string) (auth.Subject, e
 func scopeDB(t *testing.T) (*sql.DB, *sql.DB) {
 	t.Helper()
 	db := agentDB(t)
-	b, err := os.ReadFile("../../../platform/postgres/migrations/cap_ai/0007_agent_scopes.sql")
+	b, err := os.ReadFile("../../../../platform/postgres/migrations/cap_ai/0007_agent_scopes.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

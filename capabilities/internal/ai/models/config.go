@@ -8,226 +8,288 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"io"
+	"io/fs"
 	"os"
-	"regexp"
+	"strings"
 )
 
-type ProfileRef struct {
-	ID       string `json:"id"`
-	Revision int64  `json:"revision"`
+// The runtime has exactly one model source: the reviewed deployment declaration.
+// A purpose is configured or it is unavailable; nothing is discovered at runtime,
+// no slot or catalog selects a route, and no credential value is read from a
+// provider key in the Go environment. The provider credential the runtime holds is
+// the private proxy's master key, supplied by the deployment.
+const (
+	// deploymentFileEnv names the one private runtime declaration path. The
+	// default is the deployment's own models.yaml.
+	deploymentFileEnv     = "RAG_MODEL_DEPLOYMENT_FILE"
+	defaultDeploymentFile = "models.yaml"
+	// modelsEnabledEnv is the installation switch of the whole model surface. A
+	// deployment that leaves it off serves lexical/FTS search only.
+	modelsEnabledEnv = "RAG_MODELS_ENABLED"
+	// proxyEndpointEnv and proxyCredentialEnv name the private proxy origin and
+	// the master key the runtime authenticates with. The value is never printed,
+	// stored or used for any other destination.
+	proxyEndpointEnv   = "RAG_MODEL_LITELLM_ENDPOINT"
+	proxyCredentialEnv = "LITELLM_MASTER_KEY"
+	// proxyConfigEnv optionally names the generated proxy configuration the
+	// deployment started. When it is set, the runtime requires it to be exactly the
+	// document this declaration renders, so an independently edited or stale proxy
+	// configuration cannot serve a route the runtime believes in.
+	proxyConfigEnv = "RAG_MODEL_LITELLM_CONFIG_FILE"
+	// gatewayDatabaseEnv names the restricted gateway login. It can operate model
+	// policy and durable operations only; it holds no table privilege.
+	gatewayDatabaseEnv = "AI_GATEWAY_DATABASE_URL"
+	// localModelsQualifiedEnv is the separate qualification of a local route. A
+	// local route is a trusted operator-controlled endpoint, and the deployment
+	// states that it qualified it; the runtime does not infer it from an address.
+	localModelsQualifiedEnv = "RAG_LOCAL_MODELS_QUALIFIED"
+)
+
+// gatewayBinding is the durable half of the runtime: the restricted gateway login
+// and the check that each configured profile is the current deployment selection.
+// The verifier is the only database read of the binding and is re-checked on every
+// dispatch by Policy; it exists so a test can exercise the configuration contract
+// without a database.
+type gatewayBinding struct {
+	db       *sql.DB
+	verifier func(context.Context, Profile) error
+	close    func()
 }
 
-// legacyRuntimeConfig is the pre-deployment-selection file shape read by the
-// baseline runtime path. The canonical declaration is Deployment in
-// deployment.go; the baseline path is replaced in a later task and this shape
-// then disappears.
-type legacyRuntimeConfig struct {
-	Providers []struct {
-		ID            string `json:"id"`
-		Endpoint      string `json:"endpoint"`
-		CredentialRef string `json:"credential_ref"`
-		LoopbackTest  bool   `json:"loopback_test"`
-	} `json:"providers"`
-	Embed    ProfileRef `json:"embed_profile"`
-	Generate ProfileRef `json:"generate_profile"`
-}
-
-// FromEnvironment returns no Gateway unless explicitly qualified. The separate
-// connection role can operate only model policy and durable operation functions.
-func FromEnvironment(ctx context.Context, getenv func(string) string) (*Gateway, Profile, Profile, func(), error) {
-	fail := func() (*Gateway, Profile, Profile, func(), error) {
-		return nil, Profile{}, Profile{}, func() {}, ErrPolicy
+// openGatewayBinding opens the restricted gateway login and verifies every
+// configured profile against the live deployment selection. A profile the
+// database does not currently select — an unreconciled, suspended or drifted
+// deployment — is refused, so the runtime cannot start on a snapshot the database
+// does not hold.
+var openGatewayBinding = func(ctx context.Context, getenv func(string) string, profiles []Profile) (*gatewayBinding, error) {
+	dsn := strings.TrimSpace(getenv(gatewayDatabaseEnv))
+	if dsn == "" {
+		return nil, ErrPolicy
 	}
-	if getenv("RAG_MODELS_ENABLED") != "true" {
-		return nil, Profile{}, Profile{}, func() {}, nil
-	}
-	for _, key := range []string{"RAG_MODELS_QUALIFIED", "RAG_SOURCE_QUALIFIED", "RAG_METADATA_QUALIFIED", "RAG_PARSER_QUALIFIED"} {
-		if getenv(key) != "true" {
-			return fail()
-		}
-	}
-	if getenv("AI_GATEWAY_DATABASE_URL") == "" || getenv("RAG_MODEL_DEPLOYMENT_FILE") == "" {
-		return fail()
-	}
-	file, err := os.Open(getenv("RAG_MODEL_DEPLOYMENT_FILE"))
+	db, err := sql.Open("postgres", dsn)
 	if err != nil {
-		return fail()
-	}
-	defer func() { _ = file.Close() }()
-	data, err := io.ReadAll(io.LimitReader(file, maxCatalogBytes+1))
-	if err != nil || len(data) > maxCatalogBytes {
-		return fail()
-	}
-	var config legacyRuntimeConfig
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	registryEnabled := getenv("RAG_GLOBAL_MODEL_REGISTRY_ENABLED") == "true"
-	if registryEnabled {
-		catalog, e := ParseCatalog(data)
-		if e != nil {
-			return fail()
-		}
-		for _, provider := range catalog.Providers {
-			config.Providers = append(config.Providers, struct {
-				ID            string `json:"id"`
-				Endpoint      string `json:"endpoint"`
-				CredentialRef string `json:"credential_ref"`
-				LoopbackTest  bool   `json:"loopback_test"`
-			}{provider.ID, provider.Endpoint, provider.CredentialRef, provider.LoopbackTest})
-		}
-	} else if dec.Decode(&config) != nil || dec.Decode(new(any)) != io.EOF || len(config.Providers) > 10 {
-		return fail()
-	}
-	db, err := sql.Open("postgres", getenv("AI_GATEWAY_DATABASE_URL"))
-	if err != nil {
-		return fail()
+		return nil, ErrPolicy
 	}
 	closeDB := func() { _ = db.Close() }
 	if db.PingContext(ctx) != nil {
 		closeDB()
-		return fail()
+		return nil, ErrUnavailable
 	}
 	var role string
 	var privileged bool
-	err = db.QueryRowContext(ctx, `SELECT current_user,rolsuper OR rolbypassrls FROM pg_roles WHERE rolname=current_user`).Scan(&role, &privileged)
-	if err != nil || role != "dxos_ai_gateway" || privileged {
+	if err := db.QueryRowContext(ctx, `SELECT current_user, rolsuper OR rolbypassrls OR rolcreaterole FROM pg_roles WHERE rolname = current_user`).Scan(&role, &privileged); err != nil || role != "dxos_ai_gateway" || privileged {
 		closeDB()
-		return fail()
+		return nil, ErrPolicy
 	}
-	profiles := []Profile{{}, {}}
-	refs := []ProfileRef{config.Embed, config.Generate}
-	for i, ref := range refs {
-		if ref.ID == "" {
-			continue
-		}
+	binding := &gatewayBinding{db: db, close: closeDB, verifier: func(ctx context.Context, profile Profile) error {
 		var raw []byte
-		if err = db.QueryRowContext(ctx, `SELECT cap_ai.model_profile($1,$2)`, ref.ID, ref.Revision).Scan(&raw); err != nil || json.Unmarshal(raw, &profiles[i]) != nil || !profiles[i].Enabled {
-			closeDB()
-			return fail()
-		}
-		purpose := "EMBED"
-		if i == 1 {
-			purpose = "GENERATE"
-		}
-		if profiles[i].Purpose != purpose || profiles[i].Execution == "LOCAL" && getenv("RAG_LOCAL_MODELS_QUALIFIED") != "true" {
-			closeDB()
-			return fail()
-		}
-	}
-	if !registryEnabled && profiles[0].ID == "" && profiles[1].ID == "" {
-		closeDB()
-		return fail()
-	}
-	providers := map[string]Provider{}
-	secretRefs := map[string]string{}
-	refPattern := regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,99}$`)
-	for _, p := range config.Providers {
-		validRef := refPattern.MatchString(p.CredentialRef)
-		if registryEnabled {
-			validRef = catalogSecretRef.MatchString(p.CredentialRef)
-		}
-		if p.ID == "" || providers[p.ID] != nil || p.LoopbackTest && getenv("RAG_MODEL_TEST_MODE") != "true" || p.CredentialRef != "" && !validRef {
-			closeDB()
-			return fail()
-		}
-		secret := ""
-		if p.CredentialRef != "" {
-			secret = getenv(p.CredentialRef)
-			if secret == "" {
-				closeDB()
-				return fail()
+		if err := db.QueryRowContext(ctx, `SELECT cap_ai.model_profile($1,$2)`, profile.ID, profile.Revision).Scan(&raw); err != nil {
+			// An unreadable answer is an authority outage, which is never a usable
+			// route.
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrPolicy
 			}
+			return ErrUnavailable
 		}
-		provider, e := NewHTTPProvider(p.Endpoint, secret, p.LoopbackTest)
-		if e != nil {
-			closeDB()
-			return fail()
+		if raw == nil {
+			// cap_ai.model_profile answers SQL NULL, rather than no row, when the
+			// database does not currently select this exact profile: an
+			// unreconciled, withdrawn or drifted deployment.
+			return ErrPolicy
 		}
-		if registryEnabled {
-			providers[p.ID] = &configuredProvider{Provider: provider, credentialRef: p.CredentialRef, config: ProviderConfig{ID: p.ID, Adapter: "bounded-http-v1", Endpoint: p.Endpoint, CredentialRef: p.CredentialRef, LoopbackTest: p.LoopbackTest}}
-		} else {
-			providers[p.ID] = provider
+		var stored Profile
+		if err := json.Unmarshal(raw, &stored); err != nil {
+			return ErrUnavailable
 		}
-		secretRefs[p.ID] = p.CredentialRef
-	}
-	for _, profile := range profiles {
-		if profile.ID != "" && (providers[profile.ProviderID] == nil || profile.CredentialRef != secretRefs[profile.ProviderID]) {
-			closeDB()
-			return fail()
+		if !deploymentProfileMatches(profile, stored) {
+			return ErrPolicy
 		}
-	}
-	return &Gateway{Policy: &Policy{Authority: DatabaseAuthority{DB: db}, Enabled: true}, Operations: &OperationStore{DB: db}, Providers: providers}, profiles[0], profiles[1], closeDB, nil
-}
-
-// RuntimeFromEnvironment preserves the legacy configuration contract while wiring
-// a read-only resolver on the existing narrow gateway connection. It never imports.
-func RuntimeFromEnvironment(ctx context.Context, getenv func(string) string) (*Gateway, Profile, Profile, *RuntimeResolver, func(), error) {
-	gateway, embed, generate, closeDB, err := FromEnvironment(ctx, getenv)
-	var resolver *RuntimeResolver
-	if err == nil && gateway != nil && getenv("RAG_GLOBAL_MODEL_REGISTRY_ENABLED") == "true" {
-		authority, ok := gateway.Policy.Authority.(DatabaseAuthority)
-		if !ok {
-			closeDB()
-			return nil, Profile{}, Profile{}, nil, func() {}, ErrPolicy
-		}
-		refs := map[string]string{}
-		configs := map[string]ProviderConfig{}
-		// The validated file is read once by FromEnvironment; provider metadata is
-		// retained by the runtime provider wrapper without retaining raw credentials.
-		for id, provider := range gateway.Providers {
-			bound, ok := provider.(*configuredProvider)
-			if !ok {
-				closeDB()
-				return nil, Profile{}, Profile{}, nil, func() {}, ErrPolicy
-			}
-			refs[id] = bound.credentialRef
-			configs[id] = bound.config
-		}
-		resolver = &RuntimeResolver{registry: &Registry{DB: authority.DB}, credentialRefs: refs, providers: configs}
-	}
-	return gateway, embed, generate, resolver, closeDB, err
-}
-
-// RuntimeResolver additionally requires a locally configured bounded adapter and
-// the exact credential reference declared by the immutable active revision.
-type RuntimeResolver struct {
-	registry       *Registry
-	credentialRefs map[string]string
-	providers      map[string]ProviderConfig
-}
-
-func (r *RuntimeResolver) Resolve(ctx context.Context, capability Capability) (ActiveBinding, error) {
-	binding, err := r.registry.resolve(ctx, capability, r.validDeclaration)
-	if err != nil {
-		return ActiveBinding{}, err
-	}
-	ref, ok := r.credentialRefs[binding.Profile.ProviderID]
-	if !ok || ref != binding.Profile.CredentialRef {
-		return ActiveBinding{}, ErrUnavailable
-	}
+		return nil
+	}}
 	return binding, nil
 }
 
-type configuredProvider struct {
-	Provider
-	credentialRef string
-	config        ProviderConfig
+// RuntimeFromEnvironment returns the fixed deployment binding: the Gateway, the
+// configured embedding and generation profiles, and the close function of the one
+// database connection it opened. There is no dynamic resolver.
+//
+// A nil Gateway with no error is the supported "models are unavailable" state, and
+// it is the state of every incomplete or unreconciled deployment: the installation
+// switch is off, no declaration exists, the declaration disables inference, or the
+// declaration is valid but its live state is not — an unreconciled, withdrawn or
+// drifted database snapshot, an unusable or stale proxy configuration, or an
+// authority the runtime cannot reach. The process still boots; callers keep their
+// lexical/FTS parsing and search path and simply make no model call. Only a
+// declaration the runtime cannot accept at all — invalid content, an unrenderable
+// route, an unqualified local route, or models switched on without their qualified
+// predecessors — is an error, because no review could have produced it.
+func RuntimeFromEnvironment(ctx context.Context, getenv func(string) string) (*Gateway, Profile, Profile, func(), error) {
+	noop := func() {}
+	if getenv == nil {
+		getenv = func(string) string { return "" }
+	}
+	unavailable := func() (*Gateway, Profile, Profile, func(), error) {
+		return nil, Profile{}, Profile{}, noop, nil
+	}
+	failed := func(err error) (*Gateway, Profile, Profile, func(), error) {
+		return nil, Profile{}, Profile{}, noop, err
+	}
+	if getenv(modelsEnabledEnv) != "true" {
+		return unavailable()
+	}
+	// Source, metadata and parser qualification are independent, pre-existing
+	// gates: model support never substitutes for them. Enabling models while a
+	// predecessor is unqualified is a contradictory installation switch, not a
+	// deployment state, so it fails closed instead of silently disabling models.
+	for _, key := range []string{"RAG_SOURCE_QUALIFIED", "RAG_METADATA_QUALIFIED", "RAG_PARSER_QUALIFIED"} {
+		if getenv(key) != "true" {
+			return failed(ErrPolicy)
+		}
+	}
+	path := strings.TrimSpace(getenv(deploymentFileEnv))
+	if path == "" {
+		path = defaultDeploymentFile
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			// No declaration is the documented default: no model calls, lexical
+			// search intact. It is not a misconfiguration.
+			return unavailable()
+		}
+		return failed(ErrPolicy)
+	}
+	defer func() { _ = file.Close() }()
+	data, err := io.ReadAll(io.LimitReader(file, maxDeploymentBytes+1))
+	if err != nil || len(data) > maxDeploymentBytes {
+		return failed(ErrPolicy)
+	}
+	deployment, err := LoadDeployment(bytes.NewReader(data))
+	if err != nil {
+		return failed(err)
+	}
+	if !deployment.Enabled {
+		return unavailable()
+	}
+	embed, err := configuredProfile(deployment.Embedding, purposeEmbed, getenv)
+	if err != nil {
+		return failed(err)
+	}
+	generate, err := configuredProfile(deployment.LLM, purposeGenerate, getenv)
+	if err != nil {
+		return failed(err)
+	}
+	if embed.ID == "" && generate.ID == "" {
+		return unavailable()
+	}
+	if configPath := strings.TrimSpace(getenv(proxyConfigEnv)); configPath != "" {
+		err = verifyProxyConfiguration(deployment, configPath)
+		switch {
+		case err == nil:
+		case errors.Is(err, errProxyConfigurationMismatch):
+			// The running proxy does not serve this declaration: the deployment's
+			// live state disagrees with the review. No route is served, and the
+			// installation boots with lexical search instead of crash-looping.
+			return unavailable()
+		default:
+			// The declaration cannot render the proxy configuration at all.
+			return failed(err)
+		}
+	}
+	provider, err := NewLiteLLMProvider(strings.TrimSpace(getenv(proxyEndpointEnv)), getenv(proxyCredentialEnv), deployment)
+	if err != nil {
+		return failed(err)
+	}
+	profiles := make([]Profile, 0, 2)
+	for _, profile := range []Profile{embed, generate} {
+		if profile.ID != "" {
+			profiles = append(profiles, profile)
+		}
+	}
+	binding, err := openGatewayBinding(ctx, getenv, profiles)
+	if err != nil {
+		// The authority that decides whether a route is live is part of the live
+		// deployment state. Without it no profile can be proven current, so the
+		// runtime serves no route and keeps its lexical path.
+		return unavailable()
+	}
+	// The database is the authority: a configured route the deployment does not
+	// currently select — an unreconciled, suspended or drifted snapshot — is not
+	// usable, however valid the declaration is.
+	for _, profile := range profiles {
+		if err := binding.verifier(ctx, profile); err != nil {
+			binding.close()
+			return unavailable()
+		}
+	}
+	gateway := &Gateway{
+		Policy:     &Policy{Authority: DatabaseAuthority{DB: binding.db}, Enabled: true},
+		Operations: &OperationStore{DB: binding.db},
+		Providers:  make(map[string]Provider, 2),
+		Routes:     make(map[string]Profile, 2),
+	}
+	for _, profile := range profiles {
+		// One private proxy serves every declared route; the route is selected by
+		// the immutable profile identity, never by a provider name.
+		gateway.Providers[profile.ProviderID] = provider
+		gateway.Routes[profile.ID] = profile
+	}
+	return gateway, embed, generate, binding.close, nil
 }
 
-func (r *RuntimeResolver) ResolveEmbeddingLease(ctx context.Context, lease LeaseRef) (Profile, error) {
-	profile, err := r.registry.resolveEmbeddingLease(ctx, lease, r.validDeclaration)
+// configuredProfile derives the immutable profile of one declared route. A local
+// route additionally requires the deployment's separate local qualification, so an
+// unqualified local endpoint is never served.
+func configuredProfile(spec *ModelSpec, purpose string, getenv func(string) string) (Profile, error) {
+	if spec == nil {
+		return Profile{}, nil
+	}
+	profile, err := spec.Profile(purpose)
 	if err != nil {
 		return Profile{}, err
 	}
-	ref, ok := r.credentialRefs[profile.ProviderID]
-	if !ok || ref != profile.CredentialRef {
-		return Profile{}, ErrUnavailable
+	if profile.Execution == "LOCAL" && getenv(localModelsQualifiedEnv) != "true" {
+		return Profile{}, ErrPolicy
 	}
 	return profile, nil
 }
 
-func (r *RuntimeResolver) validDeclaration(p Profile, adapter, digest string) bool {
-	provider, ok := r.providers[p.ProviderID]
-	return ok && digest == declarationDigest(p, adapter, provider)
+// errProxyConfigurationMismatch reports that the proxy configuration the
+// deployment started is not the document this declaration renders. It is a live
+// state disagreement, distinct from a declaration that cannot render at all.
+var errProxyConfigurationMismatch = errors.New("the proxy configuration does not match the declaration")
+
+// verifyProxyConfiguration requires the proxy configuration the deployment
+// started to be exactly what this declaration renders. The proxy is transport, not
+// authority: a hand-edited route would be a destination the review never made, so
+// a stale or independently edited document is refused instead of served.
+func verifyProxyConfiguration(deployment Deployment, path string) error {
+	rendered, err := RenderProxyConfig(deployment)
+	if err != nil {
+		return err
+	}
+	current, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(current, rendered) {
+		return errProxyConfigurationMismatch
+	}
+	return nil
+}
+
+// deploymentProfileMatches reports whether the database row is exactly the profile
+// the runtime was configured with. A changed identity, purpose, execution class,
+// provider, model, revision, dimension, limit or credential reference is a
+// different route, and a disabled row is not current at all.
+func deploymentProfileMatches(configured, stored Profile) bool {
+	return stored.Enabled &&
+		configured.ID == stored.ID &&
+		configured.Revision == stored.Revision &&
+		configured.Purpose == stored.Purpose &&
+		configured.Execution == stored.Execution &&
+		configured.ProviderID == stored.ProviderID &&
+		configured.ModelID == stored.ModelID &&
+		configured.Dimension == stored.Dimension &&
+		configured.CredentialRef == stored.CredentialRef &&
+		configured.Limits == stored.Limits
 }

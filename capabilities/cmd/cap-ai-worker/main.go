@@ -37,15 +37,18 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	worker := knowledge.Worker{Store: knowledge.NewStore(db), Parser: docir.NewUnixClient(os.Getenv("PARSER_SOCKET"), os.Getenv("PARSER_SERVICE_TOKEN")), FileEndpoint: os.Getenv("RAG_INTERNAL_FILE_URL"), ServiceToken: serviceToken, WorkerID: os.Getenv("RAG_WORKER_SERVICE_SUBJECT"), PackageEndpoint: os.Getenv("RAG_INTERNAL_AI_URL")}
-	gateway, embed, generate, resolver, closeGateway, modelErr := models.RuntimeFromEnvironment(ctx, os.Getenv)
+	gateway, embed, generate, closeGateway, modelErr := models.RuntimeFromEnvironment(ctx, os.Getenv)
 	if modelErr != nil {
 		log.Fatal("invalid model gateway configuration")
 	}
 	defer closeGateway()
-	worker.Store.ConfigureModels(gateway, embed, generate)
-	if resolver != nil {
-		worker.Store.ConfigureModelResolver(resolver)
+	if gateway == nil && os.Getenv("RAG_MODELS_ENABLED") == "true" {
+		// A declared but unreconciled deployment is not a worker startup failure:
+		// the worker still parses and indexes, and claims no embedding job because
+		// the database reports no current EMBED profile.
+		log.Printf("embedding model unavailable: no callable deployment profile; claiming no model work")
 	}
+	worker.Store.ConfigureModels(gateway, embed, generate)
 	if err = worker.Run(ctx); err != nil && ctx.Err() == nil {
 		log.Fatal("worker failed")
 	}

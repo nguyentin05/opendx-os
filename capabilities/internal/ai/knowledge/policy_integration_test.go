@@ -25,7 +25,7 @@ func metadataFixture(t *testing.T) (*sql.DB, *sql.DB, *auth.Identity) {
 	t.Helper()
 	db := testutil.Database(t)
 	for _, p := range []string{"init/01_core_schema.sql", "init/02_capability_registry.sql", "init/03_app_registry.sql", "init/05_operator_deployments.sql", "init/06_runtime_roles.sql", "init/07_app_definitions.sql", "capabilities/cap_ai.sql", "migrations/cap_ai/0001_metadata_jobs.sql"} {
-		raw, e := os.ReadFile("../../../platform/postgres/" + p)
+		raw, e := os.ReadFile("../../../../platform/postgres/" + p)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -107,7 +107,7 @@ func TestFreshUpgradeEquivalent(t *testing.T) {
 func TestBootstrapMigrationLedger(t *testing.T) {
 	db := testutil.Database(t)
 	for _, p := range []string{"init/01_core_schema.sql", "init/02_capability_registry.sql", "init/03_app_registry.sql", "init/05_operator_deployments.sql", "init/06_runtime_roles.sql", "init/07_app_definitions.sql", "capabilities/cap_ai.sql"} {
-		raw, e := os.ReadFile("../../../platform/postgres/" + p)
+		raw, e := os.ReadFile("../../../../platform/postgres/" + p)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -124,19 +124,19 @@ func TestBootstrapMigrationLedger(t *testing.T) {
 	env := append(os.Environ(), "PGHOST="+u.Hostname(), "PGPORT="+u.Port(), "PGUSER="+u.User.Username(), "POSTGRES_USER="+u.User.Username(), "POSTGRES_DB="+name, "PGDATABASE="+name, "PGSSLMODE=disable")
 	pw, _ := u.User.Password()
 	env = append(env, "PGPASSWORD="+pw)
-	cmd := exec.Command("../../../platform/postgres/init/09_rag_migrations.sh")
+	cmd := exec.Command("../../../../platform/postgres/init/09_rag_migrations.sh")
 	cmd.Env = env
 	out, e := cmd.CombinedOutput()
 	if e != nil {
 		t.Fatalf("bootstrap: %v %s", e, out)
 	}
 	t.Setenv("RAG_POLICY_TEST_URL", u.String())
-	cmd = exec.Command("../../../scripts/migrate-rag.sh", "--database-url-env", "RAG_POLICY_TEST_URL", "--scope", "cap-ai", "--through", "0001")
+	cmd = exec.Command("../../../../scripts/migrate-rag.sh", "--database-url-env", "RAG_POLICY_TEST_URL", "--scope", "cap-ai", "--through", "0001")
 	if out, e = cmd.CombinedOutput(); e != nil {
 		t.Fatalf("upgrade replay: %v %s", e, out)
 	}
 	upgraded, _, _ := metadataFixture(t)
-	derivedSQL, readErr := os.ReadFile("../../../platform/postgres/migrations/cap_ai/0002_docir_fts.sql")
+	derivedSQL, readErr := os.ReadFile("../../../../platform/postgres/migrations/cap_ai/0002_docir_fts.sql")
 	if readErr != nil {
 		t.Fatal(readErr)
 	}
@@ -144,7 +144,7 @@ func TestBootstrapMigrationLedger(t *testing.T) {
 		t.Fatal(e)
 	}
 	// Bootstrap also installs the model-independent conversation ledger.
-	ledgerSQL, readErr := os.ReadFile("../../../platform/postgres/migrations/cap_ai/0006_agent_conversations.sql")
+	ledgerSQL, readErr := os.ReadFile("../../../../platform/postgres/migrations/cap_ai/0006_agent_conversations.sql")
 	if readErr != nil {
 		t.Fatal(readErr)
 	}

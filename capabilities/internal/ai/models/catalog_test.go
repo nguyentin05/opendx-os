@@ -94,8 +94,8 @@ func TestCatalogGenerationDimensionAndOffline(t *testing.T) {
 	if calls.Load() != 0 {
 		t.Fatal("parser sent a request")
 	}
-	// Registry declarations must not affect the existing disabled deployment path.
-	g, _, _, close, e := FromEnvironment(context.Background(), func(key string) string {
+	// A catalog declaration must not affect the disabled deployment path.
+	g, _, _, close, e := RuntimeFromEnvironment(context.Background(), func(key string) string {
 		if key == "RAG_MODELS_ENABLED" {
 			return "false"
 		}

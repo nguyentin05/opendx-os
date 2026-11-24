@@ -71,7 +71,7 @@ func validateChatProcessingApp(ctx context.Context, db *sql.DB, appID string) er
 }
 
 func newRuntimeChatHandler(authenticator agent.ChatAuthenticator, sources *knowledge.Store, modelsGateway *models.Gateway,
-	runtimeResolver *models.RuntimeResolver, processingApp string, packages, personal bool,
+	embed, generate models.Profile, processingApp string, packages, personal bool,
 ) *agent.Handler {
 	db := authenticator.DB
 	store := &agent.PostgresConversationStore{DB: db}
@@ -79,23 +79,18 @@ func newRuntimeChatHandler(authenticator agent.ChatAuthenticator, sources *knowl
 		ScopeResolver: &agent.PostgresScopeResolver{DB: db}, AppEnabled: packages, PersonalEnabled: personal,
 	}
 	reader := knowledge.NewPolicy(db)
-	var resolver knowledge.ModelResolver
 	var policy knowledge.ModelPolicy
-	if runtimeResolver != nil {
-		resolver = runtimeResolver
-	}
 	if modelsGateway != nil && modelsGateway.Policy != nil {
 		policy = modelsGateway.Policy
 	}
-	// The chat path selects models only from installation slots. The native
-	// routes may still use their configured legacy profiles.
+	// The chat path uses the same fixed deployment profiles as the native routes:
+	// one installation, one model selection, no per-surface route.
 	search := *sources
-	search.ConfigureModels(modelsGateway, models.Profile{}, models.Profile{})
-	search.ConfigureModelResolver(resolver)
+	search.ConfigureModels(modelsGateway, embed, generate)
 	retrieval := &agent.RetrievalCoordinator{Scopes: scopes, Search: &search, Reader: reader}
-	checker := agent.NewSourcePolicyChecker(reader, resolver, policy, processingApp)
+	checker := agent.NewSourcePolicyChecker(reader, generate, policy, processingApp)
 	memory := agent.NewWorkingMemory(scopes.FilterHistory(checker), 0)
-	reply := agent.NewOrchestrator(store, memory, retrieval, reader, resolver, modelsGateway, processingApp)
+	reply := agent.NewOrchestrator(store, memory, retrieval, reader, generate, modelsGateway, processingApp)
 	return agent.NewHandler(authenticator, store, reply, scopes, sources)
 }
 
@@ -182,22 +177,25 @@ func main() {
 		log.Fatal("invalid package source configuration")
 	}
 	modelCtx, modelCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	gateway, embed, generate, resolver, closeGateway, modelErr := models.RuntimeFromEnvironment(modelCtx, os.Getenv)
+	gateway, embed, generate, closeGateway, modelErr := models.RuntimeFromEnvironment(modelCtx, os.Getenv)
 	modelCancel()
 	if modelErr != nil {
 		log.Fatal("invalid model gateway configuration")
 	}
 	defer closeGateway()
-	store.ConfigureModels(gateway, embed, generate)
-	if resolver != nil {
-		store.ConfigureModelResolver(resolver)
+	if gateway == nil && os.Getenv("RAG_MODELS_ENABLED") == "true" {
+		// A declared but unreconciled deployment is not a startup failure: the
+		// process boots and every model call stays unavailable. The message names no
+		// profile, endpoint, credential or document.
+		log.Printf("model calls unavailable: no callable deployment profile; serving authorized lexical search only")
 	}
+	store.ConfigureModels(gateway, embed, generate)
 	if err = store.ConfigurePersonal(personal, os.Getenv("RAG_FILE_API_URL"), os.Getenv("KNOWLEDGE_ARTIFACT_ROOT")); err != nil {
 		log.Fatal("invalid personal-source configuration")
 	}
 	var chat http.Handler
 	if chatVerifier != nil {
-		chat = newRuntimeChatHandler(agent.ChatAuthenticator{Verifier: chatVerifier, DB: db}, store, gateway, resolver, processingApp, packageEnabled, personal)
+		chat = newRuntimeChatHandler(agent.ChatAuthenticator{Verifier: chatVerifier, DB: db}, store, gateway, embed, generate, processingApp, packageEnabled, personal)
 	}
 	nativeAuthority := access.Authenticator{Authority: knowledge.NewAuthority(verifier, db)}
 	nativeEnabled := os.Getenv("RAG_METADATA_ENABLED") == "true" && os.Getenv("RAG_SOURCE_QUALIFIED") == "true"

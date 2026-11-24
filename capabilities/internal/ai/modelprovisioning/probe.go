@@ -14,14 +14,19 @@ import (
 // The one fixed synthetic input of each purpose. Verification sends exactly these
 // bytes: a caller cannot supply a prompt, evidence, endpoint or credential, so a
 // probe can never be turned into a production dispatch.
+//
+// The strings are the models package's single definition of the synthetic call, so
+// the deployment CLI's `verify` (models.VerifyDeployment) and this provisioning
+// probe cannot drift apart: an installation verifying with one tool and probing
+// with the other sends identical bytes.
 const (
-	syntheticEmbedText    = "OpenDX-OS synthetic embedding qualification."
-	syntheticQuery        = "What is the synthetic project code?"
-	syntheticEvidenceID   = "E1"
-	syntheticEvidenceText = "The synthetic project code is BLUE-17."
+	syntheticEmbedText    = models.SyntheticEmbedText
+	syntheticQuery        = models.SyntheticQuery
+	syntheticEvidenceID   = models.SyntheticEvidenceID
+	syntheticEvidenceText = models.SyntheticEvidenceText
 	// syntheticMarker is the deterministic token a successful synthetic
 	// generation must contain.
-	syntheticMarker = "BLUE-17"
+	syntheticMarker = models.SyntheticMarker
 )
 
 // ProbeReport is the bounded outcome of one synthetic verification. It carries the

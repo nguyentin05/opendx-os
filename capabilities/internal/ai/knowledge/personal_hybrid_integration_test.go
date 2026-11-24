@@ -23,13 +23,13 @@ type personalHybridFixture struct {
 	api, worker *Store
 	owner       *auth.Identity
 	spy         *embeddingProvider
-	registry    *models.Registry
+	profile     models.Profile
 }
 
 func applyHybridFixtureMigrations(t *testing.T, db *sql.DB, migrations ...string) {
 	t.Helper()
 	for _, migration := range migrations {
-		raw, err := os.ReadFile("../../../platform/postgres/migrations/cap_ai/" + migration)
+		raw, err := os.ReadFile("../../../../platform/postgres/migrations/cap_ai/" + migration)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -42,21 +42,25 @@ func applyHybridFixtureMigrations(t *testing.T, db *sql.DB, migrations ...string
 func newPersonalHybridFixture(t *testing.T) personalHybridFixture {
 	t.Helper()
 	db, api, owner := derivedFixture(t)
-	applyHybridFixtureMigrations(t, db, "0003_package_knowledge.sql", "0004_models_vectors.sql",
-		"0005_model_registry.sql", "0008_personal_model_processing.sql", "0009_personal_hybrid.sql")
+	applyHybridFixtureMigrations(t, db, "0003_package_knowledge.sql", "0004_models_vectors.sql", "0005_model_registry.sql")
+	applyDeploymentAuthority(t, db)
 	_, err := db.Exec(`
 INSERT INTO core.user_roles(user_id, role_name)
 VALUES ('11111111-1111-4111-8111-111111111111', 'role_operator');
 INSERT INTO cap_ai.model_profiles(id, revision, purpose, execution, provider_id, model_id, dimension, limits, enabled)
 VALUES ('embed', 1, 'EMBED', 'HOSTED', 'fake', 'fake', 3,
- '{"max_input_tokens":8192,"max_output_tokens":512,"max_bytes":16384,"timeout_ms":500}', true);
+ '{"max_input_tokens":8192,"max_output_tokens":512,"max_bytes":16384,"timeout_ms":500}', false);
 INSERT INTO cap_ai.model_candidates(profile_id, revision, adapter_key, declaration_digest, declaration)
 VALUES ('embed', 1, 'bounded-http-v1', repeat('a',64), '{}');
-UPDATE cap_ai.global_model_slots SET profile_id='embed', profile_revision=1, slot_revision=1 WHERE capability='EMBEDDING';
 `)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The embedding route is the live deployment selection, exactly as the
+	// deployment records it.
+	profile := models.Profile{ID: "embed", Revision: 1, Purpose: "EMBED", Execution: "HOSTED", ProviderID: "fake", ModelID: "fake", Dimension: 3,
+		Limits: models.Limits{MaxInputTokens: 8192, MaxOutputTokens: 512, MaxBytes: 16384, TimeoutMS: 500}}
+	selectDeployment(t, db, profile)
 	var name string
 	if err := db.QueryRow("SELECT current_database()").Scan(&name); err != nil {
 		t.Fatal(err)
@@ -67,7 +71,6 @@ UPDATE cap_ai.global_model_slots SET profile_id='embed', profile_revision=1, slo
 	}
 	u.Path = "/" + name
 	gatewayDB := testutil.As(t, u.String(), "dxos_ai_gateway")
-	registry := &models.Registry{DB: gatewayDB}
 	spy := &embeddingProvider{}
 	gateway := &models.Gateway{
 		Policy:     &models.Policy{Enabled: true, Authority: models.DatabaseAuthority{DB: gatewayDB}},
@@ -76,10 +79,9 @@ UPDATE cap_ai.global_model_slots SET profile_id='embed', profile_revision=1, slo
 	s := NewStore(api)
 	worker := workerStore(t, db)
 	for _, store := range []*Store{s, worker} {
-		store.ConfigureModels(gateway, models.Profile{}, models.Profile{})
-		store.ConfigureModelResolver(registry)
+		store.ConfigureModels(gateway, profile, models.Profile{})
 	}
-	return personalHybridFixture{db: db, admin: testutil.As(t, u.String(), "dxos_authz"), api: s, worker: worker, owner: owner, spy: spy, registry: registry}
+	return personalHybridFixture{db: db, admin: testutil.As(t, u.String(), "dxos_authz"), api: s, worker: worker, owner: owner, spy: spy, profile: profile}
 }
 
 func (f personalHybridFixture) approve(t *testing.T) string {
@@ -118,7 +120,7 @@ func (f personalHybridFixture) activate(t *testing.T, actor *auth.Identity, key,
 
 func (f personalHybridFixture) enqueue(t *testing.T, actor *auth.Identity) {
 	t.Helper()
-	if err := f.api.EnqueueEmbeddings(context.Background(), actor, models.Profile{}); err != nil {
+	if err := f.api.EnqueueEmbeddings(context.Background(), actor); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -126,17 +128,13 @@ func (f personalHybridFixture) enqueue(t *testing.T, actor *auth.Identity) {
 func (f personalHybridFixture) claim(t *testing.T) (*Lease, models.Profile) {
 	t.Helper()
 	ctx := context.Background()
-	lease, err := f.worker.ClaimEmbedding(ctx, ownerID, models.Profile{ID: "embed", Revision: 1})
+	lease, err := f.worker.ClaimEmbedding(ctx, ownerID, f.profile)
 	if err != nil || lease == nil {
 		t.Fatalf("expected a PERSONAL embedding lease, got %v, %v", lease, err)
 	}
-	profile, err := f.registry.ResolveEmbeddingLease(ctx, models.LeaseRef{
-		JobID: lease.JobID, WorkerID: lease.WorkerID, RunID: lease.RunID, Fence: lease.Fence,
-	})
-	if err != nil {
-		t.Fatal("resolve PERSONAL embedding lease", err)
-	}
-	return lease, profile
+	// The worker holds the fixed configured profile; there is no lease lookup that
+	// could recover another revision.
+	return lease, f.profile
 }
 
 func (f personalHybridFixture) build(t *testing.T) {
@@ -369,13 +367,9 @@ func TestPersonalHybridDiscardsVectorAfterQueryApprovalRevocation(t *testing.T) 
 }
 
 func TestPersonalHybridMigrationPreservesAppEmbedding(t *testing.T) {
-	db, api, actor, _ := semanticFixture(t)
-	applyHybridFixtureMigrations(t, db, "0005_model_registry.sql", "0008_personal_model_processing.sql", "0009_personal_hybrid.sql")
-	if _, err := db.Exec(`INSERT INTO cap_ai.model_candidates(profile_id, revision, adapter_key, declaration_digest, declaration)
-	 VALUES ('embed',1,'bounded-http-v1',repeat('a',64),'{}');
-	 UPDATE cap_ai.global_model_slots SET profile_id='embed',profile_revision=1,slot_revision=1 WHERE capability='EMBEDDING'`); err != nil {
-		t.Fatal(err)
-	}
+	db, api, actor, profile := semanticFixture(t)
+	// semanticFixture already declared the candidate, selected the deployment and
+	// applied the deployment-authority chain; nothing is replayed here.
 	var name string
 	if err := db.QueryRow("SELECT current_database()").Scan(&name); err != nil {
 		t.Fatal(err)
@@ -394,8 +388,7 @@ func TestPersonalHybridMigrationPreservesAppEmbedding(t *testing.T) {
 	}
 	worker := workerStore(t, db)
 	for _, store := range []*Store{api, worker} {
-		store.ConfigureModels(gateway, models.Profile{}, models.Profile{})
-		store.ConfigureModelResolver(&models.Registry{DB: gatewayDB})
+		store.ConfigureModels(gateway, profile, models.Profile{})
 	}
 	if err := (&Worker{Store: worker, WorkerID: ownerID}).Once(context.Background()); err != nil {
 		t.Fatal("APP embedding after migration", err)

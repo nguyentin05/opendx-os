@@ -75,9 +75,10 @@ ensure_env RAG_METADATA_ENABLED true
 ensure_env RAG_PACKAGE_ENABLED true
 ensure_env RAG_PERSONAL_ENABLED true
 ensure_env RAG_PRIVATE_UPLOAD_ENABLED true
-ensure_env RAG_MODELS_QUALIFIED false
+# Model calls stay off, and there is no runtime catalog or model qualification
+# flag to set: the reviewed deployment declaration and its reconciled selection
+# are the only model source.
 ensure_env RAG_MODELS_ENABLED false
-ensure_env RAG_GLOBAL_MODEL_REGISTRY_ENABLED false
 ensure_env RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED false
 ensure_env RAG_MODELS_SCHEMA_ENABLED false
 ensure_env RAG_AGENT_MODELS_SCHEMA_ENABLED false

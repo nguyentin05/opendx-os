@@ -16,6 +16,7 @@ import (
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/ai/agent"
 	"github.com/opendx-os/opendx-os/capabilities/internal/ai/knowledge"
+	"github.com/opendx-os/opendx-os/capabilities/internal/ai/models"
 	"github.com/opendx-os/opendx-os/capabilities/internal/testutil"
 )
 
@@ -75,7 +76,7 @@ func TestChatHTTPRuntimeWithReadyProcessingAppAndNoModels(t *testing.T) {
 		t.Fatal(err)
 	}
 	chat := newRuntimeChatHandler(agent.ChatAuthenticator{Verifier: verifierStub{}, DB: api}, sourceStore,
-		nil, nil, "ready_app", true, false)
+		nil, models.Profile{}, models.Profile{}, "ready_app", true, false)
 	h := newHandlerWithKnowledge(testAuth(), sourceStore, true, chat)
 	const path = "/api/cap/ai/conversations"
 	r := httptest.NewRequest("POST", path, strings.NewReader(`{"title":"Private chat"}`))

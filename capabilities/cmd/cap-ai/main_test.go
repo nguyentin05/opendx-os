@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/ai/access"
+	"github.com/opendx-os/opendx-os/capabilities/internal/ai/models"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
@@ -260,4 +261,71 @@ func TestChatHTTPCachePolicyDuringPathNormalization(t *testing.T) {
 			t.Errorf("chat path %q returned status %d without no-store", path, w.Code)
 		}
 	}
+}
+
+// TestRuntimeModelGateKeepsBootAvailable fixes the composition contract of the
+// service start-up: the model gateway is optional, and a valid declaration whose
+// live state is not reconciled leaves the process booting with model calls
+// unavailable rather than failing. Only a declaration the runtime cannot accept is
+// a startup error. With no gateway the search and answer paths keep their
+// authorized lexical behaviour, which the knowledge and agent suites cover.
+func TestRuntimeModelGateKeepsBootAvailable(t *testing.T) {
+	valid := "enabled: true\nembedding:\n  model: 'ollama/embed-model'\n  execution: local\n  api_base: http://ollama:11434\n  revision: 'embed-revision'\n  dimension: 8\n"
+	disabled := "enabled: false\n" + strings.TrimPrefix(valid, "enabled: true\n")
+	base := map[string]string{
+		"RAG_MODELS_ENABLED":         "true",
+		"RAG_SOURCE_QUALIFIED":       "true",
+		"RAG_METADATA_QUALIFIED":     "true",
+		"RAG_PARSER_QUALIFIED":       "true",
+		"RAG_LOCAL_MODELS_QUALIFIED": "true",
+		"RAG_MODEL_LITELLM_ENDPOINT": "http://litellm:4000",
+		"LITELLM_MASTER_KEY":         "runtime-proxy-credential",
+	}
+	write := func(t *testing.T, declaration string) string {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "models.yaml")
+		if err := os.WriteFile(path, []byte(declaration), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	for _, tc := range []struct {
+		name        string
+		declaration string
+		gatewayDSN  string
+	}{
+		{"no model configuration", "", ""},
+		{"disabled declaration", disabled, ""},
+		{"enabled declaration without a binding", valid, ""},
+		{"enabled declaration with an unreachable authority", valid, "postgres://gateway@127.0.0.1:1/test"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := map[string]string{}
+			for key, value := range base {
+				env[key] = value
+			}
+			env["AI_GATEWAY_DATABASE_URL"] = tc.gatewayDSN
+			if tc.declaration != "" {
+				env["RAG_MODEL_DEPLOYMENT_FILE"] = write(t, tc.declaration)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			gateway, embed, generate, closeRuntime, err := models.RuntimeFromEnvironment(ctx, func(key string) string { return env[key] })
+			defer closeRuntime()
+			if err != nil || gateway != nil || embed.ID != "" || generate.ID != "" {
+				t.Fatalf("startup gate: %v %v %q %q", err, gateway, embed.ID, generate.ID)
+			}
+		})
+	}
+	t.Run("an invalid declaration is still a startup error", func(t *testing.T) {
+		env := map[string]string{}
+		for key, value := range base {
+			env[key] = value
+		}
+		env["RAG_MODEL_DEPLOYMENT_FILE"] = write(t, "not a declaration at all")
+		if _, _, _, closeRuntime, err := models.RuntimeFromEnvironment(context.Background(), func(key string) string { return env[key] }); err == nil {
+			closeRuntime()
+			t.Fatal("an invalid declaration booted")
+		}
+	})
 }

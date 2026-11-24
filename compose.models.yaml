@@ -3,10 +3,15 @@
 # Add after compose.rag.yaml for pgvector and deployment-controlled model configuration.
 x-model-runtime: &model-runtime
   AI_GATEWAY_DATABASE_URL: postgres://dxos_ai_gateway:${AI_GATEWAY_DATABASE_PASSWORD:?set the Gateway database password}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
+  # The one reviewed declaration and the private proxy it renders. There is no
+  # runtime catalog and no separate model qualification flag: an unreconciled or
+  # withdrawn selection boots with model calls unavailable and FTS intact.
   RAG_MODEL_DEPLOYMENT_FILE: /run/secrets/model-catalog
   RAG_MODELS_ENABLED: ${RAG_MODELS_ENABLED:-false}
-  RAG_MODELS_QUALIFIED: ${RAG_MODELS_QUALIFIED:-false}
-  RAG_GLOBAL_MODEL_REGISTRY_ENABLED: ${RAG_GLOBAL_MODEL_REGISTRY_ENABLED:-false}
+  RAG_MODEL_LITELLM_ENDPOINT: ${RAG_MODEL_LITELLM_ENDPOINT:-http://litellm:4000}
+  LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
+  RAG_MODEL_LITELLM_CONFIG_FILE: ${RAG_MODEL_LITELLM_CONFIG_FILE:-}
+  RAG_LOCAL_MODELS_QUALIFIED: ${RAG_LOCAL_MODELS_QUALIFIED:-false}
 
 services:
   postgres:

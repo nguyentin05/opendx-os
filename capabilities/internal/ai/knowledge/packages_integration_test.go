@@ -27,7 +27,7 @@ const packageIncarnation = "77777777-7777-4777-8777-777777777777"
 func packageFixture(t *testing.T) (*sql.DB, *Store, *auth.Identity, string) {
 	t.Helper()
 	db, _, actor := derivedFixture(t)
-	migration, e := os.ReadFile("../../../platform/postgres/migrations/cap_ai/0003_package_knowledge.sql")
+	migration, e := os.ReadFile("../../../../platform/postgres/migrations/cap_ai/0003_package_knowledge.sql")
 	if e != nil {
 		t.Fatal(e)
 	}

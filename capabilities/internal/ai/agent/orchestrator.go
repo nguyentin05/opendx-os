@@ -36,17 +36,20 @@ type Orchestrator struct {
 	memory     ContextBuilder
 	retriever  Retriever
 	reader     knowledge.AnswerReader
-	resolver   knowledge.ModelResolver
+	profile    models.Profile
 	policy     knowledge.ModelPolicy
 	gateway    knowledge.ModelCaller
 	processing string
 }
 
-// NewOrchestrator accepts optional generation dependencies for lexical-only
-// installations. A configured Gateway supplies its own canonical policy.
+// NewOrchestrator takes the fixed configured generation profile. There is no
+// resolver: an installation either has a generate route or answers with
+// authorized search results. A configured Gateway supplies its own canonical
+// policy, which re-checks the exact profile and its current authority on every
+// attempt.
 func NewOrchestrator(store ConversationStore, memory ContextBuilder, retrieval Retriever, reader knowledge.AnswerReader,
-	resolver knowledge.ModelResolver, gateway *models.Gateway, processingAppID string) *Orchestrator {
-	o := &Orchestrator{store: store, memory: memory, retriever: retrieval, reader: reader, resolver: resolver, processing: processingAppID}
+	profile models.Profile, gateway *models.Gateway, processingAppID string) *Orchestrator {
+	o := &Orchestrator{store: store, memory: memory, retriever: retrieval, reader: reader, profile: profile, processing: processingAppID}
 	if gateway != nil && gateway.Policy != nil {
 		o.policy, o.gateway = gateway.Policy, gateway
 	}
@@ -54,18 +57,14 @@ func NewOrchestrator(store ConversationStore, memory ContextBuilder, retrieval R
 }
 
 // NewSourcePolicyChecker reauthorizes history under each source's actual role,
-// exact READ snapshot, the active generation profile, and the processing consumer.
-func NewSourcePolicyChecker(reader knowledge.AnswerReader, resolver knowledge.ModelResolver, policy knowledge.ModelPolicy, processingAppID string) SourcePolicyChecker {
+// exact READ snapshot, the fixed generation profile, and the processing consumer.
+func NewSourcePolicyChecker(reader knowledge.AnswerReader, profile models.Profile, policy knowledge.ModelPolicy, processingAppID string) SourcePolicyChecker {
 	return func(ctx context.Context, actor Actor, ref SourceRef) (bool, error) {
-		if resolver == nil || policy == nil || processingAppID == "" || !readCurrentSource(ctx, reader, actor, ref) {
+		if profile.ID == "" || policy == nil || processingAppID == "" || !readCurrentSource(ctx, reader, actor, ref) {
 			return false, nil
 		}
-		binding, err := resolver.Resolve(ctx, models.CapabilityLLM)
-		if err != nil {
-			return false, err
-		}
-		op := agentOperation("agent-memory:"+ref.ChunkID, processingAppID, binding, []models.AgentSourceProof{agentProof(ref)})
-		_, err = policy.Check(ctx, &auth.Identity{UserID: actor.UserID}, op)
+		op := agentOperation("agent-memory:"+ref.ChunkID, processingAppID, profile, []models.AgentSourceProof{agentProof(ref)})
+		_, err := policy.Check(ctx, &auth.Identity{UserID: actor.UserID}, op)
 		return err == nil, err
 	}
 }
@@ -150,30 +149,31 @@ func (o *Orchestrator) runTurn(ctx context.Context, actor Actor, user Message) T
 		}
 		return out
 	}
-	if o.resolver == nil || o.policy == nil || o.gateway == nil {
+	if o.policy == nil || o.gateway == nil {
 		return fallback(models.ErrUnavailable.Error())
 	}
 	if o.processing == "" {
 		return fallback(models.ErrPolicy.Error())
 	}
-
-	binding, err := o.resolver.Resolve(ctx, models.CapabilityLLM)
-	if err != nil || binding.Capability != models.CapabilityLLM ||
-		binding.Profile.ID == "" || binding.Profile.Revision < 1 || !binding.Profile.Enabled || binding.Profile.Purpose != "GENERATE" {
+	// The fixed configured profile is the only generation route. A purpose that is
+	// absent from the deployment is an unavailable model, not a reason to search
+	// for another one.
+	profile := o.profile
+	if profile.ID == "" || profile.Revision < 1 || !profile.Enabled || profile.Purpose != "GENERATE" {
 		return fallback(models.ErrUnavailable.Error())
 	}
-	payload, selected, sources, proofs := buildTurnPayload(user.Content, evidence, memory.RecentTurns, binding.Profile.Limits)
+	payload, selected, sources, proofs := buildTurnPayload(user.Content, evidence, memory.RecentTurns, profile.Limits)
 	if len(selected) == 0 {
 		return fallback("CONTEXT_LIMIT")
 	}
 
 	identity := &auth.Identity{UserID: actor.UserID}
-	op := agentOperation("agent-turn:"+user.ID, o.processing, binding, proofs)
+	op := agentOperation("agent-turn:"+user.ID, o.processing, profile, proofs)
 	approval, err := o.policy.Check(ctx, identity, op)
 	if err != nil {
 		return fallback(safeModelReason(err))
 	}
-	if approval.Fingerprint == "" || approval.Profile != binding.Profile {
+	if approval.Fingerprint == "" || approval.Profile != profile {
 		return emptyTurn("SEARCH_ONLY", authorizationChanged, search)
 	}
 
@@ -186,12 +186,11 @@ func (o *Orchestrator) runTurn(ctx context.Context, actor Actor, user Message) T
 			return emptyTurn("SEARCH_ONLY", authorizationChanged, search)
 		}
 	}
-	current, err := o.resolver.Resolve(ctx, models.CapabilityLLM)
-	if err != nil || current != binding {
-		return emptyTurn("SEARCH_ONLY", authorizationChanged, search)
-	}
+	// The exact configured profile and its current authority are re-checked before
+	// any grounded result is returned. The database is the authority, so a changed
+	// selection is reported as a changed authorization, never as an answer.
 	fresh, err := o.policy.Check(ctx, identity, op)
-	if err != nil || fresh.Fingerprint != approval.Fingerprint {
+	if err != nil || fresh.Fingerprint != approval.Fingerprint || fresh.Profile != profile {
 		return emptyTurn("SEARCH_ONLY", authorizationChanged, search)
 	}
 	if errors.Is(callErr, models.ErrUnavailable) {
@@ -225,12 +224,12 @@ func safeModelReason(err error) string {
 	}
 }
 
-func agentOperation(key, processing string, binding models.ActiveBinding, sources []models.AgentSourceProof) models.Operation {
-	// The exact profile revision is the whole binding: no slot revision is sent or
-	// accepted. The database authorizes it only while it is the live deployment
-	// selection, and every call re-checks that current authority.
+func agentOperation(key, processing string, profile models.Profile, sources []models.AgentSourceProof) models.Operation {
+	// The exact profile revision is the whole binding. The database authorizes it
+	// only while it is the live deployment selection, and every call re-checks that
+	// current authority.
 	return models.Operation{Key: key, AppID: processing, ScopeKind: "AGENT", Purpose: "GENERATE",
-		ProfileID: binding.Profile.ID, ProfileRevision: binding.Profile.Revision,
+		ProfileID: profile.ID, ProfileRevision: profile.Revision,
 		AgentSources: sources}
 }
 

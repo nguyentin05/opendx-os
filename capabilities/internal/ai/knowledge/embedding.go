@@ -23,27 +23,11 @@ func (s *Store) ConfigureModels(gateway *models.Gateway, embed, generate models.
 	s.generateProfile = generate
 }
 
-// ModelResolver selects the installation-wide immutable revision, never an app selector.
-type ModelResolver interface {
-	Resolve(context.Context, models.Capability) (models.ActiveBinding, error)
-}
-
-func (s *Store) ConfigureModelResolver(resolver ModelResolver) { s.modelResolver = resolver }
-
-func (s *Store) modelProfile(ctx context.Context, capability models.Capability) (models.Profile, error) {
-	binding, err := s.modelBinding(ctx, capability)
-	return binding.Profile, err
-}
-
-func (s *Store) modelBinding(ctx context.Context, capability models.Capability) (models.ActiveBinding, error) {
-	if s.modelResolver != nil {
-		return s.modelResolver.Resolve(ctx, capability)
-	}
-	profile := s.generateProfile
-	if capability == models.CapabilityEmbedding {
-		profile = s.embedProfile
-	}
-	return models.ActiveBinding{Capability: capability, Profile: profile}, nil
+// ModelProfiles exposes the two fixed configured profiles. They are the runtime
+// identity of a purpose; policy and the deployment selection are still re-checked
+// on every call.
+func (s *Store) ModelProfiles() (embed, generate models.Profile) {
+	return s.embedProfile, s.generateProfile
 }
 
 func modelOperationKey() string {
@@ -54,14 +38,8 @@ func modelOperationKey() string {
 	return hex.EncodeToString(b[:])
 }
 
-func (s *Store) EnqueueEmbeddings(ctx context.Context, actor *auth.Identity, profile models.Profile) error {
-	if s.modelResolver != nil {
-		var err error
-		profile, err = s.modelProfile(ctx, models.CapabilityEmbedding)
-		if err != nil {
-			return err
-		}
-	}
+func (s *Store) EnqueueEmbeddings(ctx context.Context, actor *auth.Identity) error {
+	profile := s.embedProfile
 	if s.gateway == nil || profile.ID == "" {
 		return models.ErrPolicy
 	}
@@ -147,20 +125,14 @@ func (s *Store) BuildEmbeddings(ctx context.Context, lease Lease, profile models
 }
 
 func (s *Store) semanticCandidates(ctx context.Context, actor *auth.Identity, req SearchRequest) ([]candidate, error) {
-	binding, err := s.modelBinding(ctx, models.CapabilityEmbedding)
-	if err != nil {
-		return nil, err
-	}
-	profile := binding.Profile
-	if req.RequirePersonalQueryApproval && binding.Capability != models.CapabilityEmbedding {
-		return nil, models.ErrUnavailable
-	}
-	if s.gateway == nil || profile.ID == "" || (req.Scope.Kind != "APP" && req.Scope.Kind != "PERSONAL") {
+	profile := s.embedProfile
+	if s.gateway == nil || profile.ID == "" || profile.Purpose != "EMBED" || (req.Scope.Kind != "APP" && req.Scope.Kind != "PERSONAL") {
 		return nil, models.ErrPolicy
 	}
 
 	app := req.Scope.AppID
 	collections := pq.Array(req.Scope.CollectionIDs)
+	var err error
 	var review sql.NullInt64
 	if req.Scope.Kind == "PERSONAL" {
 		app, err = s.ResolveModelApp(ctx, actor, req.Scope)

@@ -61,19 +61,16 @@ func (p *Policy) Check(ctx context.Context, actor *auth.Identity, req Operation)
 func (op Operation) validScope() bool {
 	switch op.ScopeKind {
 	case "APP", "PERSONAL":
-		if op.LLMSlotRevision != 0 || len(op.AgentSources) != 0 {
+		if len(op.AgentSources) != 0 {
 			return false
 		}
 		if op.RequirePersonalQueryApproval {
-			// The retired slot revisions are dead authority, never an ignored
-			// hint: a caller that still sets one is denied instead of silently
-			// accepted, so a stale caller fails closed.
-			return op.Purpose == "EMBED" && op.EmbeddingSlotRevision == 0 && len(op.Sources) == 0 && op.Lease == nil
+			return op.Purpose == "EMBED" && len(op.Sources) == 0 && op.Lease == nil
 		}
-		return op.EmbeddingSlotRevision == 0 && len(op.Sources) <= 50
+		return len(op.Sources) <= 50
 	case "AGENT":
-		return op.Purpose == "GENERATE" && op.AppID != "" && op.LLMSlotRevision == 0 && op.Lease == nil && len(op.Sources) == 0 &&
-			op.EmbeddingSlotRevision == 0 && !op.RequirePersonalQueryApproval && len(op.AgentSources) > 0 && len(op.AgentSources) <= 50
+		return op.Purpose == "GENERATE" && op.AppID != "" && op.Lease == nil && len(op.Sources) == 0 &&
+			!op.RequirePersonalQueryApproval && len(op.AgentSources) > 0 && len(op.AgentSources) <= 50
 	default:
 		return false
 	}

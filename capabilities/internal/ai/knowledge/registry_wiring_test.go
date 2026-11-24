@@ -10,16 +10,9 @@ import (
 	"testing"
 )
 
-type fixedResolver struct {
-	profile models.Profile
-	err     error
-	calls   int
-}
-
-func (r *fixedResolver) Resolve(_ context.Context, c models.Capability) (models.ActiveBinding, error) {
-	r.calls++
-	return models.ActiveBinding{Capability: c, SlotRevision: 1, Profile: r.profile}, r.err
-}
+// TestRegistryFlagOffPreservesPlan05 keeps the fixed-profile default: an ANSWERED
+// answer over the configured generation profile, and a store that reports exactly
+// the profiles it was configured with.
 func TestRegistryFlagOffPreservesPlan05(t *testing.T) {
 	s, f := answerSetup()
 	o, e := s.Answer(context.Background(), answerActor, answerRequest)
@@ -28,35 +21,35 @@ func TestRegistryFlagOffPreservesPlan05(t *testing.T) {
 	}
 	store := NewStore(nil)
 	store.ConfigureModels(nil, answerProfile(), answerProfile())
-	p, e := store.modelProfile(context.Background(), models.CapabilityLLM)
-	if e != nil || p != answerProfile() {
-		t.Fatal(p, e)
+	embed, generate := store.ModelProfiles()
+	if embed != answerProfile() || generate != answerProfile() {
+		t.Fatal(embed, generate)
 	}
 }
+
+// TestRegistrySharedSlotAndNoAppOverride proves no request field selects a model:
+// two apps read the same configured profile, and the store has no resolver to
+// consult.
 func TestRegistrySharedSlotAndNoAppOverride(t *testing.T) {
-	r := &fixedResolver{profile: answerProfile()}
-	r.profile.Revision = 9
 	for _, app := range []string{"one", "two"} {
 		s, _ := answerSetup()
-		s.Resolver = r
 		req := answerRequest
 		req.Scope.AppID = app
 		o, e := s.Answer(context.Background(), answerActor, req)
-		if e != nil || o.ModelProfile == nil || o.ModelProfile.Revision != 9 {
+		if e != nil || o.ModelProfile == nil || o.ModelProfile.Revision != answerProfile().Revision {
 			t.Fatal(o, e)
 		}
 	}
 	store := NewStore(nil)
-	store.ConfigureModels(nil, answerProfile(), answerProfile())
-	store.ConfigureModelResolver(&fixedResolver{err: models.ErrUnavailable})
-	if _, e := store.modelProfile(context.Background(), models.CapabilityLLM); e != models.ErrUnavailable {
-		t.Fatal(e)
+	store.ConfigureModels(nil, answerProfile(), models.Profile{})
+	if _, generate := store.ModelProfiles(); generate.ID != "" {
+		t.Fatal("an unconfigured generation purpose was invented")
 	}
 }
+
 func TestRegistryPersonalHostedZeroEgressAndRevocation(t *testing.T) {
 	s, f := answerSetup()
 	s.Policy = &models.Policy{Authority: &personalAnswerAuthority{}, Enabled: true}
-	s.Resolver = &fixedResolver{profile: answerProfile()}
 	req := answerRequest
 	req.Scope = Scope{Kind: "PERSONAL"}
 	o, e := s.Answer(context.Background(), answerActor, req)
@@ -64,7 +57,6 @@ func TestRegistryPersonalHostedZeroEgressAndRevocation(t *testing.T) {
 		t.Fatal(o, e)
 	}
 	s, f = answerSetup()
-	s.Resolver = &fixedResolver{profile: answerProfile()}
 	f.after = func() { f.revoked = true }
 	o, e = s.Answer(context.Background(), answerActor, answerRequest)
 	if e != nil || o.Reason != "AUTHORIZATION_CHANGED" || len(o.Results) != 0 {
@@ -89,17 +81,18 @@ func TestRegistryRequestSelectorsRejected(t *testing.T) {
 	}
 }
 
+// TestRegistryAnswerPinsRevisionAcrossSlotChange replaces the slot pinning test: the
+// configured profile is immutable for the lifetime of the service, so a change to
+// the database selection cannot make an in-flight answer switch routes.
 func TestRegistryAnswerPinsRevisionAcrossSlotChange(t *testing.T) {
-	resolver := &fixedResolver{profile: answerProfile()}
 	service, provider := answerSetup()
-	service.Resolver = resolver
-	provider.after = func() { resolver.profile.Revision = 2 }
+	provider.after = func() { service.Profile = models.Profile{ID: "other", Revision: 2, Purpose: "GENERATE"} }
 	first, err := service.Answer(context.Background(), answerActor, answerRequest)
-	if err != nil || first.ModelProfile == nil || first.ModelProfile.Revision != 1 || resolver.calls != 1 {
-		t.Fatal(first, err, resolver.calls)
+	if err != nil || first.ModelProfile == nil || first.ModelProfile.Revision != 1 || provider.calls != 1 {
+		t.Fatal(first, err)
 	}
 	second, err := service.Answer(context.Background(), answerActor, answerRequest)
-	if err != nil || second.ModelProfile == nil || second.ModelProfile.Revision != 2 || resolver.calls != 2 {
-		t.Fatal(second, err, resolver.calls)
+	if err != nil || second.ModelProfile == nil || second.ModelProfile.Revision != 2 {
+		t.Fatal(second, err)
 	}
 }

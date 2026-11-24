@@ -342,7 +342,6 @@ func TestAgentModelPolicyRequiresGroundedGeneration(t *testing.T) {
 		{"missing question", func(_ *Operation, p *Payload) { p.Query = "" }},
 		{"missing profile", func(o *Operation, _ *Payload) { o.ProfileID = "" }},
 		{"stale profile revision", func(o *Operation, _ *Payload) { o.ProfileRevision++ }},
-		{"retired slot pin", func(o *Operation, _ *Payload) { o.LLMSlotRevision = 1 }},
 		{"legacy sources mixed in", func(o *Operation, _ *Payload) { o.Sources = []contracts.ReadScope{f.proofs[0].ReadScope} }},
 		{"worker lease mixed in", func(o *Operation, _ *Payload) { o.Lease = &LeaseRef{} }},
 		{"AGENT proofs on APP", func(o *Operation, _ *Payload) { o.ScopeKind, o.AppID = "APP", "hr" }},

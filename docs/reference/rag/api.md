@@ -110,20 +110,24 @@ Event envelope: event_id, event_type `ai.document.version.registered`, schema_ve
 
 ## Global model registry foundation (R1)
 
-This is the canonical contract for the implemented optional registry foundation;
-implementation does not establish production qualification. `RAG_GLOBAL_MODEL_REGISTRY_ENABLED`
-defaults to `false`. It does not replace the existing model/source qualification
-or policy gates. While OFF, preserve the current Plan05 deployment-file behavior:
-`embed_profile` and `generate_profile` may select exact existing profile revisions
-under the existing gates. They are legacy deployment configuration, never app or
-user overrides. Authorized lexical search remains available without models or
-pgvector.
+**Retired.** This section is the historical contract of the optional R1 registry
+foundation. `RAG_GLOBAL_MODEL_REGISTRY_ENABLED` is no longer read by any Go code:
+the runtime has one model source, the reviewed deployment declaration and the
+exact selection reconciled from it (ADR 0011), and it serves no route otherwise.
+The `EMBED`/`GENERATE` capability mapping, the `MODEL_UNAVAILABLE` outcomes and
+the FTS fallbacks below remain the behaviour; the slot and catalog machinery they
+were bound to does not, and is retained as data until it is removed.
 
-While ON, the database is the sole authority for installation-wide `ACTIVE`
-slot bindings. There is exactly one slot for each of `EMBEDDING`, `LLM`, and
-`VLM`; a slot may be unbound. `RERANKING` is reserved and disabled until a
-separate increment. No model choice belongs in an app manifest, workflow, UI
-request or user preference. Capability names map to existing database profile
+While the foundation existed, it opted in through
+`RAG_GLOBAL_MODEL_REGISTRY_ENABLED` (default `false`) and did not replace the
+model/source qualification or policy gates. Authorized lexical search remained
+available without models or pgvector.
+
+With the foundation on, the database was the sole authority for
+installation-wide `ACTIVE` slot bindings. There was exactly one slot for each of
+`EMBEDDING`, `LLM`, and `VLM`; a slot could be unbound. `RERANKING` is reserved
+and disabled. No model choice belongs in an app manifest, workflow, UI
+request or user preference. Capability names mapped to existing database profile
 `purpose` values as follows:
 
 | Capability | Existing profile purpose | R1 binding |

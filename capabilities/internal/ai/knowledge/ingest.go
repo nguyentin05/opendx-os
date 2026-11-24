@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/ai/knowledge/docir"
-	"github.com/opendx-os/opendx-os/capabilities/internal/ai/models"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
 
@@ -32,12 +31,9 @@ type Worker struct {
 }
 
 func (w *Worker) Once(ctx context.Context) error {
-	// Resolve the current slot only to schedule new embedding jobs.
-	profile, resolveErr := w.Store.modelProfile(ctx, models.CapabilityEmbedding)
-	// Unavailable models must not stop ordinary parsing.
-	if resolveErr != nil {
-		profile = models.Profile{}
-	}
+	// The worker holds the fixed configured embedding profile. It is the only
+	// profile it may queue, claim or build: the database refuses any other.
+	profile := w.Store.embedProfile
 	// Enqueue only profile-allowlisted current sources; no model dependency for PARSE.
 	if w.Store.gateway != nil && profile.ID != "" {
 		_, err := w.Store.db.ExecContext(ctx, `SELECT cap_ai.queue_embeddings(NULL,NULL,$1,$2)`, profile.ID, profile.Revision)
@@ -50,24 +46,14 @@ func (w *Worker) Once(ctx context.Context) error {
 		return err
 	}
 	if lease == nil {
-		if w.Store.gateway == nil || profile.ID == "" && w.Store.modelResolver == nil {
+		if w.Store.gateway == nil || profile.ID == "" {
 			return nil
 		}
+		// Claim only a job queued for this exact profile; a job for a superseded
+		// profile is never dispatched and never blocks this one.
 		embedLease, e := w.Store.ClaimEmbedding(ctx, w.WorkerID, profile)
 		if e != nil || embedLease == nil {
 			return e
-		}
-		if w.Store.modelResolver != nil {
-			resolver, ok := w.Store.modelResolver.(interface {
-				ResolveEmbeddingLease(context.Context, models.LeaseRef) (models.Profile, error)
-			})
-			if !ok {
-				return models.ErrUnavailable
-			}
-			profile, e = resolver.ResolveEmbeddingLease(ctx, models.LeaseRef{JobID: embedLease.JobID, WorkerID: embedLease.WorkerID, RunID: embedLease.RunID, Fence: embedLease.Fence})
-			if e != nil {
-				return e
-			}
 		}
 		return w.Store.BuildEmbeddings(ctx, *embedLease, profile)
 	}

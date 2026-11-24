@@ -23,6 +23,13 @@ type Gateway struct {
 	Policy     *Policy
 	Operations OperationLog
 	Providers  map[string]Provider
+	// Routes is the fixed deployment the runtime was configured with, keyed by the
+	// immutable profile identity. When it is set, it is the only dispatchable route
+	// set: a policy decision for any other profile — an unreconciled revision, a
+	// withdrawn purpose or a drifted row — is refused before the durable claim and
+	// before any provider call. A Gateway built without it (a test seam, or a
+	// caller that composes its own policy) keeps the previous behaviour.
+	Routes map[string]Profile
 }
 
 func (g *Gateway) Call(ctx context.Context, actor *auth.Identity, op Operation, payload Payload) (Result, error) {
@@ -40,6 +47,15 @@ func (g *Gateway) Call(ctx context.Context, actor *auth.Identity, op Operation, 
 		return Result{}, err
 	}
 	profile := approval.Profile
+	if g.Routes != nil {
+		// The configured deployment is the only dispatchable route set. The database
+		// approving a different revision, purpose or binding is not a reason to
+		// dispatch: it is a snapshot the runtime was not started on.
+		configured, ok := g.Routes[profile.ID]
+		if !ok || configured != profile {
+			return Result{}, ErrPolicy
+		}
+	}
 	provider := g.Providers[profile.ProviderID]
 	if provider == nil || g.Operations == nil {
 		return Result{}, ErrUnavailable

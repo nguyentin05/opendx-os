@@ -47,12 +47,6 @@ func (f turnRetrieverFunc) Retrieve(ctx context.Context, actor Actor, query stri
 	return f(ctx, actor, query)
 }
 
-type turnResolverFunc func(context.Context, models.Capability) (models.ActiveBinding, error)
-
-func (f turnResolverFunc) Resolve(ctx context.Context, capability models.Capability) (models.ActiveBinding, error) {
-	return f(ctx, capability)
-}
-
 type turnPolicyFunc func(context.Context, *auth.Identity, models.Operation) (models.Approval, error)
 
 func (f turnPolicyFunc) Check(ctx context.Context, actor *auth.Identity, op models.Operation) (models.Approval, error) {
@@ -92,7 +86,7 @@ func turnHistory(seq int64, question, answer string, refs ...SourceRef) []Messag
 	}
 }
 
-func unitTurn(t *testing.T, store *turnStore, evidence ...Evidence) (*Orchestrator, models.ActiveBinding) {
+func unitTurn(t *testing.T, store *turnStore, evidence ...Evidence) (*Orchestrator, models.Profile) {
 	t.Helper()
 	reads := make(map[string]knowledge.ReadScope)
 	for _, item := range evidence {
@@ -109,36 +103,30 @@ func unitTurn(t *testing.T, store *turnStore, evidence ...Evidence) (*Orchestrat
 		}
 		return reads[doc], nil
 	})
-	binding := models.ActiveBinding{Capability: models.CapabilityLLM, SlotRevision: 2, Profile: models.Profile{
+	// The configured deployment profile is the only generation route. There is no
+	// resolver to consult, so a turn cannot select another model.
+	profile := models.Profile{
 		ID: "qualified-generate", Revision: 4, Enabled: true, Purpose: "GENERATE", Limits: models.Limits{MaxInputTokens: 4096, MaxBytes: 4096},
-	}}
-	resolver := turnResolverFunc(func(_ context.Context, capability models.Capability) (models.ActiveBinding, error) {
-		if capability != models.CapabilityLLM {
-			t.Error("generation must resolve LLM")
-		}
-		return binding, nil
-	})
+	}
 	retriever := turnRetrieverFunc(func(context.Context, Actor, string) (RetrievalResult, error) {
 		return RetrievalResult{Evidence: evidence, SearchStatus: "HYBRID", Warnings: []string{"SEMANTIC_UNAVAILABLE"}}, nil
 	})
 	policy := turnPolicyFunc(func(_ context.Context, actor *auth.Identity, op models.Operation) (models.Approval, error) {
-		// The exact profile revision is the whole authority; a retired slot
-		// revision must never be carried into a policy decision or a fingerprint.
+		// The exact profile revision is the whole authority.
 		if actor.UserID != retrievalActor.UserID || actor.Role != "" || op.Key == "" || op.AppID != "agent_processing" ||
-			op.ScopeKind != "AGENT" || op.Purpose != "GENERATE" || op.ProfileID != binding.Profile.ID ||
-			op.ProfileRevision != binding.Profile.Revision || op.LLMSlotRevision != 0 || op.EmbeddingSlotRevision != 0 ||
-			len(op.AgentSources) == 0 {
+			op.ScopeKind != "AGENT" || op.Purpose != "GENERATE" || op.ProfileID != profile.ID ||
+			op.ProfileRevision != profile.Revision || len(op.AgentSources) == 0 {
 			t.Fatalf("operation lacks server authority: %+v, actor=%+v", op, actor)
 		}
-		return models.Approval{Profile: binding.Profile, Fingerprint: "approved"}, nil
+		return models.Approval{Profile: profile, Fingerprint: "approved"}, nil
 	})
-	o := NewOrchestrator(store, NewWorkingMemory(NewSourcePolicyChecker(reader, resolver, policy, "agent_processing"), 0),
-		retriever, reader, resolver, nil, "agent_processing")
+	o := NewOrchestrator(store, NewWorkingMemory(NewSourcePolicyChecker(reader, profile, policy, "agent_processing"), 0),
+		retriever, reader, profile, nil, "agent_processing")
 	o.policy = policy
 	o.gateway = turnCallerFunc(func(_ context.Context, _ *auth.Identity, _ models.Operation, _ models.Payload) (models.Result, error) {
 		return models.Result{Text: "Use the standard laptop request.", CitationIDs: []string{"E1"}, Usage: &models.Usage{InputTokens: 4, OutputTokens: 1}}, nil
 	})
-	return o, binding
+	return o, profile
 }
 
 func TestOrchestratorFollowUpGrounding(t *testing.T) {
@@ -181,11 +169,11 @@ func TestOrchestratorFollowUpGrounding(t *testing.T) {
 }
 
 func TestAgentRevocationBeforeReply(t *testing.T) {
-	for _, mode := range []string{"uncited history READ", "processing review fingerprint", "active slot"} {
+	for _, mode := range []string{"uncited history READ", "processing review fingerprint", "authorized profile"} {
 		t.Run(mode, func(t *testing.T) {
 			evidence, prior := turnEvidence(1), turnEvidence(2)
 			s := &turnStore{history: turnHistory(29, "Prior topic", "Prior protected answer.", turnHistorySource(prior))}
-			o, binding := unitTurn(t, s, evidence)
+			o, profile := unitTurn(t, s, evidence)
 			var sent bool
 			read, policy := o.reader, o.policy
 			o.reader = retrievalReaderFunc(func(ctx context.Context, a *auth.Identity, doc string) (knowledge.ReadScope, error) {
@@ -199,14 +187,12 @@ func TestAgentRevocationBeforeReply(t *testing.T) {
 				if sent && mode == "processing review fingerprint" {
 					approval.Fingerprint = "new-approval"
 				}
-				return approval, err
-			})
-			o.resolver = turnResolverFunc(func(context.Context, models.Capability) (models.ActiveBinding, error) {
-				current := binding
-				if sent && mode == "active slot" {
-					current.SlotRevision++
+				// Revoking the authorized route is a fresh database answer, never a
+				// cached resolution: the policy recheck must report the change.
+				if sent && mode == "authorized profile" {
+					approval.Profile.Revision = profile.Revision + 1
 				}
-				return current, nil
+				return approval, err
 			})
 			gateway := o.gateway
 			o.gateway = turnCallerFunc(func(ctx context.Context, a *auth.Identity, op models.Operation, p models.Payload) (models.Result, error) {
@@ -227,7 +213,7 @@ func TestOrchestratorSearchOnlyWhenModelMissing(t *testing.T) {
 		t.Run(fmt.Sprintf("fresh read %t", hasRead), func(t *testing.T) {
 			s := &turnStore{}
 			o, _ := unitTurn(t, s, turnEvidence(1))
-			o.resolver = nil
+			o.profile = models.Profile{}
 			o.gateway = turnCallerFunc(func(context.Context, *auth.Identity, models.Operation, models.Payload) (models.Result, error) {
 				t.Fatal("generation has no active model")
 				return models.Result{}, nil
@@ -400,10 +386,10 @@ func TestOrchestratorKeepsLatestHistoryWithinInputAndProofLimits(t *testing.T) {
 					turnHistory(29, "Newest question", "Newest authorized context.", turnHistorySource(fresh), turnHistorySource(inherited), otherChunk)...,
 				),
 			}
-			o, binding := unitTurn(t, s, fresh)
+			o, profile := unitTurn(t, s, fresh)
 			o.gateway = turnCallerFunc(func(_ context.Context, _ *auth.Identity, op models.Operation, payload models.Payload) (models.Result, error) {
 				raw, err := json.Marshal(payload)
-				if err != nil || len(raw) > binding.Profile.Limits.MaxBytes || len(raw)+512 > binding.Profile.Limits.MaxInputTokens {
+				if err != nil || len(raw) > profile.Limits.MaxBytes || len(raw)+512 > profile.Limits.MaxInputTokens {
 					t.Fatalf("serialized model limits exceeded: bytes=%d err=%v", len(raw), err)
 				}
 				if len(payload.Texts) != 1 || strings.Contains(payload.Texts[0], "Older question") ||
@@ -461,7 +447,7 @@ func TestOrchestratorDistinguishesSearchOutageFromNoEvidence(t *testing.T) {
 					return tc.procurementResult, tc.procurementErr
 				})}
 			store := &turnStore{}
-			o := NewOrchestrator(store, NewWorkingMemory(nil, 0), retrieval, read, nil, nil, "")
+			o := NewOrchestrator(store, NewWorkingMemory(nil, 0), retrieval, read, models.Profile{}, nil, "")
 			result, err := o.Reply(t.Context(), retrievalActor, TurnRequest{turnConversation, "search", "laptop"})
 			if err != nil || result.Status != tc.status || result.Reason != tc.reason ||
 				strings.Join(result.Warnings, ",") != strings.Join(tc.warnings, ",") || len(result.Citations) != tc.citations ||

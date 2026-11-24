@@ -82,6 +82,19 @@ type DeploymentStatus struct {
 	Profiles     []DeploymentStatusProfile `json:"profiles"`
 }
 
+// DeploymentIndexStatus is the sanitized indexing state of one installation: how
+// much embedding work is queued, leased or failed, and how many embedding
+// generations are ready. It carries counts only — never a document, chunk, title,
+// app, profile credential or endpoint.
+type DeploymentIndexStatus struct {
+	EmbeddingJobsPending int `json:"embedding_jobs_pending"`
+	EmbeddingJobsLeased  int `json:"embedding_jobs_leased"`
+	EmbeddingJobsFailed  int `json:"embedding_jobs_failed"`
+	EmbeddingsReady      int `json:"embeddings_ready"`
+	EmbeddingsBuilding   int `json:"embeddings_building"`
+	EmbeddingsFailed     int `json:"embeddings_failed"`
+}
+
 // deploymentDeclaration is the exact key set cap_ai.reconcile_deployment_models
 // accepts. Client-side state (Enabled, an absent GENERATE dimension, a zero
 // revision) can never be smuggled into the declaration.
@@ -192,6 +205,23 @@ func ReadDeploymentStatus(ctx context.Context, db *sql.DB) (DeploymentStatus, er
 	}
 	var raw []byte
 	if err := db.QueryRowContext(ctx, `SELECT cap_ai.model_deployment_status()`).Scan(&raw); err != nil {
+		return status, deploymentError(err)
+	}
+	if err := json.Unmarshal(raw, &status); err != nil {
+		return status, ErrUnavailable
+	}
+	return status, nil
+}
+
+// ReadDeploymentIndexStatus reads the sanitized embedding index counts. Like the
+// deployment status it is read-only and returns no content, identity or secret.
+func ReadDeploymentIndexStatus(ctx context.Context, db *sql.DB) (DeploymentIndexStatus, error) {
+	status := DeploymentIndexStatus{}
+	if db == nil {
+		return status, ErrUnavailable
+	}
+	var raw []byte
+	if err := db.QueryRowContext(ctx, `SELECT cap_ai.model_deployment_index_status()`).Scan(&raw); err != nil {
 		return status, deploymentError(err)
 	}
 	if err := json.Unmarshal(raw, &status); err != nil {

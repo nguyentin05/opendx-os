@@ -84,15 +84,15 @@ the same file order and project name throughout an installation.
    `compose.model-adapter.yaml` as the last `-f` file
    ([bundled hosted adapter](#bundled-hosted-adapter-opt-in)). `make rag-up` never
    enables models and never starts the adapter.
-6. Before enabling model calls, qualify the bounded adapter, import disabled
-   candidates, complete Platform Admin review and activate the exact EMBEDDING
-   and/or LLM revisions through the deployment's audited slot procedure.
-   Provision the processing reviews below. Then enable
-   `RAG_MODELS_QUALIFIED`, `RAG_MODELS_ENABLED` and
-   `RAG_GLOBAL_MODEL_REGISTRY_ENABLED` for the API and worker and recreate
-   them. The agent only resolves global slots. Missing review, binding or
-   adapter keeps the affected operation unavailable. The optional overlays
-   provide no active slot, consumer attribution or provider approval.
+6. Before enabling model calls, qualify the declared routes (`dxos-model validate`
+   and `dxos-model verify`) and provision the processing reviews below. Then have
+   the deployment reconcile the reviewed selection, and enable `RAG_MODELS_ENABLED`
+   for the API and worker and recreate them. The reviewed declaration and its
+   reconciled selection are the only model lifecycle: there is no runtime catalog,
+   no separate qualification flag and no slot to activate. Missing review, a
+   selection the deployment did not reconcile or an unusable proxy keeps the
+   affected operation unavailable — the process still boots, FTS parsing and
+   search still work, and no model call is made.
 
 ### Advanced: bring your own identities
 
@@ -382,31 +382,42 @@ actual source.
 
 ## Deployment configuration
 
-API and worker independently load `models.FromEnvironment`. Defaults are off.
-Enabling requires all of `RAG_MODELS_ENABLED`, `RAG_MODELS_QUALIFIED`,
-`RAG_SOURCE_QUALIFIED`, `RAG_METADATA_QUALIFIED`, `RAG_PARSER_QUALIFIED` to be
-`true`, plus `AI_GATEWAY_DATABASE_URL` and `RAG_MODEL_DEPLOYMENT_FILE`.
-The Gateway connection must log in as `dxos_ai_gateway`, without superuser or
-BYPASSRLS. It executes the policy and operation-state functions and cannot export chunks,
-change grants or mutate policy. The API and worker keep their existing roles.
-Bootstrap accepts `AI_GATEWAY_DATABASE_PASSWORD` only with the optional schema
-setting. Store secrets in deployment secrets, never in manifests or the browser.
+API and worker independently load `models.RuntimeFromEnvironment`. Defaults are off.
+The runtime has exactly one model source: the reviewed deployment declaration
+(`RAG_MODEL_DEPLOYMENT_FILE`, default `models.yaml`) and the exact selection the
+deployment reconciled from it. Enabling requires `RAG_MODELS_ENABLED`,
+`RAG_SOURCE_QUALIFIED`, `RAG_METADATA_QUALIFIED` and `RAG_PARSER_QUALIFIED` to be
+`true`, plus `AI_GATEWAY_DATABASE_URL`, the private proxy origin
+`RAG_MODEL_LITELLM_ENDPOINT` and its master key `LITELLM_MASTER_KEY`. There is no
+`RAG_MODELS_QUALIFIED` and no runtime catalog. The Gateway connection must log in
+as `dxos_ai_gateway`, without superuser or BYPASSRLS. It executes the policy and
+operation-state functions and cannot export chunks, change grants or mutate
+policy. The API and worker keep their existing roles. Bootstrap accepts
+`AI_GATEWAY_DATABASE_PASSWORD` only with the optional schema setting. Store secrets
+in deployment secrets, never in manifests or the browser.
 
-The current Plan05 private deployment JSON has `providers`, `embed_profile` and
-`generate_profile`. Profile references contain `id` and `revision`. Each provider
-contains `id`, `endpoint`, `credential_ref` (an environment-variable reference)
-and `loopback_test`. Profiles and deployment references must agree. HTTPS is
-required; redirects, URL credentials and query strings are rejected. An explicit
-`RAG_MODEL_TEST_MODE=true` permits a loopback HTTP test adapter. This is not a
-production provider approval. Existing LOCAL profiles additionally require
-`RAG_LOCAL_MODELS_QUALIFIED=true`; no local model is bundled or prequalified, and
-local-model serving is outside the new harness scope. APP and owner-only
-PERSONAL search use bounded FTS and embedding fusion with qualified profiles.
-PERSONAL hybrid search requires migration 0009. Hosted PERSONAL embedding and
-generation each require a current audited approval for that purpose. Absent or
-unqualified semantic models preserve authorized FTS. PERSONAL-only model
-operations retain the actual registered library app for attribution, regardless of
-UI context.
+A valid declaration whose live state disagrees with it — an unreconciled,
+withdrawn or drifted selection, an unreachable authority, or a generated proxy
+configuration that is not exactly what the declaration renders — boots with model
+calls unavailable and leaves FTS parsing and search intact. Only a declaration the
+runtime cannot accept at all (invalid content, an unrenderable route, an
+unqualified local route, models enabled without their qualified predecessors) is a
+startup error. The declaration's shape is documented in
+[`models.example.yaml`](../../../models.example.yaml) and the
+[dxos-model CLI reference](../../reference/cli/dxos-model.md): it is YAML with at
+most one embedding and one generation route, and each route names its provider,
+model, limit bounds and (for embeddings) dimension. HTTPS is required for a hosted
+`api_base`; redirects, URL credentials and query strings are rejected. A LOCAL
+route additionally requires `RAG_LOCAL_MODELS_QUALIFIED=true`; no local model is
+bundled or prequalified, and local-model serving is outside the new harness scope.
+`RAG_MODEL_LITELLM_CONFIG_FILE`, when set, must be byte-identical to
+`models.RenderProxyConfig(deployment)`, so a hand-edited proxy route is never
+served. APP and owner-only PERSONAL search use bounded FTS and embedding fusion
+with the selected profiles. PERSONAL hybrid search requires migration 0009. Hosted
+PERSONAL embedding and generation each require a current audited approval for that
+purpose. Absent or unqualified semantic models preserve authorized FTS. PERSONAL-only
+model operations retain the actual registered library app for attribution,
+regardless of UI context.
 
 The HTTP adapter receives a fixed system instruction, model, purpose, bounded
 JSON input and pinned limits. It returns bounded `text`, `vector`,
@@ -725,36 +736,32 @@ named owner-approved rebuild in
 [installation](../../operations/installation.md#rebuilding-an-existing-model-installation),
 which rebuilds a separate database and re-derives model state.
 
-### Import, verify, review and activate
+### Verify, review and reconcile
 
-Export one DSN at a time from the protected environment; the CLI reads exactly the
-login its command needs and never echoes a value.
-
-```bash
-export AI_MODEL_CATALOG_DATABASE_URL   # restricted catalog login
-bin/dxos-model import --catalog model-catalog.json
-bin/dxos-model validate --catalog model-catalog.json --adapter-config model-adapter.json
-unset AI_MODEL_CATALOG_DATABASE_URL
-```
-
-`import` declares disabled candidates only. Then make one explicit synthetic call
-per reviewed candidate. `verify` sends the fixed synthetic input to the adapter
-route the catalog names; it reads the candidate's `credential_ref` (the internal
-adapter token) from the protected environment and no vendor key:
+The minimum operator surface is `validate`, `verify`, `status` and
+`policy approve|revoke|suspend`; the exact contract is in the
+[dxos-model CLI reference](../../reference/cli/dxos-model.md). `validate` is
+offline and prints the per-purpose mode and qualification; `verify` makes exactly
+one bounded synthetic call per configured purpose through the same private proxy
+transport the runtime uses and reports per-purpose outcomes. Neither approves
+anything:
 
 ```bash
-bin/dxos-model verify --catalog model-catalog.json --profile embed-primary --revision 1 --json > verify-embed.json
-bin/dxos-model verify --catalog model-catalog.json --profile generate-primary --revision 1 --json > verify-generate.json
+bin/dxos-model validate --config models.yaml
+bin/dxos-model verify --config models.yaml --json > verify.json
 ```
 
-The JSON report carries the profile identity, the declaration digest, the
-dimension and the bounded usage, never response text, an endpoint or a key. A
-transport failure after a possible send exits 6 and is never re-sent: reconcile
-the state before another reviewed attempt.
+The report carries the purpose, the effective mode and the bounded usage, never
+response text, an endpoint or a key. A transport failure after a possible send
+exits 6 and is never re-sent: reconcile the state with `status` before another
+reviewed attempt. The deployment then records the reviewed selection from the same
+declaration through `cap_ai.reconcile_deployment_models`; that reconciliation is
+deployment-internal and is not an operator command. A purpose the declaration
+omits is withdrawn, and a withdrawn or drifted selection denies every model call
+while authorized FTS remains available.
 
 Write the review that binds the probe to one independent human attestation. The
-`qualification` object is the verify report unchanged; the `attestation_ref` is
-the review record, not a copy of the probe:
+`attestation_ref` is the review record, not a copy of the probe:
 
 ```json
 {
@@ -765,34 +772,21 @@ the review record, not a copy of the probe:
 ```
 
 Authenticate as a Platform Admin without putting the token in a command line, then
-activate the exact revision. Check `slots` first: a fresh installation reports
-`EMBEDDING slot_revision=0`, and the expected revision is required explicitly,
-including 0.
+read the deployment state. `status` is read-only and sanitized; it reports the
+selected profile per purpose and the one reason that blocks it (route absent,
+installation switch off, not selected, suspended, snapshot mismatch):
 
 ```bash
-export AI_MODEL_ADMIN_DATABASE_URL
-bin/dxos-model slots --token-file operator.jwt
-bin/dxos-model activate --slot EMBEDDING --profile embed-primary --revision 1 \
-  --expected-slot-revision 0 --review embed-review.json --token-file operator.jwt
-bin/dxos-model slots --token-file operator.jwt
-unset AI_MODEL_ADMIN_DATABASE_URL
+export AI_MODEL_CATALOG_DATABASE_URL
+bin/dxos-model status --config models.yaml --token-file operator.jwt
+unset AI_MODEL_CATALOG_DATABASE_URL
 ```
 
-The mutation verifies the token subject and the current `role_operator` in the
-same transaction, locks the slot, compares the expected revision, enables the
-reviewed profile, advances the slot revision exactly once and appends the audit
-event with the review. A stale revision exits 4 and changes nothing. `LLM` binds
-`generate-primary` the same way.
-
-- Rollback is an explicit action with a fresh review, never a revision decrement:
-  `bin/dxos-model activate --slot EMBEDDING --profile <older> --revision <n>
-  --expected-slot-revision <current> --review <fresh-review> --rollback
-  --token-file operator.jwt`. The slot revision still advances.
-- Deactivate unbinds without deleting the profile or any vector:
-  `bin/dxos-model deactivate --slot EMBEDDING --expected-slot-revision <current>
-  --reason 'review withdrawn' --token-file operator.jwt`.
-- Read-only commands (`list`, `inspect`, `slots`) use the same administration
-  login and authenticate the operator; they never mutate.
+The retired candidate-import and slot commands (`import`, `activate`, `deactivate`,
+`slots`, `rollback`, `list`, `inspect`) are gone: they are not a model lifecycle
+and no runtime consults a slot. The legacy `model_candidates`/`global_model_slots`
+tables and the bundled adapter's own catalog remain only as data and adapter
+configuration until they are removed together; no runtime path reads them.
 
 ### PERSONAL processing approval
 
@@ -834,39 +828,40 @@ approval.
 
 ### Enable, rotate and retire routes
 
-Only after qualification, import, activation and the required approvals, set
-`RAG_MODELS_QUALIFIED`, `RAG_MODELS_ENABLED` and
-`RAG_GLOBAL_MODEL_REGISTRY_ENABLED` for `cap-ai` and the worker and recreate them.
-Missing any of them keeps inference off; authorized FTS remains available.
+Only after the declaration is verified and the required approvals exist, set
+`RAG_MODELS_ENABLED=true` together with the declaration path, the private proxy
+origin and its master key (`RAG_MODEL_DEPLOYMENT_FILE`,
+`RAG_MODEL_LITELLM_ENDPOINT`, `LITELLM_MASTER_KEY`) for `cap-ai` and the worker and
+recreate them. Missing any of them, or a selection the deployment has not
+reconciled, keeps inference off; authorized FTS remains available, and the process
+still boots.
 
-When a route changes, add the new route and a new provider ID (one endpoint per
-provider ID), import the new disabled revision and review it, then keep the old
-and new routes and IDs until every fenced embedding job and pinned operation has
-drained or failed closed. Retire the old configuration explicitly: remove its
-route, re-import, deactivate its slot and confirm the old digest no longer
-resolves. Never rewrite an old provider declaration or reinterpret existing
-vectors under a new dimension.
+When a route changes, declare the new route and a new provider ID (one endpoint per
+provider ID), verify it, and keep the old and new routes and IDs until every fenced
+embedding job and pinned operation has drained or failed closed. Retire the old
+configuration explicitly: remove its route from the declaration, reconcile, and
+confirm the old digest no longer resolves. Never reinterpret existing vectors
+under a new dimension.
 
 Environment files are not encrypted and are not a boundary against a privileged
 host or container operator; they only keep secrets out of Git, images, rendered
 Compose output and shell history.
 
-## Global registry compatibility
+## Retired registry compatibility
 
-The [R1 registry contract](../../reference/rag/api.md#global-model-registry-foundation-r1)
-defines a separate `RAG_GLOBAL_MODEL_REGISTRY_ENABLED=false` default. This is an
-opt-in loader; the OFF path uses the legacy profile references
-described above. Turning it ON requires the additive registry migrations; the
-flag does not qualify a provider or bypass existing enablement gates.
+`RAG_GLOBAL_MODEL_REGISTRY_ENABLED` is retired: no Go code reads it, and the
+[R1 registry contract](../../reference/rag/api.md#global-model-registry-foundation-r1)
+is retained only as the historical record of that design. The runtime no longer
+has a registry mode, a catalog or DB `ACTIVE` slots; the deployment's reconciled
+selection of the exact declared profiles is the only model authority
+(ADR 0011). The `model_candidates`, `global_model_slots` and `model_slot_events`
+tables, their functions and the bundled adapter's catalog stay as data and adapter
+configuration until they are removed together; no runtime path reads them.
 
-With the registry ON, DB `ACTIVE` slots supply the exact EMBEDDING/LLM profile
-revisions. Deployment configuration declares candidates and adapter/secret
-references only; legacy `embed_profile`/`generate_profile` cannot override slots
-or serve as fallback. Apps and users cannot select models. Unbound/unavailable
-models preserve authorized FTS and optional search-only answers; required
+Apps and users cannot select models. An unavailable, withdrawn or mismatched
+selection preserves authorized FTS and optional search-only answers; required
 generation with evidence returns 503 `MODEL_UNAVAILABLE`. VLM is reserved and
-unbound, and RERANKING remains disabled. Follow the canonical contract for
-provisioning identities, future Platform Admin lifecycle, and consumer impacts.
+unbound, and RERANKING remains disabled.
 
 For new chat, `AGENT` source selection is server-side across all current DB role
 memberships and owner-only PERSONAL sources. The turn accepts only a question. Role claims, client lists and LLM app suggestions confer no authority.
@@ -996,7 +991,11 @@ shared dispatch boundary only; no LOCAL serving adapter ships. Missing
 real-provider/classification approval leaves hosted production enablement
 blocked. No overall S01–S08 release claim follows.
 
-Registry mode reads a strict catalog from `RAG_MODEL_DEPLOYMENT_FILE`:
+`RAG_MODEL_DEPLOYMENT_FILE` today names the YAML deployment declaration described
+above; `models.example.yaml` is the reference shape. The retired JSON catalog
+below (`schema_version` 2) belongs to the bundled adapter and the retired registry
+loader only. No runtime path reads it, and it is retained with the adapter until
+that adapter is removed:
 
 ```json
 {
@@ -1013,17 +1012,17 @@ Registry mode reads a strict catalog from `RAG_MODEL_DEPLOYMENT_FILE`:
 }
 ```
 
-An empty `models` array supports runtime startup after deployment provisioning.
-To provision candidates, each model entry has `adapter: "bounded-http-v1"` and
-a `profile` with `id`, `revision`, `purpose`, `execution`, `provider_id`,
-`model_id`, `credential_ref`, and resource-only `limits`
-(`max_input_tokens`, `max_output_tokens`, `max_bytes`, `timeout_ms`); EMBED also
-requires `dimension`. Monetary fields are not part of schema version 2. Follow the linked canonical contract for validation.
-Startup never imports candidates. Runtime verifies the immutable declaration
-digest against provider metadata; endpoint or loopback changes require a new
-profile revision and provisioning. Slot reads and fenced embedding lease profile
-reads use narrowly granted gateway functions. Registry enablement alone provides
-no production qualification.
+A model entry in that retired shape has `adapter: "bounded-http-v1"` and a `profile`
+with `id`, `revision`, `purpose`, `execution`, `provider_id`, `model_id`,
+`credential_ref`, and resource-only `limits` (`max_input_tokens`,
+`max_output_tokens`, `max_bytes`, `timeout_ms`); EMBED also requires `dimension`.
+Monetary fields are not part of schema version 2. Follow the linked canonical
+contract for validation.
+Startup never imports candidates. The runtime verifies the immutable declaration
+digest against the provider metadata of the exact declared revision; endpoint or
+loopback changes require a new profile revision and provisioning. Fenced embedding
+lease profile reads use narrowly granted worker functions. Neither the retired
+registry switch nor a slot binding provides any production qualification.
 
 ## Explicit real hosted qualification
 
@@ -1033,13 +1032,13 @@ requests, possible provider charges and withdrawal of the supplied GENERATE
 processing approval at the end of the test. The runner leaves that approval
 disabled. Restore it only through a fresh, independently reviewed approval.
 
-Use the CLI procedure above to import, verify, review and activate the exact
-EMBEDDING and LLM revisions first. Independently approve PERSONAL content and
+Use the CLI procedure above to validate, verify and reconcile the exact EMBED and
+GENERATE routes first. Independently approve PERSONAL content and
 queries for both purposes with `policy approve`. Record the returned approval
 UUIDs. Both approvals must cover the dedicated library app, the `local-only@1`
-source policy, exact profile revisions and their actual processors. Use the same
-opaque `attestation_ref` in both slot activation reviews and supply that reference
-as `RAG_REAL_MODELS_REVIEW_REF`. A provider behind OpenRouter also needs review
+source policy, exact profile revisions and their actual processors. Supply the same
+opaque `attestation_ref` in the recorded human review and as
+`RAG_REAL_MODELS_REVIEW_REF`. A provider behind OpenRouter also needs review
 of the pinned underlying processor and routing settings.
 
 Prepare a separate installation whose Ready personal-library app ID begins with

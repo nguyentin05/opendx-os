@@ -166,12 +166,16 @@ func TestRetiredSlotRevisionsAreDenied(t *testing.T) {
 	if _, err := p.Check(context.Background(), actor, query); err != nil {
 		t.Fatalf("the personal query approval was denied without a retired field: %v", err)
 	}
+	// The retired slot fields no longer exist, so a stale caller cannot express one
+	// at all. The remaining shape rules of a personal query approval still fail
+	// closed: it may carry no source proof and no lease.
 	for _, change := range []struct {
 		name string
 		op   func(*Operation)
 	}{
-		{"embedding slot revision", func(o *Operation) { o.EmbeddingSlotRevision = 1 }},
-		{"llm slot revision", func(o *Operation) { o.LLMSlotRevision = 1 }},
+		{"source proof", func(o *Operation) { o.Sources = []contracts.ReadScope{{DocumentID: "doc"}} }},
+		{"lease", func(o *Operation) { o.Lease = &LeaseRef{JobID: "job"} }},
+		{"generation purpose", func(o *Operation) { o.Purpose = "GENERATE" }},
 	} {
 		op := query
 		change.op(&op)
