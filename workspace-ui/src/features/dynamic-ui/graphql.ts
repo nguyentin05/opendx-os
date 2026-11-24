@@ -43,11 +43,10 @@ function wasVisible(ctx: ScopedRequestContext, table: InstalledTable, record: Re
     && view.appID === ctx.app?.app_id && view.table === table.name && view.parentRecord === parentRecord;
 }
 
-type GraphQLErrorKind = 'unauthenticated' | 'forbidden' | 'attachment' | 'parent_locked' | 'parent_move' | 'unavailable';
+type GraphQLErrorKind = 'unauthenticated' | 'forbidden' | 'attachment' | 'parent_locked' | 'unavailable';
 
 const attachmentRefusal = 'Check constraint violation. attachment ';
 const parentLockedRefusal = 'Check constraint violation. the parent record can no longer be changed';
-const parentMoveRefusal = 'Check constraint violation. a row cannot move to another parent record';
 
 export class GraphQLRequestError extends Error {
   constructor(readonly kind: GraphQLErrorKind, readonly missingFieldPaths: string[] = []) {
@@ -63,12 +62,10 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 function graphQLErrorKind(errors: unknown[]): GraphQLErrorKind {
   const codes = errors.map(error => isRecord(error) && isRecord(error.extensions) && error.extensions.code);
   if (codes.includes('invalid-jwt') || codes.includes('jwt-expired')) return 'unauthenticated';
-  if (errors.some(error => isRecord(error) && isRecord(error.extensions) && error.extensions.code === 'permission-error'
-    && typeof error.message === 'string' && error.message.startsWith(attachmentRefusal))) return 'attachment';
-  if (errors.some(error => isRecord(error) && isRecord(error.extensions) && error.extensions.code === 'permission-error'
-    && typeof error.message === 'string' && error.message.startsWith(parentLockedRefusal))) return 'parent_locked';
-  if (errors.some(error => isRecord(error) && isRecord(error.extensions) && error.extensions.code === 'permission-error'
-    && typeof error.message === 'string' && error.message.startsWith(parentMoveRefusal))) return 'parent_move';
+  const refused = (prefix: string) => errors.some(error => isRecord(error) && isRecord(error.extensions)
+    && error.extensions.code === 'permission-error' && typeof error.message === 'string' && error.message.startsWith(prefix));
+  if (refused(attachmentRefusal)) return 'attachment';
+  if (refused(parentLockedRefusal)) return 'parent_locked';
   if (codes.includes('access-denied') || codes.includes('permission-error')) return 'forbidden';
   return 'unavailable';
 }

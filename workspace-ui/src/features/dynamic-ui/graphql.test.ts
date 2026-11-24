@@ -57,7 +57,6 @@ it('maps an attachment refusal to its own kind', async () => {
 
 it.each([
   ['parent locked', 'the parent record can no longer be changed (status SUBMITTED)', 'parent_locked'],
-  ['parent move', 'a row cannot move to another parent record', 'parent_move'],
 ] as const)('maps a refused child row (%s) to its own kind', async (_reason, refusal, kind) => {
   vi.stubGlobal('fetch', async () => Response.json({
     errors: [{

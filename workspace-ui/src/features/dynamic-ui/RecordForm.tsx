@@ -231,8 +231,7 @@ function FormFields({ table, context, mode, record, childScope, writeGuard, onSa
       setMessage(kind === 'unauthenticated' ? 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.'
         : kind === 'attachment' ? 'Chỉ đính kèm được tệp do chính bạn tải lên trong ứng dụng này. Hãy tải tệp lên lại.'
           : kind === 'parent_locked' ? 'Hồ sơ cha không còn ở trạng thái cho phép sửa dòng con.'
-            : kind === 'parent_move' ? 'Không thể chuyển dòng sang hồ sơ khác.'
-              : 'Không lưu được hồ sơ. Hãy thử lại.');
+            : 'Không lưu được hồ sơ. Hãy thử lại.');
     } finally {
       finishWrite?.();
       if (!controller.signal.aborted) {

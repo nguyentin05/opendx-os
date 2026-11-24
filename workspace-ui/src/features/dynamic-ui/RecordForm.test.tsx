@@ -262,7 +262,6 @@ it.each([
 
 it.each([
   ['Hồ sơ cha không còn ở trạng thái cho phép sửa dòng con.', 'the parent record can no longer be changed (status SUBMITTED)'],
-  ['Không thể chuyển dòng sang hồ sơ khác.', 'a row cannot move to another parent record'],
 ] as const)('reports a refused child row with "%s"', async (message, refusal) => {
   serve(({ query }) => {
     if (query.includes('domain_vendors(')) return dataResponse('domain_vendors', []);
