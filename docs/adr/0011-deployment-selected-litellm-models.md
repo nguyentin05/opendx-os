@@ -311,6 +311,17 @@ prompt/response cache, no virtual keys, teams or budgets. The provider prefixes
 `openrouter/`, `ollama/` and `hosted_vllm/` resolve at this release, and Ollama
 embeddings use `/api/embed`.
 
+Telemetry is not a `config.yaml` setting at the pinned version: the proxy reads it
+from its own environment (`litellm/proxy/telemetry/settings.py`, prefix
+`LITELLM_TELEMETRY_`), so the renderer cannot express it and its absence from the
+generated file proves nothing. **Owned requirement, T4 (Compose) and T7
+(deployment verification):** the proxy environment must set
+`LITELLM_TELEMETRY_DISABLED=true` — and every equivalent telemetry switch the
+pinned version honours — and the deployment verification must assert it at the
+running container, not only in the declaration. No configuration key is invented
+for this, and the render test must keep asserting that the generated configuration
+contains no telemetry, database or message-logging enable key.
+
 Two prerequisites remain unresolved and must be closed before a real route is
 declared qualified; neither may be asserted as done:
 

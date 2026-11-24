@@ -6,7 +6,9 @@ package models
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 
@@ -46,9 +48,39 @@ embedding:
 
 const deploymentLLMOnly = `enabled: true
 llm:
+  model: anthropic/claude-sonnet-4
+  execution: hosted
+  api_key_env: ANTHROPIC_API_KEY
+  revision: 'route-2026-11-01'
+`
+
+// deploymentOpenRouter declares a hosted openrouter.ai route with no reviewed
+// provider routing, which the reviewed baseline rejects.
+const deploymentOpenRouter = `enabled: true
+llm:
   model: openrouter/qwen/qwen3-8b
   execution: hosted
   api_key_env: OPENROUTER_API_KEY
+  revision: 'route-2026-11-01'
+`
+
+// deploymentRenderable declares both purposes without reviewed provider routing.
+// Rendering fails closed for a route whose routing the pinned configuration
+// cannot express, so the render contract is pinned on a hosted route that needs
+// none.
+const deploymentRenderable = `enabled: true
+embedding:
+  model: ollama/nomic-embed-text
+  execution: local
+  api_base: http://ollama:11434
+  revision: '2026-11-01'
+  dimension: 768
+  indexing_parameters: {input_type: passage}
+  query_parameters: {input_type: query}
+llm:
+  model: anthropic/claude-sonnet-4
+  execution: hosted
+  api_key_env: ANTHROPIC_API_KEY
   revision: 'route-2026-11-01'
 `
 
@@ -90,8 +122,8 @@ func TestLoadDeployment(t *testing.T) {
 				if d.Embedding.Model != "ollama/nomic-embed-text" || d.LLM.Model != "openrouter/qwen/qwen3-8b" {
 					t.Fatalf("models = %q/%q, want the declared models", d.Embedding.Model, d.LLM.Model)
 				}
-				if d.Embedding.Limits != defaultDeploymentLimits {
-					t.Fatalf("embedding limits = %+v, want the safe defaults %+v", d.Embedding.Limits, defaultDeploymentLimits)
+				if d.Embedding.Limits != (Limits{MaxInputTokens: 8192, MaxOutputTokens: 1, MaxBytes: 65536, TimeoutMS: 30000}) {
+					t.Fatalf("embedding limits = %+v, want the embedding defaults (no completion tokens)", d.Embedding.Limits)
 				}
 				if d.LLM.Limits != (Limits{MaxInputTokens: 12000, MaxOutputTokens: 1500, MaxBytes: 262144, TimeoutMS: 60000}) {
 					t.Fatalf("llm limits = %+v, want the declared limits", d.LLM.Limits)
@@ -117,6 +149,39 @@ func TestLoadDeployment(t *testing.T) {
 			check: func(t *testing.T, d Deployment) {
 				if d.Embedding != nil || d.LLM == nil {
 					t.Fatalf("LoadDeployment() = %+v, want an LLM only", d)
+				}
+				// Defaults are purpose-appropriate: a generation route keeps a
+				// completion bound, an embedding route (above) does not.
+				if d.LLM.Limits != (Limits{MaxInputTokens: 8192, MaxOutputTokens: 2048, MaxBytes: 65536, TimeoutMS: 30000}) {
+					t.Fatalf("llm limits = %+v, want the generation defaults", d.LLM.Limits)
+				}
+			},
+		},
+		{
+			// The reviewed baseline requires explicit provider routing on an
+			// openrouter.ai route; accepting the route without it would be a
+			// declaration broader than the baseline.
+			name:    "openrouter route without reviewed routing",
+			doc:     deploymentOpenRouter,
+			wantErr: "routing",
+		},
+		{
+			name:    "openrouter endpoint declared on a non-openrouter route",
+			doc:     edit(t, deploymentLLMOnly, "  api_key_env: ANTHROPIC_API_KEY", "  api_key_env: ANTHROPIC_API_KEY\n  api_base: https://openrouter.ai/api/v1"),
+			wantErr: "routing",
+		},
+		{
+			name:    "routing on a non-openrouter route",
+			doc:     edit(t, deploymentLLMOnly, "  revision: 'route-2026-11-01'", "  revision: 'route-2026-11-01'\n  routing: {provider: deepinfra, data_collection: deny, zdr: true}"),
+			wantErr: "routing",
+		},
+		{
+			name: "openrouter route with reviewed routing accepted",
+			doc:  edit(t, deploymentOpenRouter, "  revision: 'route-2026-11-01'", "  revision: 'route-2026-11-01'\n  routing: {provider: deepinfra, data_collection: allow, zdr: false}"),
+			check: func(t *testing.T, d Deployment) {
+				want := Route{Provider: "deepinfra", DataCollection: "allow", ZDR: false}
+				if d.LLM == nil || d.LLM.Routing == nil || *d.LLM.Routing != want {
+					t.Fatalf("llm routing = %+v, want %+v", d.LLM.Routing, want)
 				}
 			},
 		},
@@ -190,6 +255,12 @@ func TestLoadDeployment(t *testing.T) {
 			wantErr: "trailing",
 		},
 		{
+			// An empty second document is still a second document.
+			name:    "trailing empty document",
+			doc:     deploymentBoth + "---\n",
+			wantErr: "trailing",
+		},
+		{
 			name:    "empty document",
 			doc:     "",
 			wantErr: "empty",
@@ -198,6 +269,13 @@ func TestLoadDeployment(t *testing.T) {
 			name:    "null document",
 			doc:     "---\n",
 			wantErr: "mapping",
+		},
+		{
+			// `revision: null` is an absent revision spelled as a value, so it
+			// must fail as text rather than decode to an empty string.
+			name:    "null revision",
+			doc:     edit(t, deploymentEmbeddingOnly, "revision: '2026-11-01'", "revision: null"),
+			wantErr: "text",
 		},
 		{
 			name:    "anchor and alias",
@@ -241,12 +319,12 @@ func TestLoadDeployment(t *testing.T) {
 		},
 		{
 			name:    "inline secret",
-			doc:     edit(t, deploymentLLMOnly, "  api_key_env: OPENROUTER_API_KEY", "  api_key: sk-live-abc123"),
+			doc:     edit(t, deploymentLLMOnly, "  api_key_env: ANTHROPIC_API_KEY", "  api_key: sk-live-abc123"),
 			wantErr: "unknown key",
 		},
 		{
 			name:    "secret value as credential reference",
-			doc:     edit(t, deploymentLLMOnly, "api_key_env: OPENROUTER_API_KEY", "api_key_env: 'sk-proj-abc123'"),
+			doc:     edit(t, deploymentLLMOnly, "api_key_env: ANTHROPIC_API_KEY", "api_key_env: 'sk-proj-abc123'"),
 			wantErr: "environment variable",
 		},
 		{
@@ -291,12 +369,12 @@ func TestLoadDeployment(t *testing.T) {
 		},
 		{
 			name:    "private endpoint declared hosted",
-			doc:     edit(t, deploymentLLMOnly, "  api_key_env: OPENROUTER_API_KEY", "  api_key_env: OPENROUTER_API_KEY\n  api_base: https://127.0.0.1:8443"),
+			doc:     edit(t, deploymentLLMOnly, "  api_key_env: ANTHROPIC_API_KEY", "  api_key_env: ANTHROPIC_API_KEY\n  api_base: https://127.0.0.1:8443"),
 			wantErr: "private address",
 		},
 		{
 			name:    "plain http hosted endpoint",
-			doc:     edit(t, deploymentLLMOnly, "  api_key_env: OPENROUTER_API_KEY", "  api_key_env: OPENROUTER_API_KEY\n  api_base: http://api.example.com"),
+			doc:     edit(t, deploymentLLMOnly, "  api_key_env: ANTHROPIC_API_KEY", "  api_key_env: ANTHROPIC_API_KEY\n  api_base: http://api.example.com"),
 			wantErr: "HTTPS",
 		},
 		{
@@ -311,7 +389,7 @@ func TestLoadDeployment(t *testing.T) {
 		},
 		{
 			name:    "hosted route without credential reference",
-			doc:     edit(t, deploymentLLMOnly, "  api_key_env: OPENROUTER_API_KEY\n", ""),
+			doc:     edit(t, deploymentLLMOnly, "  api_key_env: ANTHROPIC_API_KEY\n", ""),
 			wantErr: "api_key_env",
 		},
 		{
@@ -356,12 +434,12 @@ func TestLoadDeployment(t *testing.T) {
 		},
 		{
 			name:    "wildcard model",
-			doc:     edit(t, deploymentLLMOnly, "model: openrouter/qwen/qwen3-8b", "model: openrouter/*"),
+			doc:     edit(t, deploymentLLMOnly, "model: anthropic/claude-sonnet-4", "model: anthropic/*"),
 			wantErr: "model",
 		},
 		{
 			name:    "mutable router alias",
-			doc:     edit(t, deploymentLLMOnly, "model: openrouter/qwen/qwen3-8b", "model: openrouter/auto"),
+			doc:     edit(t, deploymentLLMOnly, "model: anthropic/claude-sonnet-4", "model: anthropic/auto"),
 			wantErr: "model",
 		},
 		{
@@ -387,7 +465,7 @@ func TestLoadDeployment(t *testing.T) {
 		},
 		{
 			name:    "model with a routing suffix",
-			doc:     edit(t, deploymentLLMOnly, "model: openrouter/qwen/qwen3-8b", "model: 'openrouter/qwen/qwen3-8b:free'"),
+			doc:     edit(t, deploymentLLMOnly, "model: anthropic/claude-sonnet-4", "model: 'anthropic/claude-sonnet-4:free'"),
 			wantErr: "model",
 		},
 		{
@@ -404,6 +482,26 @@ func TestLoadDeployment(t *testing.T) {
 			name:    "unreviewed routing policy",
 			doc:     edit(t, deploymentBoth, "data_collection: deny", "data_collection: maybe"),
 			wantErr: "routing",
+		},
+		{
+			name:    "duplicate key inside limits",
+			doc:     edit(t, deploymentBoth, "max_input_tokens: 12000", "max_input_tokens: 12000, max_input_tokens: 12000"),
+			wantErr: "duplicate key",
+		},
+		{
+			name:    "unknown key inside limits",
+			doc:     edit(t, deploymentBoth, "timeout_ms: 60000}", "timeout_ms: 60000, max_retries: 3}"),
+			wantErr: "unknown key",
+		},
+		{
+			name:    "duplicate key inside routing",
+			doc:     edit(t, deploymentBoth, "provider: deepinfra", "provider: deepinfra, provider: deepinfra"),
+			wantErr: "duplicate key",
+		},
+		{
+			name:    "unknown key inside routing",
+			doc:     edit(t, deploymentBoth, "zdr: true}", "zdr: true, fallback: deepinfra}"),
+			wantErr: "unknown key",
 		},
 		{
 			name:    "oversized declaration",
@@ -507,6 +605,23 @@ func TestDeploymentIdentity(t *testing.T) {
 		t.Fatalf("llm alias = %q, want a digest-derived dxos-llm- alias", baseLLMAlias)
 	}
 
+	// Golden identity. These literals are the digest of the deploymentBoth
+	// embedding route as reviewed here: the one pinned value that makes an
+	// unintended change to the identity struct, its JSON tags, the domain
+	// separator or the normalization of a hashed field fail loudly. A deliberate
+	// identity change must update them, and with them every stored profile and
+	// every proxy alias of the deployments already running.
+	const (
+		wantEmbedID    = "9d1ef5525d1ff7c6931b0f8037ad3333e10978b97ff94bedd3de49764ac7262d"
+		wantEmbedAlias = "dxos-embed-9d1ef5525d1ff7c6931b0f8037ad3333e10978b97ff94bedd3de49764ac7262d"
+	)
+	if baseEmbed.ID != wantEmbedID {
+		t.Fatalf("embedding profile id = %q, want the pinned golden %q", baseEmbed.ID, wantEmbedID)
+	}
+	if baseEmbedAlias != wantEmbedAlias {
+		t.Fatalf("embedding alias = %q, want the pinned golden %q", baseEmbedAlias, wantEmbedAlias)
+	}
+
 	// Field order, quoting and spacing are declaration details, not identity.
 	reordered := loadDeployment(t, `llm:
   limits: {timeout_ms: 60000, max_bytes: 262144, max_output_tokens: 1500, max_input_tokens: 12000}
@@ -539,7 +654,9 @@ enabled: true
 		wantEmbedding bool
 	}{
 		{name: "upstream model change", doc: edit(t, deploymentBoth, "openrouter/qwen/qwen3-8b", "openrouter/qwen/qwen3-32b")},
-		{name: "provider change", doc: edit(t, deploymentBoth, "openrouter/qwen/qwen3-8b", "anthropic/claude-sonnet-4")},
+		// A provider change leaves openrouter.ai, which no longer permits routing,
+		// so the case changes the provider prefix and drops the routing block.
+		{name: "provider change", doc: edit(t, edit(t, deploymentBoth, "  routing: {provider: deepinfra, data_collection: deny, zdr: true}\n", ""), "openrouter/qwen/qwen3-8b", "mistral/mistral-large")},
 		{name: "route revision change", doc: edit(t, deploymentBoth, "route-2026-11-01", "route-2026-12-01")},
 		{name: "approved routing change", doc: edit(t, deploymentBoth, "provider: deepinfra", "provider: together")},
 		{name: "routing policy change", doc: edit(t, deploymentBoth, "zdr: true", "zdr: false")},
@@ -612,6 +729,31 @@ enabled: true
 	})
 }
 
+// proxyClaim records a configuration setting that is only acceptable in its
+// inactive form: absent, explicitly false, or an empty list or mapping. The
+// render contract is asserted on the parsed document instead of on substrings,
+// so a stronger explicit `cache: false` or `fallbacks: []` passes while any
+// value that enables or declares the setting still fails.
+type proxyClaim struct {
+	declared bool
+	value    any
+}
+
+func (c *proxyClaim) UnmarshalYAML(node *yaml.Node) error {
+	c.declared = true
+	return node.Decode(&c.value)
+}
+
+// inactive reports whether the setting does nothing: absent, false, an empty
+// list or an empty mapping. A string, a number, true or a populated collection
+// is a declared, enabling value.
+func (c proxyClaim) inactive() bool {
+	if !c.declared {
+		return true
+	}
+	return inactiveValue(c.value)
+}
+
 // proxyDocument mirrors the generated configuration for parsing in tests.
 type proxyDocument struct {
 	ModelList []struct {
@@ -627,19 +769,23 @@ type proxyDocument struct {
 		} `yaml:"model_info"`
 	} `yaml:"model_list"`
 	LiteLLMSettings struct {
-		DropParams            *bool `yaml:"drop_params"`
-		TurnOffMessageLogging *bool `yaml:"turn_off_message_logging"`
-		Cache                 *bool `yaml:"cache"`
+		DropParams            *bool      `yaml:"drop_params"`
+		TurnOffMessageLogging *bool      `yaml:"turn_off_message_logging"`
+		Cache                 proxyClaim `yaml:"cache"`
 	} `yaml:"litellm_settings"`
 	GeneralSettings struct {
-		DisableSpendLogs *bool `yaml:"disable_spend_logs"`
-		DatabaseURL      any   `yaml:"database_url"`
-		StoreModelInDB   any   `yaml:"store_model_in_db"`
-		MasterKey        any   `yaml:"master_key"`
+		DisableSpendLogs *bool      `yaml:"disable_spend_logs"`
+		DatabaseURL      proxyClaim `yaml:"database_url"`
+		Database         proxyClaim `yaml:"database"`
+		StoreModelInDB   proxyClaim `yaml:"store_model_in_db"`
+		MasterKey        proxyClaim `yaml:"master_key"`
+		Telemetry        proxyClaim `yaml:"telemetry"`
 	} `yaml:"general_settings"`
 	RouterSettings struct {
-		NumRetries *int `yaml:"num_retries"`
-		Fallbacks  any  `yaml:"fallbacks"`
+		NumRetries             *int       `yaml:"num_retries"`
+		Fallbacks              proxyClaim `yaml:"fallbacks"`
+		ContextWindowFallbacks proxyClaim `yaml:"context_window_fallbacks"`
+		ContentPolicyFallbacks proxyClaim `yaml:"content_policy_fallbacks"`
 	} `yaml:"router_settings"`
 }
 
@@ -658,12 +804,74 @@ func renderProxy(t *testing.T, d Deployment) ([]byte, proxyDocument) {
 	return raw, doc
 }
 
+// inactiveValue reports whether a decoded YAML value does nothing if it is a
+// configuration key.
+func inactiveValue(node any) bool {
+	switch typed := node.(type) {
+	case nil:
+		return true
+	case bool:
+		return !typed
+	case []any:
+		return len(typed) == 0
+	case map[string]any:
+		return len(typed) == 0
+	}
+	return false
+}
+
+// enableKeyProblem walks the parsed document and returns the path of the first
+// key that switches telemetry, a database, message logging or spend logging on,
+// or declares a backing store. It parses the tree instead of matching
+// substrings, so a disabling switch or an empty list is acceptable while any
+// enabling or declaring value is not.
+func enableKeyProblem(raw []byte) (string, error) {
+	var tree map[string]any
+	if err := yaml.Unmarshal(raw, &tree); err != nil {
+		return "", err
+	}
+	// The only keys allowed to carry these words are the disabling switches.
+	disabling := map[string]bool{"turn_off_message_logging": true, "disable_spend_logs": true}
+	var walk func(path string, node any) string
+	walk = func(path string, node any) string {
+		switch typed := node.(type) {
+		case map[string]any:
+			keys := make([]string, 0, len(typed))
+			for key := range typed {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				next := path + "." + key
+				lower := strings.ToLower(key)
+				restricted := strings.Contains(lower, "telemetry") || strings.Contains(lower, "database") ||
+					strings.Contains(lower, "message_log") || strings.Contains(lower, "logging") ||
+					strings.Contains(lower, "spend_log")
+				if restricted && !disabling[key] && !inactiveValue(typed[key]) {
+					return next
+				}
+				if found := walk(next, typed[key]); found != "" {
+					return found
+				}
+			}
+		case []any:
+			for i, item := range typed {
+				if found := walk(fmt.Sprintf("%s[%d]", path, i), item); found != "" {
+					return found
+				}
+			}
+		}
+		return ""
+	}
+	return walk("", tree), nil
+}
+
 // TestRenderProxyConfig pins the generated proxy configuration: exactly the
-// declared routes, fixed digest aliases, secret references only, and every
-// automatic dispatch path disabled.
+// declared routes, fixed digest aliases, secret references only, every automatic
+// dispatch path disabled, and no telemetry, database or message-logging setting.
 func TestRenderProxyConfig(t *testing.T) {
-	t.Setenv("OPENROUTER_API_KEY", "sk-live-do-not-render")
-	d := loadDeployment(t, deploymentBoth)
+	t.Setenv("ANTHROPIC_API_KEY", "sk-live-do-not-render")
+	d := loadDeployment(t, deploymentRenderable)
 	raw, doc := renderProxy(t, d)
 
 	if len(doc.ModelList) != 2 {
@@ -700,10 +908,10 @@ func TestRenderProxyConfig(t *testing.T) {
 	if embed.ModelInfo.Mode != "embedding" {
 		t.Fatalf("embedding model_info.mode = %q, want embedding", embed.ModelInfo.Mode)
 	}
-	if llm.LiteLLMParams.Model != "openrouter/qwen/qwen3-8b" {
+	if llm.LiteLLMParams.Model != "anthropic/claude-sonnet-4" {
 		t.Fatalf("llm deployment = %+v, want the declared model", llm.LiteLLMParams)
 	}
-	if llm.LiteLLMParams.APIKey != "os.environ/OPENROUTER_API_KEY" {
+	if llm.LiteLLMParams.APIKey != "os.environ/ANTHROPIC_API_KEY" {
 		t.Fatalf("llm api_key = %q, want the environment reference", llm.LiteLLMParams.APIKey)
 	}
 	if embed.LiteLLMParams.APIKey != "" {
@@ -723,22 +931,62 @@ func TestRenderProxyConfig(t *testing.T) {
 		t.Fatalf("router_settings.num_retries = %v, want 0", doc.RouterSettings.NumRetries)
 	}
 
-	// Nothing that could widen dispatch, persist content or reach a database.
+	// Parsed settings, not substrings: cache, the three fallback lists, a
+	// database, message logging and telemetry must all be absent or explicitly
+	// inactive. Emitting `cache: false` or `fallbacks: []` is a stronger
+	// statement of the same control and passes; any enabling value fails.
+	for _, claim := range []struct {
+		name  string
+		claim proxyClaim
+	}{
+		{"litellm_settings.cache", doc.LiteLLMSettings.Cache},
+		{"router_settings.fallbacks", doc.RouterSettings.Fallbacks},
+		{"router_settings.context_window_fallbacks", doc.RouterSettings.ContextWindowFallbacks},
+		{"router_settings.content_policy_fallbacks", doc.RouterSettings.ContentPolicyFallbacks},
+		{"general_settings.database", doc.GeneralSettings.Database},
+		{"general_settings.database_url", doc.GeneralSettings.DatabaseURL},
+		{"general_settings.store_model_in_db", doc.GeneralSettings.StoreModelInDB},
+		{"general_settings.master_key", doc.GeneralSettings.MasterKey},
+		{"general_settings.telemetry", doc.GeneralSettings.Telemetry},
+	} {
+		if !claim.claim.inactive() {
+			t.Fatalf("%s = %v, want it absent or explicitly inactive", claim.name, claim.claim.value)
+		}
+	}
+
+	// Nothing that could widen dispatch or reference a backing store at all.
 	for _, forbidden := range []string{
-		"sk-live-do-not-render", "database_url", "postgres", "master_key",
-		"store_model_in_db", "fallback", "cache", "callbacks", "success_callback",
-		"telemetry", "drop_params: true", "num_retries: 2", "*",
+		"sk-live-do-not-render", "postgres", "callbacks", "success_callback",
+		"drop_params: true", "num_retries: 2", "*",
 	} {
 		if strings.Contains(strings.ToLower(string(raw)), strings.ToLower(forbidden)) {
 			t.Fatalf("generated configuration contains %q\n%s", forbidden, raw)
 		}
 	}
-	if doc.RouterSettings.Fallbacks != nil {
-		t.Fatalf("router_settings.fallbacks = %v, want none", doc.RouterSettings.Fallbacks)
-	}
+
+	t.Run("no telemetry database or message logging enable keys", func(t *testing.T) {
+		// LiteLLM reads telemetry from the proxy environment at the pinned
+		// version, so the rendered configuration must carry no telemetry,
+		// database or message-logging setting that could enable one. The
+		// requirement itself is owned by ADR 0011 (proxy environment, T4/T7).
+		problem, err := enableKeyProblem(raw)
+		if err != nil {
+			t.Fatalf("generated configuration is not parseable: %v", err)
+		}
+		if problem != "" {
+			t.Fatalf("generated configuration enables %s\n%s", problem, raw)
+		}
+		// The check is not vacuous, and an explicit disabling value passes.
+		if problem, err := enableKeyProblem([]byte("general_settings:\n  telemetry: true\n")); err != nil || problem != ".general_settings.telemetry" {
+			t.Fatalf("enableKeyProblem() = %q, %v; want it to report an enabled telemetry key", problem, err)
+		}
+		if problem, err := enableKeyProblem([]byte("litellm_settings:\n  cache: false\nrouter_settings:\n  fallbacks: []\n")); err != nil || problem != "" {
+			t.Fatalf("enableKeyProblem() = %q, %v; want an explicit disabling value to pass", problem, err)
+		}
+	})
 
 	t.Run("deterministic", func(t *testing.T) {
-		again, _ := renderProxy(t, loadDeployment(t, deploymentBoth))
+		again, _ := renderProxy(t, loadDeployment(t, deploymentRenderable))
 		if !bytes.Equal(again, raw) {
 			t.Fatalf("RenderProxyConfig() is not deterministic:\n%s\n%s", again, raw)
 		}
@@ -760,7 +1008,7 @@ func TestRenderProxyConfig(t *testing.T) {
 
 	t.Run("disabled renders no route", func(t *testing.T) {
 		// A disabled declaration must not start inference for an unused route.
-		raw, doc := renderProxy(t, loadDeployment(t, edit(t, deploymentBoth, "enabled: true", "enabled: false")))
+		raw, doc := renderProxy(t, loadDeployment(t, edit(t, deploymentRenderable, "enabled: true", "enabled: false")))
 		if len(doc.ModelList) != 0 {
 			t.Fatalf("model_list = %+v, want no route\n%s", doc.ModelList, raw)
 		}
@@ -772,6 +1020,21 @@ func TestRenderProxyConfig(t *testing.T) {
 	t.Run("no model renders no route", func(t *testing.T) {
 		if _, doc := renderProxy(t, loadDeployment(t, "enabled: true\n")); len(doc.ModelList) != 0 {
 			t.Fatalf("model_list = %+v, want no route", doc.ModelList)
+		}
+	})
+
+	t.Run("route with reviewed provider routing is not rendered", func(t *testing.T) {
+		// Rendering a route whose routing it cannot express would turn a reviewed
+		// data-handling control into an accepted no-op, so the renderer fails
+		// closed instead, enabled or not.
+		for _, doc := range []string{deploymentBoth, edit(t, deploymentBoth, "enabled: true", "enabled: false")} {
+			_, err := RenderProxyConfig(loadDeployment(t, doc))
+			if !errors.Is(err, ErrDeployment) {
+				t.Fatalf("RenderProxyConfig() = %v, want ErrDeployment for a route with routing", err)
+			}
+			if !strings.Contains(strings.ToLower(err.Error()), "routing") {
+				t.Fatalf("RenderProxyConfig() = %v, want an error naming the routing control", err)
+			}
 		}
 	})
 

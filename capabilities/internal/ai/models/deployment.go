@@ -101,14 +101,33 @@ const (
 	proxyConfigHeader = "# Generated from the deployment declaration. Do not edit.\n"
 )
 
-// defaultDeploymentLimits apply when a declaration omits limits. Every bound is
-// positive and no wider than the existing model boundary, so an omitted limit is
-// never read as unbounded.
-var defaultDeploymentLimits = Limits{
-	MaxInputTokens:  8192,
-	MaxOutputTokens: 2048,
-	MaxBytes:        maxDeploymentLimitBytes,
-	TimeoutMS:       30000,
+// The defaults apply when a declaration omits limits. Every bound is positive
+// and no wider than the reviewed baseline, so an omitted limit is never read as
+// unbounded. They are purpose-specific: an embedding call emits no completion
+// tokens, so defaulting it to a generation width would be a limit a deployment
+// never reviewed. The byte and time bounds match the existing declarations
+// (catalog.go, modeladapter/config.go), which are narrower than the ceilings.
+var (
+	defaultEmbeddingLimits = Limits{
+		MaxInputTokens:  8192,
+		MaxOutputTokens: 1,
+		MaxBytes:        65536,
+		TimeoutMS:       30000,
+	}
+	defaultGenerationLimits = Limits{
+		MaxInputTokens:  8192,
+		MaxOutputTokens: 2048,
+		MaxBytes:        65536,
+		TimeoutMS:       30000,
+	}
+)
+
+// deploymentDefaultLimits returns the safe defaults of one purpose.
+func deploymentDefaultLimits(purpose string) Limits {
+	if purpose == purposeEmbed {
+		return defaultEmbeddingLimits
+	}
+	return defaultGenerationLimits
 }
 
 var (
@@ -120,9 +139,11 @@ var (
 	deploymentModel = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,63}/[A-Za-z0-9][A-Za-z0-9_.\-/:]{0,199}$`)
 	// deploymentRevision is a reviewed literal upstream or route revision.
 	deploymentRevision = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:+-]{0,127}$`)
-	// deploymentSecretRef is the existing credential-reference grammar. A
-	// declaration stores the reference of a secret, never the secret value.
-	deploymentSecretRef = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,99}$`)
+	// deploymentSecretRef is the existing credential-reference grammar
+	// (catalog.go, modeladapter/config.go). A declaration stores the reference of
+	// a secret, never the secret value, and a reference that is valid in those
+	// declarations must stay valid here.
+	deploymentSecretRef = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,127}$`)
 	// deploymentProviderSlug is a reviewed intermediary provider slug.
 	deploymentProviderSlug = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 	// deploymentHost accepts a lowercase DNS name or a literal IP address.
@@ -146,6 +167,12 @@ var deploymentReservedSegments = map[string]bool{
 
 // deploymentHostedProviders are providers with no local execution mode. Naming
 // one on a local route would describe a cloud route as local inference.
+//
+// This is a denylist of known hosted prefixes, not a security control: a list of
+// provider names can never be complete. The control that carries the weight is
+// the local-host predicate (deploymentLocalHost), which every local route must
+// satisfy; this map only rejects the obvious cloud provider early, with a clearer
+// message, before the host check rejects the endpoint that would address it.
 var deploymentHostedProviders = map[string]bool{
 	"openai": true, "anthropic": true, "azure": true, "gemini": true,
 	"vertex_ai": true, "bedrock": true, "openrouter": true, "cohere": true,
@@ -444,6 +471,9 @@ func normalizeSpec(raw *rawSpec, purpose string) (*ModelSpec, error) {
 		return nil, deploymentErr("%s api_key_env must name an environment variable, never a secret value", label)
 	}
 	prefix := deploymentModelPrefix(spec.Model)
+	// host is the canonical host of the declared endpoint, empty when a hosted
+	// route leaves the endpoint to the provider prefix.
+	var host string
 	switch spec.Execution {
 	case "LOCAL":
 		if deploymentHostedProviders[prefix] {
@@ -452,28 +482,31 @@ func normalizeSpec(raw *rawSpec, purpose string) (*ModelSpec, error) {
 		if strings.TrimSpace(raw.APIBase) == "" {
 			return nil, deploymentErr("%s api_base is required for a local route", label)
 		}
-		base, host, err := canonicalDeploymentEndpoint(raw.APIBase, true)
+		base, declared, err := canonicalDeploymentEndpoint(raw.APIBase, true)
 		if err != nil {
 			return nil, deploymentErr("%s api_base %v", label, err)
 		}
-		if !deploymentLocalHost(host) {
+		if !deploymentLocalHost(declared) {
 			return nil, deploymentErr("%s api_base host is not a deployment-local address", label)
 		}
-		spec.APIBase = base
+		spec.APIBase, host = base, declared
 	case "HOSTED":
 		if spec.APIKeyEnv == "" {
 			return nil, deploymentErr("%s api_key_env is required for a hosted route", label)
 		}
 		if strings.TrimSpace(raw.APIBase) != "" {
-			base, host, err := canonicalDeploymentEndpoint(raw.APIBase, false)
+			base, declared, err := canonicalDeploymentEndpoint(raw.APIBase, false)
 			if err != nil {
 				return nil, deploymentErr("%s api_base %v", label, err)
 			}
-			if deploymentPrivateHost(host) {
+			if deploymentLocalHost(declared) {
 				return nil, deploymentErr("%s api_base host is a private address on a hosted route", label)
 			}
-			spec.APIBase = base
+			spec.APIBase, host = base, declared
 		}
+	}
+	if err := normalizeDeploymentRouting(spec, prefix, host, raw.Routing, label); err != nil {
+		return nil, err
 	}
 	if purpose == purposeEmbed {
 		if raw.Dimension < 1 || raw.Dimension > maxDeploymentDimension {
@@ -498,7 +531,7 @@ func normalizeSpec(raw *rawSpec, purpose string) (*ModelSpec, error) {
 			return nil, deploymentErr("%s limits are outside the model boundary", label)
 		}
 	} else {
-		spec.Limits = defaultDeploymentLimits
+		spec.Limits = deploymentDefaultLimits(purpose)
 	}
 	indexing, err := normalizeParameters(raw.IndexingParameters, label+".indexing_parameters")
 	if err != nil {
@@ -515,19 +548,47 @@ func normalizeSpec(raw *rawSpec, purpose string) (*ModelSpec, error) {
 		return nil, deploymentErr("%s indexing_parameters and query_parameters must be declared together", label)
 	}
 	spec.IndexingParameters, spec.QueryParameters = indexing, query
-	if raw.Routing != nil {
-		if spec.Execution != "HOSTED" {
-			return nil, deploymentErr("%s routing is only reviewed for a hosted route", label)
-		}
-		if !deploymentProviderSlug.MatchString(raw.Routing.Provider) {
-			return nil, deploymentErr("%s routing provider is not a reviewed provider slug", label)
-		}
-		if raw.Routing.DataCollection != "allow" && raw.Routing.DataCollection != "deny" {
-			return nil, deploymentErr("%s routing data_collection is not allow or deny", label)
-		}
-		spec.Routing = &Route{Provider: raw.Routing.Provider, DataCollection: raw.Routing.DataCollection, ZDR: raw.Routing.ZDR}
-	}
 	return spec, nil
+}
+
+// normalizeDeploymentRouting keeps reviewed provider routing a fail-closed
+// control with the same shape the reviewed baseline requires
+// (capabilities/internal/ai/knowledge/modeladapter/config.go validateRouting):
+// an openrouter.ai route must declare it, and no other route may. Accepting an
+// openrouter.ai route without it would be a declaration broader than the
+// baseline, and accepting routing on another route would claim a data-handling
+// control the deployment review never made.
+//
+// host is the canonical declared endpoint host, empty when the route does not
+// declare one; the provider prefix decides the implicit upstream in that case.
+func normalizeDeploymentRouting(spec *ModelSpec, prefix, host string, raw *rawRouting, label string) error {
+	openRouter := prefix == "openrouter" || deploymentOpenRouterHost(host)
+	if raw == nil {
+		if openRouter {
+			return deploymentErr("%s route addresses openrouter.ai and must declare its reviewed provider routing", label)
+		}
+		return nil
+	}
+	if spec.Execution != "HOSTED" {
+		return deploymentErr("%s routing is only reviewed for a hosted route", label)
+	}
+	if !openRouter {
+		return deploymentErr("%s routing is only reviewed for an openrouter.ai route", label)
+	}
+	if !deploymentProviderSlug.MatchString(raw.Provider) {
+		return deploymentErr("%s routing provider is not a reviewed provider slug", label)
+	}
+	if raw.DataCollection != "allow" && raw.DataCollection != "deny" {
+		return deploymentErr("%s routing data_collection is not allow or deny", label)
+	}
+	spec.Routing = &Route{Provider: raw.Provider, DataCollection: raw.DataCollection, ZDR: raw.ZDR}
+	return nil
+}
+
+// deploymentOpenRouterHost reports whether a host is openrouter.ai or one of its
+// subdomains.
+func deploymentOpenRouterHost(host string) bool {
+	return host == "openrouter.ai" || strings.HasSuffix(host, ".openrouter.ai")
 }
 
 // normalizeParameters keeps semantic parameters a small allowlist of reviewed
@@ -542,7 +603,7 @@ func normalizeParameters(raw map[string]string, where string) (map[string]string
 		switch key {
 		case "input_type":
 			if !deploymentInputTypes[value] {
-				return nil, deploymentErr("%s.input_type value %q is not allowed", where, value)
+				return nil, deploymentErr("%s.input_type value is not allowed", where)
 			}
 		default:
 			return nil, deploymentErr("%s.%s is not allowed", where, key)
@@ -629,16 +690,11 @@ func deploymentAuthority(parsed *url.URL, scheme string) (string, string, bool) 
 // single-label service name that resolves only through the deployment's DNS.
 // This is deployment-controlled route qualification, not proof of locality; the
 // deployment probe is what shows no source reached a hosted endpoint.
+//
+// The one predicate serves both directions: a local route must match it, and a
+// hosted route must not (an upstream that is only reachable inside the
+// deployment network cannot be the hosted provider the review qualified).
 func deploymentLocalHost(host string) bool {
-	if ip := net.ParseIP(host); ip != nil {
-		return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
-	}
-	return !strings.Contains(host, ".")
-}
-
-// deploymentPrivateHost reports whether a host addresses a private network. A
-// hosted route must never describe one as its upstream.
-func deploymentPrivateHost(host string) bool {
 	if ip := net.ParseIP(host); ip != nil {
 		return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
 	}
@@ -734,7 +790,11 @@ func (s *ModelSpec) Profile(purpose string) (Profile, error) {
 		Revision:      1,
 		Dimension:     spec.Dimension,
 		Limits:        spec.Limits,
-		Enabled:       true,
+		// Enabled is the per-profile flag of a usable route, not the
+		// installation switch. The installation switch is Deployment.Enabled and
+		// is applied where a route is admitted; a profile derived from a declared
+		// route is always a complete, usable route description.
+		Enabled: true,
 	}, nil
 }
 
@@ -746,11 +806,24 @@ func (s *ModelSpec) Alias(purpose string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	prefix := "dxos-embed-"
-	if purpose == purposeGenerate {
-		prefix = "dxos-llm-"
+	alias, err := deploymentAlias(purpose, digest)
+	if err != nil {
+		return "", err
 	}
-	return prefix + digest, nil
+	return alias, nil
+}
+
+// deploymentAlias renders the fixed alias of one digest. Callers that already
+// hold a verified digest use it directly rather than re-deriving the identity.
+func deploymentAlias(purpose, digest string) (string, error) {
+	switch purpose {
+	case purposeEmbed:
+		return "dxos-embed-" + digest, nil
+	case purposeGenerate:
+		return "dxos-llm-" + digest, nil
+	default:
+		return "", deploymentErr("purpose is not EMBED or GENERATE")
+	}
 }
 
 // deploymentIdentity is the hashed structure. Field order is fixed by this
@@ -844,9 +917,18 @@ type proxyRouterSettings struct {
 // database. A disabled or empty deployment renders no route, so an unused model
 // never starts inference.
 //
+// A route that declares reviewed provider routing is rejected, not rendered: the
+// config-mode key shape of that control could not be confirmed at the pinned
+// version, so the renderer cannot express it. Rendering the route anyway would
+// turn a reviewed data-handling control into an accepted no-op, so this fails
+// closed with ErrDeployment until the shape is confirmed. Telemetry cannot be
+// expressed in the configuration at all: it is an environment requirement of the
+// deployment (ADR 0011).
+//
 // The rendered document is a generated artifact: it is private, immutable and
-// never a second editable input. A deployment that changes identity always
-// re-renders, and the configuration digest is part of the reviewed declaration.
+// never a second editable input. It carries one digest per route — the same
+// digest the runtime profile uses — and no whole-document digest, because none
+// exists to review.
 func RenderProxyConfig(d Deployment) ([]byte, error) {
 	config := proxyConfig{
 		ModelList:       []proxyDeployment{},
@@ -860,9 +942,10 @@ func RenderProxyConfig(d Deployment) ([]byte, error) {
 		spec    *ModelSpec
 		purpose string
 		mode    string
+		label   string
 	}{
-		{d.Embedding, purposeEmbed, "embedding"},
-		{d.LLM, purposeGenerate, ""},
+		{d.Embedding, purposeEmbed, "embedding", "embedding"},
+		{d.LLM, purposeGenerate, "", "llm"},
 	} {
 		if route.spec == nil {
 			continue
@@ -871,10 +954,15 @@ func RenderProxyConfig(d Deployment) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		if spec.Routing != nil {
+			// The reviewed provider routing cannot be emitted at the pinned
+			// version, so this route must not be rendered as if it had none.
+			return nil, deploymentErr("%s route declares reviewed provider routing that the pinned proxy configuration cannot express", route.label)
+		}
 		if !d.Enabled {
 			continue
 		}
-		alias, err := route.spec.Alias(route.purpose)
+		alias, err := deploymentAlias(route.purpose, digest)
 		if err != nil {
 			return nil, err
 		}

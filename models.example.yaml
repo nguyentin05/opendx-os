@@ -33,14 +33,25 @@ embedding:
   # and query text differently.
   # indexing_parameters: {input_type: passage}
   # query_parameters: {input_type: query}
-  # Optional; the defaults are 8192 input tokens, 2048 output tokens, 1048576
-  # bytes and 30000 ms. When declared, all four bounds are required.
-  # limits: {max_input_tokens: 8192, max_output_tokens: 2048, max_bytes: 1048576, timeout_ms: 30000}
+  # Optional; the defaults are purpose-specific. An embedding route defaults to
+  # 8192 input tokens, 1 output token, 65536 bytes and 30000 ms (an embedding
+  # call emits no completion); a generation route defaults to 8192 input tokens,
+  # 2048 output tokens, 65536 bytes and 30000 ms. When declared, all four bounds
+  # are required.
+  # limits: {max_input_tokens: 8192, max_output_tokens: 1, max_bytes: 65536, timeout_ms: 30000}
 llm:
   model: 'openrouter/qualified-model'
   execution: hosted
   api_key_env: OPENROUTER_API_KEY
   revision: 'reviewed-route-revision'
-  # Optional immutable provider routing of a hosted route. It is part of the
-  # reviewed identity, never a request parameter.
-  # routing: {provider: provider-slug, data_collection: deny, zdr: true}
+  # Required on an openrouter.ai route (the `openrouter/` prefix, or an endpoint
+  # on openrouter.ai) and forbidden on every other route: the reviewed baseline
+  # requires an explicit provider routing block before an openrouter.ai route may
+  # be declared. It is part of the immutable reviewed identity, never a request
+  # parameter, and the placeholders below are not a qualified routing decision.
+  #
+  # The renderer fails closed while this block is present, because the pinned
+  # LiteLLM version's configuration shape for provider routing is unconfirmed: a
+  # route that declares routing is never rendered as if it had none. T4 settles
+  # that shape before an openrouter.ai route is declared qualified.
+  routing: {provider: provider-slug, data_collection: deny, zdr: true}
