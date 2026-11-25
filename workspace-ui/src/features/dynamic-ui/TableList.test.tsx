@@ -185,3 +185,98 @@ it('keeps the current page when the parent re-renders the same list definition',
   expect(fetch).toHaveBeenCalledOnce();
   expect(screen.getByText('Stable record')).toBeTruthy();
 });
+
+const sharedUser = '11111111-1111-4111-8111-111111111111';
+const sharedFile = '22222222-2222-4222-8222-222222222222';
+const sharedTable: InstalledTable = {
+  name: 'domain.shared',
+  columns: [
+    { name: 'title', type: 'text', nullable: false },
+    { name: 'quote_file_id', type: 'uuid', nullable: true },
+  ],
+  foreignKeys: [{ column: 'quote_file_id', references: 'core.files' }],
+  access: {
+    select: [{ role: 'role_editor', columns: ['id', 'title', 'created_by', 'quote_file_id'], scope: 'own' }],
+    insert: [],
+  },
+  ui: { listColumns: ['title', 'created_by', 'quote_file_id'], formFields: [] },
+};
+const sharedContext = {
+  ...context,
+  app: {
+    ...context.app,
+    tables: [sharedTable],
+    sharedAccess: [
+      { table: 'core.users', roles: ['role_editor'], columns: ['id', 'display_name'] },
+      { table: 'core.files', roles: ['role_editor'], columns: ['id', 'file_name'] },
+    ],
+  },
+};
+
+function sharedResponse(query: string): Response {
+  if (query.includes('core_users(')) {
+    return Response.json({ data: { core_users: [{ id: sharedUser, display_name: 'Nguyễn Văn An' }] } });
+  }
+  if (query.includes('core_files(')) {
+    return Response.json({ data: { core_files: [{ id: sharedFile, file_name: 'bao-gia.pdf' }] } });
+  }
+  return Response.json({ data: { domain_shared: [{
+    id,
+    title: 'Shared row',
+    created_by: sharedUser,
+    quote_file_id: sharedFile,
+  }] } });
+}
+
+it('batches shared names once per shared table for the page', async () => {
+  const fetch = vi.fn(async (_url: string, init: RequestInit) => {
+    const { query } = JSON.parse(String(init.body));
+    return sharedResponse(query);
+  });
+  vi.stubGlobal('fetch', fetch);
+  render(<TableList table={sharedTable} context={sharedContext} onOpen={vi.fn()} onCreate={vi.fn()} />);
+
+  await screen.findByText('Shared row');
+  expect(await screen.findByText('Nguyễn Văn An')).toBeTruthy();
+  expect(await screen.findByText('bao-gia.pdf')).toBeTruthy();
+  const queries = fetch.mock.calls.map(([, init]) => JSON.parse(String(init.body)).query as string);
+  expect(queries.filter(query => query.includes('core_users('))).toHaveLength(1);
+  expect(queries.filter(query => query.includes('core_files('))).toHaveLength(1);
+});
+
+it.each([
+  ['the role is not in sharedAccess', [{ table: 'core.users', roles: ['role_reader'], columns: ['id', 'display_name'] }]],
+  ['the label column is not shared', [{ table: 'core.users', roles: ['role_editor'], columns: ['id'] }]],
+])('keeps the UUID and skips the lookup when %s', async (_reason, sharedAccess) => {
+  const fetch = vi.fn(async (_url: string, init: RequestInit) => {
+    const { query } = JSON.parse(String(init.body));
+    if (query.includes('core_users(')) throw new Error('unexpected shared lookup');
+    return Response.json({ data: { domain_shared: [{
+      id, title: 'Shared row', created_by: sharedUser, quote_file_id: null,
+    }] } });
+  });
+  vi.stubGlobal('fetch', fetch);
+  const app = { ...sharedContext.app, sharedAccess };
+  render(<TableList table={sharedTable} context={{ ...sharedContext, app }} onOpen={vi.fn()} onCreate={vi.fn()} />);
+
+  await screen.findByText('Shared row');
+  expect(screen.getByText(sharedUser)).toBeTruthy();
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it('keeps the list rendered with UUIDs when a shared lookup fails', async () => {
+  const fetch = vi.fn(async (_url: string, init: RequestInit) => {
+    const { query } = JSON.parse(String(init.body));
+    if (query.includes('core_users(')) return new Response('unavailable', { status: 503 });
+    return Response.json({ data: { domain_shared: [{
+      id, title: 'Shared row', created_by: sharedUser, quote_file_id: null,
+    }] } });
+  });
+  vi.stubGlobal('fetch', fetch);
+  render(<TableList table={sharedTable} context={sharedContext} onOpen={vi.fn()} onCreate={vi.fn()} />);
+
+  await screen.findByText('Shared row');
+  expect(screen.getByText(sharedUser)).toBeTruthy();
+  expect(screen.queryByText('unavailable')).toBeNull();
+  expect(fetch).toHaveBeenCalledTimes(2);
+});

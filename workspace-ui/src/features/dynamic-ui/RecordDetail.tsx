@@ -11,7 +11,7 @@ import { ChildGrid } from './ChildGrid';
 import { CommandPanel } from './CommandPanel';
 import type { CommandAttempts, CommandFeedback } from './CommandPanel';
 import { FileField } from './FileField';
-import { GraphQLRequestError, isRecordID, loadRecord, referenceLabelColumn } from './graphql';
+import { GraphQLRequestError, isRecordID, loadRecord, loadSharedNames, referenceLabelColumn, sharedName, sharedNameColumns } from './graphql';
 import { allowedFields, canEditRecord, columnLabel, isAttachmentColumn, tableLabel } from './registry';
 import { RecordHistory } from './RecordHistory';
 
@@ -77,7 +77,9 @@ function describeFields(table: InstalledTable, app: InstalledApp, readable: Set<
   });
 }
 
-type RecordResult = { record: Record<string, unknown> | null } | { error: keyof typeof failureMessages };
+type RecordResult =
+  | { record: Record<string, unknown> | null; names?: Map<string, Map<string, string>> }
+  | { error: keyof typeof failureMessages };
 
 function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof describeFields> }) {
   const { app, context, recordID, onEdit, onAccessResult } = props;
@@ -114,8 +116,10 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
 
   useEffect(() => {
     const controller = new AbortController();
-    void loadRecord(context, table, recordID, selection, controller.signal).then(record => {
-      if (!controller.signal.aborted) setResult({ revision, value: { record } });
+    void loadRecord(context, table, recordID, selection, controller.signal).then(async record => {
+      if (controller.signal.aborted) return;
+      const names = record ? await loadSharedNames(context, app, table, [record], controller.signal) : undefined;
+      if (!controller.signal.aborted) setResult({ revision, value: { record, names } });
     }).catch(error => {
       if (!controller.signal.aborted) {
         const kind = error instanceof GraphQLRequestError ? error.kind : 'unavailable';
@@ -127,6 +131,8 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
 
   const current = result?.revision === revision ? result.value : undefined;
   const record = current && 'record' in current ? current.record : undefined;
+  const names = current && 'record' in current ? current.names : undefined;
+  const shared = sharedNameColumns(app, table, role);
   const denied = current && 'error' in current
     && (current.error === 'forbidden' || current.error === 'unauthenticated');
   useEffect(() => {
@@ -157,7 +163,7 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
                           ? <WorkspaceLink href={toTableURL(app.app_id, target.name, value, role)} onNavigate={navigate}>
                             <ReferenceName context={context} table={target} id={value} />
                           </WorkspaceLink>
-                          : formatValue(table, name, value)}
+                          : sharedName(shared, names, name, value) ?? formatValue(table, name, value)}
                     </dd>
                   </div>
                 );

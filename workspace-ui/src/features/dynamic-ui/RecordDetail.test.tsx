@@ -244,3 +244,30 @@ it('names a referenced record by its readable label column', async () => {
   expect(lookup.variables).toEqual({ id: otherID });
   expect(lookup.query).toMatch(/\{\s*id name\s*\}/);
 });
+
+it('shows a creator display name when sharedAccess permits it', async () => {
+  const creator = '44444444-4444-4444-8444-444444444444';
+  const creatorTable: InstalledTable = {
+    ...table,
+    columns: [...table.columns, { name: 'created_by', type: 'uuid', nullable: false }],
+    access: { ...table.access, select: [{ role, columns: ['id', 'title', 'vendor_id', 'status', 'version', 'created_by'] }] },
+    ui: { ...table.ui, listColumns: ['title', 'created_by'] },
+  };
+  const app = {
+    ...session.apps[0],
+    tables: [creatorTable, session.apps[0].tables[1]],
+    sharedAccess: [{ table: 'core.users', roles: [role], columns: ['id', 'display_name'] }],
+  };
+  const context = { app, role, token: session.token, userID: session.user.id };
+  mockFetch(init => {
+    const { query } = JSON.parse(String(init.body));
+    if (query.includes('core_users(')) {
+      return Response.json({ data: { core_users: [{ id: creator, display_name: 'Người tạo hồ sơ' }] } });
+    }
+    return recordResponse({ id, title: 'Record', vendor_id: null, status: 'draft', version: 1, created_by: creator });
+  });
+  render(<RecordDetail table={creatorTable} app={app} context={context} recordID={id} onEdit={vi.fn()} onBack={vi.fn()} />);
+
+  expect(await screen.findByText('Người tạo hồ sơ')).toBeTruthy();
+  expect(screen.queryByText(creator)).toBeNull();
+});

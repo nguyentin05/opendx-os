@@ -308,4 +308,20 @@ export function watchSession(token: string, onEnded: () => void): () => void {
   return stop;
 }
 
-export async function loadSession(token:string,signal:AbortSignal):Promise<Session>{const headers={Authorization:bearer(token)};const userResponse=await fetch('/api/auth/me',{headers,signal});if(!userResponse.ok)throw new Error('Sign-in or current permissions are unavailable.');const user=await userResponse.json() as CurrentUser;const appsResponse=await fetch('/api/auth/apps',{headers,signal});if(!appsResponse.ok)throw new Error('Applications are unavailable.');const {apps}=await appsResponse.json() as {apps:InstalledApp[]};if(signal.aborted)throw new DOMException('Context changed','AbortError');return {token,user,apps}}
+function normalizeSharedAccess(value: unknown): InstalledApp['sharedAccess'] {
+  if (!Array.isArray(value)) return undefined;
+  const entries: NonNullable<InstalledApp['sharedAccess']> = [];
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) continue;
+    const entry = item as Record<string, unknown>;
+    if (typeof entry.table !== 'string' || !Array.isArray(entry.roles) || !Array.isArray(entry.columns)) continue;
+    entries.push({
+      table: entry.table,
+      roles: entry.roles.filter((role): role is string => typeof role === 'string'),
+      columns: entry.columns.filter((column): column is string => typeof column === 'string'),
+    });
+  }
+  return entries.length ? entries : undefined;
+}
+
+export async function loadSession(token:string,signal:AbortSignal):Promise<Session>{const headers={Authorization:bearer(token)};const userResponse=await fetch('/api/auth/me',{headers,signal});if(!userResponse.ok)throw new Error('Sign-in or current permissions are unavailable.');const user=await userResponse.json() as CurrentUser;const appsResponse=await fetch('/api/auth/apps',{headers,signal});if(!appsResponse.ok)throw new Error('Applications are unavailable.');const body=await appsResponse.json() as {apps?:unknown};if(!Array.isArray(body.apps))throw new Error('Applications are unavailable.');const apps=body.apps.flatMap(value=>{if(typeof value!=='object'||value===null||Array.isArray(value))return[];const app=value as InstalledApp;return[{...app,sharedAccess:normalizeSharedAccess((value as {sharedAccess?:unknown}).sharedAccess)}]});if(signal.aborted)throw new DOMException('Context changed','AbortError');return {token,user,apps}}

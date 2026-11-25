@@ -114,6 +114,10 @@ application-specific labels.
   reference picker over that table's list. The picker and the record detail
   name a referenced record by the first readable `text` column in the target's
   `ui.listColumns`, and show its id when the role can read none.
+- `created_by` and foreign keys to shared `core.users`, `core.files` or
+  `cap_data.devices` show `display_name`, `file_name` or `name` when the acting
+  role's `sharedAccess` includes the shared table and both `id` and that label
+  column; otherwise the id remains.
 - Format values by column type: `timestamp` (including `created_at` and
   `updated_at`) as a `vi-VN` date and time in the viewer's time zone, `date` as
   a `vi-VN` date, and `integer` and `numeric(...)` with `vi-VN` digit grouping.
