@@ -409,10 +409,54 @@ section[aria-label="Lịch sử hồ sơ"] li::before {
   min-inline-size: 0;
 }
 
+.record-form-box {
+  max-inline-size: 48rem;
+  padding: 1rem;
+  border: 1px solid var(--workspace-line);
+  border-radius: 0.5rem;
+  background: var(--workspace-surface);
+}
+
+.record-form-box fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
+.record-form-field {
+  display: grid;
+  gap: 0.25rem;
+  margin-block: 0 0.875rem;
+}
+
+.record-form-field > .record-form-label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  color: var(--workspace-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.record-form-field :is(input, select, textarea) {
+  inline-size: 100%;
+  max-inline-size: 42rem;
+}
+
+.record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-block-start: 0.75rem;
+  border-block-start: 1px solid var(--workspace-line);
+}
+
 .workspace-agent-drawer {
   box-sizing: border-box;
   width: min(24rem, 88vw);
   max-width: none;
+  height: 100dvh;
   max-height: 100dvh;
   margin: 0;
   overflow: auto;
@@ -443,8 +487,36 @@ section[aria-label="Lịch sử hồ sơ"] li::before {
   padding-inline-start: 1.5rem;
 }
 
+.workspace-agent-drawer .agent-conversations {
+  margin-block: 0.5rem;
+  padding-inline-start: 0;
+  list-style: none;
+}
+
 .workspace-agent-drawer li + li {
   margin-block-start: 0.5rem;
+}
+
+.workspace-agent-drawer .agent-composer {
+  position: sticky;
+  /* Cover the drawer's bottom padding so the scrolled transcript cannot show beneath it. */
+  bottom: -1rem;
+  z-index: 1;
+  margin-block-start: 0.75rem;
+  padding-block: 0.75rem 1rem;
+  border-block-start: 1px solid var(--workspace-line);
+  background: var(--workspace-surface);
+}
+
+.workspace-agent-drawer .agent-composer label {
+  display: block;
+  color: var(--workspace-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.workspace-agent-drawer .agent-composer textarea {
+  margin-block: 0.25rem 0.5rem;
 }
 
 @media (width >= 64rem) {
@@ -452,7 +524,22 @@ section[aria-label="Lịch sử hồ sơ"] li::before {
     grid-template-columns: 14rem minmax(0, 1fr) auto;
   }
 
+  .workspace-topbar {
+    grid-column: 1 / -2;
+  }
+
+  /* Placed explicitly: with the drawer closed, auto-placement would move them into the empty top-right cell. */
+  .workspace-sidebar {
+    grid-area: 2 / 1;
+  }
+
+  .workspace-main {
+    grid-area: 2 / 2;
+  }
+
   .workspace-agent-drawer {
+    grid-row: 1 / -1;
+    grid-column: 3;
     position: sticky;
     inset: 0 auto auto;
     align-self: start;

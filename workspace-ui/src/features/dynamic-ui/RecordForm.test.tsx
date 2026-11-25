@@ -461,6 +461,19 @@ it('omits a crafted work item UUID from the record mutation', async () => {
   expect(requests[0].variables).toEqual({ object: { title: 'Allowed' } });
 });
 
+it('puts save and cancel in one action row inside the form box', async () => {
+  showForm();
+
+  const save = await screen.findByRole('button', { name: 'Lưu hồ sơ' });
+  const cancel = screen.getByRole('button', { name: 'Huỷ' });
+  const box = document.querySelector('.record-form-box');
+  const actions = box?.querySelector('.record-actions');
+  expect(actions).toBeTruthy();
+  expect(actions?.contains(save)).toBe(true);
+  expect(actions?.contains(cancel)).toBe(true);
+  expect(box && actions ? box.contains(actions) : false).toBe(true);
+});
+
 it('keeps cancel disabled on a regular form while a save is pending', async () => {
   let finishSave: (result: Response) => void = () => {};
   serve(({ query }) => {

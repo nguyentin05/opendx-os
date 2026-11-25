@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 DX-OS Open-Core Contributors
 import { useEffect, useMemo, useRef, useState } from "react";
+import { dateTimeFormat } from "../../core/labels";
 import {
   AgentClient,
   Citation,
@@ -34,9 +35,14 @@ function emptyResultMessage(result: Result, incomplete: boolean) {
   }
   if (result.status === "NO_EVIDENCE")
     return incomplete
-      ? "Không tìm thấy nguồn nào trong các nguồn đã tìm."
-      : "Không tìm thấy nguồn nào.";
+      ? "Trợ lý chỉ trả lời từ tài liệu bạn được xem và chưa tìm thấy đoạn nào khớp câu hỏi trong các nguồn đã tìm được. Hãy hỏi cụ thể hơn hoặc thêm tài liệu vào Thư viện cá nhân."
+      : "Trợ lý chỉ trả lời từ tài liệu bạn được xem và chưa tìm thấy đoạn nào khớp câu hỏi. Hãy hỏi cụ thể hơn hoặc thêm tài liệu vào Thư viện cá nhân.";
   return "Chưa có câu trả lời được tạo.";
+}
+
+function conversationTitle(title: string) {
+  // Rows created before the title change still carry the English default.
+  return title === "Private conversation" ? "Cuộc trò chuyện riêng" : title;
 }
 
 export function AgentChat({
@@ -263,18 +269,18 @@ export function AgentChat({
       <h2>Cuộc trò chuyện</h2>
       {loading && <p role="status">Đang tải…</p>}
       {!loading && listReady && !conversations.length && <p>Chưa có cuộc trò chuyện nào. Hãy đặt câu hỏi đầu tiên.</p>}
-      <ul>
+      <ul className="agent-conversations">
         {conversations.map((c) => (
           <li key={c.id}>
             <button
               aria-current={selected === c.id ? "page" : undefined}
               onClick={() => choose(c.id)}
             >
-              {c.title}
+              {conversationTitle(c.title)}
               {c.created_at && (
                 <time dateTime={c.created_at}>
                   {" · "}
-                  {new Date(c.created_at).toLocaleString()}
+                  {dateTimeFormat.format(new Date(c.created_at))}
                 </time>
               )}
             </button>
@@ -351,40 +357,42 @@ export function AgentChat({
               Tải thêm tin nhắn
             </button>
           )}
-          <label htmlFor="agent-question">Câu hỏi</label>
-          <textarea
-            id="agent-question"
-            maxLength={2000}
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-          />
-          {pending && pending.query !== question.trim() && (
-            <p role="status">
-              Khôi phục câu hỏi đang chờ để thử lại, hoặc bỏ nó để bắt đầu câu hỏi mới.
-            </p>
-          )}
-          {pending && (
+          <div className="agent-composer">
+            <label htmlFor="agent-question">Câu hỏi</label>
+            <textarea
+              id="agent-question"
+              maxLength={2000}
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+            />
+            {pending && pending.query !== question.trim() && (
+              <p role="status">
+                Khôi phục câu hỏi đang chờ để thử lại, hoặc bỏ nó để bắt đầu câu hỏi mới.
+              </p>
+            )}
+            {pending && (
+              <button
+                disabled={busy}
+                onClick={() => {
+                  delete pendingByConversation.current[selected];
+                  setPending(null);
+                }}
+              >
+                Bỏ lượt hỏi đang chờ
+              </button>
+            )}
             <button
-              disabled={busy}
-              onClick={() => {
-                delete pendingByConversation.current[selected];
-                setPending(null);
-              }}
+              disabled={
+                busy ||
+                !transcriptReady ||
+                !question.trim() ||
+                Boolean(pending && pending.query !== question.trim())
+              }
+              onClick={send}
             >
-              Bỏ lượt hỏi đang chờ
+              {pending?.query === question.trim() ? "Thử lại" : "Gửi"}
             </button>
-          )}
-          <button
-            disabled={
-              busy ||
-              !transcriptReady ||
-              !question.trim() ||
-              Boolean(pending && pending.query !== question.trim())
-            }
-            onClick={send}
-          >
-            {pending?.query === question.trim() ? "Thử lại" : "Gửi"}
-          </button>
+          </div>
           {busy && <p role="status">Đang xử lý…</p>}
           {previewError && <p role="alert">{previewError}</p>}
           {preview && (

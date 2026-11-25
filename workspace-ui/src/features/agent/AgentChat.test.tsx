@@ -9,6 +9,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { dateTimeFormat } from "../../core/labels";
 import { AgentChat } from "./AgentChat";
 afterEach(() => {
   cleanup();
@@ -541,7 +542,18 @@ it("shows search outage and partial coverage without implying all sources were s
   fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
   expect(await screen.findByText("Tìm kiếm tạm thời không khả dụng.")).toBeTruthy();
   expect(screen.getByText("Một số nguồn chưa tìm được. Hãy thử lại.")).toBeTruthy();
-  expect(screen.getByText("Không tìm thấy nguồn nào trong các nguồn đã tìm.")).toBeTruthy();
+  expect(screen.getByText("Trợ lý chỉ trả lời từ tài liệu bạn được xem và chưa tìm thấy đoạn nào khớp câu hỏi trong các nguồn đã tìm được. Hãy hỏi cụ thể hơn hoặc thêm tài liệu vào Thư viện cá nhân.")).toBeTruthy();
+});
+
+it("renders a stored English default title in Vietnamese with a vi-VN time", async () => {
+  const createdAt = "2026-11-17T03:00:00Z";
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+    conversations: [{ id: "c1", title: "Private conversation", created_at: createdAt }],
+    next_cursor: null,
+  })));
+  render(<AgentChat token="token" />);
+  const entry = await screen.findByRole("button", { name: /^Cuộc trò chuyện riêng/ });
+  expect(entry.textContent).toContain(dateTimeFormat.format(new Date(createdAt)));
 });
 
 it("distinguishes conversations with the same default title by creation time", async () => {
@@ -553,7 +565,7 @@ it("distinguishes conversations with the same default title by creation time", a
     next_cursor: null,
   })));
   render(<AgentChat token="token" />);
-  const entries = await screen.findAllByRole("button", { name: /^Private conversation/ });
+  const entries = await screen.findAllByRole("button", { name: /^Cuộc trò chuyện riêng/ });
   expect(entries).toHaveLength(2);
   expect(entries[0].textContent).not.toBe(entries[1].textContent);
 });
