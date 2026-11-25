@@ -498,10 +498,11 @@ section[aria-label="Lịch sử hồ sơ"] li::before {
 
 .workspace-agent-drawer .agent-composer {
   position: sticky;
-  bottom: 0;
+  /* Cover the drawer's bottom padding so the scrolled transcript cannot show beneath it. */
+  bottom: -1rem;
   z-index: 1;
   margin-block-start: 0.75rem;
-  padding-block-start: 0.75rem;
+  padding-block: 0.75rem 1rem;
   border-block-start: 1px solid var(--workspace-line);
   background: var(--workspace-surface);
 }
@@ -524,6 +525,15 @@ section[aria-label="Lịch sử hồ sơ"] li::before {
 
   .workspace-topbar {
     grid-column: 1 / -2;
+  }
+
+  /* Placed explicitly: with the drawer closed, auto-placement would move them into the empty top-right cell. */
+  .workspace-sidebar {
+    grid-area: 2 / 1;
+  }
+
+  .workspace-main {
+    grid-area: 2 / 2;
   }
 
   .workspace-agent-drawer {
