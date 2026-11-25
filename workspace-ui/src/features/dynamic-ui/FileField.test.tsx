@@ -204,6 +204,9 @@ it('shows the shared file name before the scan status', async () => {
 it.each([
   ['extended', "attachment; filename*=UTF-8''b%C3%A1o%20gi%C3%A1.pdf", 'báo giá.pdf'],
   ['quoted', 'attachment; filename="quote.pdf"', 'quote.pdf'],
+  ['escaped quote', 'attachment; filename="bad\\"name.pdf"', 'bad"name.pdf'],
+  // An unterminated quoted value full of backslashes must not backtrack exponentially.
+  ['unterminated', 'attachment; filename="' + '\\!'.repeat(40), '\\!'.repeat(40)],
 ])('uses the %s response file name for the download', async (_label, header, expected) => {
   serve((path, init) => {
     if (path === downloadRoute) return new Response('file bytes', { headers: { 'Content-Disposition': header } });
