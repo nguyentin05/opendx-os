@@ -456,6 +456,7 @@ section[aria-label="Lịch sử hồ sơ"] li::before {
   box-sizing: border-box;
   width: min(24rem, 88vw);
   max-width: none;
+  height: 100dvh;
   max-height: 100dvh;
   margin: 0;
   overflow: auto;
