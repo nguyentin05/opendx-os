@@ -20,6 +20,12 @@ pgvector schema and a synthetic upstream. They assert the deployment contract:
 * a disabled declaration starts no proxy and makes no model call;
 * ``rag-up`` boots an FTS-only installation without the model/pgvector schema.
 
+Scope: these cases pin the *deployment* contract on a stack with no parsed
+documents. Vector-level generation and generation isolation need real chunks, so
+they are pinned by the worker integration tests (``TestWorkerDeploymentReembed``,
+``TestWorkerRejectsObsoleteLease``) against real PostgreSQL 17/pgvector; here the
+deployment must leave every parsed run, chunk, job and vector count untouched.
+
 Prerequisites (a missing one is NOT_RUN, never a pass): Docker with the Compose
 plugin, the built images for the stack, and ``TEST_DISPOSABLE_DATABASE=yes`` with
 a project name other than ``opendx-os``. The suite never prints a rendered secret.
@@ -29,6 +35,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import shutil
 import subprocess
 import tempfile
@@ -43,8 +50,16 @@ RAG_SCRIPT = ROOT / "scripts" / "rag-up.sh"
 FAKE_SCRIPT = ROOT / "scripts" / "integration" / "fixtures" / "ai_up_fake.py"
 FAKE_OVERLAY = ROOT / "scripts" / "integration" / "fixtures" / "ai-up-fake.yaml"
 
-MODEL_PROJECT = os.environ.get("AI_UP_TEST_PROJECT", "opendx-aiup-test")
-FTS_PROJECT = os.environ.get("AI_UP_TEST_FTS_PROJECT", "opendx-aiup-fts-test")
+# Every run gets its own Compose project. A PostgreSQL data volume is initialized
+# once, with the runtime role passwords generated into that run's installation
+# environment file; reusing a volume across runs would leave the roles holding a
+# previous run's passwords and make every runtime login fail. The project name is
+# also the guard for teardown: only a disposable project this suite created is
+# ever removed, and never the development project.
+RUN_TOKEN = os.environ.get("AI_UP_TEST_TOKEN") or secrets.token_hex(3)
+MODEL_PROJECT = os.environ.get("AI_UP_TEST_PROJECT", "opendx-aiup-test-" + RUN_TOKEN)
+FTS_PROJECT = os.environ.get("AI_UP_TEST_FTS_PROJECT", "opendx-aiup-fts-" + RUN_TOKEN)
+DISPOSABLE_PROJECT_PREFIX = "opendx-aiup"
 DISPOSABLE = os.environ.get("TEST_DISPOSABLE_DATABASE") == "yes"
 
 
@@ -180,6 +195,18 @@ class DeploymentHarness:
             raise AssertionError("database query failed: " + result.stderr.strip())
         return result.stdout.strip()
 
+    def destroy(self) -> None:
+        """Remove this run's disposable project, its volumes and its local images.
+
+        The project name carries the run token, so the volumes removed here belong
+        to the installation this run created. The prefix guard refuses any project
+        the suite did not create, and the development project is never named with
+        it: no other data volume can be reached from here.
+        """
+        if not self.project.startswith(DISPOSABLE_PROJECT_PREFIX) or self.project == "opendx-os":
+            raise AssertionError("refusing to remove the project " + self.project)
+        self.compose("down", "--timeout", "20", "--volumes", "--rmi", "local", timeout=300)
+
     def write_declaration(self, name: str, content: str) -> Path:
         path = self.workspace / name
         path.write_text(content, encoding="utf-8")
@@ -287,6 +314,25 @@ class DeploymentHarness:
         output = self.compose("ps", "--status", "running", "-q", *services).stdout
         return [line for line in output.splitlines() if line.strip()]
 
+    def assert_models_off(self, service: str = "cap-ai") -> None:
+        """Assert the runtime is configured for models off, not degraded into it.
+
+        Only the model overlay defines the installation switch, so the FTS-only and
+        disabled renders leave it absent and the runtime's own default (off)
+        applies. An absent and an explicit false therefore mean one thing here,
+        and the assertion checks the state that matters: no model call can be
+        admitted and the process did not log the degraded-boot line.
+        """
+        result = self.compose("exec", "-T", service, "sh", "-c", 'printf %s "${RAG_MODELS_ENABLED-}"')
+        if result.returncode != 0:
+            raise AssertionError("could not read the runtime environment: " + result.stderr[-800:])
+        if result.stdout.strip() not in ("", "false"):
+            raise AssertionError("the runtime was started with model calls on: "
+                                 + result.stdout.strip()[:40])
+        logs = self.compose("logs", "--no-log-prefix", "--tail", "200", service)
+        if "model calls unavailable" in logs.stdout + logs.stderr:
+            raise AssertionError("the runtime booted degraded instead of configured for lexical search")
+
     def fake_counts(self) -> dict:
         log = self.state / "requests.jsonl"
         counts = {"EMBED": 0, "GENERATE": 0}
@@ -333,15 +379,19 @@ class AiUpDeploymentTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         if getattr(cls, "harness", None) is not None:
-            cls.harness.compose("down", "--timeout", "20")
+            cls.harness.destroy()
         if getattr(cls, "directory", None) is not None:
             cls.directory.cleanup()
 
     def setUp(self) -> None:
         self.harness.reset_fake()
-        # Each case is independent: a case that leaves a purpose withdrawn or a
-        # different route selected is repaired by deploying the reviewed baseline.
-        if set(self.harness.selected()) != {"EMBED", "GENERATE"}:
+        # Each case is independent: a case that leaves a purpose withdrawn, a
+        # different route selected or a model-calling service stopped is repaired
+        # by deploying the reviewed baseline again, so one failure never cascades
+        # into the next case's assertion.
+        repaired = (set(self.harness.selected()) == {"EMBED", "GENERATE"}
+                    and len(self.harness.running("cap-ai", "cap-ai-worker")) == 2)
+        if not repaired:
             result = self.harness.deploy(self.baseline)
             self.assertEqual(result.returncode, 0, result.stdout[-4000:] + result.stderr[-2000:])
 
@@ -441,6 +491,8 @@ class AiUpDeploymentTest(unittest.TestCase):
             process.wait(timeout=900)
         finally:
             reader.join(5)
+            if process.stdout is not None:
+                process.stdout.close()
         self.assertTrue(interrupted.is_set(), "the cutover stage was not reached:\n" + "".join(seen)[-4000:])
         self.assertNotEqual(process.returncode, 0, "an interrupted cutover reported success")
         self.assertEqual(self.harness.running("cap-ai", "cap-ai-worker"), [],
@@ -487,8 +539,7 @@ class AiUpDeploymentTest(unittest.TestCase):
         self.assertEqual(self.harness.fake_counts(), {"EMBED": 0, "GENERATE": 0},
                          "a disabled declaration made a model call")
         self.harness.wait_service_running("cap-ai")
-        environment = self.harness.compose("exec", "-T", "cap-ai", "sh", "-c", "printf %s \"$RAG_MODELS_ENABLED\"")
-        self.assertEqual(environment.stdout.strip(), "false", environment.stderr[-800:])
+        self.harness.assert_models_off("cap-ai")
         self.assertEqual(self.harness.deploy(self.baseline).returncode, 0)
 
 
@@ -508,7 +559,7 @@ class FtsOnlyDeploymentTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         if getattr(self, "harness", None) is not None:
-            self.harness.compose("down", "--timeout", "20")
+            self.harness.destroy()
         if getattr(self, "directory", None) is not None:
             self.directory.cleanup()
 
@@ -525,8 +576,7 @@ class FtsOnlyDeploymentTest(unittest.TestCase):
         self.assertEqual(self.harness.sql("SELECT count(*) FROM core.schema_migrations WHERE scope='cap-ai' AND version='0013'"), "0")
         self.assertEqual(self.harness.running("litellm"), [], "the FTS-only stack started the model proxy")
         self.harness.wait_service_running("cap-ai")
-        environment = self.harness.compose("exec", "-T", "cap-ai", "sh", "-c", "printf %s \"$RAG_MODELS_ENABLED\"")
-        self.assertEqual(environment.stdout.strip(), "false", environment.stderr[-800:])
+        self.harness.assert_models_off("cap-ai")
         self.assertEqual(self.harness.sql("SELECT status FROM core.apps WHERE app_id='personal_library'"), "Ready")
 
 

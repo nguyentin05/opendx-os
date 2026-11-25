@@ -282,6 +282,21 @@ if [ -n "$provider_refs" ]; then
     done <<<"$provider_refs"
 fi
 
+# Compose hashes a file secret by its mount name, not by the source path or its
+# contents: a changed declaration, a re-rendered proxy configuration or a rotated
+# credential leaves the service configuration hash identical, so `up` would keep
+# the containers and their stale mount. The runtime refuses a cache of the wrong
+# snapshot (it verifies the mounted proxy configuration), which is why a
+# deployment that changed any of these inputs must recreate the model-calling
+# services explicitly. The digest is recorded only after a deployment that ended
+# on the verified snapshot, so an interrupted or failed cutover always recreates
+# on the next run.
+runtime_digest="$(cat "$CONFIG" "$PROXY_CONFIG" "$PROXY_ENV" "$RUNTIME_ENV" | sha256sum | cut -d' ' -f1)"
+recreate_runtime=0
+if [ ! -f "$STATE_DIR/runtime.digest" ] || [ "$(cat "$STATE_DIR/runtime.digest")" != "$runtime_digest" ]; then
+    recreate_runtime=1
+fi
+
 # ---------------------------------------------------------------------------
 # Compose project. The existing project and environment are reused; an explicit
 # COMPOSE_FILE is honoured so a documented disposable stack (different project,
@@ -583,6 +598,13 @@ fi
 stack_say "starting the knowledge stack on the verified snapshot"
 stack_compose up -d --build keycloak
 stack_configure_service_clients
+if [ "$recreate_runtime" = 1 ] && [ "$MODELS_SELECTED" = 1 ]; then
+    # The private inputs changed, which Compose cannot see: recreate only the two
+    # model-calling services so they mount the declaration and generated
+    # configuration this run verified. Everything else keeps running.
+    stack_say "recreating the model-calling services with the current private inputs"
+    stack_compose up -d --build --no-deps --force-recreate cap-ai cap-ai-worker >/dev/null
+fi
 stack_compose up -d --build
 stack_wait_app personal_library 300
 stack_env_set "$MODEL_ENV" AI_AGENT_PROCESSING_APP_ID personal_library
@@ -630,6 +652,13 @@ fi
 if [ -n "$identity_failure" ]; then
     degrade_and_fail "the started runtime does not hold the verified snapshot ($identity_failure)"
 fi
+
+# The deployment ended on the verified snapshot, so this is the state the private
+# inputs describe. Recording it here rather than before the start is what makes a
+# rerun of an unchanged declaration restart nothing while a corrected declaration
+# (or a cutover interrupted before this point) always recreates the services.
+printf '%s\n' "$runtime_digest" >"$STATE_DIR/runtime.digest"
+chmod 600 "$STATE_DIR/runtime.digest"
 
 # ---------------------------------------------------------------------------
 # Report. A route the probe did not qualify is a visible failure even while the
