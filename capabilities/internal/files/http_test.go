@@ -46,3 +46,24 @@ func TestUploadRequiresAuthentication(t *testing.T) {
 		t.Fatal(w.Code)
 	}
 }
+
+func TestAttachmentDisposition(t *testing.T) {
+	cases := []struct {
+		stored string
+		want   string
+	}{
+		{"quote.pdf", `attachment; filename=quote.pdf`},
+		{"báo giá.pdf", `attachment; filename*=utf-8''b%C3%A1o%20gi%C3%A1.pdf`},
+		{"../../etc/passwd.pdf", `attachment; filename=passwd.pdf`},
+		{"bad\"name\r\n.pdf", `attachment; filename="bad\"name.pdf"`},
+		{"\r\n", "attachment"},
+	}
+	for _, test := range cases {
+		if got := attachmentDisposition(test.stored); got != test.want {
+			t.Errorf("attachmentDisposition(%q) = %q, want %q", test.stored, got, test.want)
+		}
+	}
+	if got := attachmentDisposition("bad\r\nname.pdf"); strings.ContainsAny(got, "\r\n") {
+		t.Errorf("header injection in %q", got)
+	}
+}

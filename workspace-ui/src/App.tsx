@@ -2,7 +2,7 @@
 // Copyright 2026 DX-OS Open-Core Contributors
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { endKeycloakSession, endSession, finishSignIn, registerSession, signIn, watchSession } from './auth';
+import { endKeycloakSession, endSession, finishSignIn, registerSession, signIn, signedInMarker, watchSession } from './auth';
 import type { Session } from './auth';
 import { toTableURL, useWorkspaceRoute } from './core/routes';
 import type { WorkspaceRoute } from './core/routes';
@@ -42,11 +42,18 @@ export function App({ initialSession }: { initialSession?: Session }) {
   return <WorkspaceRoot key={accountKey} initialSession={initialSession} />;
 }
 
+function callbackInURL() {
+  const params = new URLSearchParams(window.location.search);
+  return params.has('code') || params.has('error');
+}
+
 function WorkspaceRoot({ initialSession }: { initialSession?: Session }) {
   const [credential, setCredential] = useState<{ token: string; expires: number } | null>(
     initialSession ? { token: initialSession.token, expires: Infinity } : null,
   );
   const [message, setMessage] = useState('');
+  const [retrying, setRetrying] = useState(() => !initialSession && !callbackInURL()
+    && sessionStorage.getItem(signedInMarker) === '1');
   const callbackStarted = useRef(false);
 
   useEffect(() => {
@@ -54,10 +61,26 @@ function WorkspaceRoot({ initialSession }: { initialSession?: Session }) {
     callbackStarted.current = true;
 
     void finishSignIn().then(value => {
-      if (!value) return;
-      registerSession(value);
-      setCredential({ token: value.token, expires: value.expires });
-    }).catch(() => setMessage('Đăng nhập thất bại. Hãy thử lại.'));
+      if (value) {
+        registerSession(value);
+        setCredential({ token: value.token, expires: value.expires });
+        setRetrying(false);
+        return;
+      }
+      if (!callbackInURL() && sessionStorage.getItem(signedInMarker) === '1') {
+        sessionStorage.removeItem(signedInMarker);
+        setRetrying(true);
+        void signIn({ silent: true }).catch(() => {
+          setRetrying(false);
+          setMessage('Dịch vụ đăng nhập tạm thời không phản hồi. Hãy thử lại sau ít phút.');
+        });
+        return;
+      }
+      setRetrying(false);
+    }).catch(() => {
+      setRetrying(false);
+      setMessage('Đăng nhập thất bại. Hãy thử lại.');
+    });
   }, [initialSession]);
 
   const signInToken = credential?.token;
@@ -82,6 +105,14 @@ function WorkspaceRoot({ initialSession }: { initialSession?: Session }) {
           void endKeycloakSession(idToken);
         }}
       />
+    );
+  }
+
+  if (retrying) {
+    return (
+      <main className="workspace-sign-in">
+        <p role="status">Đang đăng nhập lại…</p>
+      </main>
     );
   }
 

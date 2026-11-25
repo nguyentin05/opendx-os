@@ -3,7 +3,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bearer, endKeycloakSession, endSession, loadSession, refreshSession, registerSession, sessionDeadlines, watchSession } from './auth';
+import { bearer, endKeycloakSession, endSession, finishSignIn, loadSession, refreshSession, registerSession, sessionDeadlines, signIn, signedInMarker, watchSession } from './auth';
 
 const issuer = 'http://localhost:8085/realms/dxos';
 const tokenURL = issuer + '/protocol/openid-connect/token';
@@ -48,6 +48,8 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  sessionStorage.clear();
+  window.history.replaceState(null, '', '/');
   delete window.DXOS_CONFIG;
 });
 
@@ -229,6 +231,63 @@ describe('refresh schedule', () => {
     await vi.advanceTimersByTimeAsync(1000);
 
     expect(ended).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('silent sign-in', () => {
+  it('starts a silent request with prompt=none and remembers it in the PKCE state', async () => {
+    const assign = vi.fn();
+    vi.stubGlobal('location', { origin: 'http://localhost:3000', pathname: '/', search: '', assign });
+    stubFetch(url => url === discoveryURL ? discovery() : Response.json({}));
+
+    await signIn({ silent: true });
+
+    expect(assign).toHaveBeenCalledTimes(1);
+    const target = new URL(String(assign.mock.calls[0][0]));
+    expect(target.searchParams.get('prompt')).toBe('none');
+    expect(JSON.parse(sessionStorage.getItem('dxos.pkce') ?? '{}')).toMatchObject({
+      redirectURI: 'http://localhost:3000/',
+      silent: true,
+    });
+  });
+
+  it('records a successful sign-in with a non-secret marker', async () => {
+    window.history.replaceState(null, '', '/?code=code&state=state');
+    sessionStorage.setItem('dxos.pkce', JSON.stringify({
+      verifier: 'verifier', state: 'state', created: Date.now(), redirectURI: 'http://localhost:3000/',
+    }));
+    stubFetch(url => url === discoveryURL ? discovery() : Response.json({
+      access_token: 'access', token_type: 'Bearer', expires_in: 60, id_token: 'id',
+    }));
+
+    const tokens = await finishSignIn();
+
+    expect(tokens?.token).toBe('access');
+    expect(sessionStorage.getItem(signedInMarker)).toBe('1');
+    expect(window.location.search).toBe('');
+  });
+
+  it('drops the marker on a silent login_required callback without an error', async () => {
+    window.history.replaceState(null, '', '/?error=login_required&state=state');
+    sessionStorage.setItem(signedInMarker, '1');
+    sessionStorage.setItem('dxos.pkce', JSON.stringify({
+      verifier: 'verifier', state: 'state', created: Date.now(),
+      redirectURI: 'http://localhost:3000/', silent: true,
+    }));
+    const fetcher = stubFetch(() => discovery());
+
+    expect(await finishSignIn()).toBeNull();
+    expect(sessionStorage.getItem(signedInMarker)).toBeNull();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('removes the marker on sign-out', () => {
+    sessionStorage.setItem(signedInMarker, '1');
+    registerSession({ token: 'sign-out', expires: Date.now() + 60_000 });
+
+    endSession('sign-out');
+
+    expect(sessionStorage.getItem(signedInMarker)).toBeNull();
   });
 });
 
