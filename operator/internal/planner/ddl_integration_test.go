@@ -483,3 +483,41 @@ EXISTS (SELECT FROM core.capabilities c WHERE c.cap_id='cap-ai' AND c.enabled)`)
 		}
 	}
 }
+
+func TestDDLIntegrationRefusesNaNNumericValues(t *testing.T) {
+	db := testutil.NewDatabase(t)
+	app := loadFixtureApp(t).Clone()
+	app.Spec.Tables[0].Columns = append(app.Spec.Tables[0].Columns,
+		manifest.ColumnDef{Name: "optional_amount", Type: "numeric(14,2)", Nullable: true})
+	ddl, err := GenerateDDL(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installDomainTable(t, db, app)
+	if _, err := db.Exec(ddl); err != nil {
+		t.Fatalf("re-running the DDL must succeed: %v", err)
+	}
+
+	asAlice := func(stmt string) error {
+		return inTx(t, db, "dxos_hasura", alice, "", func(tx *sql.Tx) error {
+			_, err := tx.Exec(stmt)
+			return err
+		})
+	}
+	if err := asAlice(`INSERT INTO domain.procurement_requests
+		(vendor_name, item_description, quoted_amount, optional_amount)
+		VALUES ('Acme', 'Pump', 100, NULL)`); err != nil {
+		t.Fatalf("a normal numeric value and NULL must be accepted: %v", err)
+	}
+
+	for name, stmt := range map[string]string{
+		"checked amount":   `INSERT INTO domain.procurement_requests (vendor_name, item_description, quoted_amount, optional_amount) VALUES ('Acme', 'Pump', 'NaN', NULL)`,
+		"unchecked amount": `INSERT INTO domain.procurement_requests (vendor_name, item_description, quoted_amount, optional_amount) VALUES ('Acme', 'Pump', 100, 'NaN')`,
+	} {
+		err := asAlice(stmt)
+		var pqErr *pq.Error
+		if !errors.As(err, &pqErr) || pqErr.Code != "23514" {
+			t.Errorf("%s: got %v, want check_violation", name, err)
+		}
+	}
+}

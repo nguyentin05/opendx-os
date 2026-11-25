@@ -243,3 +243,24 @@ func TestChildTableDDLAndPermissions(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateDDLRefusesNaNNumericColumns(t *testing.T) {
+	app := testutil.WithLabels(loadFixtureApp(t))
+	ddl, err := GenerateDDL(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`conname = 'ck_procurement_requests_quoted_amount_number'`,
+		`ADD CONSTRAINT "ck_procurement_requests_quoted_amount_number" CHECK ("quoted_amount" <> 'NaN') NOT VALID`,
+		`conname = 'ck_procurement_items_quantity_number'`,
+		`conname = 'ck_procurement_items_unit_price_number'`,
+	} {
+		if !strings.Contains(ddl, want) {
+			t.Errorf("DDL missing %q", want)
+		}
+	}
+	if strings.Contains(ddl, `"vendor_name" <> 'NaN'`) || strings.Contains(ddl, `ck_procurement_requests_vendor_name_number`) {
+		t.Error("a text column must not get a NaN constraint")
+	}
+}
