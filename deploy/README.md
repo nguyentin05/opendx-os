@@ -5,7 +5,9 @@
 | Docker Compose, one host | `compose.yaml` (+ `compose.rag.yaml`, `compose.models.yaml`) at the repository root | Supported; see `docs/operations/installation.md` |
 | Local Kubernetes for controller development (kind) | `platform/k8s/dev`, `scripts/k8s/dev-cluster.sh` | PostgreSQL, Hasura and the controller only |
 | Kubernetes, whole platform, any cluster | `deploy/k8s/base` plus an overlay for your cluster | Being tested (#166) |
-| Example overlay: Amazon EKS | `deploy/k8s/overlays/eks` | The cluster used to test the Kubernetes deployment (#166, #169) |
+| Example overlay: Amazon EKS | `deploy/k8s/overlays/eks` | Reference; the cluster used to test the Kubernetes deployment (#166, #169) |
+| Example overlay: Google GKE | `deploy/k8s/overlays/gke` | Reference only, not run on a cluster |
+| Example overlay: Azure AKS | `deploy/k8s/overlays/aks` | Reference only, not run on a cluster |
 
 `deploy/` is added beside the other deployment files; none of them is replaced.
 In this file, paths such as `overlays/eks` and `apply.sh` are relative to
@@ -16,8 +18,11 @@ Kubernetes: Deployments, one StatefulSet, Services, ConfigMaps, Secrets and
 PersistentVolumeClaims on the cluster's default StorageClass. It uses no cloud
 API, provider annotation or provider storage. Everything specific to one kind of
 cluster (storage class, ingress controller, certificates, how the cluster itself
-is created) belongs in an overlay. `overlays/eks` is the overlay the project uses
-to test on a real managed cluster; it is an example, not a requirement.
+is created) belongs in an overlay. **The overlays under `overlays/` are reference
+examples, not requirements:** `eks` is the one the project uses to test on a real
+managed cluster; `gke` and `aks` show the same setup on Google Cloud and Azure and
+have not been run. Write your own overlay for your cluster (see below); none of
+these cloud providers is needed.
 
 ## Layout
 
@@ -34,7 +39,10 @@ deploy/k8s/
       postgres/ keycloak/ authz/ hasura/ apisix/ kestra/ seaweedfs/ clamav/
     capabilities/       Tier 2, namespace dxos, one folder per service:
       cap-process/ cap-hr/ workspace-ui/
-  overlays/eks/         example: gp3 storage, one public ALB (the test cluster)
+  overlays/             reference examples, not requirements:
+    eks/                Amazon EKS: gp3 volumes, one ALB, ACM certificate (the test cluster)
+    gke/                Google GKE: pd-balanced disks, GKE Ingress, managed certificate (untested)
+    aks/                Azure AKS: Standard SSD disks, application routing NGINX, Key Vault certificate (untested)
 ```
 
 Each service folder holds one object per file: `service.yaml`,
@@ -96,7 +104,7 @@ other clusters are expected to work but have not been tested yet.
 ### Write an overlay for your cluster
 
 An overlay sets the public hosts and adds the Ingress for your controller. Copy
-`overlays/eks/kustomization.yaml` as a starting point and keep its
+the example closest to your cluster (`overlays/eks`, `gke` or `aks`) and keep its
 `dxos-public` values and `replacements`; replace `storageclass.yaml` and
 `ingress.yaml` with your own, or drop `storageclass.yaml` to use the cluster's
 default class.
@@ -111,10 +119,13 @@ else:
 | `APP_HOST` | `/` (prefix) | `workspace-ui:8080` |
 | `AUTH_HOST` | `/` (prefix) | `keycloak:8085` |
 
-On `AUTH_HOST`, `/admin` and `/realms/master` must not be reachable (answer 404
-or 403): they are the Keycloak administration console and master realm. The EKS
-overlay does this with an ALB fixed response; with another controller, use its
-equivalent rule. Terminate TLS at the Ingress for both hosts. Do not add routes to
+On `AUTH_HOST`, `/admin` and `/realms/master` must not be reachable: they are
+the Keycloak administration console and master realm. The EKS overlay answers
+404 with an ALB fixed response. A plain Ingress has no fixed response, so the GKE
+and AKS overlays send both paths to `not-found`, a Service that selects no pod;
+the controller answers 502 or 503 and Keycloak is never reached. Use that, or
+your controller's equivalent rule. `tests/test_deploy.py` checks every overlay
+for these routes. Terminate TLS at the Ingress for both hosts. Do not add routes to
 Hasura, Kestra, PostgreSQL, SeaweedFS or ClamAV; reach them with
 `kubectl -n dxos port-forward`.
 
@@ -184,13 +195,27 @@ After changing a file under `platform/`, run `make k8s-config`; then run
 affected deployment
 (`kubectl -n dxos rollout restart deployment/<name>`).
 
-## Example: Amazon EKS (test cluster)
+## Example overlays (reference only)
+
+These overlays are **examples to copy from, not requirements**. Creating and
+running a cluster is the operator's job and is not covered here; each overlay
+starts from an existing cluster and lists what it expects that cluster to have.
+Nothing in `base/` refers to any of them.
+
+| Overlay | Storage | Entry point and TLS | Status |
+| --- | --- | --- | --- |
+| `eks` | `dxos-gp3`: encrypted gp3 (EBS CSI) | AWS Load Balancer Controller (ALB), ACM certificate | Used to test the Kubernetes deployment |
+| `gke` | `dxos-pd`: pd-balanced (PD CSI) | GKE Ingress, Google-managed certificate, HTTP→HTTPS redirect | Not run on a cluster |
+| `aks` | `dxos-disk`: Standard SSD (Azure Disk CSI) | Application routing add-on (managed NGINX), Key Vault certificate | Not run on a cluster |
+
+Every overlay keeps volumes after their claims are deleted (`Retain`): the disks
+outlive the platform and stay billed until you delete them.
+
+### Amazon EKS (test cluster)
 
 The project tests the Kubernetes deployment on EKS because a managed cluster with
-a public load balancer is the closest to a real installation. Creating and
-running the cluster is the operator's job and is not covered here; the platform
-starts from an existing cluster. Nothing outside `overlays/eks` refers to AWS; to
-run elsewhere, write your own overlay as above.
+a public load balancer is the closest to a real installation. Nothing outside
+`overlays/eks` refers to AWS.
 
 What the overlay adds, and its counterpart on another cluster:
 
@@ -220,6 +245,44 @@ To remove the platform, delete the Ingress first so the controller removes the
 ALB (`kubectl -n dxos delete ingress dxos`). `dxos-gp3` keeps volumes after their
 claims are deleted (`Retain`): the EBS volumes outlive the platform and stay
 billed until you delete them (tag `kubernetes.io/created-for/pvc/namespace=dxos`).
+
+### Google GKE (reference, untested)
+
+The overlay expects a VPC-native GKE cluster (the default), which has the PD CSI
+driver and the GKE Ingress controller built in. It adds:
+
+- `storageclass.yaml`: default class `dxos-pd`, balanced persistent disks;
+- `ingress.yaml`: one external Application Load Balancer for both hosts;
+- `managedcertificate.yaml`: a Google-managed certificate for both hosts. It
+  turns Active only after both host names point at the Ingress address, which can
+  take a while;
+- `frontendconfig.yaml`: HTTP redirected to HTTPS;
+- `backendconfig.yaml`: health checks (`/realms/dxos`, since APISIX has no route
+  at `/`) and a 120 s timeout, attached to the `apisix` and `keycloak` Services;
+- `not-found.yaml`: the Service the Keycloak console paths go to.
+
+Set the five `dxos-public` values in `overlays/gke/kustomization.yaml`, run
+`deploy/k8s/apply.sh deploy/k8s/overlays/gke ~/dxos-k8s.env`, and point both hosts
+at the address from `kubectl -n dxos get ingress dxos`.
+
+### Azure AKS (reference, untested)
+
+The overlay expects an AKS cluster with the application routing add-on
+(`az aks approuting enable`) connected to an Azure Key Vault that holds a
+certificate for both hosts (`az aks approuting update --attach-kv`). The Azure Disk
+CSI driver is built in. It adds:
+
+- `storageclass.yaml`: default class `dxos-disk`, Standard SSD managed disks;
+- `ingress.yaml`: the add-on's NGINX (`webapprouting.kubernetes.azure.com`), TLS
+  from the Key Vault certificate named in the
+  `kubernetes.azure.com/tls-cert-keyvault-uri` annotation, a 120 s read timeout
+  and a 25 MB body limit;
+- `not-found.yaml`: the Service the Keycloak console paths go to.
+
+Set the five `dxos-public` values in `overlays/aks/kustomization.yaml` and the Key
+Vault certificate URI in `overlays/aks/ingress.yaml`, run
+`deploy/k8s/apply.sh deploy/k8s/overlays/aks ~/dxos-k8s.env`, and point both hosts
+at the address from `kubectl -n dxos get ingress dxos`.
 
 ## Known gaps
 

@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Reference only, not tested. Load balancer health checks and timeout. APISIX
+# has no route at /, so its check uses the realm route it proxies to Keycloak;
+# Keycloak's own readiness endpoint is on its management port, which the
+# Service does not expose.
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: dxos-apisix
+  namespace: dxos
+spec:
+  timeoutSec: 120
+  healthCheck:
+    type: HTTP
+    requestPath: /realms/dxos
+    port: 9080
+---
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: dxos-keycloak
+  namespace: dxos
+spec:
+  healthCheck:
+    type: HTTP
+    requestPath: /realms/dxos
+    port: 8085

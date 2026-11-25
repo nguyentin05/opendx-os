@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Reference only, not tested. The managed NGINX of the AKS application routing
+# add-on (az aks approuting enable), with the TLS certificate taken from Azure
+# Key Vault: set the annotation to your certificate's URI. Only the UI, the
+# gateway routes and the Keycloak realm endpoints are public; /admin and
+# /realms/master go to not-found, a Service without endpoints, and answer 503:
+# the Keycloak console is never reached.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dxos
+  namespace: dxos
+  annotations:
+    kubernetes.azure.com/tls-cert-keyvault-uri: https://example-vault.vault.azure.net/certificates/dxos
+    # Longer than the default 60 s: some commands take longer to answer.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    # Attachments are limited to 20 MB by cap-process; leave room for the form.
+    nginx.ingress.kubernetes.io/proxy-body-size: 25m
+spec:
+  ingressClassName: webapprouting.kubernetes.azure.com
+  tls:
+  - hosts:
+    - APP_HOST
+    - AUTH_HOST
+    secretName: keyvault-dxos
+  rules:
+  - host: APP_HOST
+    http:
+      paths:
+      - path: /api/
+        pathType: Prefix
+        backend:
+          service: {name: apisix, port: {number: 9080}}
+      - path: /v1/graphql
+        pathType: Exact
+        backend:
+          service: {name: apisix, port: {number: 9080}}
+      - path: /
+        pathType: Prefix
+        backend:
+          service: {name: workspace-ui, port: {number: 8080}}
+  - host: AUTH_HOST
+    http:
+      paths:
+      - path: /admin
+        pathType: Prefix
+        backend:
+          service: {name: not-found, port: {number: 80}}
+      - path: /realms/master
+        pathType: Prefix
+        backend:
+          service: {name: not-found, port: {number: 80}}
+      - path: /
+        pathType: Prefix
+        backend:
+          service: {name: keycloak, port: {number: 8085}}
