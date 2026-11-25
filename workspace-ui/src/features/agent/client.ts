@@ -57,7 +57,7 @@ export class AgentClient {
   create(signal: AbortSignal) {
     return this.request<Conversation>(base, signal, {
       method: "POST",
-      body: JSON.stringify({ title: "Private conversation" }),
+      body: JSON.stringify({ title: "Cuộc trò chuyện riêng" }),
     });
   }
   transcript(id: string, signal: AbortSignal, after?: number) {

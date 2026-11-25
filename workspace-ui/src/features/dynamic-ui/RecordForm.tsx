@@ -244,62 +244,70 @@ function FormFields({ table, context, mode, record, childScope, writeGuard, onSa
 
   return (
     <form noValidate onSubmit={event => void submit(event)}>
-      <fieldset disabled={pending || writeGuard?.pending}>
-        {fields.map(field => {
-          const { name, label, type, required, column, target, attachment, description, unavailable } = field;
-          const id = formID + '-' + name;
-          const describedBy = [
-            description && id + '-description',
-            errors[name] && id + '-error',
-          ].filter(Boolean).join(' ');
-          const input = {
-            id,
-            value: values[name],
-            required: required || !column.nullable,
-            'aria-invalid': Boolean(errors[name]),
-            'aria-describedby': describedBy || undefined,
-          };
-          function change(value: string) {
-            setValues(previous => ({ ...previous, [name]: value }));
-          }
-          return (
-            <div key={name}>
-              {unavailable ? <p>{label}. {unavailable}</p> : (
-                <>
-                  <label htmlFor={id}>{label}</label>
-                  {input.required && <span aria-hidden="true"> *</span>}
-                  {attachment ? <FileField
-                    appID={context.app.app_id}
-                    context={context}
-                    label={label}
-                    value={values[name]}
-                    input={{
-                      id,
-                      'aria-required': input.required,
-                      'aria-invalid': input['aria-invalid'],
-                      'aria-describedby': input['aria-describedby'],
-                    }}
-                    onChange={change}
-                    onUploadPendingChange={active => {
-                      if (active) uploads.current.add(name);
-                      else uploads.current.delete(name);
-                      setUploading(uploads.current.size > 0);
-                    }}
-                    onInfected={fileID => setInfected(previous => ({ ...previous, [name]: fileID }))}
-                  /> : target ? <ReferenceInput {...input} context={context} table={target} label={label} onChange={change} />
-                    : <input {...input} type={inputTypes[type as keyof typeof inputTypes]}
-                      step={type === 'number' ? (column.type === 'integer' ? 1 : 'any') : undefined}
-                      onChange={event => change(event.target.value)} />}
-                </>
-              )}
-              {description && <p id={id + '-description'}>{description}</p>}
-              {errors[name] && <p role="alert" id={id + '-error'}>{errors[name]}</p>}
-            </div>
-          );
-        })}
-        <button type="submit" disabled={uploading || blockedAttachment}>{pending ? 'Đang lưu…' : 'Lưu hồ sơ'}</button>
-      </fieldset>
-      <button type="button" disabled={pending} onClick={onCancel}>Huỷ</button>
+      <div className="record-form-box">
+        <fieldset disabled={pending || writeGuard?.pending}>
+          {fields.map(field => {
+            const { name, label, type, required, column, target, attachment, description, unavailable } = field;
+            const id = formID + '-' + name;
+            const describedBy = [
+              description && id + '-description',
+              errors[name] && id + '-error',
+            ].filter(Boolean).join(' ');
+            const input = {
+              id,
+              value: values[name],
+              required: required || !column.nullable,
+              'aria-invalid': Boolean(errors[name]),
+              'aria-describedby': describedBy || undefined,
+            };
+            function change(value: string) {
+              setValues(previous => ({ ...previous, [name]: value }));
+            }
+            return (
+              <div key={name} className="record-form-field">
+                {unavailable ? <p>{label}. {unavailable}</p> : (
+                  <>
+                    <div className="record-form-label">
+                      <label htmlFor={id}>{label}</label>
+                      {input.required && <span aria-hidden="true"> *</span>}
+                    </div>
+                    {attachment ? <FileField
+                      appID={context.app.app_id}
+                      context={context}
+                      label={label}
+                      value={values[name]}
+                      input={{
+                        id,
+                        'aria-required': input.required,
+                        'aria-invalid': input['aria-invalid'],
+                        'aria-describedby': input['aria-describedby'],
+                      }}
+                      onChange={change}
+                      onUploadPendingChange={active => {
+                        if (active) uploads.current.add(name);
+                        else uploads.current.delete(name);
+                        setUploading(uploads.current.size > 0);
+                      }}
+                      onInfected={fileID => setInfected(previous => ({ ...previous, [name]: fileID }))}
+                    /> : target ? <ReferenceInput {...input} context={context} table={target} label={label} onChange={change} />
+                      : <input {...input} type={inputTypes[type as keyof typeof inputTypes]}
+                        step={type === 'number' ? (column.type === 'integer' ? 1 : 'any') : undefined}
+                        onChange={event => change(event.target.value)} />}
+                  </>
+                )}
+                {description && <p id={id + '-description'}>{description}</p>}
+                {errors[name] && <p role="alert" id={id + '-error'}>{errors[name]}</p>}
+              </div>
+            );
+          })}
+        </fieldset>
+        <div className="record-actions">
+          <button type="submit" disabled={pending || writeGuard?.pending || uploading || blockedAttachment}>
+            {pending ? 'Đang lưu…' : 'Lưu hồ sơ'}
+          </button>
+          <button type="button" disabled={pending} onClick={onCancel}>Huỷ</button>
+        </div>
+      </div>
       {message && <p role={message === 'Không có thay đổi để lưu.' ? 'status' : 'alert'}>{message}</p>}
     </form>
   );
