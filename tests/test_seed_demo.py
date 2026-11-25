@@ -29,6 +29,7 @@ class SeedDemoPdf(unittest.TestCase):
         self.assertEqual(len(re.findall(rb'/Type\s*/Page\b', pdf)), 1)
         self.assertIn(b'QUOTATION / Bao gia', pdf)
         self.assertIn(b'FPT Shop', pdf)
+        self.assertIn(b'(Item: Thiet bi cho nhan vien moi) Tj', self.seed_demo.demo_pdf('X', 'Thiết bị cho nhân viên mới', 1))
 
         match = re.search(rb'startxref\s+(\d+)\s+%%EOF', pdf)
         self.assertIsNotNone(match)

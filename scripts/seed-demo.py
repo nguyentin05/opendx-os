@@ -55,6 +55,7 @@ import pathlib
 import subprocess
 import sys
 import time
+import unicodedata
 import uuid
 import urllib.error
 import urllib.parse
@@ -286,7 +287,10 @@ REQUEST_FIELDS = "id item_description status version"
 
 
 def _pdf_text(value: object) -> str:
-    return str(value).encode("ascii", "replace").decode("ascii").replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    # Helvetica here is ASCII only, so Vietnamese text loses its diacritics rather than turning into "?".
+    text = unicodedata.normalize("NFKD", str(value).replace("đ", "d").replace("Đ", "D"))
+    text = text.encode("ascii", "ignore").decode("ascii")
+    return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
 def demo_pdf(vendor: str, item: str, amount: int) -> bytes:

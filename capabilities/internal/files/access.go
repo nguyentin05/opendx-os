@@ -52,7 +52,7 @@ func (s *Service) readable(ctx context.Context, id *auth.Identity, file string) 
 		return "", "", "", "", ErrDenied
 	}
 	var app, owner, policy, name string
-	e := s.db.QueryRowContext(ctx, `SELECT app_id,uploaded_by::text,read_policy,file_name FROM core.files WHERE id=$1 AND bucket=$2`, file, s.bucket).Scan(&app, &owner, &policy, &name)
+	e := s.db.QueryRowContext(ctx, `SELECT app_id,uploaded_by::text,read_policy FROM core.files WHERE id=$1 AND bucket=$2`, file, s.bucket).Scan(&app, &owner, &policy)
 	if e != nil {
 		return "", "", "", "", ErrDenied
 	}
