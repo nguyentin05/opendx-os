@@ -119,6 +119,9 @@ type cliSeams struct {
 	// suspendActors records the actor the suspension command used: only the verified
 	// subject may be used, never a caller-supplied actor.
 	suspendActors []string
+	// reconciled records the selection the deployment-internal reconcile wrote.
+	reconciled   []models.DeploymentSelection
+	reconcileErr error
 }
 
 func withCLISeams(t *testing.T, seams *cliSeams) *cliSeams {
@@ -126,7 +129,7 @@ func withCLISeams(t *testing.T, seams *cliSeams) *cliSeams {
 	previousOpen, previousVerifier := openDB, newSubjectVerifier
 	previousTransport, previousStatus := newDeploymentTransport, readDeploymentStatus
 	previousIndex, previousSuspend := readDeploymentIndex, suspendDeployment
-	previousAdmin := newApprovalAdmin
+	previousAdmin, previousReconcile := newApprovalAdmin, reconcileDeployment
 	openDB = func(_ context.Context, dsn string) (*sql.DB, error) {
 		seams.opened = append(seams.opened, dsn)
 		return nil, nil
@@ -154,11 +157,18 @@ func withCLISeams(t *testing.T, seams *cliSeams) *cliSeams {
 	newApprovalAdmin = func(*sql.DB, auth.SubjectVerifier) approvalSurface {
 		return cliApprovalSurface{seams: seams}
 	}
+	reconcileDeployment = func(_ context.Context, _ *sql.DB, selection models.DeploymentSelection) (models.DeploymentSelectionReport, error) {
+		seams.reconciled = append(seams.reconciled, selection)
+		if seams.reconcileErr != nil {
+			return models.DeploymentSelectionReport{}, seams.reconcileErr
+		}
+		return models.DeploymentSelectionReport{Changed: true}, nil
+	}
 	t.Cleanup(func() {
 		openDB, newSubjectVerifier = previousOpen, previousVerifier
 		newDeploymentTransport, readDeploymentStatus = previousTransport, previousStatus
 		readDeploymentIndex, suspendDeployment = previousIndex, previousSuspend
-		newApprovalAdmin = previousAdmin
+		newApprovalAdmin, reconcileDeployment = previousAdmin, previousReconcile
 	})
 	return seams
 }
@@ -527,6 +537,51 @@ func TestDeploymentCLI(t *testing.T) {
 		}
 		if result := executeCLI(t, env, "", "deployment", "unknown"); result.code != exitInvalid {
 			t.Fatalf("unknown deployment command: %d", result.code)
+		}
+	})
+
+	t.Run("reconcile withdraws exactly the purpose the probe failed", func(t *testing.T) {
+		seams := withCLISeams(t, &cliSeams{})
+		env, path := cliEnvironment(t, cliDeclaration)
+		// One failed route is withdrawn while the other is selected, in the one
+		// reconciliation the deployment writes.
+		if result := executeCLI(t, env, "", "deployment", "reconcile", "--config", path, "--disable", "llm"); result.code != exitOK {
+			t.Fatalf("reconcile with a disabled llm: %d %s", result.code, result.stderr)
+		}
+		if len(seams.reconciled) != 1 {
+			t.Fatalf("reconcile calls: %d", len(seams.reconciled))
+		}
+		selection := seams.reconciled[0]
+		if selection.Embedding == nil || selection.Embedding.Purpose != "EMBED" || selection.Generation != nil {
+			t.Fatalf("disabled llm selection: %+v", selection)
+		}
+		if result := executeCLI(t, env, "", "deployment", "reconcile", "--config", path, "--disable", "embed"); result.code != exitOK {
+			t.Fatalf("reconcile with a disabled embedding: %d %s", result.code, result.stderr)
+		}
+		selection = seams.reconciled[1]
+		if selection.Embedding != nil || selection.Generation == nil || selection.Generation.Purpose != "GENERATE" {
+			t.Fatalf("disabled embedding selection: %+v", selection)
+		}
+		// Both failed: the transaction withdraws both purposes rather than
+		// selecting a route the probe never qualified.
+		if result := executeCLI(t, env, "", "deployment", "reconcile", "--config", path, "--disable", "embed", "--disable", "llm"); result.code != exitOK {
+			t.Fatalf("reconcile with both disabled: %d %s", result.code, result.stderr)
+		}
+		if selection = seams.reconciled[2]; selection.Embedding != nil || selection.Generation != nil {
+			t.Fatalf("both-disabled selection: %+v", selection)
+		}
+		// An unknown purpose is an invalid invocation and reaches no database.
+		opened := len(seams.opened)
+		if result := executeCLI(t, env, "", "deployment", "reconcile", "--config", path, "--disable", "chat"); result.code != exitInvalid {
+			t.Fatalf("unknown disabled purpose: %d", result.code)
+		}
+		if len(seams.opened) != opened || len(seams.reconciled) != 3 {
+			t.Fatal("an invalid purpose reached the deployment")
+		}
+		for _, result := range []cliResult{executeCLI(t, env, "", "deployment", "reconcile", "--config", path, "--disable", "llm")} {
+			if strings.Contains(result.stdout+result.stderr, cliProxyCredential) {
+				t.Fatal("reconcile printed the proxy credential")
+			}
 		}
 	})
 

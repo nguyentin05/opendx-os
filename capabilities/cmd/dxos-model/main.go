@@ -84,6 +84,18 @@ const (
 // uuidPattern is the approval identifier shape policy revoke accepts.
 var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
+// disabledPurposes is a repeatable flag that withdraws purposes from one
+// reconciliation. It is deployment-internal: the start-up probe qualifies each
+// route and reconciles exactly the ones that answered.
+type disabledPurposes []string
+
+func (d *disabledPurposes) String() string { return strings.Join(*d, ",") }
+
+func (d *disabledPurposes) Set(value string) error {
+	*d = append(*d, value)
+	return nil
+}
+
 // approvalReviewFields is exactly the review object the processing-approval function
 // accepts. It is the hosted processing evidence of a PERSONAL approval, never a
 // model-activation record: there is no slot, digest or qualification field here.
@@ -620,8 +632,21 @@ func runDeployment(ctx context.Context, args []string, getenv func(string) strin
 		set := newFlagSet("deployment reconcile")
 		configPath := set.String("config", defaultConfigPath, "deployment declaration file")
 		asJSON := set.Bool("json", false, "print a JSON summary")
+		// --disable withdraws one purpose from this reconciliation. The
+		// deployment's probe uses it to reconcile only the routes it qualified,
+		// leaving a failed purpose disabled in the same transaction. It is
+		// deployment-internal, like the command itself.
+		var disabled disabledPurposes
+		set.Var(&disabled, "disable", "withdraw one purpose from this selection: embed or llm (repeatable)")
 		if code, done := parseFlags(set, args[1:], stdout, stderr); done {
 			return code
+		}
+		for _, purpose := range disabled {
+			switch purpose {
+			case "embed", "llm":
+			default:
+				return fail(stderr, invalidArgs("deployment reconcile --disable accepts embed or llm"))
+			}
 		}
 		deployment, err := loadDeclaration(*configPath)
 		if err != nil {
@@ -642,6 +667,13 @@ func runDeployment(ctx context.Context, args []string, getenv func(string) strin
 					return fail(stderr, err)
 				}
 				selection.Generation = &profile
+			}
+			for _, purpose := range disabled {
+				if purpose == "embed" {
+					selection.Embedding = nil
+				} else {
+					selection.Generation = nil
+				}
 			}
 		}
 		dsn := strings.TrimSpace(getenv(catalogDatabaseEnv))
