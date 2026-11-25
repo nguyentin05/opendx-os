@@ -27,6 +27,11 @@ class WorkspaceUIImage(unittest.TestCase):
         # A location with its own add_header would drop the server-level ones.
         self.assertNotIn('add_header', self.conf.split('\n    location ', 1)[1])
 
+    def test_api_location_fails_fast_but_allows_long_reads(self):
+        api = self.conf.split('\n    location ', 1)[1]
+        self.assertIn('proxy_connect_timeout 3s;', api)
+        self.assertIn('proxy_read_timeout 490s;', api)
+
     def test_runtime_stage_is_pinned_and_renders_the_template(self):
         self.assertRegex(self.dockerfile, r'FROM nginxinc/nginx-unprivileged:[\w.-]+@sha256:[0-9a-f]{64}')
         self.assertIn('COPY nginx.conf /etc/nginx/templates/default.conf.template', self.dockerfile)
