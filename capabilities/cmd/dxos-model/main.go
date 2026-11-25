@@ -29,6 +29,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -304,6 +305,16 @@ type purposeReport struct {
 	// before this declared route is callable, beyond the declaration itself.
 	Requires string `json:"requires,omitempty"`
 	Blocked  string `json:"blocked,omitempty"`
+	// Selected is the durable fact that the database currently selects this
+	// purpose, independent of whether that selection matches the declaration on
+	// disk. A deployment about to withdraw a mismatched route must still see it.
+	Selected bool `json:"selected,omitempty"`
+	// SelectedProfileID, SelectedRevision and SelectedExecution describe the
+	// durable selection itself, which can differ from the declared identity while
+	// the deployment is unreconciled.
+	SelectedProfileID string `json:"selected_profile_id,omitempty"`
+	SelectedRevision  int64  `json:"selected_revision,omitempty"`
+	SelectedExecution string `json:"selected_execution,omitempty"`
 }
 
 // deploymentMode maps one configured route to the effective mode of ADR 0011
@@ -525,7 +536,7 @@ func runStatus(ctx context.Context, args []string, getenv func(string) string, s
 	if err != nil {
 		return fail(stderr, err)
 	}
-	mergeSelection(reports, status, getenv(models.LocalModelsQualifiedEnv) == "true")
+	reports = mergeSelection(reports, status, getenv(models.LocalModelsQualifiedEnv) == "true")
 	if *asJSON {
 		return writeJSON(stdout, stderr, statusReport{Enabled: status.Enabled, Purposes: reports, Index: index})
 	}
@@ -559,15 +570,17 @@ func runStatus(ctx context.Context, args []string, getenv func(string) string, s
 // `qualified` only when the database currently selects the exact declared profile
 // and, for a local route, the deployment states its local qualification. Otherwise
 // it is blocked, and its one reason is the first thing that denies it.
-func mergeSelection(reports []purposeReport, status models.DeploymentStatus, localQualified bool) {
+func mergeSelection(reports []purposeReport, status models.DeploymentStatus, localQualified bool) []purposeReport {
 	selected := map[string]models.DeploymentStatusProfile{}
 	for _, entry := range status.Profiles {
 		if entry.Selected {
 			selected[entry.Purpose] = entry
 		}
 	}
+	declared := map[string]bool{}
 	for i := range reports {
 		report := &reports[i]
+		declared[report.Purpose] = true
 		if report.Blocked != "" || !report.Declared {
 			continue
 		}
@@ -576,6 +589,10 @@ func mergeSelection(reports []purposeReport, status models.DeploymentStatus, loc
 			report.Blocked = "not selected"
 			continue
 		}
+		report.Selected = true
+		report.SelectedProfileID = entry.ProfileID
+		report.SelectedRevision = entry.Revision
+		report.SelectedExecution = entry.Execution
 		if entry.ProfileID != report.ProfileID || entry.Revision != report.Revision || entry.Execution != report.Execution {
 			// The declaration on disk and the durable selection disagree: the
 			// deployment must reconcile before this route is served.
@@ -590,6 +607,29 @@ func mergeSelection(reports []purposeReport, status models.DeploymentStatus, loc
 		}
 		report.Qualified = true
 	}
+	// A durable selection the declaration no longer declares is still live until
+	// the deployment reconciles it away. Reporting it is what lets `ai-up` drain a
+	// runtime before withdrawing a purpose the declaration dropped entirely.
+	undeclared := make([]string, 0, len(selected))
+	for purpose := range selected {
+		if !declared[purpose] {
+			undeclared = append(undeclared, purpose)
+		}
+	}
+	sort.Strings(undeclared)
+	for _, purpose := range undeclared {
+		entry := selected[purpose]
+		reports = append(reports, purposeReport{
+			Purpose:           purpose,
+			Mode:              deploymentMode(models.Profile{Execution: entry.Execution}),
+			Selected:          true,
+			SelectedProfileID: entry.ProfileID,
+			SelectedRevision:  entry.Revision,
+			SelectedExecution: entry.Execution,
+			Blocked:           "not declared",
+		})
+	}
+	return reports
 }
 
 // ---------------------------------------------------------------------------

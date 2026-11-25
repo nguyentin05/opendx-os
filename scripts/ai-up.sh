@@ -443,9 +443,11 @@ stack_require_cap_ai
 # selects models. A disabled or route-less declaration runs on the plain FTS
 # schema: it installs no pgvector extension and no cap_ai model table, exactly as
 # `rag-up.sh` does, whatever the Compose file list happens to contain.
+model_schema_present="$(stack_psql_value "SELECT count(*) FROM information_schema.tables WHERE table_schema='cap_ai' AND table_name='model_profiles'")"
+[ "$model_schema_present" = "1" ] || model_schema_present=0
 if [ "$MODELS_SELECTED" = 1 ]; then
     vector_extension="$(stack_psql_value "SELECT count(*) FROM pg_extension WHERE extname='vector'")"
-    model_schema="$(stack_psql_value "SELECT count(*) FROM information_schema.tables WHERE table_schema='cap_ai' AND table_name='model_profiles'")"
+    model_schema="$model_schema_present"
     if [ "$vector_extension" != "1" ] || [ "$model_schema" != "1" ]; then
         stack_say "provisioning the model/pgvector schema through the migration authority"
         migration_dsn="$(python3 - \
@@ -583,8 +585,18 @@ fi
 # changes, reconcile once, then start them on that snapshot.
 # ---------------------------------------------------------------------------
 
+# There is a selection to move only when this run selects a model or the volume
+# already carries the model schema (a previous deployment selected something that
+# this declaration may withdraw). A models-disabled declaration on a volume
+# without the schema has no model state at all: it reconciles nothing, exactly as
+# `rag-up.sh` does, and the catalog login it would need does not exist.
+reconcile_selection=0
+if [ "$MODELS_SELECTED" = 1 ] || [ "$model_schema_present" = 1 ]; then
+    reconcile_selection=1
+fi
+
 selected_before=0
-if [ "$MODELS_SELECTED" = 1 ] && model_cli cap-ai 1 status --config /run/secrets/model-catalog --json >"$STATUS_JSON" 2>/dev/null; then
+if [ "$reconcile_selection" = 1 ] && model_cli cap-ai 1 status --config /run/secrets/model-catalog --json >"$STATUS_JSON" 2>/dev/null; then
     # The decision (declared-and-matched, and nothing selected that this run does
     # not qualify to keep) is one small pure function so it can be tested without
     # a Compose project: scripts/lib/ai_up_snapshot.py.
@@ -613,12 +625,14 @@ if [ "$(running_services)" != "" ] && [ "$selected_before" != 1 ]; then
     done
 fi
 
-stack_say "reconciling the qualified deployment selection"
 zero_selected=0
 [ "$MODELS_SELECTED" = 1 ] || zero_selected=1
 [ "$expected_embed" = 1 ] || [ "$expected_llm" = 1 ] || zero_selected=1
-if ! model_cli cap-ai 1 deployment reconcile --config /run/secrets/model-catalog --json "${disabled_purposes[@]}" >"$STATE_DIR/reconcile.json" 2>"$STATE_DIR/reconcile.err"; then
-    degrade_and_fail "the deployment selection could not be reconciled; no mismatched service was started"
+if [ "$reconcile_selection" = 1 ]; then
+    stack_say "reconciling the qualified deployment selection"
+    if ! model_cli cap-ai 1 deployment reconcile --config /run/secrets/model-catalog --json "${disabled_purposes[@]}" >"$STATE_DIR/reconcile.json" 2>"$STATE_DIR/reconcile.err"; then
+        degrade_and_fail "the deployment selection could not be reconciled; no mismatched service was started"
+    fi
 fi
 if [ "$zero_selected" = 1 ]; then
     stack_say "no model route is selected; the installation serves authorized lexical search only"

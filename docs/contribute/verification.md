@@ -176,7 +176,11 @@ The coordinated deployment path has its own runner mode,
 `TEST_DISPOSABLE_DATABASE=yes scripts/test-rag.sh ai-up`, which drives the real
 `scripts/ai-up.sh` and `scripts/rag-up.sh` on a disposable Compose project with the
 pinned proxy and a synthetic local endpoint. It refuses the development project and
-reports a missing Docker/Compose prerequisite as `NOT_RUN`.
+reports a missing Docker/Compose prerequisite as `NOT_RUN`. The suite is hermetic:
+each run exports `AI_UP_STATE_DIR` and `AI_UP_MODEL_ENV` (equivalently
+`--state-dir`/`--model-env`) into its own temporary directory and asserts afterwards
+that the checkout's `.env.models` and `build/ai-up` are unchanged, so running it
+never rewrites or locks a live installation's deployment state.
 After provisioning the disposable `TEST_DATABASE_URL`, run
 `(cd capabilities && go test -tags=integration -p 1 ./internal/ai/agent -run TestAgentEndToEnd -count=1)`
 for signed identity, mixed-source turns, revocation and missing approval.

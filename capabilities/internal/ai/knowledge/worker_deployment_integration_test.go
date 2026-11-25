@@ -294,11 +294,15 @@ func TestWorkerRejectsObsoleteLease(t *testing.T) {
 		t.Fatal("resumed generation incomplete", resumedReady, err)
 	}
 
-	// The obsolete job was never leased by the current worker and was not revived
-	// into a second generation.
-	var obsoleteState string
-	if err = db.QueryRow(`SELECT state FROM cap_ai.ingestion_jobs WHERE id=$1`, lease.JobID).Scan(&obsoleteState); err != nil {
+	// Resuming advanced the fence on the same job instead of minting a second job
+	// or a second generation for the current profile.
+	var generations int
+	if err = db.QueryRow(`SELECT count(*) FROM cap_ai.embedding_generations WHERE model_profile_id=$1 AND profile_revision=$2`,
+		newer.ID, newer.Revision).Scan(&generations); err != nil {
 		t.Fatal(err)
+	}
+	if generations != 1 {
+		t.Fatalf("a resumed job left %d generations for the current profile", generations)
 	}
 
 	// An ambiguous external call is terminal: the same operation key is never sent

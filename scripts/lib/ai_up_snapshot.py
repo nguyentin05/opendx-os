@@ -28,6 +28,16 @@ import json
 import sys
 
 
+def _held(entry: dict) -> bool:
+    """Whether the runtime currently holds this purpose at all.
+
+    ``selected`` is the durable fact and is independent of ``qualified``: a route
+    whose declaration changed is selected but not qualified, and it is exactly the
+    route a withdrawal must drain before reconciling.
+    """
+    return bool(entry.get("selected") or entry.get("qualified"))
+
+
 def selection_matches(status: dict, declaration: dict, expected: dict[str, bool]) -> bool:
     """Report whether the live selection is exactly the one this run keeps."""
     declared = {
@@ -35,22 +45,23 @@ def selection_matches(status: dict, declaration: dict, expected: dict[str, bool]
         for purpose in declaration.get("purposes") or []
         if purpose.get("declared")
     }
-    current = {
+    held = {
         purpose.get("purpose"): purpose
         for purpose in status.get("purposes") or []
-        if purpose.get("qualified")
+        if _held(purpose)
     }
     wanted = {purpose for purpose, value in expected.items() if value}
     for purpose in wanted:
         profile = declared.get(purpose) or {}
-        active = current.get(purpose) or {}
+        active = held.get(purpose) or {}
         if (
             not active
-            or active.get("profile_id") != profile.get("profile_id")
-            or active.get("revision") != profile.get("revision")
+            or active.get("selected_profile_id", active.get("profile_id")) != profile.get("profile_id")
+            or active.get("selected_revision", active.get("revision")) != profile.get("revision")
+            or not active.get("qualified", True)
         ):
             return False
-    for purpose in current:
+    for purpose in held:
         if purpose not in wanted:
             return False
     return True

@@ -578,10 +578,12 @@ func TestDeploymentCLI(t *testing.T) {
 		if len(seams.opened) != opened || len(seams.reconciled) != 3 {
 			t.Fatal("an invalid purpose reached the deployment")
 		}
-		for _, result := range []cliResult{executeCLI(t, env, "", "deployment", "reconcile", "--config", path, "--disable", "llm")} {
-			if strings.Contains(result.stdout+result.stderr, cliProxyCredential) {
-				t.Fatal("reconcile printed the proxy credential")
-			}
+		result := executeCLI(t, env, "", "deployment", "reconcile", "--config", path, "--disable", "llm")
+		if result.code != exitOK {
+			t.Fatalf("reconcile with llm disabled: %d %s", result.code, result.stderr)
+		}
+		if strings.Contains(result.stdout+result.stderr, cliProxyCredential) {
+			t.Fatal("reconcile printed the proxy credential")
 		}
 	})
 
@@ -845,4 +847,33 @@ func TestDeploymentCLICurrentAdministrator(t *testing.T) {
 			t.Fatal("the approval surface has no clock")
 		}
 	})
+}
+
+func TestMergeSelectionReportsHeldSelection(t *testing.T) {
+	reports := []purposeReport{
+		{Purpose: "EMBED", Mode: "LOCAL_ONLY", ProfileID: "embed-new", Revision: 1, Execution: "LOCAL", Declared: true},
+		{Purpose: "GENERATE", Mode: "HOSTED_ALLOWED", ProfileID: "llm-new", Revision: 1, Execution: "HOSTED", Declared: true},
+	}
+	status := models.DeploymentStatus{Profiles: []models.DeploymentStatusProfile{
+		{Purpose: "EMBED", ProfileID: "embed-new", Revision: 1, Execution: "LOCAL", Selected: true},
+		{Purpose: "GENERATE", ProfileID: "llm-old", Revision: 3, Execution: "HOSTED", Selected: true},
+		{Purpose: "RERANK", ProfileID: "rank", Revision: 2, Execution: "HOSTED", Selected: true},
+	}}
+	got := mergeSelection(reports, status, true)
+	byPurpose := map[string]purposeReport{}
+	for _, report := range got {
+		byPurpose[report.Purpose] = report
+	}
+	embed := byPurpose["EMBED"]
+	if !embed.Qualified || !embed.Selected || embed.SelectedProfileID != "embed-new" || embed.SelectedRevision != 1 {
+		t.Fatalf("matched selection not reported as served: %+v", embed)
+	}
+	llm := byPurpose["GENERATE"]
+	if llm.Qualified || !llm.Selected || llm.SelectedProfileID != "llm-old" || llm.SelectedRevision != 3 || llm.Blocked != "snapshot mismatch" {
+		t.Fatalf("mismatched selection is not reported as held: %+v", llm)
+	}
+	dropped := byPurpose["RERANK"]
+	if !dropped.Selected || dropped.SelectedProfileID != "rank" || dropped.SelectedRevision != 2 || dropped.Blocked != "not declared" {
+		t.Fatalf("undeclared live selection is not reported: %+v", dropped)
+	}
 }
