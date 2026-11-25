@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Tier 1: shared infrastructure. Service names match compose.yaml, so the
+# configuration under platform/ is used unchanged.
+namespace: dxos
+resources:
+- postgres.yaml
+- keycloak.yaml
+- authz.yaml
+- hasura.yaml
+- apisix.yaml
+- kestra.yaml
+- seaweedfs.yaml
+- clamav.yaml

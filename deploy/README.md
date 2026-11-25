@@ -4,12 +4,14 @@
 | --- | --- | --- |
 | Docker Compose, one host | `compose.yaml` (+ `compose.rag.yaml`, `compose.models.yaml`) at the repository root | Supported; see `docs/operations/installation.md` |
 | Local Kubernetes for controller development (kind) | `platform/k8s/dev`, `scripts/k8s/dev-cluster.sh` | PostgreSQL, Hasura and the controller only |
-| Kubernetes, whole platform, any cluster | `deploy/base` plus an overlay for your cluster | Being tested (#166) |
-| Example overlay: Amazon EKS | `deploy/overlays/eks` | The cluster used to test the Kubernetes deployment (#166, #169) |
+| Kubernetes, whole platform, any cluster | `deploy/k8s/base` plus an overlay for your cluster | Being tested (#166) |
+| Example overlay: Amazon EKS | `deploy/k8s/overlays/eks` | The cluster used to test the Kubernetes deployment (#166, #169) |
 
 `deploy/` is added beside the other deployment files; none of them is replaced.
+In this file, paths such as `overlays/eks` and `apply.sh` are relative to
+`deploy/k8s`.
 
-**The platform does not depend on a cloud provider.** `deploy/base` is plain
+**The platform does not depend on a cloud provider.** `deploy/k8s/base` is plain
 Kubernetes: Deployments, one StatefulSet, Services, ConfigMaps, Secrets and
 PersistentVolumeClaims on the cluster's default StorageClass. It uses no cloud
 API, provider annotation or provider storage. Everything specific to one kind of
@@ -19,21 +21,33 @@ to test on a real managed cluster; it is an example, not a requirement.
 
 ## Layout
 
+Kubernetes manifests live under `deploy/k8s`, grouped by the platform's tiers
+(see `docs/architecture/index.md`):
+
 ```
-deploy/
-  apply.sh              creates Secrets and ConfigMaps, then applies an overlay
-  base/
-    kustomization.yaml  platform + dxos-controller (operator/config/default)
-    platform/           the services of compose.yaml, namespace dxos
-  overlays/eks/         example: gp3 storage, one public ALB (the test cluster)
+deploy/k8s/
+  apply.sh                creates Secrets and ConfigMaps, then applies an overlay
+  base/                   the whole platform; no public entry point
+    kustomization.yaml    tiers + dxos-controller, public settings, images
+    namespace.yaml
+    tier1-platform/       shared infrastructure, namespace dxos
+      postgres.yaml keycloak.yaml authz.yaml hasura.yaml apisix.yaml
+      kestra.yaml seaweedfs.yaml clamav.yaml
+    tier2-capabilities/   capability services and the App Shell, namespace dxos
+      cap-process.yaml cap-hr.yaml workspace-ui.yaml
+  overlays/eks/           example: gp3 storage, one public ALB (the test cluster)
 ```
+
+| Tier | What runs | Where it comes from |
+| --- | --- | --- |
+| 1, platform | PostgreSQL, Keycloak, dxos-authz, Hasura, APISIX, Kestra, SeaweedFS, ClamAV; dxos-controller | `base/tier1-platform/`; the controller from `operator/config/default`, in namespace `dxos-operator-system` |
+| 2, capabilities | cap-process, cap-hr, Workspace UI | `base/tier2-capabilities/` |
+| 3, applications | One `DXApplication` per package in `apps/` | Not a file here: exported from the package and applied when needed ([Install an application](#deploy)); dxos-controller installs it |
 
 The base runs the same images and configuration as `compose.yaml`. Service names
 match the Compose service names, so `platform/apisix/apisix.yaml`,
 `platform/kestra/config.yaml` and the PostgreSQL init scripts are used unchanged:
 `apply.sh` turns those files into ConfigMaps, so there is one copy of each.
-Applications are installed by dxos-controller from `DXApplication` resources,
-not from a watched directory.
 
 ## Kubernetes (any cluster)
 
@@ -110,7 +124,7 @@ volume.
 ### Deploy
 
 ```bash
-deploy/apply.sh deploy/overlays/<your-overlay> ~/dxos-k8s.env
+deploy/k8s/apply.sh deploy/k8s/overlays/<your-overlay> ~/dxos-k8s.env
 kubectl -n dxos get pods -w
 kubectl -n dxos get ingress dxos   # ADDRESS: where to point both host names
 ```
@@ -154,7 +168,7 @@ The overlay expects the cluster to have:
 
 Then set the five `dxos-public` values in `overlays/eks/kustomization.yaml`,
 write the secrets file as above, run
-`deploy/apply.sh deploy/overlays/eks ~/dxos-k8s.env`, and point both hosts at the
+`deploy/k8s/apply.sh deploy/k8s/overlays/eks ~/dxos-k8s.env`, and point both hosts at the
 ALB host name from `kubectl -n dxos get ingress dxos`. With Cloudflare as the DNS:
 keep the records DNS-only (grey) while testing; with the proxy on (orange, SSL
 mode Full (strict)) the Free plan ends requests after 100 s and limits uploads to

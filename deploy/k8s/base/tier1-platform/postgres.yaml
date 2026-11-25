@@ -3,7 +3,7 @@
 # PostgreSQL 17, initialized exactly like the Compose service: the image runs
 # the scripts in /docker-entrypoint-initdb.d once, on an empty data volume. The
 # scripts come from the postgres-seed ConfigMap (a tarball of platform/postgres
-# built by deploy/apply.sh), so no file list is maintained here.
+# built by deploy/k8s/apply.sh), so no file list is maintained here.
 apiVersion: v1
 kind: Service
 metadata:

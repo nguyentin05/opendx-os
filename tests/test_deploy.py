@@ -13,7 +13,7 @@ import unittest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / 'deploy/apply.sh'
+SCRIPT = ROOT / 'deploy/k8s/apply.sh'
 SECRETS = re.search(r'SECRETS=\(\n(.*?)\n\)', SCRIPT.read_text(), re.S).group(1).split()
 
 # Records every call and keeps the files passed with --from-file / --from-env-file.
@@ -53,7 +53,7 @@ class ApplyScript(unittest.TestCase):
         kubectl.write_text(FAKE_KUBECTL)
         kubectl.chmod(0o755)
         result = subprocess.run(
-            [str(SCRIPT), str(ROOT / 'deploy/overlays/eks'), str(env)],
+            [str(SCRIPT), str(ROOT / 'deploy/k8s/overlays/eks'), str(env)],
             capture_output=True, text=True,
             env={**os.environ, 'KUBECTL': str(kubectl), 'CAPTURE': str(capture)},
         )
@@ -79,7 +79,7 @@ class ApplyScript(unittest.TestCase):
             for name in ('dxos-secrets', 'seaweedfs-s3', 'dxos-operator-config', 'postgres-seed',
                          'keycloak-realm', 'kestra-config', 'apisix-config'):
                 self.assertIn(f' {name} ', calls)
-            self.assertIn(f'kustomize {ROOT / "deploy/overlays/eks"}\n', calls)
+            self.assertIn(f'kustomize {ROOT / "deploy/k8s/overlays/eks"}\n', calls)
 
             secrets = dict(l.split('=', 1) for l in (capture / 'secrets.env').read_text().split())
             self.assertEqual(set(secrets), set(SECRETS))
@@ -102,7 +102,7 @@ class ApplyScript(unittest.TestCase):
 class RenderedManifests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        out = subprocess.run(['kubectl', 'kustomize', str(ROOT / 'deploy/overlays/eks')],
+        out = subprocess.run(['kubectl', 'kustomize', str(ROOT / 'deploy/k8s/overlays/eks')],
                              capture_output=True, text=True, check=True).stdout
         cls.docs = [d for d in yaml.safe_load_all(out) if d]
 
@@ -111,7 +111,7 @@ class RenderedManifests(unittest.TestCase):
 
     def test_base_has_nothing_provider_specific(self):
         # Provider settings belong in an overlay, so the base runs on any cluster.
-        base = subprocess.run(['kubectl', 'kustomize', str(ROOT / 'deploy/base')],
+        base = subprocess.run(['kubectl', 'kustomize', str(ROOT / 'deploy/k8s/base')],
                               capture_output=True, text=True, check=True).stdout.lower()
         for marker in ('amazonaws', 'alb.ingress', 'ebs.csi', 'eks.', 'gke.', 'azure', 'storageclassname'):
             self.assertNotIn(marker, base)

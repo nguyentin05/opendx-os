@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 DX-OS Open-Core Contributors
-# APISIX with the same standalone configuration as Compose, and the Workspace UI.
-# On Kubernetes the entry point (an Ingress in an overlay) sends /api/ and
-# /v1/graphql to APISIX directly; the UI image's own proxy uses the Docker DNS
-# address and is not used here.
+# APISIX with the same standalone configuration as Compose. On Kubernetes the
+# entry point (an Ingress in an overlay) sends /api/ and /v1/graphql to APISIX
+# directly.
 apiVersion: v1
 kind: Service
 metadata:
@@ -54,44 +53,3 @@ spec:
       - name: config
         configMap:
           name: apisix-config
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: workspace-ui
-spec:
-  selector:
-    app: workspace-ui
-  ports:
-  - name: http
-    port: 8080
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: workspace-ui
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: workspace-ui
-  template:
-    metadata:
-      labels:
-        app: workspace-ui
-    spec:
-      containers:
-      - name: workspace-ui
-        image: opendx-workspace-ui
-        env:
-        - name: DXOS_OIDC_ORIGIN
-          valueFrom: {configMapKeyRef: {name: dxos-public, key: DXOS_OIDC_ORIGIN}}
-        ports:
-        - containerPort: 8080
-          name: http
-        readinessProbe:
-          httpGet: {path: /, port: http}
-          periodSeconds: 5
-        resources:
-          requests: {cpu: 50m, memory: 32Mi}
-          limits: {memory: 128Mi}

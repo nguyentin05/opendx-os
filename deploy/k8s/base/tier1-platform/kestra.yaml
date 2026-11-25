@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Kestra: runs the applications' workflows, with platform/kestra/config.yaml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kestra
+spec:
+  selector:
+    app: kestra
+  ports:
+  - name: http
+    port: 8080
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kestra-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kestra
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: kestra
+  template:
+    metadata:
+      labels:
+        app: kestra
+    spec:
+      containers:
+      - name: kestra
+        image: kestra/kestra:v0.20.7
+        # start.sh hands the platform's secrets to Kestra, then starts the server.
+        command: ["/bin/bash", "/app/config/start.sh"]
+        env:
+        - name: KESTRA_DATABASE_PASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: KESTRA_DATABASE_PASSWORD}}
+        - name: KESTRA_USER
+          valueFrom: {configMapKeyRef: {name: dxos-public, key: KESTRA_USER}}
+        - name: KESTRA_PASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: KESTRA_PASSWORD}}
+        - name: DXOS_WEBHOOK_KEY
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: KESTRA_WEBHOOK_KEY}}
+        - name: DXOS_PROCESS_URL
+          value: http://cap-process:8081
+        - name: DXOS_WORKFLOW_TOKEN
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: WORKFLOW_SERVICE_TOKEN}}
+        ports:
+        - containerPort: 8080
+          name: http
+        startupProbe:
+          tcpSocket: {port: http}
+          periodSeconds: 10
+          failureThreshold: 30
+        readinessProbe:
+          tcpSocket: {port: http}
+          periodSeconds: 10
+        resources:
+          requests: {cpu: 250m, memory: 1Gi}
+          limits: {memory: 2Gi}
+        volumeMounts:
+        - name: data
+          mountPath: /app/storage
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: kestra-data
+      - name: config
+        configMap:
+          name: kestra-config

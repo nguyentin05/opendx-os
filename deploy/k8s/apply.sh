@@ -4,8 +4,8 @@
 #
 # Deploy the platform to the current kubectl context.
 #
-#   deploy/apply.sh <overlay directory> <env file>
-#   deploy/apply.sh deploy/overlays/eks ~/dxos-k8s.env   (any overlay; eks is the example)
+#   deploy/k8s/apply.sh <overlay directory> <env file>
+#   deploy/k8s/apply.sh deploy/k8s/overlays/eks ~/dxos-k8s.env   (any overlay; eks is the example)
 #
 # The env file holds the secrets, as written by `scripts/init-env.sh <file>`
 # plus S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY. Keep it outside the
@@ -18,11 +18,11 @@
 # initializes an empty volume.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 KUBECTL="${KUBECTL:-kubectl}"
 NS=dxos
 OPERATOR_NS=dxos-operator-system
-# Matches KESTRA_USER in deploy/base/platform/kustomization.yaml.
+# Matches KESTRA_USER in deploy/k8s/base/kustomization.yaml.
 KESTRA_USER=admin@dxos.local
 
 SECRETS=(
@@ -43,7 +43,7 @@ SECRETS=(
 
 die() { echo "[deploy] ERROR: $*" >&2; exit 1; }
 
-[ $# -eq 2 ] || die "usage: deploy/apply.sh <overlay directory> <env file>"
+[ $# -eq 2 ] || die "usage: deploy/k8s/apply.sh <overlay directory> <env file>"
 overlay="$1"
 env_file="$2"
 [ -f "$overlay/kustomization.yaml" ] || die "$overlay has no kustomization.yaml"

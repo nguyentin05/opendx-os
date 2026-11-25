@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# cap-hr: departments and people, with the settings of compose.yaml. Connects
+# with its own restricted database role; tokens are verified against the public
+# issuer (dxos-public) with keys fetched inside the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: cap-hr
+spec:
+  selector:
+    app: cap-hr
+  ports:
+  - name: http
+    port: 8083
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cap-hr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cap-hr
+  template:
+    metadata:
+      labels:
+        app: cap-hr
+    spec:
+      containers:
+      - name: cap-hr
+        image: opendx-cap-hr
+        env:
+        - name: PORT
+          value: "8083"
+        - name: DB_PASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: HR_DATABASE_PASSWORD}}
+        - name: DATABASE_URL
+          value: postgres://dxos_hr:$(DB_PASSWORD)@postgres:5432/dxos_db?sslmode=disable
+        - name: OIDC_ISSUER_URL
+          valueFrom: {configMapKeyRef: {name: dxos-public, key: OIDC_ISSUER_URL}}
+        - name: OIDC_JWKS_URL
+          value: http://keycloak:8085/realms/dxos/protocol/openid-connect/certs
+        - name: OIDC_AUDIENCE
+          value: dxos-runtime
+        - name: ROLE_CACHE_TTL
+          value: 5s
+        ports:
+        - containerPort: 8083
+          name: http
+        readinessProbe:
+          httpGet: {path: /healthz, port: http}
+          periodSeconds: 5
+        resources:
+          requests: {cpu: 50m, memory: 64Mi}
+          limits: {memory: 256Mi}

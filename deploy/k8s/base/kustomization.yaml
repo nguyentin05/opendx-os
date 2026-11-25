@@ -1,21 +1,23 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 DX-OS Open-Core Contributors
-# The platform of compose.yaml on Kubernetes. deploy/apply.sh creates the
-# Secrets (dxos-secrets, seaweedfs-s3) and the ConfigMaps built from files under
-# platform/ (postgres-seed, keycloak-realm, kestra-config, apisix-config) first.
-namespace: dxos
+# The whole platform for any Kubernetes cluster, by tier (docs/architecture):
+#   tier1-platform/      shared infrastructure, namespace dxos
+#   tier2-capabilities/  capability services and the App Shell, namespace dxos
+#   dxos-controller      Tier 1 as well, in dxos-operator-system; it installs
+#                        Tier 3 applications declared as DXApplication resources
+# deploy/k8s/apply.sh creates the Secrets (dxos-secrets, seaweedfs-s3) and the
+# ConfigMaps built from files under platform/ (postgres-seed, keycloak-realm,
+# kestra-config, apisix-config) first. No public entry point: an overlay adds one.
 resources:
 - namespace.yaml
-- postgres.yaml
-- keycloak.yaml
-- hasura.yaml
-- capabilities.yaml
-- services.yaml
-- gateway.yaml
+- tier1-platform
+- tier2-capabilities
+- ../../../operator/config/default
 # Public, non-secret settings. The defaults match Compose on localhost; an
 # overlay replaces them with the deployment's own origins.
 configMapGenerator:
 - name: dxos-public
+  namespace: dxos
   literals:
   - KEYCLOAK_HOSTNAME=http://localhost:8085
   - OIDC_ISSUER_URL=http://localhost:8085/realms/dxos
@@ -23,6 +25,9 @@ configMapGenerator:
   - KESTRA_USER=admin@dxos.local
   - BOOTSTRAP_OPERATOR_EMAIL=
 images:
+- name: controller
+  newName: ghcr.io/nguyentin05/opendx-dxos-controller
+  newTag: main
 - name: opendx-dxos-authz
   newName: ghcr.io/nguyentin05/opendx-dxos-authz
   newTag: main
