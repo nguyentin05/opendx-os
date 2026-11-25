@@ -5,7 +5,7 @@
 # Deploy the platform to the current kubectl context.
 #
 #   deploy/apply.sh <overlay directory> <env file>
-#   deploy/apply.sh deploy/overlays/eks ~/dxos-eks.env
+#   deploy/apply.sh deploy/overlays/eks ~/dxos-k8s.env   (any overlay; eks is the example)
 #
 # The env file holds the secrets, as written by `scripts/init-env.sh <file>`
 # plus S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY. Keep it outside the

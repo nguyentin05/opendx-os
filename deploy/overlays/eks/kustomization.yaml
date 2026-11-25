@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 DX-OS Open-Core Contributors
-# Amazon EKS: gp3 volumes, one public ALB, and the deployment's own domain.
+# Example overlay for Amazon EKS, the cluster used to test the Kubernetes
+# deployment: gp3 volumes, one public ALB, and the deployment's own domain.
+# Other clusters use their own overlay; deploy/base has nothing AWS-specific.
 # Set the five values under dxos-public below to your domain before applying.
 # Requires the AWS Load Balancer Controller and the EBS CSI driver add-on.
 resources:

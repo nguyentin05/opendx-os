@@ -109,6 +109,13 @@ class RenderedManifests(unittest.TestCase):
     def kinds(self, kind):
         return [d for d in self.docs if d['kind'] == kind]
 
+    def test_base_has_nothing_provider_specific(self):
+        # Provider settings belong in an overlay, so the base runs on any cluster.
+        base = subprocess.run(['kubectl', 'kustomize', str(ROOT / 'deploy/base')],
+                              capture_output=True, text=True, check=True).stdout.lower()
+        for marker in ('amazonaws', 'alb.ingress', 'ebs.csi', 'eks.', 'gke.', 'azure', 'storageclassname'):
+            self.assertNotIn(marker, base)
+
     def test_no_secret_is_rendered(self):
         self.assertEqual(self.kinds('Secret'), [])
 
