@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 DX-OS Open-Core Contributors
 """Check deploy/: the apply script's boundary and the rendered manifests, without a cluster."""
+import contextlib
+import importlib.util
+import io
 import os
 from pathlib import Path
 import re
@@ -119,6 +122,45 @@ class GeneratedConfigMaps(unittest.TestCase):
             self.assertTrue(source.endswith(data), key)
         # APISIX standalone mode loads apisix.yaml only once it sees the closing marker.
         self.assertEqual(doc['data']['apisix.yaml'].rstrip().splitlines()[-1], '#END')
+
+
+def load_parity():
+    spec = importlib.util.spec_from_file_location('parity', ROOT / 'scripts/k8s/check-compose-parity.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@unittest.skipUnless(shutil.which('kubectl'), 'kubectl is not installed')
+class ComposeParity(unittest.TestCase):
+    """compose.yaml and deploy/k8s/base must not drift apart."""
+
+    def run_with(self, change):
+        parity = load_parity()
+        services = parity.compose_services()
+        change(services, parity)
+        parity.compose_services = lambda: services
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            code = parity.main()
+        return code, err.getvalue()
+
+    def test_current_tree_agrees(self):
+        code, err = self.run_with(lambda services, parity: None)
+        self.assertEqual(code, 0, err)
+
+    def test_reports_each_kind_of_drift(self):
+        cases = {
+            'image': lambda s, p: s['keycloak'].update(image='quay.io/keycloak/keycloak:26.1'),
+            'NEW_SETTING only in compose': lambda s, p: s['cap-hr']['env'].add('NEW_SETTING'),
+            'not in deploy/k8s/base': lambda s, p: s.update(mailer={'image': 'mailhog', 'built': False,
+                                                                    'env': set(), 'ports': set()}),
+            'no longer needed': lambda s, p: s['keycloak']['env'].add('KC_PROXY_HEADERS'),
+        }
+        for expected, change in cases.items():
+            with self.subTest(expected):
+                code, err = self.run_with(change)
+                self.assertEqual(code, 1)
+                self.assertIn(expected, err)
 
 
 @unittest.skipUnless(shutil.which('kubectl'), 'kubectl is not installed')

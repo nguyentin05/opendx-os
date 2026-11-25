@@ -59,6 +59,24 @@ checksums whole files. `platform/` stays the only copy: after changing a file th
 out of date. In `postgres-seed`, a key's `__` stands for `/`
 (`migrations__core__0001_….sql`); its init container restores the directories.
 
+### Keeping Compose and Kubernetes in step
+
+The platform is deployed two ways, so the workflow `Deploy drift`
+(`.github/workflows/deploy-drift.yml`) fails a change that updates one side only.
+It runs on changes to `compose.yaml`, `platform/`, `deploy/` and the controller
+configuration, and checks that:
+
+- every generated `configmap.yaml` matches the files under `platform/`
+  (`scripts/k8s/render-configmaps.py --check`);
+- every service of `compose.yaml` exists in `base/`, with the same image (or the
+  image built from the same source), the same container port and the same
+  environment variable names (`scripts/k8s/check-compose-parity.py`). Values are
+  not compared. An intended difference goes in `ALLOWED` in that script, with its
+  reason; an entry that is no longer needed fails too.
+
+Run both locally with `make k8s-config` and
+`python3 scripts/k8s/check-compose-parity.py`.
+
 ## Kubernetes (any cluster)
 
 ### What the cluster needs
