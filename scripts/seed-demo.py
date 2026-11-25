@@ -285,10 +285,44 @@ REQUESTER = "role_procurement_requester"
 REQUEST_FIELDS = "id item_description status version"
 
 
-def upload_quote(token: str, name: str) -> str:
+def _pdf_text(value: object) -> str:
+    return str(value).encode("ascii", "replace").decode("ascii").replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def demo_pdf(vendor: str, item: str, amount: int) -> bytes:
+    """Returns a small one-page PDF quotation with an ASCII Helvetica body."""
+    content = (
+        "BT\n/F1 16 Tf\n72 760 Td\n(QUOTATION / Bao gia) Tj\n"
+        "/F1 11 Tf\n0 -30 Td\n" + f"(Vendor: {_pdf_text(vendor)}) Tj\n" +
+        "0 -20 Td\n" + f"(Item: {_pdf_text(item)}) Tj\n" +
+        "0 -20 Td\n" + f"(Amount: {_pdf_text(amount)} VND) Tj\nET\n"
+    ).encode("ascii")
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(content)).encode() + b" >>\nstream\n" + content + b"\nendstream",
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for number, body in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += f"{number} 0 obj\n".encode() + body + b"\nendobj\n"
+    xref = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n".encode() + b"0000000000 65535 f \n"
+    for offset in offsets:
+        out += f"{offset:010d} 00000 n \n".encode()
+    out += (f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+            f"startxref\n{xref}\n%%EOF\n").encode()
+    return bytes(out)
+
+
+def upload_quote(token: str, name: str, vendor: str, item: str, amount: int) -> str:
     """Uploads a quote through cap-process and waits until ClamAV marks it CLEAN."""
     boundary = uuid.uuid4().hex
-    pdf = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
+    pdf = demo_pdf(vendor, item, amount)
     body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"app_id\"\r\n\r\nprocurement\r\n"
             f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{name}\"\r\n"
             "Content-Type: application/pdf\r\n\r\n").encode() + pdf + f"\r\n--{boundary}--\r\n".encode()
@@ -313,7 +347,7 @@ def upload_quote(token: str, name: str) -> str:
 
 
 def file_request(token: str, vendor: str, item: str, amount: int) -> dict:
-    quote = upload_quote(token, "bao-gia.pdf")
+    quote = upload_quote(token, "bao-gia.pdf", vendor, item, amount)
     data, err = graphql(token, REQUESTER,
                         "mutation($o: domain_procurement_requests_insert_input!) "
                         f"{{ insert_domain_procurement_requests_one(object: $o) {{ {REQUEST_FIELDS} }} }}",
@@ -622,7 +656,8 @@ def lines() -> None:
         note("read the vendor list", "an.nguyen", REQUESTER, f"{seen} vendor found", seen == 1)
 
         # A process record referring to the list, and its lines in a child table.
-        quote = upload_quote(t["an.nguyen"], "bao-gia.pdf")
+        quote = upload_quote(t["an.nguyen"], "bao-gia.pdf", vendor_name,
+                             "Thiết bị cho nhân viên mới", 43250000)
         data, err = graphql(t["an.nguyen"], REQUESTER,
                             "mutation($o: domain_procurement_requests_insert_input!) "
                             f"{{ insert_domain_procurement_requests_one(object: $o) {{ {REQUEST_FIELDS} }} }}",

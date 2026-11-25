@@ -25,6 +25,9 @@ const maxBytes = 20 * 1024 * 1024;
 const scanQuery = `query AttachmentScan($id: uuid!) {
   core_files(where: {id: {_eq: $id}}) { scan_status }
 }`;
+const namedScanQuery = `query AttachmentScan($id: uuid!) {
+  core_files(where: {id: {_eq: $id}}) { file_name scan_status }
+}`;
 const unavailableMessage = 'Không lấy được trạng thái quét tệp.';
 const scanMessages = {
   loading: 'Đang kiểm tra trạng thái quét…',
@@ -44,6 +47,32 @@ export function FileField(props: FileFieldProps) {
 
 function fileHeaders({ token, role }: AppRoleContext) {
   return { Authorization: bearer(token), 'X-Hasura-Role': role };
+}
+
+function canReadFileName(context: AppRoleContext): boolean {
+  return context.app.sharedAccess?.some(entry =>
+    entry.table === 'core.files'
+    && entry.roles.includes(context.role)
+    && entry.columns.includes('file_name')) ?? false;
+}
+
+function responseFileName(header: string | null): string | undefined {
+  if (!header) return undefined;
+  const extended = header.match(/filename\*\s*=\s*([^;]+)/i)?.[1]?.trim().replace(/^"|"$/g, '');
+  if (extended) {
+    const parts = extended.split("'");
+    if (parts.length >= 3) {
+      try {
+        return decodeURIComponent(parts.slice(2).join("'")) || undefined;
+      } catch {
+        // Fall through to the unextended filename.
+      }
+    }
+  }
+  const quoted = header.match(/filename\s*=\s*"((?:\\.|[^"])*)"/i)?.[1];
+  if (quoted !== undefined) return quoted.replace(/\\(["\\])/g, '$1') || undefined;
+  const token = header.match(/filename\s*=\s*([^;]+)/i)?.[1]?.trim();
+  return token ? token.replace(/^"|"$/g, '') || undefined : undefined;
 }
 
 function ScopedFileField({ appID, context, value, onChange, onUploadPendingChange, onInfected, input, label }: FileFieldProps) {
@@ -122,6 +151,7 @@ function ScannedAttachment({ fileID, context, label, onInfected }: {
   onInfected?: (fileID: string) => void;
 }) {
   const [status, setStatus] = useState<ScanStatus>('loading');
+  const [fileName, setFileName] = useState<string>();
   const [attempt, setAttempt] = useState(0);
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState(false);
@@ -133,6 +163,7 @@ function ScannedAttachment({ fileID, context, label, onInfected }: {
   }, [onInfected]);
 
   const { token, role } = context;
+  const showFileName = canReadFileName(context);
   useLayoutEffect(() => {
     const controller = new AbortController();
     const { signal } = controller;
@@ -140,9 +171,13 @@ function ScannedAttachment({ fileID, context, label, onInfected }: {
 
     async function poll() {
       try {
-        const data = await executeGraphQL<{ core_files?: unknown }>({ token, role }, scanQuery, { id: fileID }, signal);
+        const data = await executeGraphQL<{ core_files?: unknown }>({ token, role },
+          showFileName ? namedScanQuery : scanQuery, { id: fileID }, signal);
         if (signal.aborted) return;
         const row = Array.isArray(data.core_files) && data.core_files.length === 1 ? data.core_files[0] : undefined;
+        if (showFileName && isRecord(row) && typeof row.file_name === 'string' && row.file_name.trim()) {
+          setFileName(row.file_name);
+        }
         const result = isRecord(row) ? row.scan_status : undefined;
         if (result === 'QUARANTINED') {
           setStatus(result);
@@ -166,7 +201,7 @@ function ScannedAttachment({ fileID, context, label, onInfected }: {
       clearTimeout(timer);
       downloadRequest.current?.abort();
     };
-  }, [fileID, token, role, attempt]);
+  }, [fileID, token, role, attempt, showFileName]);
 
   async function download() {
     if (status !== 'CLEAN' || downloadRequest.current) return;
@@ -186,7 +221,7 @@ function ScannedAttachment({ fileID, context, label, onInfected }: {
       try {
         const link = document.createElement('a');
         link.href = url;
-        link.download = 'attachment';
+        link.download = responseFileName(reply.headers.get('Content-Disposition')) ?? fileName ?? 'attachment';
         link.click();
       } finally {
         setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -203,6 +238,7 @@ function ScannedAttachment({ fileID, context, label, onInfected }: {
 
   return (
     <>
+      {fileName && <p>{fileName}</p>}
       <p role="status">{scanMessages[status]}</p>
       {status === 'retryable' && (
         <button type="button" onClick={() => {

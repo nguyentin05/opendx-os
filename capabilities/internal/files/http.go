@@ -20,7 +20,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
+	"path"
+	"strings"
+	"unicode"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 )
@@ -130,7 +134,7 @@ func (s *Service) downloadHTTP(w http.ResponseWriter, r *http.Request) {
 		fileError(w, 401)
 		return
 	}
-	stream, e := s.Download(r.Context(), id, r.PathValue("file_id"))
+	stream, name, e := s.download(r.Context(), id, r.PathValue("file_id"))
 	if e != nil {
 		status := 503
 		if errors.Is(e, ErrDenied) {
@@ -143,8 +147,24 @@ func (s *Service) downloadHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = stream.Close() }()
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", "attachment")
+	w.Header().Set("Content-Disposition", attachmentDisposition(name))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = io.Copy(w, stream) // The response may already be partially written.
+}
+
+func attachmentDisposition(stored string) string {
+	name := strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, path.Base(stored))
+	if name == "" {
+		return "attachment"
+	}
+	if value := mime.FormatMediaType("attachment", map[string]string{"filename": name}); value != "" {
+		return value
+	}
+	return "attachment"
 }

@@ -27,6 +27,7 @@ import (
 	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
 	"github.com/opendx-os/opendx-os/capabilities/internal/testutil"
 	"io"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"sync"
@@ -460,5 +461,30 @@ func TestAttachmentRefusalIsACheckViolation(t *testing.T) {
 	}
 	if !strings.Contains(pqErr.Message, "attachment quote_file_id: only a file you uploaded to this application can be attached") {
 		t.Fatalf("message = %q", pqErr.Message)
+	}
+}
+
+func TestDownloadHTTPUsesStoredFileName(t *testing.T) {
+	s, _, id, _, _ := fileFixture(t)
+	f, e := s.Upload(context.Background(), id, "procurement", "báo giá.pdf", bytes.NewBufferString("%PDF-1.7\nimmutable"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e := s.ScanPending(context.Background(), 10); e != nil {
+		t.Fatal(e)
+	}
+	req := httptest.NewRequest("GET", "/api/cap/process/files/"+f.ID, nil)
+	req.SetPathValue("file_id", f.ID)
+	req = req.WithContext(auth.WithIdentity(req.Context(), id))
+	response := httptest.NewRecorder()
+	s.downloadHTTP(response, req)
+	if response.Code != 200 {
+		t.Fatalf("status %d", response.Code)
+	}
+	if got, want := response.Header().Get("Content-Disposition"), `attachment; filename*=utf-8''b%C3%A1o%20gi%C3%A1.pdf`; got != want {
+		t.Fatalf("Content-Disposition = %q, want %q", got, want)
+	}
+	if got := response.Header().Get("Content-Type"); got != "application/octet-stream" {
+		t.Fatalf("Content-Type = %q", got)
 	}
 }

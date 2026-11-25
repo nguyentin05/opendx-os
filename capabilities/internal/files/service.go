@@ -128,26 +128,31 @@ func (s *Service) verified(ctx context.Context, key, hash string) ([]byte, error
 }
 
 func (s *Service) Download(ctx context.Context, actor *auth.Identity, fileID string) (io.ReadCloser, error) {
-	key, hash, status, e := s.readable(ctx, actor, fileID)
+	stream, _, e := s.download(ctx, actor, fileID)
+	return stream, e
+}
+
+func (s *Service) download(ctx context.Context, actor *auth.Identity, fileID string) (io.ReadCloser, string, error) {
+	key, hash, status, name, e := s.readable(ctx, actor, fileID)
 	if e != nil {
-		return nil, e
+		return nil, "", e
 	}
 	if status != "CLEAN" {
-		return nil, ErrUnclean
+		return nil, "", ErrUnclean
 	}
 	b, e := s.verified(ctx, key, hash)
 	if e != nil {
-		return nil, e
+		return nil, "", e
 	}
 	// A fresh statement after bounded object retrieval observes revocation.
-	key2, hash2, status2, err := s.readable(ctx, actor, fileID)
+	key2, hash2, status2, _, err := s.readable(ctx, actor, fileID)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if key2 != key || hash2 != hash || status2 != "CLEAN" {
-		return nil, ErrDenied
+		return nil, "", ErrDenied
 	}
-	return io.NopCloser(bytes.NewReader(b)), nil
+	return io.NopCloser(bytes.NewReader(b)), name, nil
 }
 
 func (s *Service) ScanPending(ctx context.Context, limit int) error {

@@ -33,6 +33,14 @@ const context: AppRoleContext = {
   app: { app_id: 'sample', display_name: 'Sample', version: '1', capabilities: ['cap-process'],
     roles: [{ name: editor }, { name: reader }], tables: [table], knowledge: null },
 };
+const namedContext: AppRoleContext = {
+  ...context,
+  role: reader,
+  app: {
+    ...context.app,
+    sharedAccess: [{ table: 'core.files', roles: [reader], columns: ['id', 'file_name'] }],
+  },
+};
 const noop = () => undefined;
 
 function form(current = context, value?: string, formTable = table) {
@@ -152,14 +160,20 @@ it('downloads a scanned attachment for the read-only role through the protected 
   const create = vi.fn(() => 'blob:attachment');
   const revoke = vi.fn();
   vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: create, revokeObjectURL: revoke }));
-  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  const names: string[] = [];
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+    names.push(this.download);
+  });
   render(detail({ ...context, role: reader }));
   await screen.findByText(/Tệp đã quét xong và an toàn/);
   expect(screen.queryByLabelText('Quote')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Sửa hồ sơ' })).toBeNull();
+  const statusRequest = fetch.mock.calls.find(([, init]) => String(init.body).includes('core_files'))?.[1];
+  expect(JSON.parse(String(statusRequest?.body)).query).not.toContain('file_name');
   fireEvent.click(screen.getByRole('button', { name: /^Tải (?!lại)/i }));
 
   await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
+  expect(names).toEqual(['attachment']);
   const [path, request] = fetch.mock.calls[fetch.mock.calls.length - 1];
   expect(path).toBe(downloadRoute);
   expect(request.method).toBe('GET');
@@ -168,6 +182,74 @@ it('downloads a scanned attachment for the read-only role through the protected 
   expect(headers.get('X-Hasura-Role')).toBe(reader);
   expect(create).toHaveBeenCalledTimes(1);
   await waitFor(() => expect(revoke).toHaveBeenCalledWith('blob:attachment'), { timeout: 2000 });
+});
+
+it('shows the shared file name before the scan status', async () => {
+  const fetch = serve((_path, init) => {
+    const { query } = JSON.parse(String(init.body));
+    return String(query).includes('core_files')
+      ? graphql('core_files', [{ file_name: 'Báo giá.pdf', scan_status: 'CLEAN' }])
+      : graphql('domain_requests_by_pk', { id, quote_file_id: fileID });
+  });
+  render(detail(namedContext));
+
+  await screen.findByText('Báo giá.pdf');
+  await screen.findByText(/Tệp đã quét xong và an toàn/);
+  const statusRequest = fetch.mock.calls.find(([, init]) => String(init.body).includes('core_files'))?.[1];
+  expect(JSON.parse(String(statusRequest?.body)).query).toContain('file_name');
+  expect(screen.getByText('Báo giá.pdf').compareDocumentPosition(
+    screen.getByText(/Tệp đã quét xong và an toàn/)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it.each([
+  ['extended', "attachment; filename*=UTF-8''b%C3%A1o%20gi%C3%A1.pdf", 'báo giá.pdf'],
+  ['quoted', 'attachment; filename="quote.pdf"', 'quote.pdf'],
+])('uses the %s response file name for the download', async (_label, header, expected) => {
+  serve((path, init) => {
+    if (path === downloadRoute) return new Response('file bytes', { headers: { 'Content-Disposition': header } });
+    return String(init.body).includes('core_files')
+      ? scanned('CLEAN') : graphql('domain_requests_by_pk', { id, quote_file_id: fileID });
+  });
+  const revoke = vi.fn();
+  vi.stubGlobal('URL', Object.assign(class extends URL {}, {
+    createObjectURL: () => 'blob:attachment', revokeObjectURL: revoke,
+  }));
+  const names: string[] = [];
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+    names.push(this.download);
+  });
+  render(detail({ ...context, role: reader }));
+  await screen.findByText(/Tệp đã quét xong và an toàn/);
+  fireEvent.click(screen.getByRole('button', { name: /^Tải (?!lại)/i }));
+
+  await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
+  expect(names).toEqual([expected]);
+  await waitFor(() => expect(revoke).toHaveBeenCalled(), { timeout: 2000 });
+});
+
+it('falls back to the displayed name when the response has no filename', async () => {
+  serve((path, init) => {
+    if (path === downloadRoute) return new Response('file bytes');
+    const { query } = JSON.parse(String(init.body));
+    return String(query).includes('core_files')
+      ? graphql('core_files', [{ file_name: 'Báo giá.pdf', scan_status: 'CLEAN' }])
+      : graphql('domain_requests_by_pk', { id, quote_file_id: fileID });
+  });
+  const revoke = vi.fn();
+  vi.stubGlobal('URL', Object.assign(class extends URL {}, {
+    createObjectURL: () => 'blob:attachment', revokeObjectURL: revoke,
+  }));
+  const names: string[] = [];
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+    names.push(this.download);
+  });
+  render(detail(namedContext));
+  await screen.findByText('Báo giá.pdf');
+  fireEvent.click(screen.getByRole('button', { name: /^Tải (?!lại)/i }));
+
+  await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
+  expect(names).toEqual(['Báo giá.pdf']);
+  await waitFor(() => expect(revoke).toHaveBeenCalled(), { timeout: 2000 });
 });
 
 it.each([

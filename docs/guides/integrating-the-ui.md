@@ -41,10 +41,12 @@ The access token carries identity only. Send it as `Authorization: Bearer
 The portal keeps the access, refresh and ID tokens in memory only. Before the
 shorter of the two lifetimes ends it exchanges the refresh token for a new
 access token while keeping the same sign-in identity, so open screens and typed
-forms are not remounted. A page reload returns to the sign-in screen; if the
-Keycloak session is still active, one click signs in again without a password.
-The session ends when Keycloak's SSO idle or maximum lifetime ends, when the
-refresh is refused, or on sign-out. Sign-out clears the tokens and redirects to
+forms are not remounted. A page reload starts a silent sign-in with
+`prompt=none` when the browser still has the non-secret `dxos.signedIn` marker
+and the Keycloak session is active, then returns to the same page. If Keycloak
+requires interaction, the welcome screen appears without an error. The session
+ends when Keycloak's SSO idle or maximum lifetime ends, when the refresh is
+refused, or on sign-out. Sign-out clears the tokens and redirects to
 Keycloak's `end_session_endpoint` with `id_token_hint`, `client_id` and
 `post_logout_redirect_uri` (the portal origin), so the next sign-in in the same
 browser asks for the password again.
@@ -208,10 +210,13 @@ body and idempotency key.
    refusal is a `permission-error` whose message starts with `Check constraint
    violation. attachment `; show a fixed explanation, not the server message.
 3. Poll `core_files(where: {id: {_eq: $id}}) { scan_status }` until it is
-   `CLEAN` or `INFECTED`. Commands that require the attachment answer 422 until
-   it is `CLEAN`.
+   `CLEAN` or `INFECTED`; add `file_name` when `shared_access` exposes it to the
+   acting role. Commands that require the attachment answer 422 until it is
+   `CLEAN`.
 4. `GET /api/cap/process/files/{file_id}` downloads a `CLEAN` file the role may
-   read: its uploader, or a role that can read a record it is attached to.
+   read: its uploader, or a role that can read a record it is attached to. The
+   response carries `Content-Disposition` with the stored file name (base name,
+   control characters removed); the portal saves the download under that name.
 
 ## 7. Work items
 

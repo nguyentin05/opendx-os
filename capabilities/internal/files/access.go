@@ -47,45 +47,45 @@ func (s *Service) application(ctx context.Context, id *auth.Identity, app string
 // readable returns where a file is stored when the caller may read it: they
 // uploaded it, or it is attached to a record their role can read with the
 // attachment column visible (scope and record filter included).
-func (s *Service) readable(ctx context.Context, id *auth.Identity, file string) (string, string, string, error) {
+func (s *Service) readable(ctx context.Context, id *auth.Identity, file string) (string, string, string, string, error) {
 	if id == nil || !uuid.MatchString(file) {
-		return "", "", "", ErrDenied
+		return "", "", "", "", ErrDenied
 	}
-	var app, owner, policy string
-	e := s.db.QueryRowContext(ctx, `SELECT app_id,uploaded_by::text,read_policy FROM core.files WHERE id=$1 AND bucket=$2`, file, s.bucket).Scan(&app, &owner, &policy)
+	var app, owner, policy, name string
+	e := s.db.QueryRowContext(ctx, `SELECT app_id,uploaded_by::text,read_policy,file_name FROM core.files WHERE id=$1 AND bucket=$2`, file, s.bucket).Scan(&app, &owner, &policy, &name)
 	if e != nil {
-		return "", "", "", ErrDenied
+		return "", "", "", "", ErrDenied
 	}
 	if policy == "OWNER_ONLY" {
 		if !strings.EqualFold(owner, id.UserID) {
-			return "", "", "", ErrDenied
+			return "", "", "", "", ErrDenied
 		}
 		if err := knowledge.CheckIdentity(ctx, s.db, id); err != nil {
-			return "", "", "", privateAuthorityError(err)
+			return "", "", "", "", privateAuthorityError(err)
 		}
 	}
 	a, e := s.application(ctx, id, app)
 	if e != nil {
-		return "", "", "", ErrDenied
+		return "", "", "", "", ErrDenied
 	}
 	if policy == "OWNER_ONLY" && !a.AllowsPersonalLibrary(id.Role) {
-		return "", "", "", ErrDenied
+		return "", "", "", "", ErrDenied
 	}
 	if policy != "OWNER_ONLY" && policy != "APP_ATTACHMENT" {
-		return "", "", "", ErrDenied
+		return "", "", "", "", ErrDenied
 	}
 	allowed := strings.EqualFold(owner, id.UserID)
 	if !allowed {
 		viewer, e := a.Viewer(ctx, s.db, strings.ToLower(id.UserID), id.Role)
 		if e != nil {
-			return "", "", "", ErrDenied
+			return "", "", "", "", ErrDenied
 		}
 		for i := range a.Spec.Tables {
 			table := &a.Spec.Tables[i]
 			for _, attachment := range table.Attachments {
 				rows, e := s.db.QueryContext(ctx, `SELECT to_jsonb(d) FROM `+table.Name+` d WHERE `+attachment.Column+`=$1`, file)
 				if e != nil {
-					return "", "", "", ErrDenied
+					return "", "", "", "", ErrDenied
 				}
 				for rows.Next() && !allowed {
 					var raw []byte
@@ -104,17 +104,17 @@ func (s *Service) readable(ctx context.Context, id *auth.Identity, file string) 
 				e = rows.Err()
 				_ = rows.Close()
 				if e != nil {
-					return "", "", "", ErrDenied
+					return "", "", "", "", ErrDenied
 				}
 			}
 		}
 	}
 	if !allowed {
-		return "", "", "", ErrDenied
+		return "", "", "", "", ErrDenied
 	}
 	var key, hash, status string
-	e = s.db.QueryRowContext(ctx, `SELECT object_key,sha256_hash,scan_status FROM core.files WHERE id=$1 AND app_id=$2 AND bucket=$3`, file, app, s.bucket).Scan(&key, &hash, &status)
-	return key, hash, status, e
+	e = s.db.QueryRowContext(ctx, `SELECT object_key,sha256_hash,scan_status,file_name FROM core.files WHERE id=$1 AND app_id=$2 AND bucket=$3`, file, app, s.bucket).Scan(&key, &hash, &status, &name)
+	return key, hash, status, name, e
 }
 
 func privateAuthorityError(err error) error {

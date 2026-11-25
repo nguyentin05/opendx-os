@@ -8,6 +8,7 @@ declare global { interface Window { DXOS_CONFIG?:Config } }
 const config=():Config=>{if(window.DXOS_CONFIG)return window.DXOS_CONFIG;if(['localhost','127.0.0.1'].includes(window.location.hostname))return {issuer:'http://localhost:8085/realms/dxos',clientID:'dxos-portal'};throw new Error('Sign-in configuration is unavailable.');};
 const random=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');
 const redirectURI=()=>window.location.origin+window.location.pathname;
+export const signedInMarker='dxos.signedIn';
 async function discovery(){const c=config();const issuer=new URL(c.issuer);if(issuer.protocol!=='https:'&&!['localhost','127.0.0.1'].includes(issuer.hostname))throw new Error('Secure sign-in configuration is unavailable.');const r=await fetch(c.issuer.replace(/\/$/,'')+'/.well-known/openid-configuration');if(!r.ok)throw new Error('Sign-in is unavailable.');const data=await r.json() as {issuer:string;authorization_endpoint:string;token_endpoint:string;end_session_endpoint?:string};if(data.issuer.replace(/\/$/,'')!==c.issuer.replace(/\/$/,''))throw new Error('Invalid sign-in configuration.');const endpoints=[data.authorization_endpoint,data.token_endpoint];if(data.end_session_endpoint)endpoints.push(data.end_session_endpoint);for(const endpoint of endpoints)if(new URL(endpoint).origin!==issuer.origin)throw new Error('Invalid sign-in endpoint.');return {config:c,...data}}
 interface SignInState {
   verifier: string;
@@ -15,9 +16,10 @@ interface SignInState {
   created: number;
   redirectURI?: string;
   requestedRole?: string;
+  silent?: boolean;
 }
 
-export async function signIn() {
+export async function signIn(options: { silent?: boolean } = {}) {
   const redirect = redirectURI();
   const route = parseRoute(window.location.pathname, window.location.search);
   const { config, authorization_endpoint } = await discovery();
@@ -29,13 +31,14 @@ export async function signIn() {
     created: Date.now(),
     redirectURI: redirect,
     requestedRole: route.kind === 'app' ? route.requestedRole : undefined,
+    silent: options.silent || undefined,
   };
   sessionStorage.setItem('dxos.pkce', JSON.stringify(saved));
 
   const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
   const challenge = btoa(String.fromCharCode(...hash)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
   const url = new URL(authorization_endpoint);
-  url.search = new URLSearchParams({
+  const params = new URLSearchParams({
     client_id: config.clientID,
     redirect_uri: redirect,
     response_type: 'code',
@@ -43,7 +46,9 @@ export async function signIn() {
     state,
     code_challenge: challenge,
     code_challenge_method: 'S256',
-  }).toString();
+  });
+  if (options.silent) params.set('prompt', 'none');
+  url.search = params.toString();
   window.location.assign(url.toString());
 }
 
@@ -82,7 +87,14 @@ export async function finishSignIn(): Promise<SignInTokens | null> {
     window.dispatchEvent(new PopStateEvent('popstate'));
   }
 
-  if (providerError || !code) throw new Error('Sign-in failed.');
+  if (providerError) {
+    if (saved.silent && ['login_required', 'interaction_required', 'consent_required'].includes(params.get('error') ?? '')) {
+      sessionStorage.removeItem(signedInMarker);
+      return null;
+    }
+    throw new Error('Sign-in failed.');
+  }
+  if (!code) throw new Error('Sign-in failed.');
 
   const { config, token_endpoint } = await discovery();
   const response = await fetch(token_endpoint, {
@@ -106,6 +118,7 @@ export async function finishSignIn(): Promise<SignInTokens | null> {
   }
 
   const now = Date.now();
+  sessionStorage.setItem(signedInMarker, '1');
   return {
     token: token.access_token,
     expires: now + token.expires_in * 1000,
@@ -148,6 +161,7 @@ export function bearer(token: string): string {
 }
 
 export function endSession(token: string): string | undefined {
+  sessionStorage.removeItem(signedInMarker);
   const state = tokens.get(token);
   tokens.delete(token);
   const stop = watchers.get(token);
