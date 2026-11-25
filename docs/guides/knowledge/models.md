@@ -380,7 +380,72 @@ question may contain PERSONAL information. The processing consumer needs its own
 query review, while READ and source processing authority come from each
 actual source.
 
-## Deployment configuration
+## Coordinated deployment with `make ai-up`
+
+`make ai-up` deploys one reviewed declaration on the existing Compose project and
+moves the API and worker to one verified snapshot. It is the only supported way to
+change the live model selection; `dxos-model` still validates, probes and reports,
+and `deployment render|reconcile` remain deployment-internal.
+
+```sh
+cp models.example.yaml models.yaml   # then fill in a reviewed route
+make ai-up
+make ai-up AI_UP_ARGS="--config /etc/dxos/models.yaml --secret-env /etc/dxos/model-secrets.env"
+```
+
+`--secret-env` is an owner-only (`0600`) environment file holding the values of the
+credential references the declaration names (for example `OPENROUTER_API_KEY`).
+Only referenced keys are copied into the generated proxy environment; no value is
+printed. `--env-file` selects the installation environment file (default
+`.env.rag`). Generated private files live in `build/ai-up/`; the model settings the
+Compose project reads live in `.env.models`.
+
+The deployment runs in this order, and every step happens before the next one
+touches a running service:
+
+1. **Validate offline.** The declaration is loaded, rendered and reported by the
+   same Go code the runtime uses. An invalid declaration exits non-zero and leaves
+   a running valid deployment untouched.
+2. **Check the Compose target.** The project, service set and required overlays are
+   checked; a model declaration without the proxy overlay, or an Ollama route
+   without the local overlay, stops before anything starts. An existing project is
+   reused, never recreated.
+3. **Provision the optional schema.** PostgreSQL starts; the migration authority
+   applies the additive `cap_ai` chain (including pgvector and the deployment
+   authority) only when the volume lacks it, and sets the passwords of the
+   restricted `dxos_ai_gateway` and `dxos_ai_model_catalog` logins. No migration
+   checksum is reset, no database is dropped, and `down -v` is never run. A volume
+   that cannot be repaired in place is reported with the documented rebuild path.
+4. **Start the proxy only if selected.** `litellm` is started when the declaration
+   enables a route; the Ollama overlay is added only for a declared Ollama route and
+   never downloads weights. A local endpoint outside these overlays (an operator's
+   own vLLM-compatible service) must already be reachable on the private network.
+5. **Probe every configured route.** One bounded synthetic call per purpose, through
+   the same private transport the runtime uses. A route that does not answer is
+   reported and is not selected.
+6. **Drain, reconcile once, restart.** The model-calling API and worker are stopped
+   first, so no service dispatches while the selection changes and the old worker's
+   lease can no longer be renewed. One reconciliation records exactly the qualified
+   purposes; a failed purpose is withdrawn in the same transaction rather than
+   replaced by another model. The API and worker then start on that snapshot.
+7. **Check the started identity.** `dxos-model status` must report the exact
+   declared profile for every selected purpose, and the runtime logs must not
+   report a degraded model path. A mismatch stops the model-calling services
+   instead of leaving a mismatch dispatching.
+
+A failure after the cutover leaves the installation serving authorized lexical
+search and exits non-zero, so it is visible in automation. The previous model is
+never restored automatically: correct the declaration or the endpoint and rerun
+`make ai-up`. Rerunning the same declaration is idempotent — it creates no profile,
+generation or job and restarts no service. Changing only the generation route
+leaves the embedding identity and every completed vector untouched; changing the
+embedding route creates a new immutable profile, keeps old generations isolated and
+re-embeds eligible documents through the existing worker (`Worker.Once`) without a
+reparse, re-OCR or lexical reset.
+
+`make rag-up` stays the FTS-only path: it never provisions pgvector or the model
+schema, never starts the proxy and leaves `RAG_MODELS_ENABLED=false`.
+
 
 API and worker independently load `models.RuntimeFromEnvironment`. Defaults are off.
 The runtime has exactly one model source: the reviewed deployment declaration

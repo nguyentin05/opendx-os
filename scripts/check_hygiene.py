@@ -43,6 +43,11 @@ BANNED_DIRS = {
     ".git",
     ".scratch",
     ".vale",
+    # Local build and deployment artefacts are gitignored and generated: they
+    # carry no open-source metadata obligation of their own.
+    "build",
+    "dist",
+    "bin",
 }
 BANNED_FILES = set()
 

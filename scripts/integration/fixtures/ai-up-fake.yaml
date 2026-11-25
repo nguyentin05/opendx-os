@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+#
+# Disposable upstream for `scripts/integration/test_ai_up.py`. It is test
+# infrastructure, not a deployment overlay: it attaches one synthetic
+# OpenAI-compatible endpoint to the private `model-inference` network so the real
+# pinned proxy, the real probe and the real reconciliation can run without a
+# provider. It publishes nothing and holds no secret.
+services:
+  model-route-fake:
+    image: ${RAG_MODEL_LITELLM_IMAGE:-ghcr.io/berriai/litellm@sha256:1050d2c9ca58399de9cd51df6eb503812af697717f54d2f08c1c30589c75e1f7}
+    entrypoint: ["python", "/fake.py"]
+    command: ["--state-dir", "/state", "--dimension", "${AI_UP_FAKE_DIMENSION:-8}"]
+    # Run as the invoking user so the runner owns the state files it writes.
+    user: "${AI_UP_FAKE_USER:-0:0}"
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    volumes:
+      - ${AI_UP_FAKE_SCRIPT:?set the synthetic upstream script path}:/fake.py:ro
+      - ${AI_UP_FAKE_STATE:?set the synthetic upstream state directory}:/state
+    networks:
+      model-inference:
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8081/stats', timeout=2)"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s

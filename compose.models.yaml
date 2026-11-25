@@ -18,6 +18,9 @@ services:
     image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg17}
     environment:
       AI_GATEWAY_DATABASE_PASSWORD: ${AI_GATEWAY_DATABASE_PASSWORD}
+      # The restricted deployment login (dxos_ai_model_catalog) reconciles the
+      # live selection; the runtime never uses it.
+      AI_MODEL_CATALOG_DATABASE_PASSWORD: ${AI_MODEL_CATALOG_DATABASE_PASSWORD:-}
       RAG_MODELS_SCHEMA_ENABLED: ${RAG_MODELS_SCHEMA_ENABLED:-false}
       RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED: ${RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED:-false}
       RAG_AGENT_MODELS_SCHEMA_ENABLED: ${RAG_AGENT_MODELS_SCHEMA_ENABLED:-false}

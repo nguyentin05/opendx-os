@@ -46,6 +46,13 @@ set_password dxos_ai_dispatcher "${AI_DISPATCHER_DATABASE_PASSWORD:-}"
 if [ "${RAG_MODELS_SCHEMA_ENABLED:-false}" = true ]; then
     psql_admin --dbname "${POSTGRES_DB:-dxos_db}" -c "SELECT 'CREATE ROLE dxos_ai_gateway LOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='dxos_ai_gateway')" -tA | psql_admin --dbname "${POSTGRES_DB:-dxos_db}"
     set_password dxos_ai_gateway "${AI_GATEWAY_DATABASE_PASSWORD:-}"
+    # The restricted deployment login reconciles the live model selection. It is
+    # created by the model migrations; when a fresh volume applies them below,
+    # this sets its password, and the deployment sets it again for a volume that
+    # already held an FTS-only schema.
+    if [ -n "$(psql_admin --dbname "${POSTGRES_DB:-dxos_db}" -tAc "SELECT 1 FROM pg_roles WHERE rolname='dxos_ai_model_catalog'")" ]; then
+        set_password dxos_ai_model_catalog "${AI_MODEL_CATALOG_DATABASE_PASSWORD:-}"
+    fi
 fi
 set_password dxos_hr "${HR_DATABASE_PASSWORD:-}"
 

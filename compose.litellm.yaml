@@ -112,18 +112,36 @@ services:
   cap-ai:
     environment:
       RAG_MODEL_LITELLM_ENDPOINT: http://litellm:4000
+      # The runtime verifies the proxy configuration it believes in against
+      # exactly the document the proxy started, so it reads the same read-only
+      # mount instead of a host path that does not exist in the container.
+      RAG_MODEL_LITELLM_CONFIG_FILE: /run/secrets/litellm-config.yaml
     env_file:
       - ${RAG_MODEL_LITELLM_CREDENTIAL_ENV_FILE:?set the private env file holding the proxy credential for the runtime}
+    secrets:
+      # The target is the mount name inside /run/secrets and must match the
+      # runtime's RAG_MODEL_LITELLM_CONFIG_FILE above.
+      - source: litellm-config
+        target: litellm-config.yaml
     networks:
-      model-inference:
+      # Declaring networks replaces the implicit default one, so both are
+      # explicit: the proxy hop stays on the private model network while the API
+      # keeps its database, Keycloak and capability network.
+      - default
+      - model-inference
 
   cap-ai-worker:
     environment:
       RAG_MODEL_LITELLM_ENDPOINT: http://litellm:4000
+      RAG_MODEL_LITELLM_CONFIG_FILE: /run/secrets/litellm-config.yaml
     env_file:
       - ${RAG_MODEL_LITELLM_CREDENTIAL_ENV_FILE:?set the private env file holding the proxy credential for the runtime}
+    secrets:
+      - source: litellm-config
+        target: litellm-config.yaml
     networks:
-      model-inference:
+      - default
+      - model-inference
 
 # `internal` is the egress control: a container attached only to this network has
 # no route out of the deployment. See the header before adding an egress network.

@@ -172,6 +172,11 @@ The optional model slice uses `scripts/test-rag.sh models` with real PostgreSQL
 17/pgvector, Operator, File/scanner/Hasura and controlled HTTP model spies; see
 [model qualification](../guides/knowledge/models.md#qualification). Run Go integration
 packages with `-p 1` when fixtures share PostgreSQL cluster-global roles.
+The coordinated deployment path has its own runner mode,
+`TEST_DISPOSABLE_DATABASE=yes scripts/test-rag.sh ai-up`, which drives the real
+`scripts/ai-up.sh` and `scripts/rag-up.sh` on a disposable Compose project with the
+pinned proxy and a synthetic local endpoint. It refuses the development project and
+reports a missing Docker/Compose prerequisite as `NOT_RUN`.
 After provisioning the disposable `TEST_DATABASE_URL`, run
 `(cd capabilities && go test -tags=integration -p 1 ./internal/ai/agent -run TestAgentEndToEnd -count=1)`
 for signed identity, mixed-source turns, revocation and missing approval.

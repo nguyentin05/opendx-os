@@ -15,16 +15,22 @@ p = argparse.ArgumentParser()
 p.add_argument('--database-url-env', required=True)
 p.add_argument('--scope', choices=['core', 'cap-ai'], required=True)
 p.add_argument('--through', required=True,
-               help='inclusive migration version; cap-ai 0004 opts into models, 0005 also opts into the registry, 0008+ into agent authority, and 0013 (deployment authority) is derived from those, not a separate flag')
+               help='inclusive migration version, or latest; cap-ai 0004 opts into models, 0005 also opts into the registry, 0008+ into agent authority, and 0013 (deployment authority) is derived from those, not a separate flag')
 a = p.parse_args()
 if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', a.database_url_env) or not os.environ.get(a.database_url_env):
     sys.exit('NOT_RUN: database URL environment variable required')
-if not re.fullmatch(r'[0-9]{4}', a.through):
+if a.through != 'latest' and not re.fullmatch(r'[0-9]{4}', a.through):
     sys.exit('invalid migration version (expected four digits)')
 root = Path(__file__).resolve().parent.parent
 folder = root / 'platform/postgres/migrations' / a.scope.replace('-', '_')
 files = sorted(folder.glob('[0-9][0-9][0-9][0-9]_*.sql'))
 versions = [f.name[:4] for f in files]
+# `latest` is the repository's newest version. The deployment uses it to apply
+# every additive migration the checkout ships without repeating the version here.
+if a.through == 'latest':
+    if not versions:
+        sys.exit('unknown migration version')
+    a.through = versions[-1]
 if len(set(versions)) != len(versions) or a.through not in versions:
     sys.exit('unknown or duplicate migration version')
 selected = [f for f in files if f.name[:4] <= a.through]
