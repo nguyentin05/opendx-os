@@ -25,7 +25,7 @@ deploy/
   base/
     kustomization.yaml  platform + dxos-controller (operator/config/default)
     platform/           the services of compose.yaml, namespace dxos
-  overlays/eks/         example: gp3 storage, one public ALB, eksctl cluster file
+  overlays/eks/         example: gp3 storage, one public ALB (the test cluster)
 ```
 
 The base runs the same images and configuration as `compose.yaml`. Service names
@@ -131,74 +131,39 @@ overlay, then restart the affected deployment
 ## Example: Amazon EKS (test cluster)
 
 The project tests the Kubernetes deployment on EKS because a managed cluster with
-a public load balancer is the closest to a real installation. Nothing outside
-`overlays/eks` refers to AWS; to run elsewhere, write your own overlay as above.
+a public load balancer is the closest to a real installation. Creating and
+running the cluster is the operator's job and is not covered here; the platform
+starts from an existing cluster. Nothing outside `overlays/eks` refers to AWS; to
+run elsewhere, write your own overlay as above.
 
 What the overlay adds, and its counterpart on another cluster:
 
 | File | On EKS | On another cluster |
 | --- | --- | --- |
-| `cluster.yaml` | `eksctl` creates the cluster: 2 × `m7i-flex.large` (2 vCPU, 8 GiB; one of the types an AWS Free plan account may launch), public subnets without a NAT gateway, the EBS CSI driver add-on, IAM for the Load Balancer Controller | However your cluster is created |
 | `storageclass.yaml` | Default class `dxos-gp3`: encrypted gp3 volumes, `Retain` | The cluster's default class, or your own |
 | `ingress.yaml` | One internet-facing ALB, TLS from ACM, fixed 404 for the Keycloak console | An Ingress for your controller with the routes above |
 | `kustomization.yaml` | Hosts, ALB health-check annotations on `apisix` and `keycloak` | Hosts; drop the `alb.ingress.kubernetes.io` annotations |
 
-### Steps
+The overlay expects the cluster to have:
 
-1. Set `metadata.region` in `cluster.yaml` to a region your AWS account may use,
-   then create the cluster (about 20 minutes):
+- the `aws-ebs-csi-driver` add-on, for `dxos-gp3`;
+- the [AWS Load Balancer Controller](https://kubernetes-sigs.github.io/aws-load-balancer-controller/),
+  which creates the ALB from `ingress.yaml`;
+- an ACM certificate in the cluster's region covering both hosts, validated
+  through your DNS. The ALB finds it from the hosts.
 
-   ```bash
-   eksctl create cluster -f deploy/overlays/eks/cluster.yaml
-   ```
+Then set the five `dxos-public` values in `overlays/eks/kustomization.yaml`,
+write the secrets file as above, run
+`deploy/apply.sh deploy/overlays/eks ~/dxos-k8s.env`, and point both hosts at the
+ALB host name from `kubectl -n dxos get ingress dxos`. With Cloudflare as the DNS:
+keep the records DNS-only (grey) while testing; with the proxy on (orange, SSL
+mode Full (strict)) the Free plan ends requests after 100 s and limits uploads to
+100 MB.
 
-   If the node group fails with "not eligible for Free Tier", the account is on
-   the AWS Free plan: pick an instance type from
-   `aws ec2 describe-instance-types --filters Name=free-tier-eligible,Values=true`.
-   If `eksctl` stops before the node group is ready, the add-on and the Load
-   Balancer Controller's IAM may be missing; create them with
-   `eksctl create addon -f ...` and `eksctl create podidentityassociation -f ...`.
-
-2. Install the [AWS Load Balancer Controller](https://kubernetes-sigs.github.io/aws-load-balancer-controller/)
-   (its IAM role was created with the cluster):
-
-   ```bash
-   helm repo add eks https://aws.github.io/eks-charts
-   helm install aws-load-balancer-controller eks/aws-load-balancer-controller -n kube-system \
-     --set clusterName=dxos-demo --set serviceAccount.create=false \
-     --set serviceAccount.name=aws-load-balancer-controller \
-     --set region=ap-southeast-2 \
-     --set vpcId=$(aws eks describe-cluster --name dxos-demo --region ap-southeast-2 \
-       --query cluster.resourcesVpcConfig.vpcId --output text)
-   ```
-
-3. Request an ACM certificate in the cluster's region for both hosts and add the
-   validation CNAME records ACM gives to your DNS. The ALB finds the certificate
-   from the hosts.
-4. Set the five `dxos-public` values in `overlays/eks/kustomization.yaml`, write
-   the secrets file as above, and run
-   `deploy/apply.sh deploy/overlays/eks ~/dxos-k8s.env`.
-5. Point both hosts at the ALB host name from `kubectl -n dxos get ingress dxos`
-   with CNAME records. If the DNS is Cloudflare: keep the records DNS-only (grey)
-   while testing; with the proxy on (orange, SSL mode Full (strict)) the Free plan
-   ends requests after 100 s and limits uploads to 100 MB.
-
-### Cost and removal
-
-The cluster is billed while it exists: the control plane, two `m7i-flex.large` nodes,
-the ALB, public IPv4 addresses and the volumes. To pause, scale the node group to
-zero (`eksctl scale nodegroup --cluster dxos-demo --region ap-southeast-2 --name general --nodes 0`).
-To remove everything:
-
-```bash
-kubectl -n dxos delete ingress dxos   # lets the controller delete the ALB first
-eksctl delete cluster -f deploy/overlays/eks/cluster.yaml --disable-nodegroup-eviction
-```
-
-The `dxos-gp3` class keeps volumes after their claims are deleted (`Retain`), so
-the EBS volumes survive the cluster and stay billed: delete them in the EC2
-console (filter by tag `kubernetes.io/created-for/pvc/namespace=dxos`) once the
-data is no longer needed.
+To remove the platform, delete the Ingress first so the controller removes the
+ALB (`kubectl -n dxos delete ingress dxos`). `dxos-gp3` keeps volumes after their
+claims are deleted (`Retain`): the EBS volumes outlive the platform and stay
+billed until you delete them (tag `kubernetes.io/created-for/pvc/namespace=dxos`).
 
 ## Known gaps
 
