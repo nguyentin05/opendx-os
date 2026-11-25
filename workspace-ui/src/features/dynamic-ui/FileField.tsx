@@ -69,7 +69,7 @@ function responseFileName(header: string | null): string | undefined {
       }
     }
   }
-  const quoted = header.match(/filename\s*=\s*"((?:\\.|[^"])*)"/i)?.[1];
+  const quoted = header.match(/filename\s*=\s*"((?:\\.|[^"\\])*)"/i)?.[1];
   if (quoted !== undefined) return quoted.replace(/\\(["\\])/g, '$1') || undefined;
   const token = header.match(/filename\s*=\s*([^;]+)/i)?.[1]?.trim();
   return token ? token.replace(/^"|"$/g, '') || undefined : undefined;
