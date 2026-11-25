@@ -237,6 +237,12 @@ func TestAppsListsApplicationsOfHeldRoles(t *testing.T) {
 	if len(workItemRoles) != 1 || workItemRoles[0] != "role_review_lead" {
 		t.Errorf("work_item_roles = %v, want [role_review_lead]", app["work_item_roles"])
 	}
+	// Only the caller's own roles are listed: role_unheld stays private.
+	shared, _ := json.Marshal(app["shared_access"])
+	if want := `[{"columns":["id","title"],"roles":["role_review_lead"],"table":"cap_work.work_items"},` +
+		`{"columns":["id"],"roles":["role_review"],"table":"core.users"}]`; string(shared) != want {
+		t.Errorf("shared_access = %s, want %s", shared, want)
+	}
 	for _, field := range []string{"sharedAccess", "columns", "workflows", "privateMetadata"} {
 		if _, leaked := app[field]; leaked {
 			t.Errorf("apps response exposed %s", field)
@@ -266,6 +272,9 @@ func TestAppsIncludesCapabilityOnlyKnowledge(t *testing.T) {
 	}
 	if roles, ok := app["work_item_roles"].([]any); !ok || len(roles) != 0 {
 		t.Errorf("work_item_roles = %v, want an empty JSON array", app["work_item_roles"])
+	}
+	if shared, ok := app["shared_access"].([]any); !ok || len(shared) != 0 {
+		t.Errorf("shared_access = %v, want an empty JSON array", app["shared_access"])
 	}
 }
 
