@@ -48,18 +48,10 @@ export STACK_LABEL
 CONFIG="models.yaml"
 SECRET_ENV=""
 INSTALL_ENV=".env.rag"
-MODEL_ENV=".env.models"
-STATE_DIR="build/ai-up"
+MODEL_ENV="${AI_UP_MODEL_ENV:-.env.models}"
+STATE_DIR="${AI_UP_STATE_DIR:-build/ai-up}"
 CLI="${DXOS_MODEL_BIN:-$STACK_ROOT/bin/dxos-model}"
 CLI_TARGET="/run/dxos-deploy/dxos-model"
-PROXY_CONFIG="$STATE_DIR/litellm-config.yaml"
-PROXY_ENV="$STATE_DIR/proxy.env"
-RUNTIME_ENV="$STATE_DIR/runtime.env"
-LOCK="$STATE_DIR/ai-up.lock"
-VALIDATE_JSON="$STATE_DIR/validate.json"
-PROBE_JSON="$STATE_DIR/verify.json"
-STATUS_JSON="$STATE_DIR/status.json"
-STATE_FILE="$STATE_DIR/deployment.json"
 
 usage() {
     cat <<'EOF'
@@ -75,11 +67,17 @@ Options:
                       (for example OPENROUTER_API_KEY). Secret values never
                       appear in this script's output or arguments.
   --env-file FILE     installation environment file (default: .env.rag)
+  --model-env FILE    generated model settings file (default: .env.models)
+  --state-dir DIR     generated private files and the deployment lock
+                      (default: build/ai-up)
   -h, --help          print this help
 
 The installation environment file holds the generated stack secrets and keeps
-every value it already has. The generated model settings live in .env.models;
-the generated proxy configuration and runtime credential live in build/ai-up.
+every value it already has. The generated model settings live in .env.models
+(override with --model-env or AI_UP_MODEL_ENV); the generated proxy
+configuration and runtime credential live in the state directory (override with
+--state-dir or AI_UP_STATE_DIR). Both overrides exist so a disposable or
+parallel deployment never touches another installation's files.
 A declaration that disables models, or that declares no route, runs this stack
 FTS-only and starts no proxy.
 EOF
@@ -100,6 +98,16 @@ while [ "$#" -gt 0 ]; do
         --env-file)
             [ "$#" -ge 2 ] || stack_fail "--env-file requires a file"
             INSTALL_ENV="$2"
+            shift 2
+            ;;
+        --model-env)
+            [ "$#" -ge 2 ] || stack_fail "--model-env requires a file"
+            MODEL_ENV="$2"
+            shift 2
+            ;;
+        --state-dir)
+            [ "$#" -ge 2 ] || stack_fail "--state-dir requires a directory"
+            STATE_DIR="$2"
             shift 2
             ;;
         -h|--help)
@@ -138,13 +146,31 @@ fi
 
 mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
+STATE_DIR="$(cd "$STATE_DIR" && pwd)"
+case "$MODEL_ENV" in
+    /*) ;;
+    *) MODEL_ENV="$STACK_ROOT/$MODEL_ENV" ;;
+esac
+PROXY_CONFIG="$STATE_DIR/litellm-config.yaml"
+PROXY_ENV="$STATE_DIR/proxy.env"
+RUNTIME_ENV="$STATE_DIR/runtime.env"
+VALIDATE_JSON="$STATE_DIR/validate.json"
+PROBE_JSON="$STATE_DIR/verify.json"
+STATUS_JSON="$STATE_DIR/status.json"
 
 # One deployment at a time for this Compose project: a second invocation waits
 # for no one, because a concurrent cutover could reconcile a different snapshot
-# while the first is starting services.
+# while the first is starting services. The lock is keyed on the Compose project
+# name, so two checkouts deploying the same project are serialized while two
+# different projects (for example a disposable one) never block each other.
+STACK_VALUE_FILES=("$INSTALL_ENV" .env)
+lock_project="$(stack_env_value COMPOSE_PROJECT_NAME '')"
+lock_project="${lock_project:-$(basename "$STACK_ROOT")}"
+lock_project="$(printf '%s' "$lock_project" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')"
+LOCK="$STATE_DIR/ai-up.${lock_project:-default}.lock"
 exec 9>"$LOCK"
 chmod 600 "$LOCK"
-flock -n 9 || stack_fail "another ai-up deployment holds $LOCK"
+flock -n 9 || stack_fail "another ai-up deployment holds $LOCK for the Compose project ${lock_project:-default}"
 
 # The CLI is the one owner of declaration parsing and proxy rendering. It is a
 # static binary so the same one runs on the host and inside the private network.
@@ -209,20 +235,25 @@ stack_env_file_path "$MODEL_ENV"
 # corrected declaration takes effect and a disabled one cannot leave an old
 # model selected.
 stack_env_set "$MODEL_ENV" RAG_MODELS_ENABLED "$([ "$MODELS_SELECTED" = 1 ] && echo true || echo false)"
-# The model schema is provisioned once and kept: the schema flags are read at
-# database initialization only, so toggling them per declaration would recreate
-# the database container without removing anything. A disabled declaration simply
-# selects no route and switches model calls off; `rag-up` remains the path that
-# never installs pgvector at all.
-stack_env_set "$MODEL_ENV" RAG_MODELS_SCHEMA_ENABLED true
-stack_env_set "$MODEL_ENV" RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED true
-stack_env_set "$MODEL_ENV" RAG_AGENT_MODELS_SCHEMA_ENABLED true
+# The model schema (pgvector and the cap_ai model tables) belongs to a
+# declaration that selects models. A disabled or route-less declaration must not
+# install it, so the switches follow the declaration instead of being hard-coded
+# on: initializing a new volume with this deployment installs no model schema.
+# A volume that already carries the schema is left exactly as it is (nothing is
+# dropped); `rag-up` remains the path that never installs it at all.
+for schema_switch in \
+    RAG_MODELS_SCHEMA_ENABLED \
+    RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED \
+    RAG_AGENT_MODELS_SCHEMA_ENABLED
+do
+    stack_env_set "$MODEL_ENV" "$schema_switch" "$([ "$MODELS_SELECTED" = 1 ] && echo true || echo false)"
+done
 stack_env_set "$MODEL_ENV" RAG_LOCAL_MODELS_QUALIFIED "$([ "$LOCAL_ROUTES" = 1 ] && echo true || echo false)"
 stack_env_set "$MODEL_ENV" RAG_MODEL_CATALOG_FILE "$CONFIG"
-stack_env_set "$MODEL_ENV" RAG_MODEL_CREDENTIAL_ENV_FILE "$STACK_ROOT/$RUNTIME_ENV"
-stack_env_set "$MODEL_ENV" RAG_MODEL_LITELLM_CONFIG_FILE "$STACK_ROOT/$PROXY_CONFIG"
-stack_env_set "$MODEL_ENV" RAG_MODEL_LITELLM_SECRET_ENV_FILE "$STACK_ROOT/$PROXY_ENV"
-stack_env_set "$MODEL_ENV" RAG_MODEL_LITELLM_CREDENTIAL_ENV_FILE "$STACK_ROOT/$RUNTIME_ENV"
+stack_env_set "$MODEL_ENV" RAG_MODEL_CREDENTIAL_ENV_FILE "$RUNTIME_ENV"
+stack_env_set "$MODEL_ENV" RAG_MODEL_LITELLM_CONFIG_FILE "$PROXY_CONFIG"
+stack_env_set "$MODEL_ENV" RAG_MODEL_LITELLM_SECRET_ENV_FILE "$PROXY_ENV"
+stack_env_set "$MODEL_ENV" RAG_MODEL_LITELLM_CREDENTIAL_ENV_FILE "$RUNTIME_ENV"
 stack_env_set "$MODEL_ENV" RAG_MODEL_LITELLM_ENDPOINT "http://litellm:4000"
 # No agent processing until the personal library is ready, as in the FTS path.
 stack_env_ensure "$MODEL_ENV" RAG_AGENT_ENABLED false
@@ -234,8 +265,17 @@ stack_env_ensure "$MODEL_ENV" AI_AGENT_PROCESSING_APP_ID ""
 # ---------------------------------------------------------------------------
 
 master_key=""
-if [ -n "$SECRET_ENV" ] && grep -q '^LITELLM_MASTER_KEY=' "$SECRET_ENV"; then
-    master_key="$(grep -m1 '^LITELLM_MASTER_KEY=' "$SECRET_ENV" | cut -d= -f2-)"
+if [ -n "$SECRET_ENV" ]; then
+    if grep -q '^LITELLM_MASTER_KEY=' "$SECRET_ENV"; then
+        master_key="$(grep -m1 '^LITELLM_MASTER_KEY=' "$SECRET_ENV" | cut -d= -f2-)"
+        # An empty assignment is the operator naming the credential and leaving it
+        # blank. Generating a replacement here would silently rotate a proxy
+        # credential the operator believes they control, so it is refused with the
+        # two ways forward instead.
+        if [ -z "$master_key" ]; then
+            stack_fail "LITELLM_MASTER_KEY is present but empty in the secret environment file: set it to at least 24 characters, or remove the line to let this deployment generate one"
+        fi
+    fi
 fi
 if [ -z "$master_key" ]; then
     stack_env_ensure "$INSTALL_ENV" LITELLM_MASTER_KEY "$(stack_random_secret)"
@@ -399,42 +439,48 @@ stack_wait_healthy postgres 300
 stack_wait_postgres 300
 stack_require_cap_ai
 
-vector_extension="$(stack_psql_value "SELECT count(*) FROM pg_extension WHERE extname='vector'")"
-model_schema="$(stack_psql_value "SELECT count(*) FROM information_schema.tables WHERE table_schema='cap_ai' AND table_name='model_profiles'")"
-if [ "$vector_extension" != "1" ] || [ "$model_schema" != "1" ]; then
-    stack_say "provisioning the model/pgvector schema through the migration authority"
-    migration_dsn="$(python3 - \
-        "$(stack_env_value BIND_ADDRESS 127.0.0.1)" \
-        "$(stack_env_value POSTGRES_PORT 5432)" \
-        "$(stack_env_value POSTGRES_USER dxos_admin)" \
-        "$(stack_env_value POSTGRES_PASSWORD dxos_secret)" \
-        "$(stack_env_value POSTGRES_DB dxos_db)" <<'PY'
+# The optional model/pgvector schema is provisioned only for a declaration that
+# selects models. A disabled or route-less declaration runs on the plain FTS
+# schema: it installs no pgvector extension and no cap_ai model table, exactly as
+# `rag-up.sh` does, whatever the Compose file list happens to contain.
+if [ "$MODELS_SELECTED" = 1 ]; then
+    vector_extension="$(stack_psql_value "SELECT count(*) FROM pg_extension WHERE extname='vector'")"
+    model_schema="$(stack_psql_value "SELECT count(*) FROM information_schema.tables WHERE table_schema='cap_ai' AND table_name='model_profiles'")"
+    if [ "$vector_extension" != "1" ] || [ "$model_schema" != "1" ]; then
+        stack_say "provisioning the model/pgvector schema through the migration authority"
+        migration_dsn="$(python3 - \
+            "$(stack_env_value BIND_ADDRESS 127.0.0.1)" \
+            "$(stack_env_value POSTGRES_PORT 5432)" \
+            "$(stack_env_value POSTGRES_USER dxos_admin)" \
+            "$(stack_env_value POSTGRES_PASSWORD dxos_secret)" \
+            "$(stack_env_value POSTGRES_DB dxos_db)" <<'PY'
 import sys
 from urllib.parse import quote
 host, port, user, password, database = sys.argv[1:6]
 print("postgres://%s:%s@%s:%s/%s?sslmode=disable" % (quote(user, safe=""), quote(password, safe=""), host, port, quote(database, safe="")))
 PY
 )"
-    if ! AI_UP_MIGRATION_DATABASE_URL="$migration_dsn" \
-        RAG_MODELS_SCHEMA_ENABLED=true \
-        RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED=true \
-        RAG_AGENT_MODELS_SCHEMA_ENABLED=true \
-        "$STACK_ROOT/scripts/migrate-rag.sh" --database-url-env AI_UP_MIGRATION_DATABASE_URL --scope cap-ai --through latest; then
-        stack_fail "the model schema could not be provisioned; the existing database and its checksums are unchanged"
+        if ! AI_UP_MIGRATION_DATABASE_URL="$migration_dsn" \
+            RAG_MODELS_SCHEMA_ENABLED=true \
+            RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED=true \
+            RAG_AGENT_MODELS_SCHEMA_ENABLED=true \
+            "$STACK_ROOT/scripts/migrate-rag.sh" --database-url-env AI_UP_MIGRATION_DATABASE_URL --scope cap-ai --through latest; then
+            stack_fail "the model schema could not be provisioned; the existing database and its checksums are unchanged"
+        fi
+        vector_extension="$(stack_psql_value "SELECT count(*) FROM pg_extension WHERE extname='vector'")"
+        model_schema="$(stack_psql_value "SELECT count(*) FROM information_schema.tables WHERE table_schema='cap_ai' AND table_name='model_profiles'")"
+        if [ "$vector_extension" != "1" ] || [ "$model_schema" != "1" ]; then
+            stack_fail "this database volume was not initialized for models and cannot be repaired in place; keep the data and follow docs/operations/installation.md#rebuilding-an-existing-model-installation"
+        fi
     fi
-    vector_extension="$(stack_psql_value "SELECT count(*) FROM pg_extension WHERE extname='vector'")"
-    model_schema="$(stack_psql_value "SELECT count(*) FROM information_schema.tables WHERE table_schema='cap_ai' AND table_name='model_profiles'")"
-    if [ "$vector_extension" != "1" ] || [ "$model_schema" != "1" ]; then
-        stack_fail "this database volume was not initialized for models and cannot be repaired in place; keep the data and follow docs/operations/installation.md#rebuilding-an-existing-model-installation"
-    fi
+    # The restricted deployment logins cannot log in without a password on a
+    # Compose network. They are set by the bootstrap migration authority; neither
+    # is a runtime role, and neither is a globally privileged application login.
+    stack_role_exists dxos_ai_gateway || stack_fail "the model schema has no dxos_ai_gateway login"
+    stack_role_exists dxos_ai_model_catalog || stack_fail "the model schema has no dxos_ai_model_catalog login"
+    stack_set_role_password dxos_ai_gateway "$(stack_env_value AI_GATEWAY_DATABASE_PASSWORD '')"
+    stack_set_role_password dxos_ai_model_catalog "$(stack_env_value AI_MODEL_CATALOG_DATABASE_PASSWORD '')"
 fi
-# The restricted deployment logins cannot log in without a password on a
-# Compose network. They are set by the bootstrap migration authority; neither
-# is a runtime role, and neither is a globally privileged application login.
-stack_role_exists dxos_ai_gateway || stack_fail "the model schema has no dxos_ai_gateway login"
-stack_role_exists dxos_ai_model_catalog || stack_fail "the model schema has no dxos_ai_model_catalog login"
-stack_set_role_password dxos_ai_gateway "$(stack_env_value AI_GATEWAY_DATABASE_PASSWORD '')"
-stack_set_role_password dxos_ai_model_catalog "$(stack_env_value AI_MODEL_CATALOG_DATABASE_PASSWORD '')"
 
 # ---------------------------------------------------------------------------
 # Proxy and optional local runtime. A declaration with no route starts neither.
@@ -539,25 +585,13 @@ fi
 
 selected_before=0
 if [ "$MODELS_SELECTED" = 1 ] && model_cli cap-ai 1 status --config /run/secrets/model-catalog --json >"$STATUS_JSON" 2>/dev/null; then
-    read -r selected_before < <(python3 - "$STATUS_JSON" "$VALIDATE_JSON" "$expected_embed" "$expected_llm" <<'PY'
-import json, sys
-status = json.load(open(sys.argv[1]))
-declaration = json.load(open(sys.argv[2]))
-expected = {"EMBED": sys.argv[3] == "1", "GENERATE": sys.argv[4] == "1"}
-declared = {p.get("purpose"): p for p in declaration.get("purposes") or [] if p.get("declared")}
-current = {p.get("purpose"): p for p in status.get("purposes") or [] if p.get("qualified")}
-ok = True
-for purpose, wanted in expected.items():
-    if not wanted:
-        continue
-    profile = declared.get(purpose) or {}
-    active = current.get(purpose) or {}
-    if not active or active.get("profile_id") != profile.get("profile_id") or active.get("revision") != profile.get("revision"):
-        ok = False
-print("1" if ok else "0")
-PY
-)
+    # The decision (declared-and-matched, and nothing selected that this run does
+    # not qualify to keep) is one small pure function so it can be tested without
+    # a Compose project: scripts/lib/ai_up_snapshot.py.
+    read -r selected_before < <(python3 "$STACK_ROOT/scripts/lib/ai_up_snapshot.py" \
+        "$STATUS_JSON" "$VALIDATE_JSON" "$expected_embed" "$expected_llm")
 fi
+[ -n "${selected_before:-}" ] || selected_before=0
 
 if [ "$(running_services)" != "" ]; then
     if [ "$selected_before" != 1 ]; then
@@ -596,20 +630,38 @@ fi
 # ---------------------------------------------------------------------------
 
 stack_say "starting the knowledge stack on the verified snapshot"
-stack_compose up -d --build keycloak
-stack_configure_service_clients
+# Everything from here to the identity check runs on the failure path too: a
+# service that cannot start, a service client that cannot be enabled or an app
+# that never becomes Ready after the selection moved must not leave the API and
+# worker running on a snapshot nobody verified. The helpers are called in a
+# subshell where they call `stack_fail` (which exits), so their failure becomes a
+# plain status this script can degrade on instead of an immediate exit.
+if ! ( stack_compose up -d --build keycloak ); then
+    degrade_and_fail "Keycloak could not be started after the cutover; no service was left dispatching to an unverified route"
+fi
+if ! ( stack_configure_service_clients ); then
+    degrade_and_fail "the knowledge service clients could not be enabled after the cutover; no service was left dispatching to an unverified route"
+fi
 if [ "$recreate_runtime" = 1 ] && [ "$MODELS_SELECTED" = 1 ]; then
     # The private inputs changed, which Compose cannot see: recreate only the two
     # model-calling services so they mount the declaration and generated
     # configuration this run verified. Everything else keeps running.
     stack_say "recreating the model-calling services with the current private inputs"
-    stack_compose up -d --build --no-deps --force-recreate cap-ai cap-ai-worker >/dev/null
+    if ! ( stack_compose up -d --build --no-deps --force-recreate cap-ai cap-ai-worker >/dev/null ); then
+        degrade_and_fail "the model-calling services could not be recreated with the current private inputs"
+    fi
 fi
-stack_compose up -d --build
-stack_wait_app personal_library 300
+if ! ( stack_compose up -d --build ); then
+    degrade_and_fail "the knowledge stack could not be started on the verified snapshot"
+fi
+if ! ( stack_wait_app personal_library 300 ); then
+    degrade_and_fail "the personal library did not become ready on the verified snapshot"
+fi
 stack_env_set "$MODEL_ENV" AI_AGENT_PROCESSING_APP_ID personal_library
 stack_env_set "$MODEL_ENV" RAG_AGENT_ENABLED true
-stack_compose up -d
+if ! ( stack_compose up -d ); then
+    degrade_and_fail "the agent processing setting could not be applied on the verified snapshot"
+fi
 
 identity_failure=""
 if [ "$MODELS_SELECTED" = 1 ] && { [ "$expected_embed" = 1 ] || [ "$expected_llm" = 1 ]; }; then

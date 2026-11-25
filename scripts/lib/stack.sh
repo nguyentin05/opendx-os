@@ -124,8 +124,13 @@ stack_compose_init() {
     done
 }
 
+# stack_compose runs one Compose command with the accumulated arguments. The
+# deployment lock (fd 9, opened by the caller that holds one) is closed for the
+# child: a Compose process that outlived the script must not keep the lock
+# advertised on its own descriptor. Closing an fd the caller never opened is a
+# no-op, so the shared bootstrap behaves the same without a lock.
 stack_compose() {
-    docker compose "${STACK_ENV_ARGS[@]}" "${STACK_COMPOSE_ARGS[@]}" "$@"
+    docker compose "${STACK_ENV_ARGS[@]}" "${STACK_COMPOSE_ARGS[@]}" "$@" 9>&-
 }
 
 stack_psql_value() {

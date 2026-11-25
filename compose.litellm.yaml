@@ -25,9 +25,17 @@
 # Required deployment settings (each names a private path or file, never a secret
 # value in this file):
 #   RAG_MODEL_LITELLM_IMAGE                pinned image reference (default below)
-#   RAG_MODEL_LITELLM_CONFIG_FILE          the configuration generated from the
-#                                          deployment declaration by
-#                                          models.RenderProxyConfig
+#   RAG_MODEL_LITELLM_CONFIG_FILE          the host path of the configuration
+#                                          generated from the deployment
+#                                          declaration by models.RenderProxyConfig.
+#                                          Note the two meanings: Compose reads it
+#                                          here as the *source file* of the
+#                                          `litellm-config` secret, while the two
+#                                          model-calling services below override it
+#                                          to the *mounted* path inside the
+#                                          container (/run/secrets/litellm-config.yaml).
+#                                          They are the same document, and the
+#                                          runtime verifies the mounted one.
 #   RAG_MODEL_LITELLM_SECRET_ENV_FILE      owner-only env file holding
 #                                          LITELLM_MASTER_KEY and the provider key
 #                                          references the configuration names

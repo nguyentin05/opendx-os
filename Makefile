@@ -34,6 +34,9 @@ rag-up: ## Start the stack with cap-ai and the personal library
 
 # The declaration and the private secret environment file are operator inputs:
 #   make ai-up AI_UP_ARGS="--config models.yaml --secret-env /private/model-secrets.env"
+# AI_UP_ARGS is deliberately unquoted: it is a list of flags, one per word, so the
+# recipe hands each of them to the script as its own argument. Quoting it would
+# pass the whole string as a single (invalid) argument.
 ai-up: ## Deploy the fixed model snapshot and reuse the embedding worker
 	@scripts/ai-up.sh $(AI_UP_ARGS)
 

@@ -398,7 +398,10 @@ credential references the declaration names (for example `OPENROUTER_API_KEY`).
 Only referenced keys are copied into the generated proxy environment; no value is
 printed. `--env-file` selects the installation environment file (default
 `.env.rag`). Generated private files live in `build/ai-up/`; the model settings the
-Compose project reads live in `.env.models`.
+Compose project reads live in `.env.models`. `--model-env FILE` (or
+`AI_UP_MODEL_ENV`) and `--state-dir DIR` (or `AI_UP_STATE_DIR`) relocate the latter
+two, which is how a disposable or parallel deployment keeps its files and its
+project-keyed deployment lock away from testing installations.
 
 The deployment runs in this order, and every step happens before the next one
 touches a running service:
@@ -410,12 +413,17 @@ touches a running service:
    checked; a model declaration without the proxy overlay, or an Ollama route
    without the local overlay, stops before anything starts. An existing project is
    reused, never recreated.
-3. **Provision the optional schema.** PostgreSQL starts; the migration authority
-   applies the additive `cap_ai` chain (including pgvector and the deployment
-   authority) only when the volume lacks it, and sets the passwords of the
-   restricted `dxos_ai_gateway` and `dxos_ai_model_catalog` logins. No migration
-   checksum is reset, no database is dropped, and `down -v` is never run. A volume
-   that cannot be repaired in place is reported with the documented rebuild path.
+3. **Provision the optional schema — only when the declaration selects models.**
+   PostgreSQL starts; for a declaration that enables a route and declares at least
+   one purpose, the migration authority applies the additive `cap_ai` chain
+   (including pgvector and the deployment authority) when the volume lacks it, and
+   sets the passwords of the restricted `dxos_ai_gateway` and
+   `dxos_ai_model_catalog` logins. A declaration that disables models, or declares
+   no route, provisions neither pgvector nor the model schema: it initializes and
+   runs the same FTS schema `make rag-up` does, and the schema switches in
+   `.env.models` follow the declaration. No migration checksum is reset, no
+   database is dropped, and `down -v` is never run. A volume that cannot be
+   repaired in place is reported with the documented rebuild path.
 4. **Start the proxy only if selected.** `litellm` is started when the declaration
    enables a route; the Ollama overlay is added only for a declared Ollama route and
    never downloads weights. A local endpoint outside these overlays (an operator's
@@ -444,7 +452,9 @@ re-embeds eligible documents through the existing worker (`Worker.Once`) without
 reparse, re-OCR or lexical reset.
 
 `make rag-up` stays the FTS-only path: it never provisions pgvector or the model
-schema, never starts the proxy and leaves `RAG_MODELS_ENABLED=false`.
+schema, never starts the proxy and leaves `RAG_MODELS_ENABLED=false`. A `make ai-up`
+declaration that disables models behaves the same way on a fresh volume: no
+pgvector, no model schema, no proxy, and the same lexical runtime.
 
 
 API and worker independently load `models.RuntimeFromEnvironment`. Defaults are off.
