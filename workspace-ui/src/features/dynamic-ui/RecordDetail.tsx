@@ -2,7 +2,7 @@
 // Copyright 2026 DX-OS Open-Core Contributors
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { formatValue } from '../../core/labels';
+import { formatValue, stateLabel } from '../../core/labels';
 import { toTableURL, useWorkspaceRoute } from '../../core/routes';
 import type { AppRoleContext } from '../../core/session-context';
 import { WorkspaceLink } from '../../shell/AppShell';
@@ -25,6 +25,8 @@ export interface RecordDetailProps {
   onAccessResult?: (visible: boolean) => void;
   commandAttempts?: CommandAttempts;
 }
+
+const metaFieldNames = ['version', 'created_at', 'updated_at'];
 
 const failureMessages = {
   unauthenticated: 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.',
@@ -133,6 +135,9 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
   const record = current && 'record' in current ? current.record : undefined;
   const names = current && 'record' in current ? current.names : undefined;
   const shared = sharedNameColumns(app, table, role);
+  const metaFields = metaFieldNames.flatMap(name => fields.find(field => field.name === name) ?? []);
+  const gridFields = fields.filter(field => field.name !== 'status' && !metaFieldNames.includes(field.name));
+  const canEdit = record ? canEditRecord(table, role, record) : false;
   const denied = current && 'error' in current
     && (current.error === 'forbidden' || current.error === 'unauthenticated');
   useEffect(() => {
@@ -148,13 +153,32 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
       {record === null && <p role="status">Không tìm thấy hồ sơ.</p>}
       {record && (
         <>
-          {canEditRecord(table, role, record) && <button type="button" onClick={onEdit} disabled={writePending}>Sửa hồ sơ</button>}
-          {fields.length ? (
-            <dl>
-              {fields.map(({ name, label, target, attachment }) => {
+          {(typeof record.status === 'string' || canEdit) && (
+            <div className="record-detail-header">
+              {typeof record.status === 'string' && (
+                <span className="workspace-work-status record-status">{stateLabel(table, record.status)}</span>
+              )}
+              {canEdit && <button type="button" onClick={onEdit} disabled={writePending}>Sửa hồ sơ</button>}
+            </div>
+          )}
+          {metaFields.length > 0 && (
+            <p className="record-meta">
+              {metaFields.map(({ name, label }, index) => (
+                <span key={name}>
+                  {index > 0 && ' · '}
+                  <span>{label}</span>{': '}
+                  <span>{formatValue(table, name, record[name])}</span>
+                </span>
+              ))}
+            </p>
+          )}
+          {gridFields.length ? (
+            <dl className="record-fields">
+              {gridFields.map(({ name, label, target, attachment }) => {
                 const value = record[name];
+                const wide = typeof value === 'string' && value.length > 80;
                 return (
-                  <div key={name}>
+                  <div key={name} className={wide ? 'record-field-wide' : undefined}>
                     <dt>{label}</dt>
                     <dd>
                       {attachment && isRecordID(value)
@@ -169,13 +193,13 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
                 );
               })}
             </dl>
-          ) : <p>Vai trò này chưa có trường nào để hiển thị.</p>}
-          <RecordHistory table={table} app={app} context={context} recordID={recordID}
-            version={typeof record.version === 'number' ? record.version : 0} />
+          ) : !fields.length && <p>Vai trò này chưa có trường nào để hiển thị.</p>}
           <CommandPanel table={table} appID={app.app_id} context={context} record={record}
             attempts={props.commandAttempts ?? localAttempts}
             writeGuard={{ pending: writePending, begin: beginRecordWrite }}
             onChanged={refresh} />
+          <RecordHistory table={table} app={app} context={context} recordID={recordID}
+            version={typeof record.version === 'number' ? record.version : 0} />
           {app.tables.filter(child => child.belongsTo?.table === table.name).map(child => (
             <ChildGrid key={child.name} parent={table} parentRecord={record} child={child}
               context={context} onParentChanged={refresh} writeGuard={{ pending: writePending, begin: beginRecordWrite }} />
