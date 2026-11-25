@@ -3,8 +3,16 @@
 
 import { bearer } from '../../auth';
 import type { AppRoleContext } from '../../core/session-context';
-import type { InstalledTable } from '../../types/registry';
+import type { InstalledApp, InstalledTable } from '../../types/registry';
 import { allowedFields, canEditRecord, isAttachmentColumn, isFileFormField, isParentColumn, tableGraphQLName, writableFormFields } from './registry';
+
+const sharedNameTables = {
+  'core.users': { root: 'core_users', label: 'display_name' },
+  'core.files': { root: 'core_files', label: 'file_name' },
+  'cap_data.devices': { root: 'cap_data_devices', label: 'name' },
+} as const;
+type SharedReference = keyof typeof sharedNameTables;
+export type SharedNameTarget = { reference: SharedReference; label: string };
 
 export interface RequestContext {
   token: string;
@@ -353,6 +361,86 @@ export async function saveRecord(
   const data = await executeGraphQL<Record<string, unknown>>(ctx, query, variables, signal);
   const id = mode === 'update' ? recordID : undefined;
   return parent ? projectChildRecord(data[root], selected, parent, id) : projectRecord(data[root], selected, id);
+}
+
+export function sharedNameColumns(app: InstalledApp | undefined, table: InstalledTable, role: string): Map<string, SharedNameTarget> {
+  const permitted = new Set<SharedReference>();
+  for (const entry of app?.sharedAccess ?? []) {
+    if (!Array.isArray(entry.roles) || !Array.isArray(entry.columns)
+      || !entry.roles.includes(role) || !entry.columns.includes('id')) continue;
+    const reference = entry.table as SharedReference;
+    if (!(reference in sharedNameTables) || !entry.columns.includes(sharedNameTables[reference].label)) continue;
+    permitted.add(reference);
+  }
+
+  const candidates = new Set<string>(['created_by']);
+  for (const key of table.foreignKeys ?? []) candidates.add(key.column);
+  const columns = new Map<string, SharedNameTarget>();
+  for (const name of candidates) {
+    const reference = name === 'created_by'
+      ? 'core.users'
+      : table.foreignKeys?.find(key => key.column === name)?.references;
+    if (!reference || !(reference in sharedNameTables) || !permitted.has(reference as SharedReference)) continue;
+    columns.set(name, { reference: reference as SharedReference, label: sharedNameTables[reference as SharedReference].label });
+  }
+  return columns;
+}
+
+// One request per shared table for all requested rows. Missing names, errors
+// and an aborted signal leave the caller's UUID in place.
+export async function loadSharedNames(
+  ctx: RequestContext,
+  app: InstalledApp | undefined,
+  table: InstalledTable,
+  rows: Array<Record<string, unknown>>,
+  signal: AbortSignal,
+): Promise<Map<string, Map<string, string>>> {
+  const groups = new Map<SharedReference, Set<string>>();
+  for (const row of rows) {
+    for (const [column, target] of sharedNameColumns(app, table, ctx.role)) {
+      const value = row[column];
+      if (typeof value !== 'string' || !isRecordID(value)) continue;
+      const ids = groups.get(target.reference) ?? new Set<string>();
+      ids.add(value.toLowerCase());
+      groups.set(target.reference, ids);
+    }
+  }
+
+  const names = new Map<string, Map<string, string>>();
+  await Promise.all([...groups].map(async ([reference, ids]) => {
+    const target = sharedNameTables[reference];
+    try {
+      const data = await executeGraphQL<Record<string, unknown>>(ctx,
+        `query SharedNames($ids: [uuid!]!) {
+          ${target.root}(where: {id: {_in: $ids}}) {
+            id ${target.label}
+          }
+        }`, { ids: [...ids] }, signal);
+      const list = data[target.root];
+      if (!Array.isArray(list)) return;
+      const labels = new Map<string, string>();
+      for (const entry of list) {
+        if (!isRecord(entry) || typeof entry.id !== 'string' || !isRecordID(entry.id)) continue;
+        const label = entry[target.label];
+        if (typeof label === 'string' && label.trim()) labels.set(entry.id.toLowerCase(), label);
+      }
+      names.set(reference, labels);
+    } catch {
+      // A failed name lookup must not hide the list.
+    }
+  }));
+  return names;
+}
+
+export function sharedName(
+  columns: Map<string, SharedNameTarget>,
+  names: Map<string, Map<string, string>> | undefined,
+  column: string,
+  value: unknown,
+): string | undefined {
+  if (typeof value !== 'string' || !isRecordID(value)) return undefined;
+  const target = columns.get(column);
+  return target ? names?.get(target.reference)?.get(value.toLowerCase()) : undefined;
 }
 
 export const referencePageSize = 25;

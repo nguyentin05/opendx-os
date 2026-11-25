@@ -20,6 +20,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
@@ -113,8 +114,9 @@ func Handler(r *Resolver) http.Handler {
 				Knowledge    *registry.KnowledgeDef `json:"knowledge,omitempty"`
 				Tables       json.RawMessage        `json:"tables"`
 				SharedAccess []struct {
-					Table string   `json:"table"`
-					Roles []string `json:"roles"`
+					Table   string   `json:"table"`
+					Roles   []string `json:"roles"`
+					Columns []string `json:"columns"`
 				} `json:"sharedAccess"`
 			}
 			// A definition stored before spec.tables has nothing the UI can show.
@@ -146,6 +148,20 @@ func Handler(r *Resolver) http.Handler {
 					workItemRoles = append(workItemRoles, grant.Role)
 				}
 			}
+			// The shared tables the caller's own roles may read; roles the caller
+			// does not hold stay private, like the rest of sharedAccess.
+			sharedAccess := []map[string]any{}
+			for _, access := range spec.SharedAccess {
+				roles := []string{}
+				for _, grant := range appRoles {
+					if slices.Contains(access.Roles, grant.Role) {
+						roles = append(roles, grant.Role)
+					}
+				}
+				if len(roles) > 0 {
+					sharedAccess = append(sharedAccess, map[string]any{"table": access.Table, "roles": roles, "columns": access.Columns})
+				}
+			}
 			out = append(out, map[string]any{
 				"app_id":          a.AppID,
 				"display_name":    a.DisplayName,
@@ -155,6 +171,7 @@ func Handler(r *Resolver) http.Handler {
 				"tables":          spec.Tables,
 				"knowledge":       spec.Knowledge,
 				"work_item_roles": workItemRoles,
+				"shared_access":   sharedAccess,
 			})
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"apps": out})

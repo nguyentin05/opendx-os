@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { formatValue } from '../../core/labels';
 import type { AppRoleContext } from '../../core/session-context';
 import type { InstalledTable } from '../../types/registry';
-import { executeGraphQL, GraphQLRequestError, isRecord } from './graphql';
+import { executeGraphQL, GraphQLRequestError, isRecord, loadSharedNames, sharedName, sharedNameColumns } from './graphql';
 import { allowedFields, columnLabel, tableGraphQLName, tableLabel } from './registry';
 
 export interface TableListProps {
@@ -64,7 +64,8 @@ function describeList({ table, context }: TableListProps) {
   }`;
 
   const labels = new Map(columns.map(column => [column.name, columnLabel(table, column)]));
-  return { table, root, columns, labels, selected, query, canOpen, canCreate, filterColumn };
+  const shared = sharedNameColumns(context.app, table, context.role);
+  return { table, root, columns, labels, selected, query, canOpen, canCreate, filterColumn, shared };
 }
 
 function validCell(value: unknown, column: Column): value is Cell {
@@ -102,7 +103,7 @@ export function TableList(props: TableListProps) {
     return <p role="alert">Dịch vụ tạm thời không phản hồi. Hãy thử lại sau ít phút.</p>;
   }
   const scope = JSON.stringify([
-    context.userID, context.token, context.app.app_id, context.role, table.name, description,
+    context.userID, context.token, context.app.app_id, context.app.sharedAccess, context.role, table.name, description,
   ]);
 
   return (
@@ -124,7 +125,7 @@ type PageOptions = {
 };
 
 type PageResult =
-  | { rows: Row[] }
+  | { rows: Row[]; names: Map<string, Map<string, string>> }
   | { message: string };
 
 const failureMessages = {
@@ -139,7 +140,7 @@ function PaginatedTable({ context, onOpen, description }: Pick<TableListProps, '
   description: ReturnType<typeof describeList>;
 }) {
   // The parent remounts this page whenever its description or scope changes.
-  const [{ table, root, columns, labels, selected, query, canOpen, canCreate, filterColumn }] = useState(description);
+  const [{ table, root, columns, labels, selected, query, canOpen, canCreate, filterColumn, shared }] = useState(description);
   const [options, setOptions] = useState<PageOptions>({ offset: 0, sort: columns[0].name, direction: 'asc', filter: '' });
   const [filterDraft, setFilterDraft] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -157,10 +158,11 @@ function PaginatedTable({ context, onOpen, description }: Pick<TableListProps, '
       offset: options.offset,
       orderBy,
       where,
-    }, controller.signal).then(data => {
-      if (!controller.signal.aborted) {
-        setResult({ options, page: { rows: readRows(data[root], selected) } });
-      }
+    }, controller.signal).then(async data => {
+      if (controller.signal.aborted) return;
+      const rows = readRows(data[root], selected);
+      const names = await loadSharedNames({ token, role }, context.app, table, rows, controller.signal);
+      if (!controller.signal.aborted) setResult({ options, page: { rows, names } });
     }).catch(error => {
       if (!controller.signal.aborted) {
         const kind = error instanceof GraphQLRequestError ? error.kind : 'unavailable';
@@ -172,6 +174,7 @@ function PaginatedTable({ context, onOpen, description }: Pick<TableListProps, '
 
   const page = result?.options === options ? result.page : undefined;
   const rows = page && 'rows' in page ? page.rows : [];
+  const names = page && 'rows' in page ? page.names : undefined;
   const hasNext = rows.length > pageSize && options.offset < maxOffset;
 
   return (
@@ -223,7 +226,7 @@ function PaginatedTable({ context, onOpen, description }: Pick<TableListProps, '
                 <tr key={id ?? index}>
                   {columns.map(column => {
                     const cell = row[column.name];
-                    return <td key={column.name}>{formatValue(table, column.name, cell)}</td>;
+                    return <td key={column.name}>{sharedName(shared, names, column.name, cell) ?? formatValue(table, column.name, cell)}</td>;
                   })}
                   {id && <td><button type="button" onClick={() => onOpen(id)}>Mở</button></td>}
                 </tr>

@@ -64,6 +64,7 @@ Each entry of `apps`:
 | `capabilities` | The capabilities it uses |
 | `roles` | The roles the user holds in this application (`name`, `description`) |
 | `work_item_roles` | Names of the user's roles in this app that its stored `sharedAccess` lists for `cap_work.work_items`. An empty array means no eligible role. Treat an omitted field from an older server as an empty array |
+| `shared_access` | The entries of the app's `sharedAccess` that name a role the user holds: `table`, `roles` (only the user's roles) and `columns`. An empty array means none. Treat an omitted field from an older server as an empty array |
 | `tables` | The application's tables exactly as its manifest declares them: `name`, `columns`, `foreignKeys`, `access`, `ui`, and when present `stateMachine`, `attachments` and `belongsTo` ([manifest contract](../reference/manifest/schema.md)) |
 
 Call `/api/auth/me` first after sign-in: it also registers a new user in the
@@ -114,6 +115,10 @@ application-specific labels.
   reference picker over that table's list. The picker and the record detail
   name a referenced record by the first readable `text` column in the target's
   `ui.listColumns`, and show its id when the role can read none.
+- `created_by` and foreign keys to shared `core.users`, `core.files` or
+  `cap_data.devices` show `display_name`, `file_name` or `name` when
+  `shared_access` lists the acting role for that table with both `id` and the
+  label column; otherwise the id remains.
 - Format values by column type: `timestamp` (including `created_at` and
   `updated_at`) as a `vi-VN` date and time in the viewer's time zone, `date` as
   a `vi-VN` date, and `integer` and `numeric(...)` with `vi-VN` digit grouping.

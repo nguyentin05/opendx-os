@@ -3,7 +3,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bearer, endKeycloakSession, endSession, refreshSession, registerSession, sessionDeadlines, watchSession } from './auth';
+import { bearer, endKeycloakSession, endSession, loadSession, refreshSession, registerSession, sessionDeadlines, watchSession } from './auth';
 
 const issuer = 'http://localhost:8085/realms/dxos';
 const tokenURL = issuer + '/protocol/openid-connect/token';
@@ -246,5 +246,18 @@ describe('sign out', () => {
 
     await vi.advanceTimersByTimeAsync(3600_000);
     expect(tokenCalls(fetcher)).toHaveLength(0);
+  });
+});
+
+describe('load session', () => {
+  it('reads the shared tables of the held roles from shared_access', async () => {
+    stubFetch(url => url === '/api/auth/me'
+      ? Response.json({ id: 'u1', email: 'a@example.com', display_name: 'A', roles: [] })
+      : Response.json({ apps: [{ app_id: 'a', tables: [], shared_access: [
+        { table: 'core.users', roles: ['role_a'], columns: ['id', 'display_name'] },
+        { table: 'core.files', roles: 'role_a', columns: ['id'] },
+      ] }] }));
+    const { apps } = await loadSession('token', new AbortController().signal);
+    expect(apps[0].sharedAccess).toEqual([{ table: 'core.users', roles: ['role_a'], columns: ['id', 'display_name'] }]);
   });
 });

@@ -134,6 +134,12 @@ export interface InstalledTable {
   belongsTo?: { table: string; column: string };
 }
 
+export interface SharedAccess {
+  table: string;
+  roles: string[];
+  columns: string[];
+}
+
 export interface InstalledApp {
   app_id: string;
   display_name: string;
@@ -142,5 +148,6 @@ export interface InstalledApp {
   roles: RoleGrant[];
   tables: InstalledTable[];
   knowledge: KnowledgeSpec | null;
+  sharedAccess?: SharedAccess[];
   work_item_roles?: string[];
 }
