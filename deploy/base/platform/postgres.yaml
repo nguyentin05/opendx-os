@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# PostgreSQL 17, initialized exactly like the Compose service: the image runs
+# the scripts in /docker-entrypoint-initdb.d once, on an empty data volume. The
+# scripts come from the postgres-seed ConfigMap (a tarball of platform/postgres
+# built by deploy/apply.sh), so no file list is maintained here.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+  - name: postgres
+    port: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      securityContext:
+        fsGroup: 70
+      initContainers:
+      - name: seed
+        image: postgres:17-alpine
+        command: ["sh", "-c", "tar -xzf /seed/postgres-seed.tgz -C /initdb"]
+        volumeMounts:
+        - name: seed
+          mountPath: /seed
+        - name: initdb
+          mountPath: /initdb
+      containers:
+      - name: postgres
+        image: postgres:17-alpine
+        env:
+        - name: POSTGRES_USER
+          value: dxos_admin
+        - name: POSTGRES_DB
+          value: dxos_db
+        # A subdirectory: the volume root holds lost+found on EBS.
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        - name: ENABLED_CAPABILITIES
+          value: cap-process,cap-hr,cap-work,cap-data,cap-ai
+        - name: POSTGRES_PASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: POSTGRES_PASSWORD}}
+        - name: HASURA_DATABASE_PASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: HASURA_DATABASE_PASSWORD}}
+        - name: PROCESS_DATABASE_PASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: PROCESS_DATABASE_PASSWORD}}
+        - name: AUTHZ_DATABASE_PASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: AUTHZ_DATABASE_PASSWORD}}
+        - name: HR_DATABASE_PASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: HR_DATABASE_PASSWORD}}
+        - name: KESTRA_DATABASE_PASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: KESTRA_DATABASE_PASSWORD}}
+        ports:
+        - containerPort: 5432
+          name: postgres
+        # TCP, not the socket: init runs on the socket only (as in compose.yaml).
+        readinessProbe:
+          exec:
+            command: ["pg_isready", "-h", "127.0.0.1", "-U", "dxos_admin", "-d", "dxos_db"]
+          periodSeconds: 5
+        resources:
+          requests: {cpu: 250m, memory: 512Mi}
+          limits: {memory: 2Gi}
+        volumeMounts:
+        - name: initdb
+          mountPath: /docker-entrypoint-initdb.d
+          readOnly: true
+        - name: data
+          mountPath: /var/lib/postgresql/data
+      volumes:
+      - name: seed
+        configMap:
+          name: postgres-seed
+      - name: initdb
+        emptyDir: {}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ReadWriteOnce]
+      resources:
+        requests:
+          storage: 20Gi

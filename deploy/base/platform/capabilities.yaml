@@ -1,0 +1,190 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# dxos-authz, cap-hr and cap-process with the settings of compose.yaml. Each
+# connects with its own restricted database role. Tokens are verified against
+# the public issuer (dxos-public) with keys fetched inside the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: authz
+spec:
+  selector:
+    app: authz
+  ports:
+  - name: http
+    port: 8090
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authz
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: authz
+  template:
+    metadata:
+      labels:
+        app: authz
+    spec:
+      containers:
+      - name: authz
+        image: opendx-dxos-authz
+        env:
+        - name: PORT
+          value: "8090"
+        - name: DB_PASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: AUTHZ_DATABASE_PASSWORD}}
+        - name: DATABASE_URL
+          value: postgres://dxos_authz:$(DB_PASSWORD)@postgres:5432/dxos_db?sslmode=disable
+        - name: OIDC_ISSUER_URL
+          valueFrom: {configMapKeyRef: {name: dxos-public, key: OIDC_ISSUER_URL}}
+        - name: OIDC_JWKS_URL
+          value: http://keycloak:8085/realms/dxos/protocol/openid-connect/certs
+        - name: OIDC_AUDIENCE
+          value: dxos-runtime
+        - name: ROLE_CACHE_TTL
+          value: 5s
+        - name: BOOTSTRAP_OPERATOR_EMAIL
+          valueFrom: {configMapKeyRef: {name: dxos-public, key: BOOTSTRAP_OPERATOR_EMAIL}}
+        ports:
+        - containerPort: 8090
+          name: http
+        readinessProbe:
+          httpGet: {path: /healthz, port: http}
+          periodSeconds: 5
+        resources:
+          requests: {cpu: 50m, memory: 64Mi}
+          limits: {memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cap-hr
+spec:
+  selector:
+    app: cap-hr
+  ports:
+  - name: http
+    port: 8083
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cap-hr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cap-hr
+  template:
+    metadata:
+      labels:
+        app: cap-hr
+    spec:
+      containers:
+      - name: cap-hr
+        image: opendx-cap-hr
+        env:
+        - name: PORT
+          value: "8083"
+        - name: DB_PASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: HR_DATABASE_PASSWORD}}
+        - name: DATABASE_URL
+          value: postgres://dxos_hr:$(DB_PASSWORD)@postgres:5432/dxos_db?sslmode=disable
+        - name: OIDC_ISSUER_URL
+          valueFrom: {configMapKeyRef: {name: dxos-public, key: OIDC_ISSUER_URL}}
+        - name: OIDC_JWKS_URL
+          value: http://keycloak:8085/realms/dxos/protocol/openid-connect/certs
+        - name: OIDC_AUDIENCE
+          value: dxos-runtime
+        - name: ROLE_CACHE_TTL
+          value: 5s
+        ports:
+        - containerPort: 8083
+          name: http
+        readinessProbe:
+          httpGet: {path: /healthz, port: http}
+          periodSeconds: 5
+        resources:
+          requests: {cpu: 50m, memory: 64Mi}
+          limits: {memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cap-process
+spec:
+  selector:
+    app: cap-process
+  ports:
+  - name: http
+    port: 8081
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cap-process
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cap-process
+  template:
+    metadata:
+      labels:
+        app: cap-process
+    spec:
+      containers:
+      - name: cap-process
+        image: opendx-cap-process
+        env:
+        - name: PORT
+          value: "8081"
+        - name: DB_PASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: PROCESS_DATABASE_PASSWORD}}
+        - name: DATABASE_URL
+          value: postgres://dxos_process:$(DB_PASSWORD)@postgres:5432/dxos_db?sslmode=disable
+        - name: OIDC_ISSUER_URL
+          valueFrom: {configMapKeyRef: {name: dxos-public, key: OIDC_ISSUER_URL}}
+        - name: OIDC_JWKS_URL
+          value: http://keycloak:8085/realms/dxos/protocol/openid-connect/certs
+        - name: OIDC_AUDIENCE
+          value: dxos-runtime
+        # The workflow service account seeded by platform/postgres/init/03_app_registry.sql.
+        - name: WORKFLOW_SERVICE_USER_ID
+          value: 22222222-2222-4222-8222-000000000005
+        - name: WORKFLOW_SERVICE_ROLE
+          value: role_workflow
+        - name: WORKFLOW_SERVICE_TOKEN
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: WORKFLOW_SERVICE_TOKEN}}
+        - name: KESTRA_URL
+          value: http://kestra:8080
+        - name: KESTRA_USER
+          valueFrom: {configMapKeyRef: {name: dxos-public, key: KESTRA_USER}}
+        - name: KESTRA_PASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: KESTRA_PASSWORD}}
+        - name: KESTRA_WEBHOOK_KEY
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: KESTRA_WEBHOOK_KEY}}
+        - name: S3_ENDPOINT
+          value: http://seaweedfs:8333
+        - name: S3_BUCKET
+          value: dxos-attachments
+        - name: S3_REGION
+          value: us-east-1
+        - name: S3_ACCESS_KEY_ID
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: S3_ACCESS_KEY_ID}}
+        - name: S3_SECRET_ACCESS_KEY
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: S3_SECRET_ACCESS_KEY}}
+        - name: CLAMAV_ADDRESS
+          value: clamav:3310
+        ports:
+        - containerPort: 8081
+          name: http
+        readinessProbe:
+          httpGet: {path: /healthz, port: http}
+          periodSeconds: 5
+        resources:
+          requests: {cpu: 100m, memory: 128Mi}
+          limits: {memory: 512Mi}

@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# The platform of compose.yaml on Kubernetes. deploy/apply.sh creates the
+# Secrets (dxos-secrets, seaweedfs-s3) and the ConfigMaps built from files under
+# platform/ (postgres-seed, keycloak-realm, kestra-config, apisix-config) first.
+namespace: dxos
+resources:
+- namespace.yaml
+- postgres.yaml
+- keycloak.yaml
+- hasura.yaml
+- capabilities.yaml
+- services.yaml
+- gateway.yaml
+# Public, non-secret settings. The defaults match Compose on localhost; an
+# overlay replaces them with the deployment's own origins.
+configMapGenerator:
+- name: dxos-public
+  literals:
+  - KEYCLOAK_HOSTNAME=http://localhost:8085
+  - OIDC_ISSUER_URL=http://localhost:8085/realms/dxos
+  - DXOS_OIDC_ORIGIN=http://localhost:8085
+  - KESTRA_USER=admin@dxos.local
+  - BOOTSTRAP_OPERATOR_EMAIL=
+images:
+- name: opendx-dxos-authz
+  newName: ghcr.io/nguyentin05/opendx-dxos-authz
+  newTag: main
+- name: opendx-cap-hr
+  newName: ghcr.io/nguyentin05/opendx-cap-hr
+  newTag: main
+- name: opendx-cap-process
+  newName: ghcr.io/nguyentin05/opendx-cap-process
+  newTag: main
+- name: opendx-workspace-ui
+  newName: ghcr.io/nguyentin05/opendx-workspace-ui
+  newTag: main

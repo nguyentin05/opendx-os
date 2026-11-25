@@ -71,6 +71,7 @@ required=(
     "operator"
     "capabilities"
     "workspace-ui"
+    "deploy"
     "scripts/install.sh"
     "scripts/package_release.sh"
 )

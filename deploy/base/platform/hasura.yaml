@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Hasura as in compose.yaml: restricted database role, console off, roles decided
+# per request by dxos-authz (ADR 0007). Never exposed outside the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: hasura
+spec:
+  selector:
+    app: hasura
+  ports:
+  - name: http
+    port: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hasura
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hasura
+  template:
+    metadata:
+      labels:
+        app: hasura
+    spec:
+      containers:
+      - name: hasura
+        image: hasura/graphql-engine:v2.45.1-ce
+        env:
+        - name: DB_PASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: HASURA_DATABASE_PASSWORD}}
+        - name: HASURA_GRAPHQL_DATABASE_URL
+          value: postgres://dxos_hasura:$(DB_PASSWORD)@postgres:5432/dxos_db
+        - name: HASURA_GRAPHQL_ADMIN_SECRET
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: HASURA_ADMIN_SECRET}}
+        - name: HASURA_GRAPHQL_ENABLE_CONSOLE
+          value: "false"
+        - name: HASURA_GRAPHQL_DEV_MODE
+          value: "false"
+        - name: HASURA_GRAPHQL_AUTH_HOOK
+          value: http://authz:8090/hasura
+        - name: HASURA_GRAPHQL_AUTH_HOOK_MODE
+          value: GET
+        ports:
+        - containerPort: 8080
+          name: http
+        readinessProbe:
+          httpGet: {path: /healthz, port: http}
+          periodSeconds: 5
+        resources:
+          requests: {cpu: 100m, memory: 256Mi}
+          limits: {memory: 1Gi}
