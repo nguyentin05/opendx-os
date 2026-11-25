@@ -1,2 +1,4 @@
 # Historical UUID fixture for the Idempotency-Key header in a mocked process command test.
 cfb7d6ea231bb9dcb696608da0258b836df58932:workspace-ui/src/features/dynamic-ui/process.test.ts:generic-api-key:9
+# Fake 16-character secrets built for the deploy/apply.sh boundary tests; never real values.
+2242fbeba841a6146e837a95ccb1ac7a857f0ef2:tests/test_deploy.py:generic-api-key:41
