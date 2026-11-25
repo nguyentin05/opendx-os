@@ -315,8 +315,32 @@ func TestRuntimeModelGateKeepsBootAvailable(t *testing.T) {
 			if err != nil || gateway != nil || embed.ID != "" || generate.ID != "" {
 				t.Fatalf("startup gate: %v %v %q %q", err, gateway, embed.ID, generate.ID)
 			}
+			// The degraded boot is distinguishable from the models-off baseline: with
+			// the switch on and no callable route the process logs one sanitized line,
+			// and it still boots. An absent declaration is never a fatal start-up.
+			message, degraded := modelAvailabilityLog(gateway, func(key string) string { return env[key] })
+			if !degraded || !strings.Contains(message, "no callable deployment profile") {
+				t.Fatalf("the degraded boot logged nothing: %q %t", message, degraded)
+			}
 		})
 	}
+	t.Run("models switched off boots silently", func(t *testing.T) {
+		env := map[string]string{}
+		for key, value := range base {
+			env[key] = value
+		}
+		env["RAG_MODELS_ENABLED"] = "false"
+		gateway, embed, generate, closeRuntime, err := models.RuntimeFromEnvironment(context.Background(), func(key string) string { return env[key] })
+		defer closeRuntime()
+		if err != nil || gateway != nil || embed.ID != "" || generate.ID != "" {
+			t.Fatalf("models off: %v %v %q %q", err, gateway, embed.ID, generate.ID)
+		}
+		// With models off, lexical search is the configured baseline, not a degraded
+		// state, so nothing is logged and no reviewer mistake is implied.
+		if message, degraded := modelAvailabilityLog(gateway, func(key string) string { return env[key] }); degraded {
+			t.Fatalf("the models-off baseline was reported as degraded: %q", message)
+		}
+	})
 	t.Run("an invalid declaration is still a startup error", func(t *testing.T) {
 		env := map[string]string{}
 		for key, value := range base {

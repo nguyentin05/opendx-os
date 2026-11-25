@@ -110,9 +110,15 @@ func verifyProfile(ctx context.Context, provider Provider, profile Profile) (Ver
 	result, err := provider.Invoke(callCtx, profile, input)
 	if err != nil {
 		// The request may have reached the route, so the outcome is ambiguous and is
-		// never resent. The provider's own sentinel is the only reason reported.
+		// never resent. The provider's own sentinel is the only reason reported, and a
+		// provider refusal is a failed probe, not an operator authority decision: a
+		// probe result never denies an identity, so it is reported and classified as
+		// an unavailable call.
 		report.Reason = sanitizedReason(err)
-		if !isModelFailure(err) {
+		if errors.Is(err, ErrPolicy) {
+			report.Reason = ErrUnavailable.Error()
+			err = ErrUnavailable
+		} else if !isModelFailure(err) {
 			err = ErrUnavailable
 		}
 		return report, err

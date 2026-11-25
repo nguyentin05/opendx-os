@@ -58,9 +58,13 @@ func NewOrchestrator(store ConversationStore, memory ContextBuilder, retrieval R
 
 // NewSourcePolicyChecker reauthorizes history under each source's actual role,
 // exact READ snapshot, the fixed generation profile, and the processing consumer.
+// Only an enabled GENERATE profile can authorize history: a service configured
+// without a generation route has no model processing to attribute, so history is
+// filtered instead of being approved by a profile that could never serve a turn.
 func NewSourcePolicyChecker(reader knowledge.AnswerReader, profile models.Profile, policy knowledge.ModelPolicy, processingAppID string) SourcePolicyChecker {
 	return func(ctx context.Context, actor Actor, ref SourceRef) (bool, error) {
-		if profile.ID == "" || policy == nil || processingAppID == "" || !readCurrentSource(ctx, reader, actor, ref) {
+		if profile.ID == "" || !profile.Enabled || profile.Purpose != "GENERATE" ||
+			policy == nil || processingAppID == "" || !readCurrentSource(ctx, reader, actor, ref) {
 			return false, nil
 		}
 		op := agentOperation("agent-memory:"+ref.ChunkID, processingAppID, profile, []models.AgentSourceProof{agentProof(ref)})

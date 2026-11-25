@@ -22,6 +22,9 @@ type answerFixture struct {
 	err     error
 	after   func()
 	payload models.Payload
+	// op records the exact operation the service dispatched with, so a test can
+	// prove the profile an answer started with is the only one it uses.
+	op models.Operation
 }
 
 func (f *answerFixture) Search(context.Context, *auth.Identity, SearchRequest) (SearchResult, error) {
@@ -36,8 +39,9 @@ func (f *answerFixture) CanRead(context.Context, *auth.Identity, string) (ReadSc
 func (f *answerFixture) Check(context.Context, *auth.Identity, models.Operation) (models.Approval, error) {
 	return models.Approval{Profile: answerProfile()}, nil
 }
-func (f *answerFixture) Call(_ context.Context, _ *auth.Identity, _ models.Operation, payload models.Payload) (models.Result, error) {
+func (f *answerFixture) Call(_ context.Context, _ *auth.Identity, op models.Operation, payload models.Payload) (models.Result, error) {
 	f.calls++
+	f.op = op
 	f.payload = payload
 	if f.after != nil {
 		f.after()

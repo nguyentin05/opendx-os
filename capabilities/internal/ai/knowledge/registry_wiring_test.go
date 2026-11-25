@@ -81,18 +81,37 @@ func TestRegistryRequestSelectorsRejected(t *testing.T) {
 	}
 }
 
-// TestRegistryAnswerPinsRevisionAcrossSlotChange replaces the slot pinning test: the
-// configured profile is immutable for the lifetime of the service, so a change to
-// the database selection cannot make an in-flight answer switch routes.
-func TestRegistryAnswerPinsRevisionAcrossSlotChange(t *testing.T) {
+// TestAnswerPinsProfileAcrossInFlightChange keeps the property the retired slot
+// test protected: an answer cannot switch models while it is in flight. The service
+// holds one fixed configured profile, captured when the turn starts, so replacing
+// that profile while the call is outstanding changes nothing about the answer that
+// is already running — neither the dispatched operation, nor the reported profile
+// revision. The next turn binds whatever the service is configured with, because a
+// redeploy rebinds the service; it never mutates an answer in progress.
+func TestAnswerPinsProfileAcrossInFlightChange(t *testing.T) {
 	service, provider := answerSetup()
-	provider.after = func() { service.Profile = models.Profile{ID: "other", Revision: 2, Purpose: "GENERATE"} }
+	replacement := models.Profile{ID: "other", Revision: 2, Purpose: "GENERATE", Execution: "HOSTED", Limits: answerProfile().Limits}
+	provider.after = func() { service.Profile = replacement }
 	first, err := service.Answer(context.Background(), answerActor, answerRequest)
-	if err != nil || first.ModelProfile == nil || first.ModelProfile.Revision != 1 || provider.calls != 1 {
+	if err != nil || first.Status != "ANSWERED" || first.ModelProfile == nil {
 		t.Fatal(first, err)
 	}
+	if first.ModelProfile.ID != "gen" || first.ModelProfile.Revision != 1 {
+		t.Fatalf("an in-flight answer reported a switched profile: %+v", first.ModelProfile)
+	}
+	if provider.op.ProfileID != "gen" || provider.op.ProfileRevision != 1 {
+		t.Fatalf("an in-flight answer dispatched another profile: %+v", provider.op)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("an in-flight answer made %d calls", provider.calls)
+	}
+	// A later turn uses the replacement: the change reaches new turns only.
+	provider.after = nil
 	second, err := service.Answer(context.Background(), answerActor, answerRequest)
-	if err != nil || second.ModelProfile == nil || second.ModelProfile.Revision != 2 {
+	if err != nil || second.ModelProfile == nil || second.ModelProfile.ID != replacement.ID || second.ModelProfile.Revision != replacement.Revision {
 		t.Fatal(second, err)
+	}
+	if provider.op.ProfileID != replacement.ID || provider.op.ProfileRevision != replacement.Revision {
+		t.Fatalf("a later turn did not bind the configured profile: %+v", provider.op)
 	}
 }

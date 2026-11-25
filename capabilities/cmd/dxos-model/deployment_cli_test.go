@@ -47,6 +47,7 @@ func cliEnvironment(t *testing.T, declaration string) (map[string]string, string
 	return map[string]string{
 		"RAG_MODEL_LITELLM_ENDPOINT":     "http://litellm:4000",
 		"LITELLM_MASTER_KEY":             cliProxyCredential,
+		"RAG_LOCAL_MODELS_QUALIFIED":     "true",
 		"AI_MODEL_CATALOG_DATABASE_URL":  "postgres://catalog@db/test",
 		"AI_MODEL_APPROVAL_DATABASE_URL": "postgres://approval@db/test",
 		"OIDC_ISSUER_URL":                "https://issuer.example",
@@ -243,17 +244,22 @@ func TestDeploymentCLI(t *testing.T) {
 		}
 	})
 
-	t.Run("validate is local and reports both purposes", func(t *testing.T) {
+	t.Run("validate is local and reports what the declaration states", func(t *testing.T) {
 		seams := withCLISeams(t, &cliSeams{})
 		env, path := cliEnvironment(t, cliDeclaration)
 		result := executeCLI(t, env, "", "validate", "--config", path)
 		if result.code != exitOK {
 			t.Fatalf("validate: %d %s", result.code, result.stderr)
 		}
-		for _, want := range []string{"EMBED", "GENERATE", "LOCAL_ONLY", "qualified"} {
+		for _, want := range []string{"EMBED", "GENERATE", "LOCAL_ONLY", "declared", "requires=RAG_LOCAL_MODELS_QUALIFIED"} {
 			if !strings.Contains(result.stdout, want) {
 				t.Fatalf("validate output lacks %q:\n%s", want, result.stdout)
 			}
+		}
+		// validate is schema-only: it has no selection to check, so it must never
+		// claim the runtime serves a route.
+		if strings.Contains(result.stdout, "qualified") {
+			t.Fatalf("validate claimed a runtime qualification:\n%s", result.stdout)
 		}
 		if seams.opened != nil || seams.provider != nil {
 			t.Fatal("validate opened a database or a transport")
@@ -261,19 +267,32 @@ func TestDeploymentCLI(t *testing.T) {
 		if strings.Contains(result.stdout, cliProxyCredential) || strings.Contains(result.stderr, cliProxyCredential) {
 			t.Fatal("validate printed the proxy credential")
 		}
+		document := executeCLI(t, env, "", "validate", "--config", path, "--json")
+		if document.code != exitOK || !strings.Contains(document.stdout, `"declared": true`) || strings.Contains(document.stdout, `"qualified"`) {
+			t.Fatalf("validate JSON shape: %d\n%s", document.code, document.stdout)
+		}
 	})
 
 	t.Run("validate rejects an unusable declaration", func(t *testing.T) {
 		withCLISeams(t, &cliSeams{})
 		env, path := cliEnvironment(t, "enabled: true\nembedding: {model: 'cloud/x', execution: local, api_base: 'https://api.example.com', revision: 'r', dimension: 8}\n")
 		result := executeCLI(t, env, "", "validate", "--config", path)
-		if result.code != exitInvalid {
-			t.Fatalf("invalid declaration accepted: %d", result.code)
+		if result.code != exitInvalid || !strings.Contains(result.stderr, "MODEL_DEPLOYMENT_INVALID") {
+			t.Fatalf("invalid declaration accepted: %d %q", result.code, result.stderr)
 		}
-		env, _ = cliEnvironment(t, cliDeclaration)
-		env["RAG_MODEL_DEPLOYMENT_FILE"] = path
-		if result = executeCLI(t, env, "", "validate"); result.code != exitOK && result.code != exitInvalid {
-			t.Fatalf("unexpected exit %d", result.code)
+	})
+
+	t.Run("validate reads the default declaration without --config", func(t *testing.T) {
+		withCLISeams(t, &cliSeams{})
+		env, _ := cliEnvironment(t, cliDeclaration)
+		// --config defaults to models.yaml in the process directory.
+		t.Chdir(t.TempDir())
+		if err := os.WriteFile("models.yaml", []byte(cliDeclaration), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		result := executeCLI(t, env, "", "validate")
+		if result.code != exitOK || !strings.Contains(result.stdout, "EMBED") || !strings.Contains(result.stdout, "GENERATE") {
+			t.Fatalf("default declaration: %d %q %q", result.code, result.stdout, result.stderr)
 		}
 	})
 
@@ -310,7 +329,27 @@ func TestDeploymentCLI(t *testing.T) {
 		}
 	})
 
-	t.Run("status is read-only and sanitized", func(t *testing.T) {
+	t.Run("a refused probe is unavailable, never an authority denial", func(t *testing.T) {
+		seams := withCLISeams(t, &cliSeams{})
+		// The private proxy refuses the synthetic call: a wrong proxy credential or a
+		// route the proxy does not serve. A probe is technical evidence about the
+		// route, so a failed probe must never be reported as the operator being
+		// denied a permission it does not hold.
+		seams.verifyError = models.ErrPolicy
+		env, path := cliEnvironment(t, cliDeclaration)
+		result := executeCLI(t, env, "", "verify", "--config", path)
+		if result.code != exitUnavailable || !strings.Contains(result.stderr, "MODEL_UNAVAILABLE") {
+			t.Fatalf("a refused probe: %d %q", result.code, result.stderr)
+		}
+		if strings.Contains(result.stderr, "MODEL_ADMIN_DENIED") {
+			t.Fatalf("a technical probe failure was reported as an authority denial: %q", result.stderr)
+		}
+		if !strings.Contains(result.stdout, "passed=false") || !strings.Contains(result.stdout, models.ErrUnavailable.Error()) {
+			t.Fatalf("the probe outcome was not reported per purpose: %q", result.stdout)
+		}
+	})
+
+	t.Run("status is read-only and reports the live qualification", func(t *testing.T) {
 		seams := withCLISeams(t, &cliSeams{})
 		env, path := cliEnvironment(t, cliDeclaration)
 		deployment, err := models.LoadDeployment(strings.NewReader(cliDeclaration))
@@ -319,20 +358,55 @@ func TestDeploymentCLI(t *testing.T) {
 		}
 		embed, _ := deployment.Embedding.Profile("EMBED")
 		seams.status = models.DeploymentStatus{Enabled: true, LiveProfiles: 1, Profiles: []models.DeploymentStatusProfile{{
-			Purpose: "EMBED", ProfileID: embed.ID, Revision: 1, Execution: "LOCAL", ProviderID: embed.ProviderID, ModelID: embed.ModelID, Dimension: 8, Limits: embed.Limits, Selected: true, Enabled: true,
+			Purpose: "EMBED", ProfileID: embed.ID, Revision: embed.Revision, Execution: "LOCAL", ProviderID: embed.ProviderID, ModelID: embed.ModelID, Dimension: 8, Limits: embed.Limits, Selected: true, Enabled: true,
 		}}}
 		seams.index = models.DeploymentIndexStatus{EmbeddingJobsPending: 3, EmbeddingsReady: 2}
 		result := executeCLI(t, env, "", "status", "--config", path)
 		if result.code != exitOK {
 			t.Fatalf("status: %d %s", result.code, result.stderr)
 		}
-		for _, want := range []string{"EMBED", embed.ID, "selected", "pending=3", "ready=2"} {
+		for _, want := range []string{"EMBED", embed.ID, "qualified", "pending=3", "ready=2"} {
 			if !strings.Contains(result.stdout, want) {
 				t.Fatalf("status output lacks %q:\n%s", want, result.stdout)
 			}
 		}
+		// The generation route is declared but not selected: it is blocked, never
+		// reported as another usable route.
+		if !strings.Contains(result.stdout, "GENERATE LOCAL_ONLY blocked=not selected") {
+			t.Fatalf("status did not report the unselected purpose:\n%s", result.stdout)
+		}
+		if strings.Count(result.stdout, "qualified") != 1 {
+			t.Fatalf("status reported more than the one qualified purpose:\n%s", result.stdout)
+		}
 		if strings.Contains(result.stdout, cliProxyCredential) || strings.Contains(result.stdout, "postgres://") {
 			t.Fatal("status printed a secret or a DSN")
+		}
+	})
+
+	t.Run("status reports an unqualified local route", func(t *testing.T) {
+		seams := withCLISeams(t, &cliSeams{})
+		env, path := cliEnvironment(t, cliDeclaration)
+		delete(env, "RAG_LOCAL_MODELS_QUALIFIED")
+		deployment, err := models.LoadDeployment(strings.NewReader(cliDeclaration))
+		if err != nil {
+			t.Fatal(err)
+		}
+		embed, _ := deployment.Embedding.Profile("EMBED")
+		generate, _ := deployment.LLM.Profile("GENERATE")
+		seams.status = models.DeploymentStatus{Enabled: true, LiveProfiles: 2, Profiles: []models.DeploymentStatusProfile{
+			{Purpose: "EMBED", ProfileID: embed.ID, Revision: embed.Revision, Execution: "LOCAL", Selected: true, Enabled: true},
+			{Purpose: "GENERATE", ProfileID: generate.ID, Revision: generate.Revision, Execution: "LOCAL", Selected: true, Enabled: true},
+		}}
+		result := executeCLI(t, env, "", "status", "--config", path)
+		if result.code != exitOK {
+			t.Fatalf("status: %d %s", result.code, result.stderr)
+		}
+		if !strings.Contains(result.stdout, "EMBED LOCAL_ONLY blocked=local route unqualified") ||
+			!strings.Contains(result.stdout, "GENERATE LOCAL_ONLY blocked=local route unqualified") {
+			t.Fatalf("an unqualified local route was reported as usable:\n%s", result.stdout)
+		}
+		if strings.Contains(result.stdout, "LOCAL_ONLY qualified") {
+			t.Fatalf("status claimed a qualification the deployment does not hold:\n%s", result.stdout)
 		}
 	})
 

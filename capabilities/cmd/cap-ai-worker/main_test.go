@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -64,8 +65,29 @@ func TestRuntimeModelGateKeepsWorkerBooting(t *testing.T) {
 			if err != nil || gateway != nil || embed.ID != "" || generate.ID != "" {
 				t.Fatalf("worker startup gate: %v %v %q %q", err, gateway, embed.ID, generate.ID)
 			}
+			// The worker logs one sanitized line for the degraded boot and keeps
+			// running: an absent declaration is not a fatal worker start-up.
+			message, degraded := modelAvailabilityLog(gateway, func(key string) string { return env[key] })
+			if !degraded || !strings.Contains(message, "claiming no model work") {
+				t.Fatalf("the degraded worker boot logged nothing: %q %t", message, degraded)
+			}
 		})
 	}
+	t.Run("models switched off boots the worker silently", func(t *testing.T) {
+		env := map[string]string{}
+		for key, value := range base {
+			env[key] = value
+		}
+		env["RAG_MODELS_ENABLED"] = "false"
+		gateway, embed, generate, closeRuntime, err := models.RuntimeFromEnvironment(context.Background(), func(key string) string { return env[key] })
+		defer closeRuntime()
+		if err != nil || gateway != nil || embed.ID != "" || generate.ID != "" {
+			t.Fatalf("worker models off: %v %v %q %q", err, gateway, embed.ID, generate.ID)
+		}
+		if message, degraded := modelAvailabilityLog(gateway, func(key string) string { return env[key] }); degraded {
+			t.Fatalf("the models-off baseline was reported as degraded: %q", message)
+		}
+	})
 	t.Run("an invalid declaration is still a startup error", func(t *testing.T) {
 		env := map[string]string{}
 		for key, value := range base {

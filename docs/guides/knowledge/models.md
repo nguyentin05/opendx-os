@@ -741,10 +741,12 @@ which rebuilds a separate database and re-derives model state.
 The minimum operator surface is `validate`, `verify`, `status` and
 `policy approve|revoke|suspend`; the exact contract is in the
 [dxos-model CLI reference](../../reference/cli/dxos-model.md). `validate` is
-offline and prints the per-purpose mode and qualification; `verify` makes exactly
-one bounded synthetic call per configured purpose through the same private proxy
-transport the runtime uses and reports per-purpose outcomes. Neither approves
-anything:
+offline and schema-only: it prints the per-purpose mode and states which routes the
+declaration declares (plus what the runtime still needs, such as
+`RAG_LOCAL_MODELS_QUALIFIED` for a local endpoint) and never claims the runtime
+serves them; `verify` makes exactly one bounded synthetic call per configured
+purpose through the same private proxy transport the runtime uses and reports
+per-purpose outcomes. Neither approves anything:
 
 ```bash
 bin/dxos-model validate --config models.yaml
@@ -771,16 +773,25 @@ Write the review that binds the probe to one independent human attestation. The
 }
 ```
 
-Authenticate as a Platform Admin without putting the token in a command line, then
-read the deployment state. `status` is read-only and sanitized; it reports the
-selected profile per purpose and the one reason that blocks it (route absent,
-installation switch off, not selected, suspended, snapshot mismatch):
+Read the deployment state. `status` is read-only, sanitized and unauthenticated by
+contract: it resolves no operator identity, needs no token and changes nothing, and
+it reads only the sanitized deployment report and index counts through the narrow
+catalog login. It reports the selected profile per purpose and the one reason that
+blocks it (route absent, installation switch off, not selected, snapshot mismatch,
+local route unqualified). A purpose is `qualified` only from the current selection
+plus the deployment's own local qualification, so run it with the deployment's
+`RAG_LOCAL_MODELS_QUALIFIED` for a local route:
 
 ```bash
-export AI_MODEL_CATALOG_DATABASE_URL
-bin/dxos-model status --config models.yaml --token-file operator.jwt
+export AI_MODEL_CATALOG_DATABASE_URL   # the narrow deployment login
+bin/dxos-model status --config models.yaml
 unset AI_MODEL_CATALOG_DATABASE_URL
 ```
+
+OIDC identity and operator attribution are mandatory only for the actions that
+change state: `policy approve`, `policy revoke` and `policy suspend` each verify one
+operator token and re-check that subject's current platform authority in the
+database. `status` has no such path and no token input.
 
 The retired candidate-import and slot commands (`import`, `activate`, `deactivate`,
 `slots`, `rollback`, `list`, `inspect`) are gone: they are not a model lifecycle
@@ -821,7 +832,7 @@ query; confirm the deployed app identifier rather than assuming a directory name
 and use the value configured as `AI_AGENT_PROCESSING_APP_ID` for AGENT queries.
 `GENERATE` needs its own review with its own provider, profile revision and
 `purpose`. Withdraw one approval with
-`bin/dxos-model policy revoke --approval <uuid> --reason '<reason>' --token-file
+`bin/dxos-model policy revoke --id <uuid> --reason '<reason>' --token-file
 operator.jwt`; the withdrawn revision cannot be reactivated. APP `NON_PERSONAL`
 processing keeps its separately reviewed procedure above and is not a PERSONAL
 approval.
@@ -838,10 +849,14 @@ still boots.
 
 When a route changes, declare the new route and a new provider ID (one endpoint per
 provider ID), verify it, and keep the old and new routes and IDs until every fenced
-embedding job and pinned operation has drained or failed closed. Retire the old
-configuration explicitly: remove its route from the declaration, reconcile, and
-confirm the old digest no longer resolves. Never reinterpret existing vectors
-under a new dimension.
+embedding job and pinned operation has drained or failed closed. Beware the ordering:
+once the selection moves, a job queued for the superseded embedding revision can no
+longer be claimed, and such jobs stay visible in `status` as pending or failed
+counts until the deployment reconciles back to the revision they were queued for —
+reconcile back if you need them drained, or accept them as failed and re-ingest.
+Retire the old configuration explicitly: remove its route from the declaration,
+reconcile, and confirm the old digest no longer resolves. Never reinterpret existing
+vectors under a new dimension.
 
 Environment files are not encrypted and are not a boundary against a privileged
 host or container operator; they only keep secrets out of Git, images, rendered

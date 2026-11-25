@@ -40,9 +40,9 @@ must follow [source hygiene](../../contribute/source-hygiene.md).
 
 | Command | Purpose |
 | --- | --- |
-| `validate --config FILE [--json]` | Offline. Loads the declaration, proves the proxy configuration renders from it, and reports each purpose's mode and qualification. No database, network or secret |
+| `validate --config FILE [--json]` | Offline and schema-only. Loads the declaration, proves the proxy configuration renders from it, and reports each purpose's mode and whether the declaration names that route. No database, network, secret or runtime qualification |
 | `verify --config FILE [--json]` | One bounded synthetic call per configured purpose through the same private proxy transport the runtime uses. Reports per-purpose outcomes; approves nothing |
-| `status --config FILE [--json]` | Read-only and sanitized. Per purpose: the declared identity, the effective mode, the durable selection and the one reason that blocks it, plus the embedding index counts |
+| `status --config FILE [--json]` | Read-only, unauthenticated and sanitized. Per purpose: the declared identity, the effective mode, whether the deployment currently serves it, or the one reason that blocks it, plus the embedding index counts |
 | `policy approve --file FILE (--token-file FILE \| --token-stdin)` | Records one audited PERSONAL processing approval |
 | `policy revoke --id UUID --reason TEXT (--token-file FILE \| --token-stdin)` | Withdraws one approval |
 | `policy suspend (--token-file FILE \| --token-stdin)` | Withdraws every live model purpose in one audited transaction |
@@ -66,26 +66,45 @@ absent from the usage text, and a purpose the declaration omits is withdrawn.
 
 The declaration is at most 64 KiB of YAML with at most one embedding and one
 generation route. [`models.example.yaml`](../../../models.example.yaml) is the
-reference shape. `validate` prints, per purpose, the effective mode (`DISABLED`,
-`LOCAL_ONLY` or `HOSTED_ALLOWED`), whether the declaration is qualified, and the
-fixed identity (`profile`, `revision`, `provider`, `model`, optional `dimension`,
-`alias`). It opens no database and makes no network call:
+reference shape. `validate` is schema-only: it prints, per purpose, the effective
+mode (`DISABLED`, `LOCAL_ONLY` or `HOSTED_ALLOWED`), whether the declaration
+declares that route, the fixed identity (`profile`, `revision`, `provider`,
+`model`, optional `dimension`, `alias`), and what the runtime additionally
+requires of the deployment before the route is callable. It reports no runtime
+qualification: it opens no database and makes no network call, so it cannot know
+whether the live deployment selects the route:
 
 ```text
-EMBED LOCAL_ONLY qualified profile=embed-primary revision=1 provider=ollama model=ollama/embed dimension=1536 alias=embed
-GENERATE LOCAL_ONLY qualified profile=generate-primary revision=1 provider=ollama model=ollama/llama alias=generate
+EMBED LOCAL_ONLY declared profile=embed-primary revision=1 provider=ollama model=ollama/embed dimension=1536 alias=embed requires=RAG_LOCAL_MODELS_QUALIFIED
+GENERATE LOCAL_ONLY declared profile=generate-primary revision=1 provider=ollama model=ollama/llama alias=generate requires=RAG_LOCAL_MODELS_QUALIFIED
 ```
 
-A declaration the runtime cannot accept — invalid content, an unrenderable route,
-an unqualified local route — exits 2 and names no path or value.
+A local route is additionally qualified by the deployment
+(`RAG_LOCAL_MODELS_QUALIFIED=true`), because a local endpoint is an
+operator-controlled address the runtime never qualifies by inference. A hosted
+route needs no such flag: its reviewed processing approval is the deployment's
+evidence. A declaration the runtime cannot accept — invalid content, an
+unrenderable route — exits 2 and names no path or value.
 
 ## status
 
 `status` merges the declared identity with the durable selection and the index
 counts, on the restricted deployment login. It prints no endpoint, credential,
-token, document, app or content. A purpose is reported `selected`, or `blocked`
-with exactly one reason: `route absent`, `installation switch off`, `not
-selected`, `suspended` or `snapshot mismatch`.
+token, document, app or content. A purpose is reported `qualified` only when the
+database currently selects the exact declared profile and, for a local route, the
+deployment states its local qualification. Otherwise it is `blocked` with exactly
+one reason: `route absent`, `installation switch off`, `not selected`, `snapshot
+mismatch` or `local route unqualified`. A withdrawn or suspended selection is
+reported as `not selected`, because the deployment then selects no profile for that
+purpose.
+
+`status` is read-only and unauthenticated by contract: it resolves no operator, so
+it needs no token, records no audit row and changes nothing. It uses the narrow
+catalog login, which can read the sanitized deployment report and the index counts
+and nothing else. Operator attribution ([OIDC](#protected-token-input) identity plus
+the current platform authority in the database) is mandatory for the commands that
+change state — `policy approve`, `policy revoke` and `policy suspend` — and for
+nothing else.
 
 ## Protected token input
 
@@ -113,9 +132,10 @@ CLI.
 
 | Variable | Used by | Purpose |
 | --- | --- | --- |
-| `AI_MODEL_CATALOG_DATABASE_URL` | `status`, `deployment reconcile` | Restricted deployment login `dxos_ai_model_catalog`; the only session that may read the deployment report or change the selection |
+| `AI_MODEL_CATALOG_DATABASE_URL` | `status`, `policy suspend`, `deployment reconcile` | Restricted deployment login `dxos_ai_model_catalog`; the only session that may read the deployment report, withdraw every live purpose or change the selection |
 | `AI_MODEL_APPROVAL_DATABASE_URL` | `policy approve`, `policy revoke` | The protected `dxos_authz` login, the only session the PERSONAL approval functions execute for |
-| `OIDC_ISSUER_URL`, `OIDC_JWKS_URL`, `OIDC_AUDIENCE` | every policy command | Token verification; all three are required |
+| `OIDC_ISSUER_URL`, `OIDC_JWKS_URL`, `OIDC_AUDIENCE` | `policy approve`, `policy revoke`, `policy suspend` | Token verification; all three are required |
+| `RAG_LOCAL_MODELS_QUALIFIED` | `status` | The deployment's own qualification of a local route. `status` reports a selected local route as `qualified` only when it sees `true`, matching the runtime's requirement |
 | `RAG_MODEL_LITELLM_ENDPOINT`, `LITELLM_MASTER_KEY` | `verify` | The private proxy origin and the one credential the runtime and the probe share. No vendor key is read |
 
 A command opens exactly the one database its own command needs and never falls
@@ -136,13 +156,17 @@ back to another login. DSNs must be URL-form PostgreSQL URLs (`postgres://` or
 Only the stable label is printed; an error never repeats a DSN, a token, a path, a
 statement or an upstream body. Code 6 means the outcome is unknown: reconcile it
 from `status` or the approval record before running another reviewed action. No
-command retries automatically.
+command retries automatically. Code 3 is reserved for the authenticated policy
+actions: a failed `verify` probe is a technical failure of the route, so it is
+reported as 5 `MODEL_UNAVAILABLE` (or 6 when the send may have happened) and never
+as `MODEL_ADMIN_DENIED`.
 
 ## JSON output
 
 | Command | Shape |
 | --- | --- |
-| `validate`, `status` | `{enabled, purposes: [{purpose, mode, profile_id?, revision?, execution?, provider_id?, model_id?, dimension?, alias?, limits?, qualified, blocked?}], index?}` |
+| `validate` | `{enabled, purposes: [{purpose, mode, profile_id?, revision?, execution?, provider_id?, model_id?, dimension?, alias?, limits?, declared, requires?, blocked?}]}` — schema only, with no `qualified` field |
+| `status` | The same shape plus `qualified` on a served purpose and `index`; `qualified` is the live selection plus local qualification, never the declaration alone |
 | `verify` | Array of `{profile_id, revision, purpose, passed, reason?, dimension?, citation_ids?, usage?, checked_at}`, never response text, endpoint or key |
 | `policy approve` | `{approval}` |
 | `policy revoke` | `{approval, changed}` |
@@ -183,6 +207,16 @@ route, and no command fabricates a review on the operator's behalf.
   Possession of a deployment DSN is deployment infrastructure privilege: an
   operator who can connect can also read what that login can read. Protect the
   host, the token files and the environment files accordingly.
+- `validate` reads one file and computes. `status` is read-only and
+  unauthenticated: it acts as no one, reads only the sanitized deployment report and
+  index counts through the narrow catalog login, and prints metadata that carries no
+  profile credential reference, endpoint, document, app or content. That contract is
+  deliberate — a status view needs no operator token, and adding one would not
+  narrow what the catalog login can already read.
+- Every state-changing action is authenticated and attributed: `policy approve`,
+  `policy revoke` and `policy suspend` require exactly one OIDC-verified operator,
+  and the database re-checks that subject's current platform authority inside the
+  audited statement. There is no tokenless path to any of them.
 - `policy suspend` withdraws every live purpose in one transaction on the
   deployment login, as the current operator. The database authenticates the exact
   session, the ACTIVE user and its current `role_operator` grant inside the same
@@ -193,7 +227,9 @@ route, and no command fabricates a review on the operator's behalf.
 - `verify` sends one fixed synthetic request per configured purpose to the private
   proxy. It does not qualify a provider, select a profile, set a qualification flag
   or grant processing permission, and its input is shared with the provisioning
-  probe so the two cannot drift.
+  probe so the two cannot drift. A probe result is technical evidence: it never
+  authorizes or denies an identity, and a refusal is reported as an unavailable
+  call.
 - No command adds a public health, control or mutation route, and no credential
   moves from a protected file into an argument list, a rendered Compose document
   or a shell history.

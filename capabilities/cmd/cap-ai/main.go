@@ -94,6 +94,19 @@ func newRuntimeChatHandler(authenticator agent.ChatAuthenticator, sources *knowl
 	return agent.NewHandler(authenticator, store, reply, scopes, sources)
 }
 
+// modelAvailabilityLog is the one sanitized start-up line a model-enabled process
+// logs when no route is callable. It is the distinguishable evidence of the
+// documented degraded boot: models are switched on, so the deployment expected a
+// route, but no purpose is current (an absent declaration, a disabled declaration or
+// an unreconciled selection). Models switched off log nothing, because lexical
+// search is then the configured baseline rather than a degraded state.
+func modelAvailabilityLog(gateway *models.Gateway, getenv func(string) string) (string, bool) {
+	if gateway != nil || getenv(models.ModelsEnabledEnv) != "true" {
+		return "", false
+	}
+	return "model calls unavailable: no callable deployment profile; serving authorized lexical search only", true
+}
+
 func main() {
 	c, err := loadConfig(os.Getenv)
 	if err != nil {
@@ -183,11 +196,11 @@ func main() {
 		log.Fatal("invalid model gateway configuration")
 	}
 	defer closeGateway()
-	if gateway == nil && os.Getenv("RAG_MODELS_ENABLED") == "true" {
+	if message, degraded := modelAvailabilityLog(gateway, os.Getenv); degraded {
 		// A declared but unreconciled deployment is not a startup failure: the
 		// process boots and every model call stays unavailable. The message names no
 		// profile, endpoint, credential or document.
-		log.Printf("model calls unavailable: no callable deployment profile; serving authorized lexical search only")
+		log.Print(message)
 	}
 	store.ConfigureModels(gateway, embed, generate)
 	if err = store.ConfigurePersonal(personal, os.Getenv("RAG_FILE_API_URL"), os.Getenv("KNOWLEDGE_ARTIFACT_ROOT")); err != nil {

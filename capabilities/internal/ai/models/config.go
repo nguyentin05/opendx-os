@@ -21,30 +21,30 @@ import (
 // provider key in the Go environment. The provider credential the runtime holds is
 // the private proxy's master key, supplied by the deployment.
 const (
-	// deploymentFileEnv names the one private runtime declaration path. The
+	// DeploymentFileEnv names the one private runtime declaration path. The
 	// default is the deployment's own models.yaml.
-	deploymentFileEnv     = "RAG_MODEL_DEPLOYMENT_FILE"
+	DeploymentFileEnv     = "RAG_MODEL_DEPLOYMENT_FILE"
 	defaultDeploymentFile = "models.yaml"
-	// modelsEnabledEnv is the installation switch of the whole model surface. A
+	// ModelsEnabledEnv is the installation switch of the whole model surface. A
 	// deployment that leaves it off serves lexical/FTS search only.
-	modelsEnabledEnv = "RAG_MODELS_ENABLED"
-	// proxyEndpointEnv and proxyCredentialEnv name the private proxy origin and
+	ModelsEnabledEnv = "RAG_MODELS_ENABLED"
+	// ProxyEndpointEnv and ProxyCredentialEnv name the private proxy origin and
 	// the master key the runtime authenticates with. The value is never printed,
 	// stored or used for any other destination.
-	proxyEndpointEnv   = "RAG_MODEL_LITELLM_ENDPOINT"
-	proxyCredentialEnv = "LITELLM_MASTER_KEY"
-	// proxyConfigEnv optionally names the generated proxy configuration the
+	ProxyEndpointEnv   = "RAG_MODEL_LITELLM_ENDPOINT"
+	ProxyCredentialEnv = "LITELLM_MASTER_KEY"
+	// ProxyConfigEnv optionally names the generated proxy configuration the
 	// deployment started. When it is set, the runtime requires it to be exactly the
 	// document this declaration renders, so an independently edited or stale proxy
 	// configuration cannot serve a route the runtime believes in.
-	proxyConfigEnv = "RAG_MODEL_LITELLM_CONFIG_FILE"
-	// gatewayDatabaseEnv names the restricted gateway login. It can operate model
+	ProxyConfigEnv = "RAG_MODEL_LITELLM_CONFIG_FILE"
+	// GatewayDatabaseEnv names the restricted gateway login. It can operate model
 	// policy and durable operations only; it holds no table privilege.
-	gatewayDatabaseEnv = "AI_GATEWAY_DATABASE_URL"
-	// localModelsQualifiedEnv is the separate qualification of a local route. A
+	GatewayDatabaseEnv = "AI_GATEWAY_DATABASE_URL"
+	// LocalModelsQualifiedEnv is the separate qualification of a local route. A
 	// local route is a trusted operator-controlled endpoint, and the deployment
 	// states that it qualified it; the runtime does not infer it from an address.
-	localModelsQualifiedEnv = "RAG_LOCAL_MODELS_QUALIFIED"
+	LocalModelsQualifiedEnv = "RAG_LOCAL_MODELS_QUALIFIED"
 )
 
 // gatewayBinding is the durable half of the runtime: the restricted gateway login
@@ -64,7 +64,7 @@ type gatewayBinding struct {
 // deployment — is refused, so the runtime cannot start on a snapshot the database
 // does not hold.
 var openGatewayBinding = func(ctx context.Context, getenv func(string) string, profiles []Profile) (*gatewayBinding, error) {
-	dsn := strings.TrimSpace(getenv(gatewayDatabaseEnv))
+	dsn := strings.TrimSpace(getenv(GatewayDatabaseEnv))
 	if dsn == "" {
 		return nil, ErrPolicy
 	}
@@ -120,11 +120,15 @@ var openGatewayBinding = func(ctx context.Context, getenv func(string) string, p
 // switch is off, no declaration exists, the declaration disables inference, or the
 // declaration is valid but its live state is not — an unreconciled, withdrawn or
 // drifted database snapshot, an unusable or stale proxy configuration, or an
-// authority the runtime cannot reach. The process still boots; callers keep their
-// lexical/FTS parsing and search path and simply make no model call. Only a
-// declaration the runtime cannot accept at all — invalid content, an unrenderable
-// route, an unqualified local route, or models switched on without their qualified
-// predecessors — is an error, because no review could have produced it.
+// authority the runtime cannot reach. Availability is per purpose: when only one
+// declared purpose is current, that purpose stays callable and the other is
+// reported as an empty Profile, so an installation never loses a route the
+// deployment does select. The process still boots; callers keep their
+// lexical/FTS parsing and search path and simply make no model call for an
+// unavailable purpose. Only a declaration the runtime cannot accept at all —
+// invalid content, an unrenderable route, an unqualified local route, or models
+// switched on without their qualified predecessors — is an error, because no
+// review could have produced it.
 func RuntimeFromEnvironment(ctx context.Context, getenv func(string) string) (*Gateway, Profile, Profile, func(), error) {
 	noop := func() {}
 	if getenv == nil {
@@ -136,7 +140,7 @@ func RuntimeFromEnvironment(ctx context.Context, getenv func(string) string) (*G
 	failed := func(err error) (*Gateway, Profile, Profile, func(), error) {
 		return nil, Profile{}, Profile{}, noop, err
 	}
-	if getenv(modelsEnabledEnv) != "true" {
+	if getenv(ModelsEnabledEnv) != "true" {
 		return unavailable()
 	}
 	// Source, metadata and parser qualification are independent, pre-existing
@@ -148,7 +152,7 @@ func RuntimeFromEnvironment(ctx context.Context, getenv func(string) string) (*G
 			return failed(ErrPolicy)
 		}
 	}
-	path := strings.TrimSpace(getenv(deploymentFileEnv))
+	path := strings.TrimSpace(getenv(DeploymentFileEnv))
 	if path == "" {
 		path = defaultDeploymentFile
 	}
@@ -184,7 +188,7 @@ func RuntimeFromEnvironment(ctx context.Context, getenv func(string) string) (*G
 	if embed.ID == "" && generate.ID == "" {
 		return unavailable()
 	}
-	if configPath := strings.TrimSpace(getenv(proxyConfigEnv)); configPath != "" {
+	if configPath := strings.TrimSpace(getenv(ProxyConfigEnv)); configPath != "" {
 		err = verifyProxyConfiguration(deployment, configPath)
 		switch {
 		case err == nil:
@@ -198,7 +202,7 @@ func RuntimeFromEnvironment(ctx context.Context, getenv func(string) string) (*G
 			return failed(err)
 		}
 	}
-	provider, err := NewLiteLLMProvider(strings.TrimSpace(getenv(proxyEndpointEnv)), getenv(proxyCredentialEnv), deployment)
+	provider, err := NewLiteLLMProvider(strings.TrimSpace(getenv(ProxyEndpointEnv)), getenv(ProxyCredentialEnv), deployment)
 	if err != nil {
 		return failed(err)
 	}
@@ -216,21 +220,37 @@ func RuntimeFromEnvironment(ctx context.Context, getenv func(string) string) (*G
 		return unavailable()
 	}
 	// The database is the authority: a configured route the deployment does not
-	// currently select — an unreconciled, suspended or drifted snapshot — is not
-	// usable, however valid the declaration is.
+	// currently select — an unreconciled, withdrawn, suspended or drifted snapshot —
+	// is not usable, however valid the declaration is. Availability is per purpose:
+	// an unavailable purpose never withdraws the other one, whose route stays
+	// callable with its exact configuration.
+	current := make([]Profile, 0, len(profiles))
 	for _, profile := range profiles {
 		if err := binding.verifier(ctx, profile); err != nil {
-			binding.close()
-			return unavailable()
+			// Drop exactly this purpose and report it as unavailable. Callers
+			// already treat an empty profile as a purpose they cannot use.
+			if profile.Purpose == purposeEmbed {
+				embed = Profile{}
+			} else {
+				generate = Profile{}
+			}
+			continue
 		}
+		current = append(current, profile)
+	}
+	if len(current) == 0 {
+		// No purpose is current: the installation boots with model calls
+		// unavailable and keeps its lexical path.
+		binding.close()
+		return unavailable()
 	}
 	gateway := &Gateway{
 		Policy:     &Policy{Authority: DatabaseAuthority{DB: binding.db}, Enabled: true},
 		Operations: &OperationStore{DB: binding.db},
-		Providers:  make(map[string]Provider, 2),
-		Routes:     make(map[string]Profile, 2),
+		Providers:  make(map[string]Provider, len(current)),
+		Routes:     make(map[string]Profile, len(current)),
 	}
-	for _, profile := range profiles {
+	for _, profile := range current {
 		// One private proxy serves every declared route; the route is selected by
 		// the immutable profile identity, never by a provider name.
 		gateway.Providers[profile.ProviderID] = provider
@@ -250,7 +270,7 @@ func configuredProfile(spec *ModelSpec, purpose string, getenv func(string) stri
 	if err != nil {
 		return Profile{}, err
 	}
-	if profile.Execution == "LOCAL" && getenv(localModelsQualifiedEnv) != "true" {
+	if profile.Execution == "LOCAL" && getenv(LocalModelsQualifiedEnv) != "true" {
 		return Profile{}, ErrPolicy
 	}
 	return profile, nil

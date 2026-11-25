@@ -233,30 +233,65 @@ func TestRuntimeDeploymentConfig(t *testing.T) {
 		}
 	})
 
-	t.Run("a missing snapshot degrades instead of failing startup", func(t *testing.T) {
-		_, generate := declaredProfiles(t)
-		double := &runtimeAuthorityDouble{stored: map[string]Profile{generate.ID: generate}}
+	t.Run("an unreconciled purpose leaves the other routable", func(t *testing.T) {
+		embed, _ := declaredProfiles(t)
+		// The database selects EMBED only: generation has not been reconciled (or was
+		// withdrawn), so it is unavailable on its own and the deployment keeps the
+		// embedding route it does select.
+		double := &runtimeAuthorityDouble{stored: map[string]Profile{embed.ID: embed}}
 		withRuntimeAuthority(t, double)
 		gateway, gotEmbed, gotGenerate, closeRuntime, err := RuntimeFromEnvironment(context.Background(), envLookup(runtimeEnvironment(t, runtimeDeclaration)))
-		closeRuntime()
-		if err != nil || gateway != nil || gotEmbed.ID != "" || gotGenerate.ID != "" {
-			t.Fatalf("an unreconciled declared profile was admitted: %v %v %q %q", err, gateway, gotEmbed.ID, gotGenerate.ID)
+		defer closeRuntime()
+		if err != nil || gateway == nil || gotEmbed != embed || gotGenerate.ID != "" {
+			t.Fatalf("generation was not the only unavailable purpose: %v %v %q %q", err, gateway, gotEmbed.ID, gotGenerate.ID)
+		}
+		if len(gateway.Routes) != 1 || gateway.Routes[embed.ID] != embed {
+			t.Fatal("the runtime bound a route the deployment does not select")
 		}
 		if double.calls == 0 {
 			t.Fatal("the database was never consulted")
 		}
 	})
 
-	t.Run("a mismatched snapshot degrades instead of failing startup", func(t *testing.T) {
+	t.Run("the reverse purpose is routable on its own", func(t *testing.T) {
+		_, generate := declaredProfiles(t)
+		// The reverse: generation is current and embedding is not, which is the
+		// search-only shape — FTS stays available and a query embedding is denied.
+		double := &runtimeAuthorityDouble{stored: map[string]Profile{generate.ID: generate}}
+		withRuntimeAuthority(t, double)
+		gateway, gotEmbed, gotGenerate, closeRuntime, err := RuntimeFromEnvironment(context.Background(), envLookup(runtimeEnvironment(t, runtimeDeclaration)))
+		defer closeRuntime()
+		if err != nil || gateway == nil || gotEmbed.ID != "" || gotGenerate != generate {
+			t.Fatalf("embedding was not the only unavailable purpose: %v %v %q %q", err, gateway, gotEmbed.ID, gotGenerate.ID)
+		}
+		if len(gateway.Routes) != 1 || gateway.Routes[generate.ID] != generate {
+			t.Fatal("the runtime bound a route the deployment does not select")
+		}
+	})
+
+	t.Run("a drifted purpose does not withdraw the other", func(t *testing.T) {
 		embed, generate := declaredProfiles(t)
 		drifted := generate
 		drifted.Limits.MaxOutputTokens++
 		double := &runtimeAuthorityDouble{stored: map[string]Profile{embed.ID: embed, generate.ID: drifted}}
 		withRuntimeAuthority(t, double)
 		gateway, gotEmbed, gotGenerate, closeRuntime, err := RuntimeFromEnvironment(context.Background(), envLookup(runtimeEnvironment(t, runtimeDeclaration)))
+		defer closeRuntime()
+		if err != nil || gateway == nil || gotEmbed != embed || gotGenerate.ID != "" {
+			t.Fatalf("a drifted deployment row was admitted: %v %v %q %q", err, gateway, gotEmbed.ID, gotGenerate.ID)
+		}
+		if len(gateway.Routes) != 1 || gateway.Routes[embed.ID] != embed {
+			t.Fatal("the runtime bound the drifted route")
+		}
+	})
+
+	t.Run("no current purpose degrades to lexical search", func(t *testing.T) {
+		double := &runtimeAuthorityDouble{stored: map[string]Profile{}}
+		withRuntimeAuthority(t, double)
+		gateway, gotEmbed, gotGenerate, closeRuntime, err := RuntimeFromEnvironment(context.Background(), envLookup(runtimeEnvironment(t, runtimeDeclaration)))
 		closeRuntime()
 		if err != nil || gateway != nil || gotEmbed.ID != "" || gotGenerate.ID != "" {
-			t.Fatalf("a drifted deployment row was admitted: %v %v %q %q", err, gateway, gotEmbed.ID, gotGenerate.ID)
+			t.Fatalf("an unreconciled declaration bound a route: %v %v %q %q", err, gateway, gotEmbed.ID, gotGenerate.ID)
 		}
 	})
 

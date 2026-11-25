@@ -108,21 +108,25 @@ Usage:
   There is no candidate catalog and no slot: no command here changes an
   installation's model at runtime.
 
-  validate  Offline. Loads the declaration, renders the proxy configuration from it
-            and prints, per configured purpose, the fixed digest identity, the
-            effective mode (DISABLED, LOCAL_ONLY or HOSTED_ALLOWED) and whether the
-            route is qualified. It opens no database and makes no network call.
+  validate  Offline and schema-only. Loads the declaration, renders the proxy
+            configuration from it and prints, per configured purpose, the fixed
+            digest identity, the effective mode (DISABLED, LOCAL_ONLY or
+            HOSTED_ALLOWED) and whether the declaration declares that route. It
+            reports no runtime qualification, opens no database and makes no
+            network call.
   verify    Makes exactly one bounded synthetic call per configured purpose through
             the same private proxy transport the runtime uses. The input is fixed,
             the call is never retried, and it reports per-purpose outcomes. It sends
             no real document, opens no database and neither qualifies a route nor
             approves any processing.
-  status    Read-only. Reports, per purpose, the declared identity, the effective
-            mode and the one reason that blocks it (route absent, installation
-            switch off, not selected, suspended, snapshot mismatch), plus the
-            embedding index counts. It reads the sanitized deployment report on the
-            restricted ` + catalogDatabaseEnv + ` login and prints no endpoint,
-            credential, token or content.
+  status    Read-only and unauthenticated by contract: it resolves no operator
+            identity, needs no token and changes nothing. Reports, per purpose, the
+            declared identity, the effective mode and whether the deployment
+            currently serves that route, or the one reason that blocks it (route
+            absent, installation switch off, not selected, snapshot mismatch, local
+            route unqualified), plus the embedding index counts. It reads the
+            sanitized deployment report on the restricted ` + catalogDatabaseEnv + ` login
+            and prints no endpoint, credential, token or content.
 
   policy approve  Records one reviewed PERSONAL processing approval. The review file
             must contain exactly the approved personal fields; it records processing
@@ -263,8 +267,14 @@ func loadDeclaration(path string) (models.Deployment, error) {
 	return deployment, nil
 }
 
-// purposeReport is one purpose's local, sanitized view. It never carries a
-// credential value, an endpoint, a token or any content.
+// purposeReport is one purpose's sanitized view. It never carries a credential
+// value, an endpoint, a token or any content.
+//
+// Declared is the schema-level outcome that `validate` reports: the declaration
+// names the purpose and its immutable profile derives. It is local evidence and
+// never a runtime qualification. Qualified is the runtime outcome, and only
+// `status` sets it, from the durable selection plus the deployment's own
+// qualification of a local route.
 type purposeReport struct {
 	Purpose   string        `json:"purpose"`
 	Mode      string        `json:"mode"`
@@ -276,8 +286,12 @@ type purposeReport struct {
 	Dimension int           `json:"dimension,omitempty"`
 	Alias     string        `json:"alias,omitempty"`
 	Limits    models.Limits `json:"limits,omitempty"`
-	Qualified bool          `json:"qualified"`
-	Blocked   string        `json:"blocked,omitempty"`
+	Declared  bool          `json:"declared"`
+	Qualified bool          `json:"qualified,omitempty"`
+	// Requires names what the runtime additionally requires of the deployment
+	// before this declared route is callable, beyond the declaration itself.
+	Requires string `json:"requires,omitempty"`
+	Blocked  string `json:"blocked,omitempty"`
 }
 
 // deploymentMode maps one configured route to the effective mode of ADR 0011
@@ -294,8 +308,11 @@ func deploymentMode(profile models.Profile) string {
 	}
 }
 
-// reportProfiles builds the local report of one declaration. A disabled
-// installation reports both purposes disabled and names the switch as the reason.
+// reportProfiles builds the local report of one declaration. It is schema-level
+// evidence only: it states which purposes the declaration names, their fixed
+// identity and the effective mode, and never claims the runtime serves them. A
+// disabled installation reports both purposes disabled and names the switch as the
+// reason.
 func reportProfiles(deployment models.Deployment) ([]purposeReport, error) {
 	reports := make([]purposeReport, 0, 2)
 	for _, route := range []struct {
@@ -329,7 +346,12 @@ func reportProfiles(deployment models.Deployment) ([]purposeReport, error) {
 			continue
 		}
 		report.Mode = deploymentMode(profile)
-		report.Qualified = true
+		report.Declared = true
+		if profile.Execution == "LOCAL" {
+			// A local route is qualified by the deployment, not by the declaration:
+			// the runtime refuses an unqualified local endpoint.
+			report.Requires = models.LocalModelsQualifiedEnv
+		}
 		reports = append(reports, report)
 	}
 	return reports, nil
@@ -337,7 +359,8 @@ func reportProfiles(deployment models.Deployment) ([]purposeReport, error) {
 
 // runValidate is offline: it loads the declaration, proves the proxy
 // configuration renders from it, and prints the local report. Nothing here opens a
-// database, resolves a credential or makes a call.
+// database, resolves a credential or makes a call, so it reports what the
+// declaration states and never a runtime qualification.
 func runValidate(args []string, stdout, stderr io.Writer) int {
 	set := newFlagSet("validate")
 	configPath := set.String("config", defaultConfigPath, "deployment declaration file")
@@ -367,7 +390,7 @@ func runValidate(args []string, stdout, stderr io.Writer) int {
 		if report.Blocked != "" {
 			line += " blocked=" + report.Blocked
 		} else {
-			line += " qualified"
+			line += " declared"
 		}
 		if report.ProfileID != "" {
 			line += fmt.Sprintf(" profile=%s revision=%d provider=%s model=%s", report.ProfileID, report.Revision, report.Provider, report.Model)
@@ -375,6 +398,9 @@ func runValidate(args []string, stdout, stderr io.Writer) int {
 				line += fmt.Sprintf(" dimension=%d", report.Dimension)
 			}
 			line += " alias=" + report.Alias
+		}
+		if report.Requires != "" {
+			line += " requires=" + report.Requires
 		}
 		if _, err := fmt.Fprintln(stdout, line); err != nil {
 			return fail(stderr, unavailableFailure("the report could not be written"))
@@ -400,10 +426,10 @@ func runVerify(ctx context.Context, args []string, getenv func(string) string, s
 	if !deployment.Enabled || (deployment.Embedding == nil && deployment.LLM == nil) {
 		return fail(stderr, invalidArgs("verify requires an enabled declaration with at least one configured purpose"))
 	}
-	endpoint := strings.TrimSpace(getenv("RAG_MODEL_LITELLM_ENDPOINT"))
-	secret := getenv("LITELLM_MASTER_KEY")
+	endpoint := strings.TrimSpace(getenv(models.ProxyEndpointEnv))
+	secret := getenv(models.ProxyCredentialEnv)
 	if endpoint == "" || secret == "" {
-		return fail(stderr, invalidArgs("verify requires RAG_MODEL_LITELLM_ENDPOINT and LITELLM_MASTER_KEY"))
+		return fail(stderr, invalidArgs("verify requires "+models.ProxyEndpointEnv+" and "+models.ProxyCredentialEnv))
 	}
 	provider, err := newDeploymentTransport(endpoint, secret, deployment)
 	if err != nil || provider == nil {
@@ -445,9 +471,10 @@ type statusReport struct {
 	Index    models.DeploymentIndexStatus `json:"index"`
 }
 
-// runStatus is read-only. It reads the sanitized deployment report and the index
-// counts on the restricted deployment login, and prints no endpoint, credential,
-// token, document or app.
+// runStatus is read-only and unauthenticated by contract: it reads the sanitized
+// deployment report and the index counts on the restricted deployment login, and
+// prints no endpoint, credential, token, document or app. It resolves no operator
+// identity and records no audit row, because it changes nothing.
 func runStatus(ctx context.Context, args []string, getenv func(string) string, stdout, stderr io.Writer) int {
 	set := newFlagSet("status")
 	configPath := set.String("config", defaultConfigPath, "deployment declaration file")
@@ -486,7 +513,7 @@ func runStatus(ctx context.Context, args []string, getenv func(string) string, s
 	if err != nil {
 		return fail(stderr, err)
 	}
-	mergeSelection(reports, status)
+	mergeSelection(reports, status, getenv(models.LocalModelsQualifiedEnv) == "true")
 	if *asJSON {
 		return writeJSON(stdout, stderr, statusReport{Enabled: status.Enabled, Purposes: reports, Index: index})
 	}
@@ -494,11 +521,14 @@ func runStatus(ctx context.Context, args []string, getenv func(string) string, s
 		line := fmt.Sprintf("%s %s", report.Purpose, report.Mode)
 		if report.Blocked != "" {
 			line += " blocked=" + report.Blocked
-		} else {
-			line += " selected"
+		} else if report.Qualified {
+			line += " qualified"
 		}
 		if report.ProfileID != "" {
 			line += fmt.Sprintf(" profile=%s revision=%d", report.ProfileID, report.Revision)
+		}
+		if report.Requires != "" {
+			line += " requires=" + report.Requires
 		}
 		if _, err := fmt.Fprintln(stdout, line); err != nil {
 			return fail(stderr, unavailableFailure("the report could not be written"))
@@ -513,10 +543,11 @@ func runStatus(ctx context.Context, args []string, getenv func(string) string, s
 	return exitOK
 }
 
-// mergeSelection adds the durable selection to the local report. A purpose the
-// database does not select is blocked, and its one reason is the first thing that
-// denies it.
-func mergeSelection(reports []purposeReport, status models.DeploymentStatus) {
+// mergeSelection adds the durable selection to the local report. A purpose is
+// `qualified` only when the database currently selects the exact declared profile
+// and, for a local route, the deployment states its local qualification. Otherwise
+// it is blocked, and its one reason is the first thing that denies it.
+func mergeSelection(reports []purposeReport, status models.DeploymentStatus, localQualified bool) {
 	selected := map[string]models.DeploymentStatusProfile{}
 	for _, entry := range status.Profiles {
 		if entry.Selected {
@@ -525,20 +556,24 @@ func mergeSelection(reports []purposeReport, status models.DeploymentStatus) {
 	}
 	for i := range reports {
 		report := &reports[i]
-		if report.Blocked != "" {
+		if report.Blocked != "" || !report.Declared {
 			continue
 		}
 		entry, ok := selected[report.Purpose]
 		if !ok {
-			report.Qualified = false
 			report.Blocked = "not selected"
 			continue
 		}
 		if entry.ProfileID != report.ProfileID || entry.Revision != report.Revision || entry.Execution != report.Execution {
 			// The declaration on disk and the durable selection disagree: the
 			// deployment must reconcile before this route is served.
-			report.Qualified = false
 			report.Blocked = "snapshot mismatch"
+			continue
+		}
+		if report.Execution == "LOCAL" && !localQualified {
+			// The runtime refuses a local endpoint the deployment has not qualified,
+			// so the selection alone does not make this route callable.
+			report.Blocked = "local route unqualified"
 			continue
 		}
 		report.Qualified = true

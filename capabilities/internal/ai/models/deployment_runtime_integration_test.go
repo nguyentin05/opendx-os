@@ -110,13 +110,42 @@ func TestDeploymentRuntimeBindsExactSelection(t *testing.T) {
 	}
 	closeRuntime()
 
-	// A withdrawn purpose is an unreconciled deployment: the declaration still
-	// names it while the database no longer serves it, so the runtime serves no
-	// model route at all and degrades to lexical search rather than crash-looping.
+	// A purpose the deployment no longer selects is unavailable on its own. The
+	// embedding route stays callable, so the installation keeps its embedding work
+	// and serves the generation side as search-only rather than losing both routes.
 	applySelection(t, db, DeploymentSelection{Embedding: &embed})
+	gateway, gotEmbed, gotGenerate, closeRuntime, err = RuntimeFromEnvironment(context.Background(), getenv)
+	if err != nil || gateway == nil || gotEmbed != embed || gotGenerate.ID != "" {
+		closeRuntime()
+		t.Fatalf("an unreconciled generation purpose withdrew the embedding route: %v %v %q %q", err, gateway, gotEmbed.ID, gotGenerate.ID)
+	}
+	if len(gateway.Routes) != 1 || gateway.Routes[embed.ID] != embed {
+		closeRuntime()
+		t.Fatal("the runtime bound a route the deployment does not select")
+	}
+	closeRuntime()
+
+	// The reverse: generation alone. The embedding purpose is unavailable, which is
+	// the search-only shape — authorized FTS still works and no query embedding is
+	// requested.
+	applySelection(t, db, DeploymentSelection{Generation: &generate})
+	gateway, gotEmbed, gotGenerate, closeRuntime, err = RuntimeFromEnvironment(context.Background(), getenv)
+	if err != nil || gateway == nil || gotEmbed.ID != "" || gotGenerate != generate {
+		closeRuntime()
+		t.Fatalf("an unreconciled embedding purpose withdrew the generation route: %v %v %q %q", err, gateway, gotEmbed.ID, gotGenerate.ID)
+	}
+	if len(gateway.Routes) != 1 || gateway.Routes[generate.ID] != generate {
+		closeRuntime()
+		t.Fatal("the runtime bound a route the deployment does not select")
+	}
+	closeRuntime()
+
+	// No purpose selected at all: the runtime serves no model route and the process
+	// still boots.
+	applySelection(t, db, DeploymentSelection{})
 	if g, _, _, closeRuntime, err := RuntimeFromEnvironment(context.Background(), getenv); err != nil || g != nil {
 		closeRuntime()
-		t.Fatalf("the runtime started on a declaration the deployment does not select: %v %v", g, err)
+		t.Fatalf("the runtime started with no current purpose: %v %v", g, err)
 	}
 
 	// Restoring the selection restores the binding.
@@ -143,7 +172,6 @@ func TestDeploymentRuntimeBindsExactSelection(t *testing.T) {
 // answers for the exact configured profile only, and never for a historical row.
 func TestDeploymentRuntimePolicyRejectsUnselectedProfile(t *testing.T) {
 	db, embed, generate := runtimeFixture(t)
-	ctx := context.Background()
 	gatewayDB := testutil.As(t, integrationDSN(t, db), "dxos_ai_gateway")
 	var raw []byte
 	if err := gatewayDB.QueryRow(`SELECT cap_ai.model_profile($1,$2)`, generate.ID, generate.Revision).Scan(&raw); err != nil {
@@ -168,7 +196,6 @@ func TestDeploymentRuntimePolicyRejectsUnselectedProfile(t *testing.T) {
 			t.Fatalf("%s can still resolve a slot: %v", role, err)
 		}
 	}
-	_ = ctx
 }
 
 // TestDeploymentRuntimePolicyDeniesUnconfiguredProfile proves a model call for a
