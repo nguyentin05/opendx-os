@@ -2,8 +2,9 @@
 # Copyright 2026 DX-OS Open-Core Contributors
 # PostgreSQL 17, initialized exactly like the Compose service: the image runs
 # the scripts in /docker-entrypoint-initdb.d once, on an empty data volume. The
-# scripts come from the postgres-seed ConfigMap (a tarball of platform/postgres
-# built by deploy/k8s/apply.sh), so no file list is maintained here.
+# scripts come from the postgres-seed ConfigMap (configmaps/postgres-seed.yaml,
+# generated from platform/postgres): the init container restores the directory
+# layout ('__' in a key is '/') and the execute bit of the shell scripts.
 apiVersion: v1
 kind: Service
 metadata:
@@ -35,7 +36,17 @@ spec:
       initContainers:
       - name: seed
         image: postgres:17-alpine
-        command: ["sh", "-c", "tar -xzf /seed/postgres-seed.tgz -C /initdb"]
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          for f in /seed/*; do
+            dest="/initdb/$(basename "$f" | sed 's#__#/#g')"
+            mkdir -p "$(dirname "$dest")"
+            cp "$f" "$dest"
+          done
+          chmod 755 /initdb/*.sh
         volumeMounts:
         - name: seed
           mountPath: /seed

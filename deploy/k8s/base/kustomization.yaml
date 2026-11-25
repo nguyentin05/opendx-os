@@ -5,9 +5,8 @@
 #   tier2-capabilities/  capability services and the App Shell, namespace dxos
 #   dxos-controller      Tier 1 as well, in dxos-operator-system; it installs
 #                        Tier 3 applications declared as DXApplication resources
-# deploy/k8s/apply.sh creates the Secrets (dxos-secrets, seaweedfs-s3) and the
-# ConfigMaps built from files under platform/ (postgres-seed, keycloak-realm,
-# kestra-config, apisix-config) first. No public entry point: an overlay adds one.
+# deploy/k8s/apply.sh creates the Secrets (dxos-secrets, seaweedfs-s3,
+# dxos-operator-config) first. No public entry point: an overlay adds one.
 resources:
 - namespace.yaml
 - tier1-platform

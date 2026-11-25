@@ -26,13 +26,14 @@ Kubernetes manifests live under `deploy/k8s`, grouped by the platform's tiers
 
 ```
 deploy/k8s/
-  apply.sh                creates Secrets and ConfigMaps, then applies an overlay
+  apply.sh                creates the Secrets, then applies an overlay
   base/                   the whole platform; no public entry point
     kustomization.yaml    tiers + dxos-controller, public settings, images
     namespace.yaml
     tier1-platform/       shared infrastructure, namespace dxos
       postgres.yaml keycloak.yaml authz.yaml hasura.yaml apisix.yaml
       kestra.yaml seaweedfs.yaml clamav.yaml
+      configmaps/         generated from platform/ (make k8s-config); do not edit
     tier2-capabilities/   capability services and the App Shell, namespace dxos
       cap-process.yaml cap-hr.yaml workspace-ui.yaml
   overlays/eks/           example: gp3 storage, one public ALB (the test cluster)
@@ -46,8 +47,13 @@ deploy/k8s/
 
 The base runs the same images and configuration as `compose.yaml`. Service names
 match the Compose service names, so `platform/apisix/apisix.yaml`,
-`platform/kestra/config.yaml` and the PostgreSQL init scripts are used unchanged:
-`apply.sh` turns those files into ConfigMaps, so there is one copy of each.
+`platform/kestra/config.yaml`, the Keycloak realm and the PostgreSQL init scripts
+are used unchanged. The ConfigMaps under `base/tier1-platform/configmaps/` are
+committed manifests generated from those files, so what is applied can be read
+and reviewed. `platform/` stays the only copy: after changing a file there, run
+`make k8s-config`; `tests/test_deploy.py` fails while a generated ConfigMap is
+out of date. In `postgres-seed`, a key's `__` stands for `/`
+(`migrations__core__0001_….sql`); its init container restores the directories.
 
 ## Kubernetes (any cluster)
 
@@ -129,6 +135,19 @@ kubectl -n dxos get pods -w
 kubectl -n dxos get ingress dxos   # ADDRESS: where to point both host names
 ```
 
+`apply.sh` only turns the secrets file into three Secrets, which are never
+committed, and then runs `kubectl apply --server-side` on the overlay. Without
+the script:
+
+1. Create `dxos-secrets` in namespace `dxos` with the keys listed in `apply.sh`
+   (`SECRETS=`), `seaweedfs-s3` from `platform/seaweedfs/s3.json` with your two S3
+   keys in place of the development ones, and `dxos-operator-config` in
+   `dxos-operator-system` (`DATABASE_URL`, `HASURA_URL`, `HASURA_ADMIN_SECRET`,
+   `KESTRA_URL`, `KESTRA_USER`, `KESTRA_PASSWORD`).
+2. `kubectl apply --server-side -k deploy/k8s/overlays/<your-overlay>`.
+   Server-side apply is required: `postgres-seed` is larger than the 256 KiB a
+   client-side apply can record.
+
 Point both host names at the Ingress address with your DNS provider.
 
 Install an application:
@@ -138,8 +157,9 @@ Install an application:
 kubectl get dxapplications -w
 ```
 
-Run `apply.sh` again after changing a file under `platform/` or a value in the
-overlay, then restart the affected deployment
+After changing a file under `platform/`, run `make k8s-config`; then run
+`apply.sh` again (also after changing a value in the overlay) and restart the
+affected deployment
 (`kubectl -n dxos rollout restart deployment/<name>`).
 
 ## Example: Amazon EKS (test cluster)

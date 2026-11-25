@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-import tarfile
+import sys
 import tempfile
 import unittest
 
@@ -70,15 +70,16 @@ class ApplyScript(unittest.TestCase):
                 self.assertIn(key, result.stderr)
                 self.assertFalse((capture / 'calls').exists())
 
-    def test_creates_secrets_and_the_postgres_seed(self):
+    def test_creates_only_the_secrets(self):
         with tempfile.TemporaryDirectory() as directory:
             env = env_file(directory)
             result, capture = self.run_script(directory, env)
             self.assertEqual(result.returncode, 0, result.stderr)
             calls = (capture / 'calls').read_text()
-            for name in ('dxos-secrets', 'seaweedfs-s3', 'dxos-operator-config', 'postgres-seed',
-                         'keycloak-realm', 'kestra-config', 'apisix-config'):
+            for name in ('dxos-secrets', 'seaweedfs-s3', 'dxos-operator-config'):
                 self.assertIn(f' {name} ', calls)
+            # ConfigMaps are committed manifests now, not built by the script.
+            self.assertNotIn('create configmap', calls)
             self.assertIn(f'kustomize {ROOT / "deploy/k8s/overlays/eks"}\n', calls)
 
             secrets = dict(l.split('=', 1) for l in (capture / 'secrets.env').read_text().split())
@@ -88,14 +89,25 @@ class ApplyScript(unittest.TestCase):
             self.assertIn(secrets['S3_SECRET_ACCESS_KEY'], s3)
             self.assertIn('@postgres.dxos.svc:5432/dxos_db', (capture / 'operator.env').read_text())
 
-            # Same layout as the files compose.yaml mounts into /docker-entrypoint-initdb.d.
-            with tarfile.open(capture / 'postgres-seed.tgz') as tar:
-                names = {os.path.normpath(n) for n in tar.getnames()}
-            for f in (ROOT / 'platform/postgres/init').iterdir():
-                self.assertIn(f.name, names)
-            for f in (ROOT / 'platform/postgres/migrations').rglob('*.sql'):
-                self.assertIn(str(f.relative_to(ROOT / 'platform/postgres')), names)
-            self.assertIn('capabilities/cap_hr.sql', names)
+
+class GeneratedConfigMaps(unittest.TestCase):
+    """The ConfigMaps are generated from platform/, the only copy of the configuration."""
+
+    def test_committed_manifests_are_up_to_date(self):
+        result = subprocess.run([sys.executable, str(ROOT / 'scripts/k8s/render-configmaps.py'), '--check'],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_postgres_seed_restores_the_compose_layout(self):
+        doc = yaml.safe_load((ROOT / 'deploy/k8s/base/tier1-platform/configmaps/postgres-seed.yaml').read_text())
+        restored = {key.replace('__', '/'): text for key, text in doc['data'].items()}
+        base = ROOT / 'platform/postgres'
+        expected = {f.name: f for f in (base / 'init').iterdir()}
+        expected.update({str(f.relative_to(base)): f for top in ('capabilities', 'migrations')
+                         for f in (base / top).rglob('*') if f.is_file()})
+        self.assertEqual(set(restored), set(expected))
+        for path, f in expected.items():
+            self.assertEqual(restored[path], f.read_text(), path)
 
 
 @unittest.skipUnless(shutil.which('kubectl'), 'kubectl is not installed')
@@ -120,7 +132,7 @@ class RenderedManifests(unittest.TestCase):
         self.assertEqual(self.kinds('Secret'), [])
 
     def test_workloads_read_only_what_apply_sh_creates(self):
-        created = {'postgres-seed', 'keycloak-realm', 'kestra-config', 'apisix-config'}
+        created = {c['metadata']['name'] for c in self.kinds('ConfigMap')}
         for workload in self.kinds('Deployment') + self.kinds('StatefulSet'):
             spec = workload['spec']['template']['spec']
             for container in spec.get('containers', []) + spec.get('initContainers', []):

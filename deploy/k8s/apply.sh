@@ -12,9 +12,11 @@
 # repository. Every secret must be at least 16 letters or digits: the development
 # defaults of compose.yaml are refused.
 #
-# The script creates the Secrets and the ConfigMaps built from files under
-# platform/ (the same files Compose mounts), then applies the overlay. It is safe
-# to run again. PostgreSQL applies the database passwords only when it
+# The script creates only the Secrets, which are never committed, then applies
+# the overlay with server-side apply (the postgres-seed ConfigMap is larger than
+# the client-side apply annotation allows). Everything else is in the manifests;
+# the ConfigMaps under base/tier1-platform/configmaps are generated from
+# platform/ by `make k8s-config`. It is safe to run again. PostgreSQL applies the database passwords only when it
 # initializes an empty volume.
 set -euo pipefail
 
@@ -101,21 +103,6 @@ KESTRA_USER=${KESTRA_USER}
 KESTRA_PASSWORD=${value[KESTRA_PASSWORD]}
 EOF
 "$KUBECTL" -n "$OPERATOR_NS" create secret generic dxos-operator-config --from-env-file="$tmp/operator.env" \
-    --dry-run=client -o yaml | apply
-
-# The init scripts, capability modules and migrations, in the layout the
-# Compose service mounts into /docker-entrypoint-initdb.d.
-tar -czf "$tmp/postgres-seed.tgz" -C "$ROOT/platform/postgres/init" . \
-    -C "$ROOT/platform/postgres" capabilities migrations
-"$KUBECTL" -n "$NS" create configmap postgres-seed --from-file="$tmp/postgres-seed.tgz" \
-    --dry-run=client -o yaml | apply
-"$KUBECTL" -n "$NS" create configmap keycloak-realm \
-    --from-file="$ROOT/platform/keycloak/realm-export.json" --dry-run=client -o yaml | apply
-"$KUBECTL" -n "$NS" create configmap kestra-config \
-    --from-file="$ROOT/platform/kestra/config.yaml" --from-file="$ROOT/platform/kestra/start.sh" \
-    --dry-run=client -o yaml | apply
-"$KUBECTL" -n "$NS" create configmap apisix-config \
-    --from-file="$ROOT/platform/apisix/config.yaml" --from-file="$ROOT/platform/apisix/apisix.yaml" \
     --dry-run=client -o yaml | apply
 
 "$KUBECTL" kustomize "$overlay" | apply
