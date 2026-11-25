@@ -122,6 +122,19 @@ func writeTableRules(sb *strings.Builder, app *manifest.DXApplication, tbl *mani
 		sb.WriteString("    END IF;\nEND $$;\n\n")
 	}
 
+	// NaN compares above every number, so it would pass a > check; NOT VALID leaves existing rows untouched.
+	for _, col := range tbl.Columns {
+		if !strings.HasPrefix(col.Type, "numeric(") {
+			continue
+		}
+		name := quoteIdent("ck_" + safeTbl + "_" + col.Name + "_number")
+		fmt.Fprintf(sb, "DO $$\nBEGIN\n    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '%s'::regclass AND conname = %s) THEN\n",
+			strings.ReplaceAll(table, "'", "''"), quoteLiteral("ck_"+safeTbl+"_"+col.Name+"_number"))
+		fmt.Fprintf(sb, "        ALTER TABLE %s ADD CONSTRAINT %s CHECK (%s <> 'NaN') NOT VALID;\n",
+			table, name, quoteIdent(col.Name))
+		sb.WriteString("    END IF;\nEND $$;\n\n")
+	}
+
 	// The allowed states follow the state machine. The constraint is replaced on
 	// every apply; the operator refuses beforehand to drop a state still in use.
 	indexed := []string{"created_by"}

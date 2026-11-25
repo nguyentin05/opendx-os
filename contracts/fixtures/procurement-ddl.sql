@@ -58,6 +58,13 @@ BEGIN
     END IF;
 END $$;
 
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '"domain"."procurement_requests"'::regclass AND conname = 'ck_procurement_requests_quoted_amount_number') THEN
+        ALTER TABLE "domain"."procurement_requests" ADD CONSTRAINT "ck_procurement_requests_quoted_amount_number" CHECK ("quoted_amount" <> 'NaN') NOT VALID;
+    END IF;
+END $$;
+
 ALTER TABLE "domain"."procurement_requests" DROP CONSTRAINT IF EXISTS "ck_procurement_requests_status";
 ALTER TABLE "domain"."procurement_requests" ADD CONSTRAINT "ck_procurement_requests_status" CHECK ("status" IN ('DRAFT', 'SUBMITTED', 'BUDGET_REVIEW', 'APPROVED', 'REJECTED', 'CANCELLED'));
 
@@ -122,6 +129,20 @@ DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '"domain"."procurement_items"'::regclass AND conname = 'fk_procurement_items_request_id') THEN
         ALTER TABLE "domain"."procurement_items" ADD CONSTRAINT "fk_procurement_items_request_id" FOREIGN KEY ("request_id") REFERENCES "domain"."procurement_requests"("id") ON DELETE RESTRICT;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '"domain"."procurement_items"'::regclass AND conname = 'ck_procurement_items_quantity_number') THEN
+        ALTER TABLE "domain"."procurement_items" ADD CONSTRAINT "ck_procurement_items_quantity_number" CHECK ("quantity" <> 'NaN') NOT VALID;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '"domain"."procurement_items"'::regclass AND conname = 'ck_procurement_items_unit_price_number') THEN
+        ALTER TABLE "domain"."procurement_items" ADD CONSTRAINT "ck_procurement_items_unit_price_number" CHECK ("unit_price" <> 'NaN') NOT VALID;
     END IF;
 END $$;
 
