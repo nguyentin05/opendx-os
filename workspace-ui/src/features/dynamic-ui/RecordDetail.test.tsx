@@ -104,6 +104,22 @@ it('loads the deep link with role credentials and publishes only projected field
   expect(body.query).toMatch(/domain_records_by_pk\(id: \$id\)\s*\{\s*id title vendor_id status version\s*\}/);
 });
 
+it('keeps the status badge and version out of the field grid', async () => {
+  open();
+  mockFetch(() => recordResponse({
+    id, title: 'Readable title', vendor_id: otherID, status: 'draft', version: 2,
+  }));
+  render(<App initialSession={session} />);
+
+  await screen.findByText('Readable title');
+  const fields = document.querySelector('dl.record-fields');
+  expect(fields).toBeTruthy();
+  expect(Array.from(fields?.querySelectorAll('dt') ?? []).map(node => node.textContent))
+    .toEqual(['Record title', 'Vendor']);
+  expect(document.querySelector('.record-detail-header')?.textContent).toContain('Draft');
+  expect(document.querySelector('.record-meta')?.textContent).toContain('2');
+});
+
 it('omits process metadata the acting role cannot read even when returned by the server', async () => {
   open(id, reader);
   const fetch = mockFetch(() => recordResponse({ id, title: 'Reader title', status: 'draft', version: 42 }));
