@@ -17,9 +17,19 @@ spec:
       labels:
         app: cap-hr
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: cap-hr
         image: opendx-cap-hr
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
         env:
         - name: PORT
           value: "8083"

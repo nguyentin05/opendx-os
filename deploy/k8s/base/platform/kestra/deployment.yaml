@@ -17,9 +17,21 @@ spec:
       labels:
         app: kestra
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: kestra
         image: kestra/kestra:v0.20.7
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
         # start.sh hands the platform's secrets to Kestra, then starts the server.
         command: ["/bin/bash", "/app/config/start.sh"]
         env:
@@ -49,12 +61,16 @@ spec:
           requests: {cpu: 250m, memory: 1Gi}
           limits: {memory: 2Gi}
         volumeMounts:
+        - name: tmp
+          mountPath: /tmp
         - name: data
           mountPath: /app/storage
         - name: config
           mountPath: /app/config
           readOnly: true
       volumes:
+      - name: tmp
+        emptyDir: {}
       - name: data
         persistentVolumeClaim:
           claimName: kestra-data

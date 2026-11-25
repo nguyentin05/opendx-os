@@ -21,10 +21,20 @@ spec:
         app: keycloak
     spec:
       securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 0
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: keycloak
         image: quay.io/keycloak/keycloak:26.0
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop: [ALL]
         args: ["start-dev", "--import-realm"]
         env:
         - name: KEYCLOAK_ADMIN

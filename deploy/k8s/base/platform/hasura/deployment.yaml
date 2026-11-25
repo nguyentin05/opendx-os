@@ -16,9 +16,19 @@ spec:
       labels:
         app: hasura
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: hasura
         image: hasura/graphql-engine:v2.45.1-ce
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
         env:
         - name: DB_PASSWORD
           valueFrom: {secretKeyRef: {name: dxos-secrets, key: HASURA_DATABASE_PASSWORD}}
@@ -43,3 +53,9 @@ spec:
         resources:
           requests: {cpu: 100m, memory: 256Mi}
           limits: {memory: 1Gi}
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}

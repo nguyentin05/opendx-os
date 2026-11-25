@@ -17,9 +17,20 @@ spec:
       labels:
         app: apisix
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 636
+        runAsGroup: 636
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: apisix
         image: apache/apisix:3.10.0-debian
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop: [ALL]
         ports:
         - containerPort: 9080
           name: http

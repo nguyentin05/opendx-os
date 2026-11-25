@@ -17,9 +17,19 @@ spec:
       labels:
         app: clamav
     spec:
+      securityContext:
+        # The image starts as root to prepare its directories, then drops to clamav.
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: clamav
         image: clamav/clamav:1.4
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop: [ALL]
+            add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
         env:
         - name: CLAMD_CONF_StreamMaxLength
           value: 25M

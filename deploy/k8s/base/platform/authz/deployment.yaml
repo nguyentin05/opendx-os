@@ -17,9 +17,19 @@ spec:
       labels:
         app: authz
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: authz
         image: opendx-dxos-authz
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
         env:
         - name: PORT
           value: "8090"

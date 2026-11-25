@@ -16,9 +16,19 @@ spec:
       labels:
         app: workspace-ui
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: workspace-ui
         image: opendx-workspace-ui
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
         env:
         - name: DXOS_OIDC_ORIGIN
           valueFrom: {configMapKeyRef: {name: dxos-public, key: DXOS_OIDC_ORIGIN}}
@@ -31,3 +41,13 @@ spec:
         resources:
           requests: {cpu: 50m, memory: 32Mi}
           limits: {memory: 128Mi}
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: nginx-conf
+          mountPath: /etc/nginx/conf.d
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: nginx-conf
+        emptyDir: {}

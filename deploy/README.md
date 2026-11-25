@@ -67,6 +67,30 @@ checksums whole files. `platform/` stays the only copy: after changing a file th
 out of date. In `postgres-seed`, a key's `__` stands for `/`
 (`migrations__core__0001_….sql`); its init container restores the directories.
 
+### Pod security
+
+Every workload runs with the `RuntimeDefault` seccomp profile, without
+privilege escalation and with all Linux capabilities dropped. Where the image
+allows it, it also runs as a fixed non-root user on a read-only root filesystem,
+with `emptyDir` volumes only for the paths it must write:
+
+| Service | User | Read-only root | Writable |
+| --- | --- | --- | --- |
+| authz, cap-hr, cap-process | 10001 | yes | none |
+| workspace-ui | 101 (nginx) | yes | `/tmp`, `/etc/nginx/conf.d` (rendered at start) |
+| postgres (and its seed init container) | 70 | yes | `/var/run/postgresql`, `/tmp`, the data volume |
+| hasura | 1001 | yes | `/tmp` |
+| kestra | 1000 | yes | `/tmp`, the data volume |
+| seaweedfs | 1000 | yes | `/tmp`, the data volume |
+| dxos-controller | 10001 (image) | yes | none |
+| keycloak | 1000 | no: `start-dev` rebuilds the server into `/opt/keycloak/lib` | the data volume |
+| apisix | 636 | no: writes its generated `nginx.conf`, logs and temp files under `/usr/local/apisix` | |
+| clamav | starts as root | no: prepares its directories, then runs as `clamav`; keeps only CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID | the signature volume |
+
+The three exceptions are recorded with their reasons in `.trivyignore.yaml` and
+tracked in #170; `tests/test_deploy.py` fails if a workload loses any of these
+settings.
+
 ### Keeping Compose and Kubernetes in step
 
 The platform is deployed two ways, so the workflow `Deploy drift`

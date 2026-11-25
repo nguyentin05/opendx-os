@@ -202,6 +202,31 @@ class RenderedManifests(unittest.TestCase):
                 if 'secret' in volume:
                     self.assertEqual(volume['secret']['secretName'], 'seaweedfs-s3')
 
+    def test_workloads_are_hardened(self):
+        # Accepted exceptions, each recorded with its reason in .trivyignore.yaml.
+        writable_root = {'apisix', 'keycloak', 'clamav'}
+        starts_as_root = {'clamav'}
+        for workload in self.kinds('Deployment') + self.kinds('StatefulSet'):
+            name = workload['metadata']['name']
+            with self.subTest(name):
+                pod = workload['spec']['template']['spec']
+                context = pod.get('securityContext', {})
+                self.assertEqual(context.get('seccompProfile'), {'type': 'RuntimeDefault'})
+                if name not in starts_as_root:
+                    self.assertTrue(context.get('runAsNonRoot'))
+                    # A named image user cannot be checked by the kubelet; the controller's
+                    # image already declares the numeric USER 10001:10001 (operator/Dockerfile).
+                    if name != 'dxos-operator-controller-manager':
+                        self.assertIsInstance(context.get('runAsUser'), int)
+                for container in pod.get('containers', []) + pod.get('initContainers', []):
+                    c = container.get('securityContext', {})
+                    self.assertIs(c.get('allowPrivilegeEscalation'), False)
+                    self.assertEqual(c.get('capabilities', {}).get('drop'), ['ALL'])
+                    if name not in writable_root:
+                        self.assertIs(c.get('readOnlyRootFilesystem'), True)
+                    if name not in starts_as_root:
+                        self.assertNotIn('add', c.get('capabilities', {}))
+
     def test_gateway_upstreams_exist(self):
         services = {(s['metadata']['name'], p['port']) for s in self.kinds('Service')
                     if s['metadata'].get('namespace') == 'dxos' for p in s['spec']['ports']}
