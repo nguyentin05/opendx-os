@@ -34,10 +34,10 @@ chunks and are pinned against real PostgreSQL 17/pgvector by
 ``capabilities/internal/ai/knowledge``.
 
 State isolation: the suite never uses the checkout's ``.env.models``,
-``build/ai-up`` or its lock. Every deployment runs with ``AI_UP_STATE_DIR`` and
-``AI_UP_MODEL_ENV`` pointing into this run's temporary directory, and
-``test_suite_is_hermetic`` asserts that the checkout paths are byte-for-byte
-unchanged afterwards.
+``build/ai-up`` or its lock. Every deployment runs with ``AI_UP_STATE_DIR``,
+``AI_UP_MODEL_ENV`` and ``AI_UP_LOCK_DIR`` pointing into this run's temporary
+directory, and ``test_suite_is_hermetic`` asserts that the checkout paths are
+byte-for-byte unchanged afterwards.
 
 Prerequisites (a missing one is NOT_RUN, never a pass): Docker with the Compose
 plugin, the stack images, and ``TEST_DISPOSABLE_DATABASE=yes`` with a project
@@ -173,8 +173,9 @@ class DeploymentHarness:
         os.chmod(self.state, 0o777)
         (self.state / "mode").write_text("normal\n", encoding="utf-8")
         self.env_file = workspace / ".env.installation"
-        # The deployment's own generated files stay in this run's directory: the
-        # checkout's .env.models, build/ai-up and its lock are never opened.
+        # The deployment's own generated files and project locks stay in this
+        # run's directory: the checkout's .env.models, build/ai-up and its lock
+        # are never opened.
         self.model_env = workspace / ".env.models"
         self.state_dir = workspace / "ai-up-state"
         self.env = {
@@ -187,6 +188,7 @@ class DeploymentHarness:
             "OIDC_ISSUER_URL": f"http://localhost:{ports['KEYCLOAK_PORT']}/realms/dxos",
             "AI_UP_STATE_DIR": str(self.state_dir),
             "AI_UP_MODEL_ENV": str(self.model_env),
+            "AI_UP_LOCK_DIR": str(workspace / "locks"),
             **ports,
         }
         if model:
@@ -553,6 +555,43 @@ class WithdrawnPurposeRuleTest(unittest.TestCase):
             {"EMBED": True, "GENERATE": True}))
 
 
+class DeploymentLockTest(unittest.TestCase):
+    """One Compose project has one deployment lock, wherever its state lives."""
+
+    def test_state_dirs_do_not_split_the_project_lock(self):
+        if not docker_available() or shutil.which("flock") is None:
+            self.skipTest("NOT_RUN: docker compose and flock are required")
+        project = "opendx-aiup-lock-" + secrets.token_hex(3)
+        with tempfile.TemporaryDirectory(prefix="ai-up-lock-") as directory:
+            workspace = Path(directory)
+            lock_dir = workspace / "locks"
+            lock_dir.mkdir(mode=0o700)
+            lock = lock_dir / ("ai-up." + project + ".lock")
+            env_file = workspace / ".env.installation"
+            env_file.write_text("COMPOSE_PROJECT_NAME=" + project + "\n", encoding="utf-8")
+            env = {
+                **os.environ,
+                "AI_UP_LOCK_DIR": str(lock_dir),
+                # If the project lock is missed, fail before any Compose call:
+                # a missing CLI parent keeps the script from building or starting
+                # the disposable project this case never intended to create.
+                "DXOS_MODEL_BIN": str(workspace / "missing" / "dxos-model"),
+                "COMPOSE_FILE": str(workspace / "missing-compose.yaml"),
+            }
+            with open(lock, "w", encoding="utf-8") as handle:
+                import fcntl
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                for state in ("state-one", "state-two"):
+                    result = subprocess.run(
+                        ["bash", str(SCRIPT), "--config", str(ROOT / "models.example.yaml"),
+                         "--env-file", str(env_file), "--state-dir", str(workspace / state)],
+                        cwd=ROOT, env=env, capture_output=True, text=True, timeout=60)
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("another ai-up deployment holds", result.stderr,
+                                  "state directory %s bypassed the project lock:\n%s%s" % (
+                                      state, result.stdout, result.stderr))
+
+
 class AiUpDeploymentTest(unittest.TestCase):
     """The coordinated model deployment on a disposable project."""
 
@@ -809,11 +848,22 @@ class AiUpDeploymentTest(unittest.TestCase):
         self.assertEqual(self.harness.deploy(self.baseline).returncode, 0)
 
     def test_ai_up_disabled_models(self):
-        """A disabled declaration reconciles no route and makes no model call."""
+        """A disabled declaration drains the live runtime before withdrawing it."""
+        self.assertIn("EMBED", self.harness.selected(),
+                      "the baseline must hold a selection for this withdrawal case")
+        cap_ai_before = self.harness.container("cap-ai")
+        worker_before = self.harness.container("cap-ai-worker")
         config = self.harness.write_declaration("models-disabled.yaml", declaration(enabled=False))
         self.harness.reset_fake()
         result = self.harness.deploy(config)
         self.assertEqual(result.returncode, 0, result.stdout[-4000:] + result.stderr[-2000:])
+        self.assertIn("stopping the model-calling API and worker before the snapshot changes",
+                      result.stdout + result.stderr,
+                      "a disabled declaration withdrew the live selection under a running API and worker")
+        self.assertNotEqual(self.harness.container("cap-ai"), cap_ai_before,
+                            "the API was not restarted on the disabled snapshot")
+        self.assertNotEqual(self.harness.container("cap-ai-worker"), worker_before,
+                            "the worker was not restarted on the disabled snapshot")
         self.assertEqual(self.harness.selected(), {}, "a disabled declaration selected a route")
         self.assertEqual(self.harness.fake_counts(), {"EMBED": 0, "GENERATE": 0},
                          "a disabled declaration made a model call")

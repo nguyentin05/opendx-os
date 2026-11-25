@@ -581,18 +581,24 @@ func mergeSelection(reports []purposeReport, status models.DeploymentStatus, loc
 	for i := range reports {
 		report := &reports[i]
 		declared[report.Purpose] = true
+		// The durable selection is independent of the declaration's outcome: a
+		// disabled installation or a declaration that drops the route still holds
+		// the live selection until the deployment reconciles it away. `ai-up`
+		// must see it to drain the old runtime first.
+		entry, ok := selected[report.Purpose]
+		if ok {
+			report.Selected = true
+			report.SelectedProfileID = entry.ProfileID
+			report.SelectedRevision = entry.Revision
+			report.SelectedExecution = entry.Execution
+		}
 		if report.Blocked != "" || !report.Declared {
 			continue
 		}
-		entry, ok := selected[report.Purpose]
 		if !ok {
 			report.Blocked = "not selected"
 			continue
 		}
-		report.Selected = true
-		report.SelectedProfileID = entry.ProfileID
-		report.SelectedRevision = entry.Revision
-		report.SelectedExecution = entry.Execution
 		if entry.ProfileID != report.ProfileID || entry.Revision != report.Revision || entry.Execution != report.Execution {
 			// The declaration on disk and the durable selection disagree: the
 			// deployment must reconcile before this route is served.

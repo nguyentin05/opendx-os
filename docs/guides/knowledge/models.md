@@ -400,8 +400,12 @@ printed. `--env-file` selects the installation environment file (default
 `.env.rag`). Generated private files live in `build/ai-up/`; the model settings the
 Compose project reads live in `.env.models`. `--model-env FILE` (or
 `AI_UP_MODEL_ENV`) and `--state-dir DIR` (or `AI_UP_STATE_DIR`) relocate the latter
-two, which is how a disposable or parallel deployment keeps its files and its
-project-keyed deployment lock away from testing installations.
+two, which is how a disposable or parallel deployment keeps its files away from
+testing installations. The deployment lock is keyed by the Compose project in a
+stable per-user directory (`$XDG_RUNTIME_DIR/dxos/ai-up`, falling back to
+`~/.cache/dxos/ai-up`), so two checkouts deploying the same project serialize
+even with different state directories; `AI_UP_LOCK_DIR` overrides that location
+for tests.
 
 The deployment runs in this order, and every step happens before the next one
 touches a running service:

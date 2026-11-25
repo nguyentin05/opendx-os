@@ -68,8 +68,7 @@ Options:
                       appear in this script's output or arguments.
   --env-file FILE     installation environment file (default: .env.rag)
   --model-env FILE    generated model settings file (default: .env.models)
-  --state-dir DIR     generated private files and the deployment lock
-                      (default: build/ai-up)
+  --state-dir DIR     generated private files (default: build/ai-up)
   -h, --help          print this help
 
 The installation environment file holds the generated stack secrets and keeps
@@ -77,7 +76,9 @@ every value it already has. The generated model settings live in .env.models
 (override with --model-env or AI_UP_MODEL_ENV); the generated proxy
 configuration and runtime credential live in the state directory (override with
 --state-dir or AI_UP_STATE_DIR). Both overrides exist so a disposable or
-parallel deployment never touches another installation's files.
+parallel deployment never touches another installation's files. The deployment
+lock is not state: it is keyed by the Compose project in a stable per-user
+directory and can be relocated for tests with AI_UP_LOCK_DIR.
 A declaration that disables models, or that declares no route, runs this stack
 FTS-only and starts no proxy.
 EOF
@@ -160,17 +161,20 @@ STATUS_JSON="$STATE_DIR/status.json"
 
 # One deployment at a time for this Compose project: a second invocation waits
 # for no one, because a concurrent cutover could reconcile a different snapshot
-# while the first is starting services. The lock is keyed on the Compose project
-# name, so two checkouts deploying the same project are serialized while two
-# different projects (for example a disposable one) never block each other.
+# while the first is starting services. The lock lives in a stable per-user
+# directory keyed by the Compose project, not in the per-checkout state directory,
+# so two checkouts deploying the same project are serialized while two different
+# projects (for example a disposable one) never block each other.
+# shellcheck source=scripts/lib/ai_up_lock.sh
+. "$STACK_ROOT/scripts/lib/ai_up_lock.sh"
 STACK_VALUE_FILES=("$INSTALL_ENV" .env)
-lock_project="$(stack_env_value COMPOSE_PROJECT_NAME '')"
-lock_project="${lock_project:-$(basename "$STACK_ROOT")}"
-lock_project="$(printf '%s' "$lock_project" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')"
-LOCK="$STATE_DIR/ai-up.${lock_project:-default}.lock"
+LOCK="$(ai_up_lock_path "$(stack_env_value COMPOSE_PROJECT_NAME '')" "$STACK_ROOT")"
+LOCK_DIR="$(dirname "$LOCK")"
+mkdir -p "$LOCK_DIR"
+chmod 700 "$LOCK_DIR"
 exec 9>"$LOCK"
 chmod 600 "$LOCK"
-flock -n 9 || stack_fail "another ai-up deployment holds $LOCK for the Compose project ${lock_project:-default}"
+flock -n 9 || stack_fail "another ai-up deployment holds $LOCK for the Compose project $(ai_up_lock_project "$(stack_env_value COMPOSE_PROJECT_NAME '')" "$STACK_ROOT")"
 
 # The CLI is the one owner of declaration parsing and proxy rendering. It is a
 # static binary so the same one runs on the host and inside the private network.

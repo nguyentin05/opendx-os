@@ -849,6 +849,54 @@ func TestDeploymentCLICurrentAdministrator(t *testing.T) {
 	})
 }
 
+func TestMergeSelectionReportsHeldSelectionWhenDeclarationWithdrawsIt(t *testing.T) {
+	status := models.DeploymentStatus{Profiles: []models.DeploymentStatusProfile{
+		{Purpose: "EMBED", ProfileID: "embed-old", Revision: 4, Execution: "LOCAL", Selected: true},
+		{Purpose: "GENERATE", ProfileID: "llm-old", Revision: 2, Execution: "HOSTED", Selected: true},
+	}}
+	cases := []struct {
+		name    string
+		reports []purposeReport
+	}{
+		{
+			name: "installation switch off",
+			reports: []purposeReport{
+				{Purpose: "EMBED", Mode: "DISABLED", ProfileID: "embed-old", Revision: 4, Execution: "LOCAL", Blocked: "installation switch off"},
+				{Purpose: "GENERATE", Mode: "DISABLED", ProfileID: "llm-old", Revision: 2, Execution: "HOSTED", Blocked: "installation switch off"},
+			},
+		},
+		{
+			name: "route absent",
+			reports: []purposeReport{
+				{Purpose: "EMBED", Mode: "DISABLED", Blocked: "route absent"},
+				{Purpose: "GENERATE", Mode: "DISABLED", Blocked: "route absent"},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mergeSelection(tc.reports, status, true)
+			byPurpose := map[string]purposeReport{}
+			for _, report := range got {
+				byPurpose[report.Purpose] = report
+			}
+			for purpose, entry := range map[string]models.DeploymentStatusProfile{
+				"EMBED":    status.Profiles[0],
+				"GENERATE": status.Profiles[1],
+			} {
+				report := byPurpose[purpose]
+				if !report.Selected || report.SelectedProfileID != entry.ProfileID ||
+					report.SelectedRevision != entry.Revision || report.SelectedExecution != entry.Execution {
+					t.Fatalf("%s: the live selection was hidden by a withdrawing declaration: %+v", purpose, report)
+				}
+				if report.Blocked == "" {
+					t.Fatalf("%s: the withdrawal reason was lost: %+v", purpose, report)
+				}
+			}
+		})
+	}
+}
+
 func TestMergeSelectionReportsHeldSelection(t *testing.T) {
 	reports := []purposeReport{
 		{Purpose: "EMBED", Mode: "LOCAL_ONLY", ProfileID: "embed-new", Revision: 1, Execution: "LOCAL", Declared: true},
