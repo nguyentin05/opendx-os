@@ -2,17 +2,6 @@
 # Copyright 2026 DX-OS Open-Core Contributors
 # Hasura as in compose.yaml: restricted database role, console off, roles decided
 # per request by dxos-authz (ADR 0007). Never exposed outside the cluster.
-apiVersion: v1
-kind: Service
-metadata:
-  name: hasura
-spec:
-  selector:
-    app: hasura
-  ports:
-  - name: http
-    port: 8080
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:

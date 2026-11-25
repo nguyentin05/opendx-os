@@ -1,9 +1,0 @@
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2026 DX-OS Open-Core Contributors
-# Tier 2: H-P-D-I capability services and the schema-driven App Shell. cap-ai
-# and its workers run only with the knowledge overlay of Compose for now.
-namespace: dxos
-resources:
-- cap-process.yaml
-- cap-hr.yaml
-- workspace-ui.yaml

@@ -26,31 +26,35 @@ Kubernetes manifests live under `deploy/k8s`, grouped by the platform's tiers
 
 ```
 deploy/k8s/
-  apply.sh                creates the Secrets, then applies an overlay
-  base/                   the whole platform; no public entry point
-    kustomization.yaml    tiers + dxos-controller, public settings, images
+  apply.sh              creates the Secrets, then applies an overlay
+  base/                 the whole platform; no public entry point
+    kustomization.yaml  tiers + dxos-controller, public settings, images
     namespace.yaml
-    tier1-platform/       shared infrastructure, namespace dxos
-      postgres.yaml keycloak.yaml authz.yaml hasura.yaml apisix.yaml
-      kestra.yaml seaweedfs.yaml clamav.yaml
-      configmaps/         generated from platform/ (make k8s-config); do not edit
-    tier2-capabilities/   capability services and the App Shell, namespace dxos
-      cap-process.yaml cap-hr.yaml workspace-ui.yaml
-  overlays/eks/           example: gp3 storage, one public ALB (the test cluster)
+    platform/           Tier 1, namespace dxos, one folder per service:
+      postgres/ keycloak/ authz/ hasura/ apisix/ kestra/ seaweedfs/ clamav/
+    capabilities/       Tier 2, namespace dxos, one folder per service:
+      cap-process/ cap-hr/ workspace-ui/
+  overlays/eks/         example: gp3 storage, one public ALB (the test cluster)
 ```
+
+Each service folder holds one object per file: `service.yaml`,
+`deployment.yaml` (`statefulset.yaml` for PostgreSQL), `pvc.yaml` when it keeps
+data, and `configmap.yaml` when it reads configuration files.
 
 | Tier | What runs | Where it comes from |
 | --- | --- | --- |
-| 1, platform | PostgreSQL, Keycloak, dxos-authz, Hasura, APISIX, Kestra, SeaweedFS, ClamAV; dxos-controller | `base/tier1-platform/`; the controller from `operator/config/default`, in namespace `dxos-operator-system` |
-| 2, capabilities | cap-process, cap-hr, Workspace UI | `base/tier2-capabilities/` |
+| 1, platform | PostgreSQL, Keycloak, dxos-authz, Hasura, APISIX, Kestra, SeaweedFS, ClamAV; dxos-controller | `base/platform/`; the controller from `operator/config/default`, in namespace `dxos-operator-system` |
+| 2, capabilities | cap-process, cap-hr, Workspace UI | `base/capabilities/` |
 | 3, applications | One `DXApplication` per package in `apps/` | Not a file here: exported from the package and applied when needed ([Install an application](#deploy)); dxos-controller installs it |
 
 The base runs the same images and configuration as `compose.yaml`. Service names
 match the Compose service names, so `platform/apisix/apisix.yaml`,
 `platform/kestra/config.yaml`, the Keycloak realm and the PostgreSQL init scripts
-are used unchanged. The ConfigMaps under `base/tier1-platform/configmaps/` are
-committed manifests generated from those files, so what is applied can be read
-and reviewed. `platform/` stays the only copy: after changing a file there, run
+are used unchanged. Each `configmap.yaml` is a committed manifest generated from
+those files, so what is applied can be read and reviewed. It carries the license
+header once, at the top of the manifest, instead of inside each embedded file;
+`postgres-seed` keeps its files byte for byte, because the migration ledger
+checksums whole files. `platform/` stays the only copy: after changing a file there, run
 `make k8s-config`; `tests/test_deploy.py` fails while a generated ConfigMap is
 out of date. In `postgres-seed`, a key's `__` stands for `/`
 (`migrations__core__0001_….sql`); its init container restores the directories.

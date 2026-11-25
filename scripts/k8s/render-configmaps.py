@@ -3,11 +3,14 @@
 # Copyright 2026 DX-OS Open-Core Contributors
 """Write the Kubernetes ConfigMaps built from the configuration files Compose mounts.
 
-    scripts/k8s/render-configmaps.py          rewrite deploy/k8s/base/tier1-platform/configmaps/
+    scripts/k8s/render-configmaps.py          rewrite deploy/k8s/base/platform/<service>/configmap.yaml
     scripts/k8s/render-configmaps.py --check  exit 1 if a committed file is out of date
 
 platform/ stays the only copy of the configuration: edit the file there and run
 `make k8s-config`; tests/test_deploy.py fails while the manifests are stale.
+The license header of a configuration file is left out of the ConfigMap (the
+manifest carries its own), except in postgres-seed: migration checksums are
+taken over the whole file, so those files stay byte for byte as in platform/.
 """
 import sys
 from pathlib import Path
@@ -15,7 +18,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-OUT = ROOT / 'deploy/k8s/base/tier1-platform/configmaps'
+OUT = ROOT / 'deploy/k8s/base/platform'
 SEED_DIRS = ('init', 'capabilities', 'migrations')
 
 
@@ -38,15 +41,29 @@ def seed_files():
 
 
 def sources():
+    """ConfigMap name -> (service folder, keep files verbatim, {key: file})."""
     platform = ROOT / 'platform'
     return {
-        'postgres-seed': seed_files(),
-        'keycloak-realm': {'realm-export.json': platform / 'keycloak/realm-export.json'},
-        'kestra-config': {'config.yaml': platform / 'kestra/config.yaml',
-                          'start.sh': platform / 'kestra/start.sh'},
-        'apisix-config': {'config.yaml': platform / 'apisix/config.yaml',
-                          'apisix.yaml': platform / 'apisix/apisix.yaml'},
+        'postgres-seed': ('postgres', True, seed_files()),
+        'keycloak-realm': ('keycloak', False, {'realm-export.json': platform / 'keycloak/realm-export.json'}),
+        'kestra-config': ('kestra', False, {'config.yaml': platform / 'kestra/config.yaml',
+                                            'start.sh': platform / 'kestra/start.sh'}),
+        'apisix-config': ('apisix', False, {'config.yaml': platform / 'apisix/config.yaml',
+                                            'apisix.yaml': platform / 'apisix/apisix.yaml'}),
     }
+
+
+def without_license(text):
+    """Drops the Apache license comment block (SPDX line to 'limitations under the License.')
+    and the blank or bare-comment line after it; a shebang stays first."""
+    lines = text.splitlines(keepends=True)
+    start = next((i for i, l in enumerate(lines[:3]) if 'SPDX-License-Identifier' in l), None)
+    if start is None:
+        return text
+    end = next(i for i, l in enumerate(lines) if 'limitations under the License.' in l) + 1
+    if end < len(lines) and lines[end].strip() in ('', '#'):
+        end += 1
+    return ''.join(lines[:start] + lines[end:])
 
 
 class Dumper(yaml.SafeDumper):
@@ -58,7 +75,7 @@ Dumper.add_representer(str, lambda d, s: d.represent_scalar(
     'tag:yaml.org,2002:str', s, style='|' if '\n' in s else None))
 
 
-def render(name, files):
+def render(name, verbatim, files):
     sources_list = sorted({str(p.relative_to(ROOT).parent) for p in files.values()})
     header = (
         '# SPDX-License-Identifier: Apache-2.0\n'
@@ -70,7 +87,8 @@ def render(name, files):
         'apiVersion': 'v1',
         'kind': 'ConfigMap',
         'metadata': {'name': name},
-        'data': {key: path.read_text(encoding='utf-8') for key, path in sorted(files.items())},
+        'data': {key: (lambda t: t if verbatim else without_license(t))(path.read_text(encoding='utf-8'))
+                 for key, path in sorted(files.items())},
     }
     return header + yaml.dump(manifest, Dumper=Dumper, sort_keys=False, allow_unicode=True, width=4096)
 
@@ -78,10 +96,9 @@ def render(name, files):
 def main():
     check = sys.argv[1:] == ['--check']
     stale = []
-    OUT.mkdir(parents=True, exist_ok=True)
-    for name, files in sources().items():
-        target = OUT / f'{name}.yaml'
-        text = render(name, files)
+    for name, (folder, verbatim, files) in sources().items():
+        target = OUT / folder / 'configmap.yaml'
+        text = render(name, verbatim, files)
         if target.exists() and target.read_text(encoding='utf-8') == text:
             continue
         stale.append(target.relative_to(ROOT))

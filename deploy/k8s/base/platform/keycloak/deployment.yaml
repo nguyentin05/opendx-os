@@ -4,27 +4,6 @@
 # the realm imported only into an empty store.
 # shortcut: start-dev with the file store, not `start` with a database; move to
 # production mode with PostgreSQL when the deployment outlives the demo (#170).
-apiVersion: v1
-kind: Service
-metadata:
-  name: keycloak
-spec:
-  selector:
-    app: keycloak
-  ports:
-  - name: http
-    port: 8085
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: keycloak-data
-spec:
-  accessModes: [ReadWriteOnce]
-  resources:
-    requests:
-      storage: 2Gi
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:

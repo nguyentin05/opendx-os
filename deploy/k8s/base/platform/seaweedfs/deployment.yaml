@@ -2,27 +2,6 @@
 # Copyright 2026 DX-OS Open-Core Contributors
 # SeaweedFS: the S3 store for attachments, as in compose.yaml. The service name
 # matches Compose, so the shared configuration under platform/ resolves the host.
-apiVersion: v1
-kind: Service
-metadata:
-  name: seaweedfs
-spec:
-  selector:
-    app: seaweedfs
-  ports:
-  - name: s3
-    port: 8333
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: seaweedfs-data
-spec:
-  accessModes: [ReadWriteOnce]
-  resources:
-    requests:
-      storage: 20Gi
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:

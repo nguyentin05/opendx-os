@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# The Workspace UI (App Shell). The UI image's own proxy uses the Docker DNS
+# address and is not used here: the Ingress routes /api/ and /v1/graphql to APISIX.
+apiVersion: v1
+kind: Service
+metadata:
+  name: workspace-ui
+spec:
+  selector:
+    app: workspace-ui
+  ports:
+  - name: http
+    port: 8080

@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# cap-process: versioned commands and attachments, with the settings of
+# compose.yaml. Connects with its own restricted database role; tokens are
+# verified against the public issuer (dxos-public) with keys fetched in the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: cap-process
+spec:
+  selector:
+    app: cap-process
+  ports:
+  - name: http
+    port: 8081

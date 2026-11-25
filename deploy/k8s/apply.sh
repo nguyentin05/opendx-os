@@ -15,9 +15,9 @@
 # The script creates only the Secrets, which are never committed, then applies
 # the overlay with server-side apply (the postgres-seed ConfigMap is larger than
 # the client-side apply annotation allows). Everything else is in the manifests;
-# the ConfigMaps under base/tier1-platform/configmaps are generated from
-# platform/ by `make k8s-config`. It is safe to run again. PostgreSQL applies the database passwords only when it
-# initializes an empty volume.
+# each base/platform/<service>/configmap.yaml is generated from platform/ by
+# `make k8s-config`. It is safe to run again. PostgreSQL applies the database
+# passwords only when it initializes an empty volume.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

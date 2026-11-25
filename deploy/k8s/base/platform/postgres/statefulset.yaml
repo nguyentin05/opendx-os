@@ -2,20 +2,9 @@
 # Copyright 2026 DX-OS Open-Core Contributors
 # PostgreSQL 17, initialized exactly like the Compose service: the image runs
 # the scripts in /docker-entrypoint-initdb.d once, on an empty data volume. The
-# scripts come from the postgres-seed ConfigMap (configmaps/postgres-seed.yaml,
+# scripts come from the postgres-seed ConfigMap (postgres/configmap.yaml,
 # generated from platform/postgres): the init container restores the directory
 # layout ('__' in a key is '/') and the execute bit of the shell scripts.
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgres
-spec:
-  selector:
-    app: postgres
-  ports:
-  - name: postgres
-    port: 5432
----
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:

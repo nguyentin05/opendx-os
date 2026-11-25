@@ -99,7 +99,7 @@ class GeneratedConfigMaps(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_postgres_seed_restores_the_compose_layout(self):
-        doc = yaml.safe_load((ROOT / 'deploy/k8s/base/tier1-platform/configmaps/postgres-seed.yaml').read_text())
+        doc = yaml.safe_load((ROOT / 'deploy/k8s/base/platform/postgres/configmap.yaml').read_text())
         restored = {key.replace('__', '/'): text for key, text in doc['data'].items()}
         base = ROOT / 'platform/postgres'
         expected = {f.name: f for f in (base / 'init').iterdir()}
@@ -107,7 +107,18 @@ class GeneratedConfigMaps(unittest.TestCase):
                          for f in (base / top).rglob('*') if f.is_file()})
         self.assertEqual(set(restored), set(expected))
         for path, f in expected.items():
+            # Byte for byte: the migration ledger checksums whole files.
             self.assertEqual(restored[path], f.read_text(), path)
+
+    def test_configuration_keeps_everything_but_the_license_header(self):
+        doc = yaml.safe_load((ROOT / 'deploy/k8s/base/platform/apisix/configmap.yaml').read_text())
+        for key in ('apisix.yaml', 'config.yaml'):
+            source = (ROOT / 'platform/apisix' / key).read_text()
+            data = doc['data'][key]
+            self.assertNotIn('SPDX-License-Identifier', data)
+            self.assertTrue(source.endswith(data), key)
+        # APISIX standalone mode loads apisix.yaml only once it sees the closing marker.
+        self.assertEqual(doc['data']['apisix.yaml'].rstrip().splitlines()[-1], '#END')
 
 
 @unittest.skipUnless(shutil.which('kubectl'), 'kubectl is not installed')

@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 DX-OS Open-Core Contributors
 # The whole platform for any Kubernetes cluster, by tier (docs/architecture):
-#   tier1-platform/      shared infrastructure, namespace dxos
-#   tier2-capabilities/  capability services and the App Shell, namespace dxos
-#   dxos-controller      Tier 1 as well, in dxos-operator-system; it installs
-#                        Tier 3 applications declared as DXApplication resources
+#   platform/      Tier 1, shared infrastructure, namespace dxos
+#   capabilities/  Tier 2, capability services and the App Shell, namespace dxos
+#   dxos-controller Tier 1 as well, in dxos-operator-system; it installs
+#                   Tier 3 applications declared as DXApplication resources
 # deploy/k8s/apply.sh creates the Secrets (dxos-secrets, seaweedfs-s3,
 # dxos-operator-config) first. No public entry point: an overlay adds one.
 resources:
 - namespace.yaml
-- tier1-platform
-- tier2-capabilities
+- platform
+- capabilities
 - ../../../operator/config/default
 # Public, non-secret settings. The defaults match Compose on localhost; an
 # overlay replaces them with the deployment's own origins.

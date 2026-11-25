@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Keycloak as in compose.yaml: start-dev with its own file store on a volume,
+# the realm imported only into an empty store.
+# shortcut: start-dev with the file store, not `start` with a database; move to
+# production mode with PostgreSQL when the deployment outlives the demo (#170).
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+spec:
+  selector:
+    app: keycloak
+  ports:
+  - name: http
+    port: 8085

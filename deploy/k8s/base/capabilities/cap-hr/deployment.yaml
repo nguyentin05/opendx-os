@@ -1,43 +1,32 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 DX-OS Open-Core Contributors
-# dxos-authz: resolves the caller's roles on every request (Hasura webhook and
-# /api/auth). Connects with its own restricted database role; tokens are
-# verified against the public issuer (dxos-public) with keys fetched in the cluster.
-apiVersion: v1
-kind: Service
-metadata:
-  name: authz
-spec:
-  selector:
-    app: authz
-  ports:
-  - name: http
-    port: 8090
----
+# cap-hr: departments and people, with the settings of compose.yaml. Connects
+# with its own restricted database role; tokens are verified against the public
+# issuer (dxos-public) with keys fetched inside the cluster.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: authz
+  name: cap-hr
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: authz
+      app: cap-hr
   template:
     metadata:
       labels:
-        app: authz
+        app: cap-hr
     spec:
       containers:
-      - name: authz
-        image: opendx-dxos-authz
+      - name: cap-hr
+        image: opendx-cap-hr
         env:
         - name: PORT
-          value: "8090"
+          value: "8083"
         - name: DB_PASSWORD
-          valueFrom: {secretKeyRef: {name: dxos-secrets, key: AUTHZ_DATABASE_PASSWORD}}
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: HR_DATABASE_PASSWORD}}
         - name: DATABASE_URL
-          value: postgres://dxos_authz:$(DB_PASSWORD)@postgres:5432/dxos_db?sslmode=disable
+          value: postgres://dxos_hr:$(DB_PASSWORD)@postgres:5432/dxos_db?sslmode=disable
         - name: OIDC_ISSUER_URL
           valueFrom: {configMapKeyRef: {name: dxos-public, key: OIDC_ISSUER_URL}}
         - name: OIDC_JWKS_URL
@@ -46,10 +35,8 @@ spec:
           value: dxos-runtime
         - name: ROLE_CACHE_TTL
           value: 5s
-        - name: BOOTSTRAP_OPERATOR_EMAIL
-          valueFrom: {configMapKeyRef: {name: dxos-public, key: BOOTSTRAP_OPERATOR_EMAIL}}
         ports:
-        - containerPort: 8090
+        - containerPort: 8083
           name: http
         readinessProbe:
           httpGet: {path: /healthz, port: http}
