@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Gateway API routes shared by the overlays that use a Gateway (aks, onprem).
+# The including overlay provides the Gateway dxos and the dxos-public values;
+# the hosts come from APP_HOST and AUTH_HOST.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+- httproutes.yaml
+- not-found.yaml
+replacements:
+- source: {kind: ConfigMap, name: dxos-public, fieldPath: data.APP_HOST}
+  targets:
+  - select: {kind: HTTPRoute, name: dxos-app}
+    fieldPaths: [spec.hostnames.0]
+  - select: {kind: Gateway, name: dxos}
+    fieldPaths:
+    - 'spec.listeners.[name=https-app].hostname'
+- source: {kind: ConfigMap, name: dxos-public, fieldPath: data.AUTH_HOST}
+  targets:
+  - select: {kind: HTTPRoute, name: dxos-auth}
+    fieldPaths: [spec.hostnames.0]
+  - select: {kind: Gateway, name: dxos}
+    fieldPaths:
+    - 'spec.listeners.[name=https-auth].hostname'

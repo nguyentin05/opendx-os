@@ -247,28 +247,45 @@ class RenderedManifests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which('kubectl'), 'kubectl is not installed')
 class EveryOverlay(unittest.TestCase):
-    """Each example overlay (eks, gke, aks, and any added later) keeps the same public surface."""
+    """Each example overlay (eks, gke, aks, onprem, and any added later) keeps the same public surface."""
+
+    @staticmethod
+    def routes(docs):
+        """(host, path, backend) for every Ingress path and HTTPRoute rule."""
+        out = set()
+        for ingress in (d for d in docs if d['kind'] == 'Ingress'):
+            for rule in ingress['spec']['rules']:
+                for path in rule['http']['paths']:
+                    out.add((rule['host'], path['path'], path['backend']['service']['name']))
+        for route in (d for d in docs if d['kind'] == 'HTTPRoute'):
+            for host in route['spec'].get('hostnames', ['*']):
+                for rule in route['spec']['rules']:
+                    for backend in rule.get('backendRefs', []):
+                        for match in rule.get('matches', [{'path': {'value': '/'}}]):
+                            out.add((host, match['path']['value'], backend['name']))
+        return out
 
     def test_public_surface_and_storage(self):
         overlays = sorted(p.parent for p in (ROOT / 'deploy/k8s/overlays').glob('*/kustomization.yaml'))
-        self.assertGreaterEqual(len(overlays), 3)
+        self.assertGreaterEqual(len(overlays), 4)
         for overlay in overlays:
             with self.subTest(overlay.name):
                 out = subprocess.run(['kubectl', 'kustomize', str(overlay)],
                                      capture_output=True, text=True, check=True).stdout
                 docs = [d for d in yaml.safe_load_all(out) if d]
-                routes = set()
-                for ingress in (d for d in docs if d['kind'] == 'Ingress'):
-                    self.assertEqual(ingress['metadata'].get('namespace'), 'dxos')
-                    for rule in ingress['spec']['rules']:
-                        for path in rule['http']['paths']:
-                            routes.add((path['path'], path['backend']['service']['name']))
-                self.assertEqual({name for _, name in routes}, {'apisix', 'workspace-ui', 'keycloak', 'not-found'})
-                self.assertIn(('/admin', 'not-found'), routes)
-                self.assertIn(('/realms/master', 'not-found'), routes)
+                for entry in (d for d in docs if d['kind'] in ('Ingress', 'Gateway', 'HTTPRoute')):
+                    self.assertEqual(entry['metadata'].get('namespace'), 'dxos')
+                routes = self.routes(docs)
+                self.assertEqual({backend for _, _, backend in routes},
+                                 {'apisix', 'workspace-ui', 'keycloak', 'not-found'})
+                for path in ('/admin', '/realms/master'):
+                    self.assertIn(('auth.example.com', path, 'not-found'), routes)
+                self.assertIn(('auth.example.com', '/', 'keycloak'), routes)
+                self.assertIn(('app.example.com', '/v1/graphql', 'apisix'), routes)
+                # An overlay may define the default StorageClass or use the cluster's.
                 defaults = [d for d in docs if d['kind'] == 'StorageClass' and d['metadata'].get(
                     'annotations', {}).get('storageclass.kubernetes.io/is-default-class') == 'true']
-                self.assertEqual(len(defaults), 1)
+                self.assertLessEqual(len(defaults), 1)
 
 
 if __name__ == '__main__':

@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Reference only, not tested. The Gateway API implementation of the AKS
+# application routing add-on (gatewayClassName approuting-istio), which replaces
+# its NGINX Ingress: Microsoft supports the NGINX one only through November 2026.
+# TLS comes from one Azure Key Vault certificate covering both hosts, read with
+# the workload identity of the ServiceAccount in serviceaccount.yaml: set the
+# certificate's unversioned URI below so rotations are picked up. The routes are
+# in components/gateway-routes.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: dxos
+  namespace: dxos
+spec:
+  gatewayClassName: approuting-istio
+  listeners:
+  - name: http
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces: {from: Same}
+  - name: https-app
+    hostname: APP_HOST
+    port: 443
+    protocol: HTTPS
+    allowedRoutes:
+      namespaces: {from: Same}
+    tls:
+      mode: Terminate
+      options:
+        kubernetes.azure.com/tls-cert-keyvault-uri: https://example-vault.vault.azure.net/certificates/dxos
+        kubernetes.azure.com/tls-cert-service-account: dxos-gateway-tls
+  - name: https-auth
+    hostname: AUTH_HOST
+    port: 443
+    protocol: HTTPS
+    allowedRoutes:
+      namespaces: {from: Same}
+    tls:
+      mode: Terminate
+      options:
+        kubernetes.azure.com/tls-cert-keyvault-uri: https://example-vault.vault.azure.net/certificates/dxos
+        kubernetes.azure.com/tls-cert-service-account: dxos-gateway-tls

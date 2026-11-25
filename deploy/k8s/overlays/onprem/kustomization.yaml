@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Example overlay for a Kubernetes cluster you run yourself (on-premises or any
+# cluster without a cloud load balancer). Reference only, and not a guide to
+# building the cluster: it expects a cluster that already has
+# - a default StorageClass with ReadWriteOnce volumes (Longhorn, Rook-Ceph,
+#   OpenEBS, an NFS CSI driver, local-path for a lab, ...); this overlay adds
+#   none and uses the cluster's;
+# - a Gateway API implementation and its GatewayClass (gateway.yaml);
+# - a way to give that Gateway's Service an address (MetalLB, kube-vip, or the
+#   implementation's NodePort/host-network mode);
+# - cert-manager with Gateway API support enabled and a ClusterIssuer.
+# Set the five values under dxos-public to your domain.
+resources:
+- ../../base
+- gateway.yaml
+components:
+- ../../components/gateway-routes
+configMapGenerator:
+- name: dxos-public
+  namespace: dxos
+  behavior: merge
+  literals:
+  - APP_HOST=app.example.com
+  - AUTH_HOST=auth.example.com
+  - KEYCLOAK_HOSTNAME=https://auth.example.com
+  - OIDC_ISSUER_URL=https://auth.example.com/realms/dxos
+  - DXOS_OIDC_ORIGIN=https://auth.example.com

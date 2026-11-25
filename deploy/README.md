@@ -8,6 +8,7 @@
 | Example overlay: Amazon EKS | `deploy/k8s/overlays/eks` | Reference; the cluster used to test the Kubernetes deployment (#166, #169) |
 | Example overlay: Google GKE | `deploy/k8s/overlays/gke` | Reference only, not run on a cluster |
 | Example overlay: Azure AKS | `deploy/k8s/overlays/aks` | Reference only, not run on a cluster |
+| Example overlay: your own cluster (on-premises) | `deploy/k8s/overlays/onprem` | Reference only |
 
 `deploy/` is added beside the other deployment files; none of them is replaced.
 In this file, paths such as `overlays/eks` and `apply.sh` are relative to
@@ -21,7 +22,7 @@ cluster (storage class, ingress controller, certificates, how the cluster itself
 is created) belongs in an overlay. **The overlays under `overlays/` are reference
 examples, not requirements:** `eks` is the one the project uses to test on a real
 managed cluster; `gke` and `aks` show the same setup on Google Cloud and Azure and
-have not been run. Write your own overlay for your cluster (see below); none of
+have not been run; `onprem` is for a cluster you run yourself. Write your own overlay for your cluster (see below); none of
 these cloud providers is needed.
 
 ## Layout
@@ -42,7 +43,10 @@ deploy/k8s/
   overlays/             reference examples, not requirements:
     eks/                Amazon EKS: gp3 volumes, one ALB, ACM certificate (the test cluster)
     gke/                Google GKE: pd-balanced disks, GKE Ingress, managed certificate (untested)
-    aks/                Azure AKS: Standard SSD disks, application routing NGINX, Key Vault certificate (untested)
+    aks/                Azure AKS: Standard SSD disks, app routing Gateway API, Key Vault certificate (untested)
+    onprem/             your own cluster: its default storage, any Gateway API implementation, cert-manager
+  components/
+    gateway-routes/     the public routes as Gateway API HTTPRoutes, shared by aks and onprem
 ```
 
 Each service folder holds one object per file: `service.yaml`,
@@ -118,7 +122,7 @@ Run both locally with `make k8s-config` and
 | x86-64 (`amd64`) nodes | The controller image is built for `linux/amd64` only | |
 | About 5 GiB of memory requested, up to about 12 GiB used | Sum of the pods' requests and limits | Two nodes of 2 vCPU / 8 GiB are comfortable |
 | A default StorageClass with `ReadWriteOnce` volumes | PostgreSQL, Keycloak, SeaweedFS, ClamAV and Kestra keep data on volumes | Or name a class in your overlay. Prefer `reclaimPolicy: Retain` so a deleted claim keeps its data |
-| An Ingress controller and a TLS certificate | Only to serve the platform outside the cluster | Any controller works; the routes are listed below |
+| An Ingress controller or a Gateway API implementation, and a TLS certificate | Only to serve the platform outside the cluster | Any one works; the routes are listed below |
 | Two host names | The UI and gateway on one (`app.`), Keycloak on the other (`auth.`) | Any DNS provider |
 | `kubectl` 1.27 or later | `apply.sh` uses the built-in `kubectl kustomize` | |
 
@@ -127,14 +131,22 @@ other clusters are expected to work but have not been tested yet.
 
 ### Write an overlay for your cluster
 
-An overlay sets the public hosts and adds the Ingress for your controller. Copy
-the example closest to your cluster (`overlays/eks`, `gke` or `aks`) and keep its
-`dxos-public` values and `replacements`; replace `storageclass.yaml` and
-`ingress.yaml` with your own, or drop `storageclass.yaml` to use the cluster's
-default class.
+An overlay sets the public hosts and adds the entry point for your cluster.
+Copy the example closest to it and keep its `dxos-public` values:
 
-The Ingress must route exactly these paths, in namespace `dxos`, and nothing
-else:
+- with **Gateway API** (`aks`, `onprem`): write only the `Gateway` named `dxos`
+  with the listeners `http`, `https-app` and `https-auth`, and include
+  `components/gateway-routes`, which holds the routes and fills in the hosts;
+- with an **Ingress** (`eks`, `gke`): write the Ingress and keep the
+  `replacements` that fill in its hosts.
+
+Gateway API is the better default for a new overlay: it is the portable
+successor to Ingress, and the community ingress-nginx controller, the most common
+Ingress controller, was retired in March 2026. Add a `storageclass.yaml` only if
+the cluster has no suitable default class.
+
+The entry point must route exactly these paths, in namespace `dxos`, and
+nothing else:
 
 | Host | Path | Service and port |
 | --- | --- | --- |
@@ -145,9 +157,10 @@ else:
 
 On `AUTH_HOST`, `/admin` and `/realms/master` must not be reachable: they are
 the Keycloak administration console and master realm. The EKS overlay answers
-404 with an ALB fixed response. A plain Ingress has no fixed response, so the GKE
-and AKS overlays send both paths to `not-found`, a Service that selects no pod;
-the controller answers 502 or 503 and Keycloak is never reached. Use that, or
+404 with an ALB fixed response. Neither a plain Ingress nor Gateway API's
+standard routes have a fixed response, so the other overlays send both paths to
+`not-found`, a Service that selects no pod; the load balancer answers 502 or 503
+(Gateway API specifies 503) and Keycloak is never reached. Use that, or
 your controller's equivalent rule. `tests/test_deploy.py` checks every overlay
 for these routes. Terminate TLS at the Ingress for both hosts. Do not add routes to
 Hasura, Kestra, PostgreSQL, SeaweedFS or ClamAV; reach them with
@@ -230,10 +243,22 @@ Nothing in `base/` refers to any of them.
 | --- | --- | --- | --- |
 | `eks` | `dxos-gp3`: encrypted gp3 (EBS CSI) | AWS Load Balancer Controller (ALB), ACM certificate | Used to test the Kubernetes deployment |
 | `gke` | `dxos-pd`: pd-balanced (PD CSI) | GKE Ingress, Google-managed certificate, HTTP→HTTPS redirect | Not run on a cluster |
-| `aks` | `dxos-disk`: Standard SSD (Azure Disk CSI) | Application routing add-on (managed NGINX), Key Vault certificate | Not run on a cluster |
+| `aks` | `dxos-disk`: Standard SSD (Azure Disk CSI) | Application routing add-on, Gateway API (`approuting-istio`), Key Vault certificate | Not run on a cluster |
+| `onprem` | The cluster's default class | Any Gateway API implementation, cert-manager | Reference |
 
-Every overlay keeps volumes after their claims are deleted (`Retain`): the disks
-outlive the platform and stay billed until you delete them.
+The cloud overlays keep volumes after their claims are deleted (`Retain`): the
+disks outlive the platform and stay billed until you delete them.
+
+Checked against the providers' documentation on 2026-11-25: GKE Ingress
+([Ingress for external Application Load Balancers](https://cloud.google.com/kubernetes-engine/docs/how-to/load-balance-ingress),
+[Ingress configuration](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/ingress-configuration),
+[Google-managed certificates](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/managed-certs)),
+the AKS application routing Gateway API implementation
+([overview](https://learn.microsoft.com/en-us/azure/aks/app-routing-gateway-api),
+[DNS and TLS](https://learn.microsoft.com/en-us/azure/aks/app-routing-gateway-api-dns-tls),
+[migration from NGINX](https://learn.microsoft.com/en-us/azure/aks/app-routing-nginx-to-gateway-api-migration)),
+[cert-manager with Gateway API](https://cert-manager.io/docs/usage/gateway/) and
+the [Gateway API specification](https://gateway-api.sigs.k8s.io/reference/api-spec/).
 
 ### Amazon EKS (test cluster)
 
@@ -285,28 +310,67 @@ driver and the GKE Ingress controller built in. It adds:
   at `/`) and a 120 s timeout, attached to the `apisix` and `keycloak` Services;
 - `not-found.yaml`: the Service the Keycloak console paths go to.
 
-Set the five `dxos-public` values in `overlays/gke/kustomization.yaml`, run
+GKE Ingress is selected with the `kubernetes.io/ingress.class: gce` annotation
+(GKE does not accept `spec.ingressClassName`), and `Exact` paths need GKE
+1.21.3-gke.1600 or later. Google points new setups to the GKE Gateway API with
+Certificate Manager; the platform's routes are the same Gateway API routes as in
+`components/gateway-routes`, should you prefer it. Set the five `dxos-public` values in `overlays/gke/kustomization.yaml`, run
 `deploy/k8s/apply.sh deploy/k8s/overlays/gke ~/dxos-k8s.env`, and point both hosts
 at the address from `kubectl -n dxos get ingress dxos`.
 
 ### Azure AKS (reference, untested)
 
-The overlay expects an AKS cluster with the application routing add-on
-(`az aks approuting enable`) connected to an Azure Key Vault that holds a
-certificate for both hosts (`az aks approuting update --attach-kv`). The Azure Disk
-CSI driver is built in. It adds:
+The overlay uses the **Gateway API implementation** of the AKS application
+routing add-on. Its older NGINX Ingress is supported by Microsoft only through
+November 2026, after the upstream ingress-nginx project was retired in March
+2026. The overlay expects a cluster with:
+
+- the managed Gateway API CRDs and the add-on's Istio-based implementation
+  (`az aks update --enable-gateway-api --enable-app-routing-istio`, Azure CLI
+  2.86.0 or later); the GatewayClass is `approuting-istio`;
+- for the certificate: the OIDC issuer and workload identity, the Key Vault
+  secrets provider, and a user-assigned managed identity with the
+  `Key Vault Secrets User` role on a vault holding one certificate for both
+  hosts, federated with the ServiceAccount `dxos-gateway-tls`.
+
+It adds:
 
 - `storageclass.yaml`: default class `dxos-disk`, Standard SSD managed disks;
-- `ingress.yaml`: the add-on's NGINX (`webapprouting.kubernetes.azure.com`), TLS
-  from the Key Vault certificate named in the
-  `kubernetes.azure.com/tls-cert-keyvault-uri` annotation, a 120 s read timeout
-  and a 25 MB body limit;
-- `not-found.yaml`: the Service the Keycloak console paths go to.
+- `gateway.yaml`: the `Gateway` with an HTTP listener (redirected to HTTPS) and
+  one HTTPS listener per host, each reading the certificate through the
+  `kubernetes.azure.com/tls-cert-keyvault-uri` and
+  `kubernetes.azure.com/tls-cert-service-account` listener options;
+- `serviceaccount.yaml`: the workload identity that reads the certificate;
+- the routes, from `components/gateway-routes`.
 
-Set the five `dxos-public` values in `overlays/aks/kustomization.yaml` and the Key
-Vault certificate URI in `overlays/aks/ingress.yaml`, run
-`deploy/k8s/apply.sh deploy/k8s/overlays/aks ~/dxos-k8s.env`, and point both hosts
-at the address from `kubectl -n dxos get ingress dxos`.
+The add-on cannot set a request body limit through this implementation; the
+120 s request timeout is set on the routes. Set the five `dxos-public` values in
+`overlays/aks/kustomization.yaml`, the certificate's unversioned URI in
+`gateway.yaml` and the identity's client ID in `serviceaccount.yaml`, run
+`deploy/k8s/apply.sh deploy/k8s/overlays/aks ~/dxos-k8s.env`, and point both
+hosts at the address of the Gateway (`kubectl -n dxos get gateway dxos`).
+
+### Your own cluster (on-premises, reference)
+
+This repository does not cover building or running a Kubernetes cluster. The
+`onprem` overlay only connects the platform to what a self-managed cluster
+already provides, through Gateway API, so it works with whichever
+implementation the cluster runs. It expects:
+
+| The cluster provides | Examples |
+| --- | --- |
+| A default StorageClass with `ReadWriteOnce` volumes; the overlay adds none | Longhorn, Rook-Ceph, OpenEBS, an NFS CSI driver; local-path for a lab |
+| A Gateway API implementation and its GatewayClass | Envoy Gateway (`eg`), Traefik, Cilium, Istio, NGINX Gateway Fabric |
+| An address for the Gateway's Service | MetalLB, kube-vip, or the implementation's NodePort or host-network mode |
+| cert-manager with Gateway API support (`config.gatewayAPI.enabled: true`) and a ClusterIssuer | Let's Encrypt (ACME) for public hosts, or your internal CA |
+
+It adds `gateway.yaml` (set `gatewayClassName` to your class, and the
+`cert-manager.io/cluster-issuer` annotation to your issuer; cert-manager then
+issues one certificate for both hosts into the Secret `dxos-tls`) and the routes
+from `components/gateway-routes`. Set the five `dxos-public` values in
+`overlays/onprem/kustomization.yaml`, run
+`deploy/k8s/apply.sh deploy/k8s/overlays/onprem ~/dxos-k8s.env`, and point both
+hosts at the Gateway's address (`kubectl -n dxos get gateway dxos`).
 
 ## Known gaps
 

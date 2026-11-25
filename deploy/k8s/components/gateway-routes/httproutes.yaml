@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# The platform's public surface as Gateway API routes, for overlays whose entry
+# point is a Gateway named dxos with the listeners http, https-app and
+# https-auth. Only the UI, the gateway routes and the Keycloak realm endpoints
+# are public. The standard channel has no fixed-response filter, so /admin and
+# /realms/master go to not-found, a Service without endpoints, which a Gateway
+# answers with 503: the Keycloak console is never reached.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: dxos-https-redirect
+  namespace: dxos
+spec:
+  parentRefs:
+  - name: dxos
+    sectionName: http
+  rules:
+  - filters:
+    - type: RequestRedirect
+      requestRedirect:
+        scheme: https
+        statusCode: 301
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: dxos-app
+  namespace: dxos
+spec:
+  parentRefs:
+  - name: dxos
+    sectionName: https-app
+  hostnames:
+  - APP_HOST
+  rules:
+  - matches:
+    - path: {type: PathPrefix, value: /api/}
+    - path: {type: Exact, value: /v1/graphql}
+    backendRefs:
+    - name: apisix
+      port: 9080
+    # Longer than common defaults: some commands take longer to answer.
+    timeouts:
+      request: 120s
+  - matches:
+    - path: {type: PathPrefix, value: /}
+    backendRefs:
+    - name: workspace-ui
+      port: 8080
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: dxos-auth
+  namespace: dxos
+spec:
+  parentRefs:
+  - name: dxos
+    sectionName: https-auth
+  hostnames:
+  - AUTH_HOST
+  rules:
+  - matches:
+    - path: {type: PathPrefix, value: /admin}
+    - path: {type: PathPrefix, value: /realms/master}
+    backendRefs:
+    - name: not-found
+      port: 80
+  - matches:
+    - path: {type: PathPrefix, value: /}
+    backendRefs:
+    - name: keycloak
+      port: 8085
