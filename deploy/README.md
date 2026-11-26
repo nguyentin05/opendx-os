@@ -303,7 +303,9 @@ update the Secret, delete the Job and apply again.
 
 Measured on the EKS test cluster (2026-11-26, KEDA 2.21.1, HTTP add-on 0.16.0):
 
-- cap-hr answered its first request after a quiet period in 2.5 s;
+- cap-hr answered its first request after a quiet period in 2.5 s, and
+  cap-process in 5.5 s (later requests: about 1 s, mostly the network to the
+  cluster);
 - an upload made while ClamAV was stopped was `CLEAN` 69 s later;
 - the whole procurement flow (`scripts/seed-demo.py flow`) passed with cap-process
   started on demand, including the review that Kestra opens through
