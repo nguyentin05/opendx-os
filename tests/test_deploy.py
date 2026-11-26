@@ -282,6 +282,13 @@ class EveryOverlay(unittest.TestCase):
                     self.assertIn(('auth.example.com', path, 'not-found'), routes)
                 self.assertIn(('auth.example.com', '/', 'keycloak'), routes)
                 self.assertIn(('app.example.com', '/v1/graphql', 'apisix'), routes)
+                # Sign-in breaks when one public origin disagrees with the hosts.
+                public = next(d['data'] for d in docs if d['kind'] == 'ConfigMap'
+                              and d['metadata']['name'].startswith('dxos-public'))
+                auth = 'https://' + public['AUTH_HOST']
+                self.assertEqual((public['KEYCLOAK_HOSTNAME'], public['DXOS_OIDC_ORIGIN'],
+                                  public['OIDC_ISSUER_URL'], public['DXOS_APP_URL']),
+                                 (auth, auth, auth + '/realms/dxos', 'https://' + public['APP_HOST']))
                 # An overlay may define the default StorageClass or use the cluster's.
                 defaults = [d for d in docs if d['kind'] == 'StorageClass' and d['metadata'].get(
                     'annotations', {}).get('storageclass.kubernetes.io/is-default-class') == 'true']

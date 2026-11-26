@@ -3,7 +3,7 @@
 # Example overlay for Amazon EKS, the cluster used to test the Kubernetes
 # deployment: gp3 volumes, one public ALB, and the deployment's own domain.
 # Other clusters use their own overlay; deploy/k8s/base has nothing AWS-specific.
-# Set the five values under dxos-public below to your domain before applying.
+# Set the six values under dxos-public below to your domain before applying.
 # Requires the AWS Load Balancer Controller and the EBS CSI driver add-on.
 resources:
 - ../../base
@@ -19,6 +19,7 @@ configMapGenerator:
   - KEYCLOAK_HOSTNAME=https://auth.example.com
   - OIDC_ISSUER_URL=https://auth.example.com/realms/dxos
   - DXOS_OIDC_ORIGIN=https://auth.example.com
+  - DXOS_APP_URL=https://app.example.com
 # The Ingress lives in namespace dxos with the services it routes to.
 patches:
 - target: {kind: Ingress, name: dxos}

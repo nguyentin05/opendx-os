@@ -25,9 +25,12 @@ FROM nginxinc/nginx-unprivileged:1.31-alpine@sha256:b5047b9b76845eac124358373c68
 # The base image lags Alpine security fixes; images.yml fails on any left over.
 USER root
 RUN apk upgrade --no-cache
-# The entrypoint renders templates into conf.d at start. DXOS_OIDC_ORIGIN is the
-# Keycloak origin the browser may call; set it when Keycloak is not on localhost:8085.
-ENV DXOS_OIDC_ORIGIN=http://localhost:8085
+# The entrypoint renders templates into conf.d at start. DXOS_OIDC_ISSUER is the
+# realm the UI signs in with and DXOS_OIDC_ORIGIN its origin, which the browser
+# may call; set both when Keycloak is not on localhost:8085.
+ENV DXOS_OIDC_ISSUER=http://localhost:8085/realms/dxos \
+    DXOS_OIDC_ORIGIN=http://localhost:8085 \
+    DXOS_OIDC_CLIENT_ID=dxos-portal
 COPY nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=builder /app/dist /usr/share/nginx/html
 # Apache-2.0 section 4: the license, notices and third-party license texts ship

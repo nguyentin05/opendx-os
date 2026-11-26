@@ -10,7 +10,7 @@
 # - a way to give that Gateway's Service an address (MetalLB, kube-vip, or the
 #   implementation's NodePort/host-network mode);
 # - cert-manager with Gateway API support enabled and a ClusterIssuer.
-# Set the five values under dxos-public to your domain.
+# Set the six values under dxos-public to your domain.
 resources:
 - ../../base
 - gateway.yaml
@@ -26,3 +26,4 @@ configMapGenerator:
   - KEYCLOAK_HOSTNAME=https://auth.example.com
   - OIDC_ISSUER_URL=https://auth.example.com/realms/dxos
   - DXOS_OIDC_ORIGIN=https://auth.example.com
+  - DXOS_APP_URL=https://app.example.com

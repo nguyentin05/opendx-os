@@ -166,7 +166,7 @@ for these routes. Terminate TLS at the Ingress for both hosts. Do not add routes
 Hasura, Kestra, PostgreSQL, SeaweedFS or ClamAV; reach them with
 `kubectl -n dxos port-forward`.
 
-The five `dxos-public` values are the public origins Keycloak and the services
+The six `dxos-public` values are the public origins Keycloak and the services
 use:
 
 ```yaml
@@ -180,6 +180,7 @@ configMapGenerator:
   - KEYCLOAK_HOSTNAME=https://auth.example.org
   - OIDC_ISSUER_URL=https://auth.example.org/realms/dxos
   - DXOS_OIDC_ORIGIN=https://auth.example.org
+  - DXOS_APP_URL=https://app.example.org
 ```
 
 ### Secrets
@@ -282,7 +283,7 @@ The overlay expects the cluster to have:
 - an ACM certificate in the cluster's region covering both hosts, validated
   through your DNS. The ALB finds it from the hosts.
 
-Then set the five `dxos-public` values in `overlays/eks/kustomization.yaml`,
+Then set the six `dxos-public` values in `overlays/eks/kustomization.yaml`,
 write the secrets file as above, run
 `deploy/k8s/apply.sh deploy/k8s/overlays/eks ~/dxos-k8s.env`, and point both hosts at the
 ALB host name from `kubectl -n dxos get ingress dxos`. With Cloudflare as the DNS:
@@ -314,7 +315,7 @@ GKE Ingress is selected with the `kubernetes.io/ingress.class: gce` annotation
 (GKE does not accept `spec.ingressClassName`), and `Exact` paths need GKE
 1.21.3-gke.1600 or later. Google points new setups to the GKE Gateway API with
 Certificate Manager; the platform's routes are the same Gateway API routes as in
-`components/gateway-routes`, should you prefer it. Set the five `dxos-public` values in `overlays/gke/kustomization.yaml`, run
+`components/gateway-routes`, should you prefer it. Set the six `dxos-public` values in `overlays/gke/kustomization.yaml`, run
 `deploy/k8s/apply.sh deploy/k8s/overlays/gke ~/dxos-k8s.env`, and point both hosts
 at the address from `kubectl -n dxos get ingress dxos`.
 
@@ -344,7 +345,7 @@ It adds:
 - the routes, from `components/gateway-routes`.
 
 The add-on cannot set a request body limit through this implementation; the
-120 s request timeout is set on the routes. Set the five `dxos-public` values in
+120 s request timeout is set on the routes. Set the six `dxos-public` values in
 `overlays/aks/kustomization.yaml`, the certificate's unversioned URI in
 `gateway.yaml` and the identity's client ID in `serviceaccount.yaml`, run
 `deploy/k8s/apply.sh deploy/k8s/overlays/aks ~/dxos-k8s.env`, and point both
@@ -367,7 +368,7 @@ implementation the cluster runs. It expects:
 It adds `gateway.yaml` (set `gatewayClassName` to your class, and the
 `cert-manager.io/cluster-issuer` annotation to your issuer; cert-manager then
 issues one certificate for both hosts into the Secret `dxos-tls`) and the routes
-from `components/gateway-routes`. Set the five `dxos-public` values in
+from `components/gateway-routes`. Set the six `dxos-public` values in
 `overlays/onprem/kustomization.yaml`, run
 `deploy/k8s/apply.sh deploy/k8s/overlays/onprem ~/dxos-k8s.env`, and point both
 hosts at the Gateway's address (`kubectl -n dxos get gateway dxos`).
