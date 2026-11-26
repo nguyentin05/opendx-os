@@ -611,3 +611,27 @@ section[aria-label="Lịch sử hồ sơ"] li::before {
 .workspace-skip-link:focus-visible {
   top: 1rem;
 }
+
+.workspace-ai-management {
+  display: grid;
+  gap: 1rem;
+}
+
+.workspace-ai-management fieldset {
+  min-width: 0;
+}
+
+.workspace-ai-management form,
+.workspace-ai-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: end;
+  margin-block: 0.5rem;
+}
+
+.workspace-ai-management label {
+  display: inline-grid;
+  gap: 0.25rem;
+  margin-inline-end: 0.75rem;
+}

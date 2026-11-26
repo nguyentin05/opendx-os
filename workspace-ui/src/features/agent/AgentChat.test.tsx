@@ -542,7 +542,7 @@ it("shows search outage and partial coverage without implying all sources were s
   fireEvent.click(await screen.findByRole("button", { name: "Existing" }));
   expect(await screen.findByText("Tìm kiếm tạm thời không khả dụng.")).toBeTruthy();
   expect(screen.getByText("Một số nguồn chưa tìm được. Hãy thử lại.")).toBeTruthy();
-  expect(screen.getByText("Trợ lý chỉ trả lời từ tài liệu bạn được xem và chưa tìm thấy đoạn nào khớp câu hỏi trong các nguồn đã tìm được. Hãy hỏi cụ thể hơn hoặc thêm tài liệu vào Thư viện cá nhân.")).toBeTruthy();
+  expect(screen.getByText("Trợ lý chưa tìm thấy đủ bằng chứng trong các nguồn bạn được xem để trả lời câu hỏi nội bộ. Hãy hỏi cụ thể hơn hoặc thêm tài liệu vào Thư viện cá nhân.")).toBeTruthy();
 });
 
 it("renders a stored English default title in Vietnamese with a vi-VN time", async () => {

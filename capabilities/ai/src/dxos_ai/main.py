@@ -52,6 +52,7 @@ def create_app() -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/api/cap/ai/health")
     @app.get("/readyz")
     def ready(session: Annotated[Session, Depends(get_session)]) -> dict[str, str]:
         try:

@@ -35,8 +35,8 @@ function emptyResultMessage(result: Result, incomplete: boolean) {
   }
   if (result.status === "NO_EVIDENCE")
     return incomplete
-      ? "Trợ lý chỉ trả lời từ tài liệu bạn được xem và chưa tìm thấy đoạn nào khớp câu hỏi trong các nguồn đã tìm được. Hãy hỏi cụ thể hơn hoặc thêm tài liệu vào Thư viện cá nhân."
-      : "Trợ lý chỉ trả lời từ tài liệu bạn được xem và chưa tìm thấy đoạn nào khớp câu hỏi. Hãy hỏi cụ thể hơn hoặc thêm tài liệu vào Thư viện cá nhân.";
+      ? "Trợ lý chưa tìm thấy đủ bằng chứng trong các nguồn bạn được xem để trả lời câu hỏi nội bộ. Hãy hỏi cụ thể hơn hoặc thêm tài liệu vào Thư viện cá nhân."
+      : "Trợ lý chưa tìm thấy nguồn bạn được xem để trả lời câu hỏi nội bộ. Hãy hỏi cụ thể hơn hoặc thêm tài liệu vào Thư viện cá nhân.";
   return "Chưa có câu trả lời được tạo.";
 }
 
@@ -250,7 +250,7 @@ export function AgentChat({
   return (
     <section>
       <h1>Trợ lý</h1>
-      <p>Đặt câu hỏi trên nguồn tri thức bạn được xem.</p>
+      <p>Hỏi thông tin chung hoặc tìm câu trả lời từ tài liệu bạn được xem.</p>
       {error && <p role="alert">{error}</p>}
       <button
         disabled={busy}
