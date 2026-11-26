@@ -13,7 +13,7 @@ from dxos_ai.security.processing import ProcessingContext
 
 def can_read(session: Session, actor: Actor, document_id: UUID, version_id: UUID) -> bool:
     return bool(session.scalar(text("""
-        SELECT cap_ai.source_access(:actor, :role, :doc, :version, false)
+        SELECT cap_ai.can_search_source(:actor, :role, :doc, :version)
         FROM cap_ai.documents WHERE id=:doc AND active_version=:version
     """), {
         "actor": actor.user_id, "role": actor.role, "doc": document_id, "version": version_id,

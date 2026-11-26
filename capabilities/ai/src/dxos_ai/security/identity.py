@@ -23,7 +23,7 @@ ROLE_NAME = re.compile(r"role_[a-z0-9_]{1,122}")
 @dataclass(frozen=True)
 class Actor:
     user_id: UUID
-    role: str
+    role: str | None
     expires_at: float
 
 
@@ -60,6 +60,10 @@ def subject(request: Request) -> tuple[UUID, int]:
 def holds_role(session: Session, actor: Actor, *, lock: bool = False) -> bool:
     if actor.expires_at <= time.time():
         return False
+    if actor.role is None:
+        return bool(session.scalar(text("SELECT cap_ai.actor_active(:actor,:lock)"), {
+            "actor": actor.user_id, "lock": lock,
+        }))
     return bool(session.scalar(
         text("SELECT cap_ai.holds_role(:actor, :role, :lock)"),
         {"actor": actor.user_id, "role": actor.role, "lock": lock},

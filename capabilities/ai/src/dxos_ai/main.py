@@ -17,6 +17,7 @@ from dxos_ai.config import settings
 from dxos_ai.database import get_session
 from dxos_ai.dispatch import poll_dispatch
 from dxos_ai.knowledge.documents import router as document_router
+from dxos_ai.knowledge.retrieval import router as retrieval_router
 from dxos_ai.knowledge.sources import router as internal_router
 from dxos_ai.models.gateway import router as model_router
 
@@ -63,4 +64,5 @@ def create_app() -> FastAPI:
     app.include_router(model_router)
     app.include_router(document_router)
     app.include_router(internal_router)
+    app.include_router(retrieval_router)
     return app
