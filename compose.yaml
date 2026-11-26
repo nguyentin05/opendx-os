@@ -100,6 +100,11 @@ services:
       # The account that becomes the first platform operator when it signs in
       # and nobody holds role_operator yet. Empty: no bootstrap.
       BOOTSTRAP_OPERATOR_EMAIL: ${BOOTSTRAP_OPERATOR_EMAIL:-}
+      # Lists accounts that have not signed in yet (read-only, view-users) through
+      # the Keycloak client set up by keycloak-directory. Empty: people appear at
+      # their first sign-in.
+      KEYCLOAK_URL: http://keycloak:8085
+      KEYCLOAK_DIRECTORY_SECRET: ${KEYCLOAK_DIRECTORY_SECRET:-}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/healthz"]
       interval: 5s
@@ -171,6 +176,23 @@ services:
       retries: 24
     depends_on:
       postgres:
+        condition: service_healthy
+
+  # One-shot: creates or disables the read-only Keycloak client dxos-authz lists
+  # users with (platform/keycloak/directory-client.sh), then exits.
+  keycloak-directory:
+    image: quay.io/keycloak/keycloak:26.0
+    restart: "no"
+    entrypoint: ["bash", "/opt/dxos/directory-client.sh"]
+    environment:
+      KEYCLOAK_URL: http://keycloak:8085
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KEYCLOAK_DIRECTORY_SECRET: ${KEYCLOAK_DIRECTORY_SECRET:-}
+    volumes:
+      - ./platform/keycloak/directory-client.sh:/opt/dxos/directory-client.sh:ro
+    depends_on:
+      keycloak:
         condition: service_healthy
 
   seaweedfs:

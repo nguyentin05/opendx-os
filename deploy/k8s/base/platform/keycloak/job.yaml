@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Sets up the read-only Keycloak client dxos-authz lists users with
+# (platform/keycloak/directory-client.sh), like keycloak-directory in compose.yaml.
+# A finished Job is removed after an hour, so the next apply runs it again
+# (it is idempotent) and picks up a new secret or a re-created realm.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-directory
+spec:
+  backoffLimit: 4
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: keycloak-directory
+        image: quay.io/keycloak/keycloak:26.0
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+        command: ["bash", "/opt/dxos/directory-client.sh"]
+        env:
+        - name: KEYCLOAK_URL
+          value: http://keycloak:8085
+        - name: KEYCLOAK_ADMIN
+          value: admin
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: KEYCLOAK_ADMIN_PASSWORD}}
+        - name: KEYCLOAK_DIRECTORY_SECRET
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: KEYCLOAK_DIRECTORY_SECRET}}
+        resources:
+          requests: {cpu: 50m, memory: 128Mi}
+          limits: {memory: 384Mi}
+        volumeMounts:
+        - name: script
+          mountPath: /opt/dxos/directory-client.sh
+          subPath: directory-client.sh
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: script
+        configMap:
+          name: keycloak-realm
+      - name: tmp
+        emptyDir: {}

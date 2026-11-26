@@ -37,7 +37,8 @@ for file in \
     platform/postgres/migrations/core/0007_work_item_source_version.sql \
     platform/postgres/capabilities/cap_process.sql \
     platform/postgres/capabilities/cap_data.sql \
-    platform/postgres/init/06_runtime_roles.sql
+    platform/postgres/init/06_runtime_roles.sql \
+    platform/postgres/migrations/core/0008_account_status.sql
 do
     psql -q -v ON_ERROR_STOP=1 -f "${ROOT_DIR}/${file}" "${TEST_DATABASE_URL}"
 done
