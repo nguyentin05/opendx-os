@@ -28,4 +28,4 @@ Công cụ không bắt buộc:
 Mặc định stack chỉ mở cổng trên `127.0.0.1`. Không đưa stack ra mạng không tin
 cậy. Tài khoản demo và dữ liệu mẫu chỉ dùng để đánh giá trên máy cá nhân.
 
-Tiếp theo: [chạy stack trên máy](local-stack.md).
+Tiếp theo: [chạy stack trên máy](local-stack.vi.md).
