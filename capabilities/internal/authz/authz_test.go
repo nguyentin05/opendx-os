@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -279,6 +280,7 @@ func TestAppsIncludesCapabilityOnlyKnowledge(t *testing.T) {
 }
 
 type fakeDirectory struct {
+	recorded  []string
 	calls     []string
 	bootstrap []string
 	err       error
@@ -297,6 +299,13 @@ func (d *fakeDirectory) GrantRole(_ context.Context, actor, user, role string) e
 func (d *fakeDirectory) RevokeRole(_ context.Context, actor, user, role string) error {
 	d.calls = append(d.calls, "revoke:"+actor+":"+user+":"+role)
 	return d.err
+}
+func (d *fakeDirectory) UserIDs(context.Context) ([]string, error) {
+	return d.recorded, d.err
+}
+func (d *fakeDirectory) MirrorStatus(_ context.Context, user string, enabled bool) (bool, error) {
+	d.calls = append(d.calls, fmt.Sprintf("status:%s:%t", user, enabled))
+	return true, d.err
 }
 func (d *fakeDirectory) BootstrapOperator(_ context.Context, user string) (bool, error) {
 	d.bootstrap = append(d.bootstrap, user)

@@ -80,7 +80,12 @@ The Compose files:
    in the directory Keycloak federates. A user appears in `core.users` on their
    first request; with `KEYCLOAK_DIRECTORY_SECRET` set (`scripts/init-env.sh` sets
    it), they appear as soon as an operator lists accounts, so roles and a
-   department can be given before their first sign-in. The one-shot service
+   department can be given before their first sign-in, and an account disabled
+   or deleted in Keycloak is refused within minutes (`ACCOUNT_SYNC_INTERVAL`,
+   default `5m`). An existing database needs the core migration 0008 for that:
+   `scripts/migrate-rag.sh --database-url-env <VAR> --scope core --through 0008`,
+   with `<VAR>` naming a variable that holds the administrator's connection URL.
+   The one-shot service
    `keycloak-directory` sets up the Keycloak client `dxos-directory` for this; it
    may only read the users of realm `dxos`. Set
    `BOOTSTRAP_OPERATOR_EMAIL` to the email of the account that should administer

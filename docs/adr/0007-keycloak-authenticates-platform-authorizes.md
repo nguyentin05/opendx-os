@@ -157,9 +157,12 @@ import is a follow-up that changes no behaviour.
   its authenticated endpoints reject the new tokens.
 - Users exist in `core.users` from their first request. With the read-only
   Keycloak client `dxos-directory` (`view-users` only), `dxos-authz` also mirrors
-  the realm's people when an operator lists accounts, so roles and a department
-  can be given before a first sign-in (#188). People are still created only in
-  Keycloak, or in the directory it federates; the platform never writes there.
+  the realm's people every few minutes and when an operator lists accounts, so
+  roles and a department can be given before a first sign-in (#23, #188). An
+  account disabled or deleted in Keycloak becomes `DISABLED` in `core.users`
+  (never deleted) and is refused; only a complete read disables anyone, and the
+  platform's own service accounts never change. People are still created only
+  in Keycloak, or in the directory it federates; the platform never writes there.
 
 ## Alternatives considered
 

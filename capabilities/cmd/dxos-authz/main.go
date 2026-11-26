@@ -66,14 +66,20 @@ func main() {
 	// the account that becomes the first operator of a new installation.
 	resolver.Administer(store, os.Getenv("BOOTSTRAP_OPERATOR_EMAIL"))
 	// With the read-only Keycloak client dxos-directory
-	// (platform/keycloak/directory-client.sh), the operator's account list also
-	// shows people who have not signed in yet.
+	// (platform/keycloak/directory-client.sh), the platform follows Keycloak:
+	// people appear before their first sign-in, and accounts disabled or
+	// deleted there are refused here.
 	if secret := os.Getenv("KEYCLOAK_DIRECTORY_SECRET"); secret != "" {
 		accounts, err := authz.NewKeycloakAccounts(envOr("KEYCLOAK_URL", "http://keycloak:8085"), envOr("KEYCLOAK_REALM", "dxos"), secret)
 		if err != nil {
 			log.Fatalf("account directory: %v", err)
 		}
 		resolver.MirrorAccounts(accounts)
+		every, err := time.ParseDuration(envOr("ACCOUNT_SYNC_INTERVAL", "5m"))
+		if err != nil || every < time.Minute {
+			log.Fatal("ACCOUNT_SYNC_INTERVAL must be a duration of at least 1m")
+		}
+		go resolver.RunAccountSync(ctx, every)
 	}
 	srv := &http.Server{
 		Addr:              ":" + port,

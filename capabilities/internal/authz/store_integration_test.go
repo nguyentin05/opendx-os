@@ -61,6 +61,14 @@ func platformDB(t *testing.T) *sql.DB {
 	if _, err := db.Exec(authzGrants); err != nil {
 		t.Fatal(err)
 	}
+	// Core migrations after the init files, as 09_rag_migrations.sh applies them.
+	b, err := os.ReadFile(filepath.Join("..", "..", "..", "platform", "postgres", "migrations", "core", "0008_account_status.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(string(b)); err != nil {
+		t.Fatalf("0008_account_status.sql: %v", err)
+	}
 	return db
 }
 
@@ -291,5 +299,54 @@ INSERT INTO core.roles (name, app_id, description) VALUES ('role_ready', 'ready_
 	// Another connection cannot use the functions, even a privileged one.
 	if _, err := db.Exec(`SELECT core.grant_role($1, 'role_operator', $2, 'role_ready')`, admin, user); err == nil || !strings.Contains(err.Error(), "untrusted database connection") {
 		t.Fatalf("role functions must refuse other connections, got %v", err)
+	}
+}
+
+// Account status follows the identity provider, audited, and never touches the
+// platform's own service accounts.
+func TestPostgresStoreMirrorsAccountStatusIntegration(t *testing.T) {
+	db := platformDB(t)
+	ctx := context.Background()
+	const person, service = "55555555-5555-4555-8555-555555555555", "22222222-2222-4222-8222-000000000005"
+	if _, err := db.Exec(`INSERT INTO core.users (id, email, display_name) VALUES ('` + person + `', 'lan@example.test', 'Lan')
+		ON CONFLICT DO NOTHING`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`SELECT core.mirror_account_status($1, false)`, person); err == nil ||
+		!strings.Contains(err.Error(), "untrusted database connection") {
+		t.Fatalf("mirror_account_status outside dxos_authz: %v", err)
+	}
+	asAuthz(t, db, func(store PostgresStore) {
+		ids, err := store.UserIDs(ctx)
+		if err != nil || len(ids) < 2 {
+			t.Fatalf("user ids = %v %v", ids, err)
+		}
+		if changed, err := store.MirrorStatus(ctx, person, false); err != nil || !changed {
+			t.Fatalf("disable: %v %v", changed, err)
+		}
+		if changed, err := store.MirrorStatus(ctx, person, false); err != nil || changed {
+			t.Fatalf("disabling twice must not change: %v %v", changed, err)
+		}
+		// A disabled account is refused at its next request.
+		if status, err := store.Mirror(ctx, auth.Principal{Subject: person, Email: "lan@example.test", Name: "Lan"}); err != nil || status != "DISABLED" {
+			t.Fatalf("status after disable = %q %v", status, err)
+		}
+		if changed, err := store.MirrorStatus(ctx, person, true); err != nil || !changed {
+			t.Fatalf("enable again: %v %v", changed, err)
+		}
+		// The workflow service account (03_app_registry.sql) is not in Keycloak.
+		if changed, err := store.MirrorStatus(ctx, service, false); err != nil || changed {
+			t.Fatalf("a platform service account changed: %v %v", changed, err)
+		}
+	})
+	var actions string
+	if err := db.QueryRow(`SELECT string_agg(action || ':' || acting_role, ',' ORDER BY seq) FROM core.audit_logs
+		WHERE entity_type = 'core.users' AND entity_id = $1`, person).Scan(&actions); err != nil ||
+		actions != "DISABLE_ACCOUNT:identity_provider,ENABLE_ACCOUNT:identity_provider" {
+		t.Fatalf("audit = %q (%v)", actions, err)
+	}
+	var status string
+	if err := db.QueryRow(`SELECT status FROM core.users WHERE id = $1`, service).Scan(&status); err != nil || status != "ACTIVE" {
+		t.Fatalf("workflow service status = %q (%v)", status, err)
 	}
 }
