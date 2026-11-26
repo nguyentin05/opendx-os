@@ -5,7 +5,7 @@
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { finishSignIn } from '../auth';
-import { parseRoute, toTableURL, useWorkspaceRoute } from './routes';
+import { canAdministerPeople, parseRoute, toTableURL, useWorkspaceRoute } from './routes';
 
 const discovery = {
   issuer: 'http://localhost:8085/realms/dxos',
@@ -23,12 +23,23 @@ afterEach(() => {
 it.each([
   ['/', { kind: 'home' }],
   ['/my-work', { kind: 'work' }],
+  ['/people', { kind: 'people' }],
   ['/apps/registry', { kind: 'app', appID: 'registry' }],
   ['/apps/registry/tables/domain.items', { kind: 'app', appID: 'registry', tableName: 'domain.items' }],
   ['/apps/registry/tables/domain.items/new', { kind: 'app', appID: 'registry', tableName: 'domain.items', mode: 'new' }],
   ['/apps/registry/tables/domain.items/row/edit', { kind: 'app', appID: 'registry', tableName: 'domain.items', recordID: 'row', mode: 'edit' }],
 ])('parses the canonical route %s', (pathname, route) => {
   expect(parseRoute(pathname, '')).toEqual(route);
+});
+
+it.each([
+  [[{ name: 'role_operator' }], true],
+  [[{ name: 'role_operator', app_id: 'registry' }], false],
+  [[{ name: 'role_operator', cap_id: 'cap-hr' }], false],
+  [[{ name: 'role_hr_admin', cap_id: 'cap-hr' }], false],
+  [[], false],
+])('shows people administration for platform role_operator only: %j', (roles, expected) => {
+  expect(canAdministerPeople({ id: 'u', email: 'u@example.invalid', display_name: 'U', roles })).toBe(expected);
 });
 
 it('round-trips an encoded record deep link and requested role', () => {

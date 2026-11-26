@@ -5,7 +5,7 @@ diataxis: how-to
 audience: [app-author]
 status: active
 owner: platform
-last_reviewed: 2026-11-23
+last_reviewed: 2026-11-26
 ---
 
 # Integrating the UI
@@ -265,7 +265,10 @@ with a retry.
 ## 8. Administration
 
 For users holding the platform role `role_operator` (it appears in
-`/api/auth/me` with no owner). Everyone else gets 403.
+`/api/auth/me` with no owner). Everyone else gets 403. In the portal, these
+users see **Người dùng & quyền** (`/people`): the accounts with search, and for
+one account its roles grouped by owner, with grant and revoke. The 404 and 409
+reasons are shown as the API returns them.
 
 | Call | Does |
 | --- | --- |
@@ -332,7 +335,8 @@ is interrupted.
   no service route yet. See [Work items](#7-work-items) for reads.
 - Accounts that have never signed in are not listed for role assignment
   (account sync, #23).
-- The portal has no screens for role administration or departments; use the
-  calls in [Administration](#8-administration), or `scripts/seed-demo.py admin`
-  and `org` on a demo stack.
+- The portal has no screen for departments; use the calls in
+  [Departments and staff](#departments-and-staff-cap-hr), or
+  `scripts/seed-demo.py org` on a demo stack.
+- The portal cannot create accounts yet (#188).
 - Custom dashboards, board and calendar views, and an Assistant model picker.

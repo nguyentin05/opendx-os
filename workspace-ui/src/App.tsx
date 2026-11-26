@@ -4,9 +4,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { endKeycloakSession, endSession, finishSignIn, registerSession, signIn, signedInMarker, watchSession } from './auth';
 import type { Session } from './auth';
-import { toTableURL, useWorkspaceRoute } from './core/routes';
+import { canAdministerPeople, toTableURL, useWorkspaceRoute } from './core/routes';
 import type { WorkspaceRoute } from './core/routes';
 import { resolveAppRole, useSessionContext } from './core/session-context';
+import { People } from './features/admin/People';
 import { AgentDrawer, agentDrawerID } from './features/agent/AgentDrawer';
 import type { Pending } from './features/agent/AgentChat';
 import type { CommandAttempts } from './features/dynamic-ui/CommandPanel';
@@ -265,7 +266,10 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
     if (route.kind === 'work') {
       return <MyWork session={session} onOpenWorkItem={openWorkItem} />;
     }
-    if (targetDenied || !context || (requestedTable && !table)) {
+    if (route.kind === 'people' && canAdministerPeople(session.user)) {
+      return <People key={session.user.id} token={token} />;
+    }
+    if (route.kind !== 'app' || targetDenied || !context || (requestedTable && !table)) {
       return (
         <>
           <h1>Không thể truy cập</h1>

@@ -2,10 +2,12 @@
 // Copyright 2026 DX-OS Open-Core Contributors
 
 import { useMemo, useSyncExternalStore } from 'react';
+import type { CurrentUser } from '../types/registry';
 
 export type WorkspaceRoute =
   | { kind: 'home' }
   | { kind: 'work' }
+  | { kind: 'people' }
   | {
     kind: 'app';
     appID: string;
@@ -19,6 +21,7 @@ const appPath = /^\/apps\/([^/]+)(?:\/tables\/([^/]+)(?:\/([^/]+)(\/edit)?)?)?$/
 
 export function parseRoute(pathname: string, search: string): WorkspaceRoute {
   if (pathname === '/my-work') return { kind: 'work' };
+  if (pathname === '/people') return { kind: 'people' };
 
   const match = appPath.exec(pathname);
   if (!match) return { kind: 'home' };
@@ -40,6 +43,11 @@ export function parseRoute(pathname: string, search: string): WorkspaceRoute {
   } catch {
     return { kind: 'home' };
   }
+}
+
+// The platform operator role has no owning application or capability.
+export function canAdministerPeople(user: CurrentUser): boolean {
+  return user.roles.some(grant => grant.name === 'role_operator' && !grant.app_id && !grant.cap_id);
 }
 
 export function toTableURL(appID: string, tableName: string, recordID?: string, role?: string): string {
