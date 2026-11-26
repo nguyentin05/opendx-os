@@ -143,14 +143,17 @@ def retrieval_pipeline() -> Pipeline:
 
 def search_knowledge(
     actor: Actor, query: str, scope: Scope, *, operation_key: str, limit: int = 10,
-    hybrid: bool = True,
+    hybrid: bool = True, sources: tuple[SourceRef, ...] = (),
 ) -> list[Evidence]:
     scope_params = resolve_sources(actor, scope)
+    context_sources = tuple(dict.fromkeys(sources))
     model = ModelGateway()
     embedding = None
     if hybrid:
         try:
-            embedding = model.embed([query], ProcessingContext(actor, operation_key + ":embed"))
+            embedding = model.embed([query], ProcessingContext(
+                actor, operation_key + ":embed", sources=context_sources,
+            ))
         except ModelError:
             pass
     output = retrieval_pipeline().run({
@@ -161,7 +164,8 @@ def search_knowledge(
     if hybrid and evidence:
         try:
             ranking = model.rerank(query, [e.text for e in evidence], ProcessingContext(
-                actor, operation_key + ":rerank", sources=tuple(item.source for item in evidence),
+                actor, operation_key + ":rerank",
+                sources=tuple(dict.fromkeys((*context_sources, *(i.source for i in evidence)))),
             ))
             matched = set(ranking)
             evidence = [evidence[i] for i in ranking] + [

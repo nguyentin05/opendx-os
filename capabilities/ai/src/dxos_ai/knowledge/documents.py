@@ -240,6 +240,8 @@ def change_grant(
             DELETE FROM cap_ai.document_grants WHERE document_id=:document AND user_id=:user
         """), args)
     else:
+        if not session.scalar(text("SELECT cap_ai.grant_eligible(:document,:user)"), args):
+            raise HTTPException(404, NOT_FOUND)
         session.execute(text("""
             INSERT INTO cap_ai.document_grants(
                 document_id,user_id,incarnation,authority_generation,granted_by

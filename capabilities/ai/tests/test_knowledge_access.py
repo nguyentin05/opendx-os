@@ -126,7 +126,7 @@ def test_personal_owner_only_including_admin(client, actors, library, admin_db):
     assert response.headers["location"].endswith(str(file))
 
 
-def test_app_role_and_restricted_grant(client, library, monkeypatch):
+def test_app_role_and_restricted_grant(client, library, actors, monkeypatch):
     assert publish(client, library.app, monkeypatch).status_code == 204
     owner = client.actor_headers(library.owner)
     manager = client.actor_headers(library.manager)
@@ -137,9 +137,14 @@ def test_app_role_and_restricted_grant(client, library, monkeypatch):
     path = f"{PREFIX}/documents/{item['document_id']}"
     assert client.get(path + "/original", headers=manager).status_code == 404
     metadata = client.get(path + "/grant-management", headers=manager).json()
-    result = client.post(path + "/grants", headers=manager | {
-        "If-Match": f'"{metadata["revision"]}"',
-    }, json={"user_id": str(library.owner.user_id)})
+    revision = manager | {"If-Match": f'"{metadata["revision"]}"'}
+    denied = client.post(path + "/grants", headers=revision, json={
+        "user_id": str(actors["other"].user_id),
+    })
+    assert denied.status_code == 404
+    result = client.post(path + "/grants", headers=revision, json={
+        "user_id": str(library.owner.user_id),
+    })
     assert result.status_code == 204, result.text
     assert client.get(route, headers=owner).json()["sources"][0]["readable"]
     assert client.get(route, headers=manager).json()["sources"][0]["readable"] is False

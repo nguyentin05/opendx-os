@@ -8,7 +8,7 @@ from sqlalchemy import text
 from test_knowledge_access import seed_app
 from test_retrieval import active_chunk
 
-from dxos_ai.models.gateway import ChatResult, ModelGateway
+from dxos_ai.models.gateway import ChatResult, ModelError, ModelGateway
 
 CONVERSATIONS = "/api/cap/ai/conversations"
 
@@ -66,17 +66,28 @@ def test_agent_uses_knowledge_tool(client, actors, admin_db, monkeypatch):
     library = seed_app(admin_db, actors["user"], actors["other"], with_package=False)
     doc = active_chunk(client, admin_db, library.app, library.owner, "maintenance safety valve")
 
+    embed_contexts = []
+
+    def embed(self, texts, context):
+        embed_contexts.append(context.sources)
+        raise ModelError("MODEL_UNAVAILABLE")
+
     def generate(self, messages, context, **kwargs):
         if messages[-1]["role"] != "tool":
             return tool()
         assert doc["chunk_id"] in messages[-1]["content"]
+        if sum(message["role"] == "tool" for message in messages) == 1:
+            return tool("safety valve")
         return final("GROUNDED", "Inspect the valve.", [doc["chunk_id"]])
 
+    monkeypatch.setattr(ModelGateway, "embed", embed)
     monkeypatch.setattr(ModelGateway, "generate", generate)
     actor = actors["user"]
     conversation = create(client, actor)
     result = ask(client, actor, conversation)
     assert result["mode"] == "GROUNDED"
+    assert len(embed_contexts) == 2 and not embed_contexts[0]
+    assert str(embed_contexts[1][0].document_id) == doc["document_id"]
     [cite] = result["citations"]
     assert cite["id"] == doc["chunk_id"]
     page = client.get(cite["url"], headers=client.actor_headers(actor))

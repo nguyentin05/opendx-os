@@ -136,6 +136,9 @@ def run_agent(actor: Actor, key: str, query: str, context: Context) -> Turn:
 
         rows = search_knowledge(
             actor, text, scope, operation_key=f"{key}:search:{index}", limit=5,
+            sources=tuple(dict.fromkeys(
+                (*context.sources, *(row.source for row in evidence.values())),
+            )),
         )
         hits = []
         for row in rows:

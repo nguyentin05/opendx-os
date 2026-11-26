@@ -67,13 +67,14 @@ def test_authorized_candidates_before_ranking(client, admin_db, private_evidence
 def test_revoked_citation_denied(client, private_evidence, admin_db, actors):
     library, doc = private_evidence
     path = citation_path(doc)
-    headers = client.actor_headers(actors["user"])
+    headers = client.actor_headers(library.owner)
     assert client.get(path, headers=headers).status_code == 200
     with admin_db.begin() as db:
         db.execute(text("""
             DELETE FROM core.user_roles WHERE user_id=:actor AND role_name=:role
         """), {"actor": library.owner.user_id, "role": library.owner.role})
-    assert client.get(path, headers=headers).status_code == 404
+    assert client.get(path, headers=headers).status_code == 403
+    assert client.get(path, headers=client.actor_headers(actors["user"])).status_code == 404
 
 
 def test_embedding_revision_mismatch_uses_fts(
