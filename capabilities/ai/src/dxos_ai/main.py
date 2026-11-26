@@ -13,6 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from dxos_ai.agent.conversations import router as agent_router
 from dxos_ai.config import settings
 from dxos_ai.database import get_session
 from dxos_ai.dispatch import poll_dispatch
@@ -65,4 +66,5 @@ def create_app() -> FastAPI:
     app.include_router(document_router)
     app.include_router(internal_router)
     app.include_router(retrieval_router)
+    app.include_router(agent_router)
     return app

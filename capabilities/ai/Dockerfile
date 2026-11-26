@@ -16,7 +16,7 @@ RUN hf download docling-project/docling-layout-heron \
       --revision 8f39ad3c0b4c58e9c2d2c84a38465abf757272d8 \
       --include '*.json' '*.safetensors' LICENSE \
       --local-dir /opt/docling-models/docling-project--docling-layout-heron
-ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HAYSTACK_TELEMETRY_ENABLED=false
+ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HAYSTACK_TELEMETRY_ENABLED=false LANGSMITH_TRACING=false
 COPY alembic.ini ./
 COPY migrations ./migrations
 COPY src ./src
