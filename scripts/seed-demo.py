@@ -238,7 +238,9 @@ def seed() -> dict[str, str]:
     psql("\n".join(sql))
 
     app_url = ENV.get("DXOS_APP_URL", f"http://localhost:{ENV.get('WORKSPACE_UI_PORT', '5173')}")
-    print(f"Demo accounts (password: {PASSWORD}), sign in at {app_url}")
+    # A password set in DEMO_PASSWORD is never printed: it may guard a public deployment.
+    shown = "DEMO_PASSWORD" if "DEMO_PASSWORD" in ENV else "Demo@2026"
+    print(f"Demo accounts (password: {shown}), sign in at {app_url}")
     print()
     rows = [("Username", "Name", "Department", "Roles")]
     depts = dict(DEPARTMENTS)
