@@ -48,7 +48,7 @@ owns its schema and registers itself in `core.capabilities`.
 | `cap-work` | `cap_work.work_items`: `app_id`, `title`, `description`, `priority`, `board_column`, `assignee_id`, source record (`source_type`, `source_id`), `created_by` |
 | `cap-process` | `cap_process.command_receipts` (command idempotency), `cap_process.processed_workflow_steps` (effect deduplication) |
 | `cap-data` | `cap_data.devices`, `cap_data.ot_events`, `cap_data.export_batches`, `cap_data.data_lineage`. The cap-data service handlers still target retired core tables and are scheduled for v1.1.0 (#111) |
-| `cap-ai` | `cap_ai.*`: knowledge collections, documents, versions, chunks and embeddings; ingestion jobs; model registry, reservations and usage; Assistant conversations. Created by the migrations in `platform/postgres/migrations/cap_ai/` ([RAG reference](../rag/index.md)) |
+| `cap-ai` | `cap_ai.*`: documents, versions, grants and chunks; ingestion jobs; model providers, models, slots and operations; processing policies; Assistant conversations and messages. Created by the Alembic migrations in `capabilities/ai/migrations/` ([RAG reference](../rag/index.md)) |
 
 Apps that do not declare a capability get no permissions or relationships on its
 tables. Removing access or disabling a capability does not by itself authorize

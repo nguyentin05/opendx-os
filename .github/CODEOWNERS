@@ -17,24 +17,10 @@
 * @nguyentin05
 
 # cap-ai: knowledge, RAG, assistant and model administration
-/capabilities/cmd/cap-ai/ @ximofam
-/capabilities/cmd/cap-ai-model-adapter/ @ximofam
-/capabilities/cmd/cap-ai-parser/ @ximofam
-/capabilities/cmd/cap-ai-worker/ @ximofam
-/capabilities/cmd/dxos-model/ @ximofam
-/capabilities/internal/agent/ @ximofam
-/capabilities/internal/ai/ @ximofam
-/capabilities/internal/knowledge/ @ximofam
-/capabilities/Dockerfile.parser @ximofam
+/capabilities/ai/ @ximofam
 /platform/postgres/capabilities/cap_ai.sql @ximofam
-/platform/postgres/migrations/cap_ai/ @ximofam
 /compose.rag.yaml @ximofam
-/compose.models.yaml @ximofam
-/compose.model-adapter.yaml @ximofam
-/scripts/integration/rag_*.py @ximofam
-/scripts/integration/test_rag_*.py @ximofam
-/scripts/integration/test_model_adapter_deployment.py @ximofam
-/scripts/check_model_adapter_env.py @ximofam
+/scripts/test-ai.sh @ximofam
+/scripts/rag-up.sh @ximofam
 /docs/guides/knowledge/ @ximofam
 /docs/reference/rag/ @ximofam
-/docs/reference/cli/dxos-model.md @ximofam
