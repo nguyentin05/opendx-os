@@ -5,7 +5,7 @@ diataxis: how-to
 audience: [app-author]
 status: active
 owner: platform
-last_reviewed: 2026-11-23
+last_reviewed: 2026-11-26
 ---
 
 # Integrating the UI
@@ -265,7 +265,10 @@ with a retry.
 ## 8. Administration
 
 For users holding the platform role `role_operator` (it appears in
-`/api/auth/me` with no owner). Everyone else gets 403.
+`/api/auth/me` with no owner). Everyone else gets 403. In the portal, these
+users see **Người dùng & quyền** (`/people`): the accounts with search, and for
+one account its roles grouped by owner, with grant and revoke. The 404 and 409
+reasons are shown as the API returns them.
 
 | Call | Does |
 | --- | --- |
@@ -282,12 +285,24 @@ For users holding the platform role `role_operator` (it appears in
 A change shows in the user's `/api/auth/me` and GraphQL at once and in
 cap-process within a few seconds, without a new sign-in. Every change is
 recorded with the operator who made it. An account is listed once it has signed
-in.
+in, or, when the installation sets `KEYCLOAK_DIRECTORY_SECRET`, as soon as it
+exists in Keycloak: listing reads the identity provider (at most every 10 s, and
+dxos-authz also reads it every `ACCOUNT_SYNC_INTERVAL`, default 5 minutes), so
+an operator can grant roles before the person's first sign-in. An account
+disabled or deleted in Keycloak shows `status: DISABLED` and is refused.
+Accounts themselves are created in Keycloak or the directory it federates,
+never here.
 
 ### Departments and staff (cap-hr)
 
 Reads are for every signed-in user; changes need the capability role
-`role_hr_admin` (403 otherwise).
+`role_hr_admin` (403 otherwise). In the portal, users holding a cap-hr role see
+**Tổ chức** (`/organization`): the department tree with staff counts, create
+and edit a department, the staff of the selected department, and place, move
+or remove a person. Picking a person lists every account only for a viewer who
+also holds `role_operator`; otherwise it offers people already in a department.
+From an account in **Người dùng & quyền**, **Xếp phòng ban** opens this screen
+with that person selected (`/organization?user=<id>`).
 
 | Call | Does |
 | --- | --- |
@@ -332,7 +347,5 @@ is interrupted.
   no service route yet. See [Work items](#7-work-items) for reads.
 - Accounts that have never signed in are not listed for role assignment
   (account sync, #23).
-- The portal has no screens for role administration or departments; use the
-  calls in [Administration](#8-administration), or `scripts/seed-demo.py admin`
-  and `org` on a demo stack.
+- The portal cannot create accounts yet (#188).
 - Custom dashboards, board and calendar views, and an Assistant model picker.

@@ -186,7 +186,7 @@ class RenderedManifests(unittest.TestCase):
 
     def test_workloads_read_only_what_apply_sh_creates(self):
         created = {c['metadata']['name'] for c in self.kinds('ConfigMap')}
-        for workload in self.kinds('Deployment') + self.kinds('StatefulSet'):
+        for workload in self.kinds('Deployment') + self.kinds('StatefulSet') + self.kinds('Job'):
             spec = workload['spec']['template']['spec']
             for container in spec.get('containers', []) + spec.get('initContainers', []):
                 for env in container.get('env', []):
@@ -206,7 +206,7 @@ class RenderedManifests(unittest.TestCase):
         # Accepted exceptions, each recorded with its reason in .trivyignore.yaml.
         writable_root = {'apisix', 'keycloak', 'clamav'}
         starts_as_root = {'clamav'}
-        for workload in self.kinds('Deployment') + self.kinds('StatefulSet'):
+        for workload in self.kinds('Deployment') + self.kinds('StatefulSet') + self.kinds('Job'):
             name = workload['metadata']['name']
             with self.subTest(name):
                 pod = workload['spec']['template']['spec']

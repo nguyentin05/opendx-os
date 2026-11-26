@@ -159,6 +159,8 @@ data:
   config.yaml: |
     apisix:
       node_listen: 9080
+      # Answer "Server: APISIX" without the version.
+      enable_server_tokens: false
       # Docker service addresses can change after a retained-volume restart.
       dns_resolver_valid: 5
       # The control API answers inside the container only; it is not published.

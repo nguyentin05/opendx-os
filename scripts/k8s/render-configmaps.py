@@ -45,7 +45,8 @@ def sources():
     platform = ROOT / 'platform'
     return {
         'postgres-seed': ('postgres', True, seed_files()),
-        'keycloak-realm': ('keycloak', False, {'realm-export.json': platform / 'keycloak/realm-export.json'}),
+        'keycloak-realm': ('keycloak', False, {'realm-export.json': platform / 'keycloak/realm-export.json',
+                                               'directory-client.sh': platform / 'keycloak/directory-client.sh'}),
         'kestra-config': ('kestra', False, {'config.yaml': platform / 'kestra/config.yaml',
                                             'start.sh': platform / 'kestra/start.sh'}),
         'apisix-config': ('apisix', False, {'config.yaml': platform / 'apisix/config.yaml',
@@ -54,13 +55,14 @@ def sources():
 
 
 def without_license(text):
-    """Drops the Apache license comment block (SPDX line to 'limitations under the License.')
-    and the blank or bare-comment line after it; a shebang stays first."""
+    """Drops the Apache license comment block (SPDX line to 'limitations under the License.',
+    or the SPDX and Copyright lines of a short header) and the blank or bare-comment
+    line after it; a shebang stays first."""
     lines = text.splitlines(keepends=True)
     start = next((i for i, l in enumerate(lines[:3]) if 'SPDX-License-Identifier' in l), None)
     if start is None:
         return text
-    end = next(i for i, l in enumerate(lines) if 'limitations under the License.' in l) + 1
+    end = next((i for i, l in enumerate(lines) if 'limitations under the License.' in l), start + 1) + 1
     if end < len(lines) and lines[end].strip() in ('', '#'):
         end += 1
     return ''.join(lines[:start] + lines[end:])
