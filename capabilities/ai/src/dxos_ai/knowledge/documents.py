@@ -80,7 +80,7 @@ def list_documents(
 ) -> dict:
     rows = session.execute(text("""
         SELECT d.id AS document_id,d.title,d.revision,
-            v.status AS desired_version_status,a.status AS active_version_status,
+            COALESCE(j.state,v.status) AS desired_version_status,a.status AS active_version_status,
             j.error_code
         FROM cap_ai.documents d JOIN cap_ai.document_versions v ON v.id=d.desired_version
         LEFT JOIN cap_ai.document_versions a ON a.id=d.active_version

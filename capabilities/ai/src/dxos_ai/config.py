@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     rag_worker_client_id: str = "dxos-rag-worker"
     rag_worker_client_secret: SecretStr | None = None
     rag_worker_bearer_token: SecretStr | None = None
+    ai_parser_artifacts: str = "/opt/docling-models"
     ai_model_master_key: SecretStr | None = None
     ai_hosted_model_endpoints: set[str] = set()
     ai_local_model_endpoints: dict[str, list[str]] = {}

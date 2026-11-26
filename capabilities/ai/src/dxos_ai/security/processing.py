@@ -24,6 +24,7 @@ class ProcessingContext:
     query: bool = True
     sources: tuple[SourceRef, ...] = ()
     ingestion_job_id: UUID | None = None
+    ingestion_lease: UUID | None = None
 
 
 def hosted_allowed(

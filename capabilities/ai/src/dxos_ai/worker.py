@@ -3,6 +3,7 @@
 
 import os
 from urllib.parse import urlsplit
+from uuid import UUID
 
 from celery import Celery
 from kombu import Queue
@@ -38,3 +39,10 @@ app.conf.update(
         "pool_size": 2,
     },
 )
+
+
+@app.task(name="knowledge.ingest")
+def ingest(job_id: str) -> None:
+    from dxos_ai.knowledge.ingestion import process_ingestion
+
+    process_ingestion(UUID(job_id))

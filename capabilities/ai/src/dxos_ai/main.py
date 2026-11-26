@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 DX-OS Open-Core Contributors
 
+import os
+from contextlib import asynccontextmanager
+from threading import Event, Thread
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -12,14 +15,32 @@ from sqlalchemy.orm import Session
 
 from dxos_ai.config import settings
 from dxos_ai.database import get_session
+from dxos_ai.dispatch import poll_dispatch
 from dxos_ai.knowledge.documents import router as document_router
 from dxos_ai.knowledge.sources import router as internal_router
 from dxos_ai.models.gateway import router as model_router
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if not os.environ.get("AI_BROKER_URL"):
+        yield
+        return
+    stop = Event()
+    dispatcher = Thread(target=poll_dispatch, args=(stop,), daemon=True)
+    dispatcher.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        dispatcher.join(timeout=5)
+
+
 def create_app() -> FastAPI:
     settings()
-    app = FastAPI(title="OpenDX-OS AI", docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(
+        title="OpenDX-OS AI", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan,
+    )
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, error: RequestValidationError) -> JSONResponse:

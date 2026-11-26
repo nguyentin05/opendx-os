@@ -29,9 +29,10 @@ def processing_classes(
             SELECT d.app_id, d.owner_id FROM cap_ai.ingestion_jobs j
             JOIN cap_ai.document_versions v ON v.id=j.version_id
             JOIN cap_ai.documents d ON d.id=v.document_id AND d.desired_version=v.id
-            WHERE j.id=:job AND j.state='INDEXING' AND j.lease_until > clock_timestamp()
+            WHERE j.id=:job AND j.lease_token=:lease AND j.state='INDEXING'
+              AND j.lease_until > clock_timestamp()
               AND cap_ai.source_current(d.id,v.id)
-        """), {"job": context.ingestion_job_id}).one_or_none()
+        """), {"job": context.ingestion_job_id, "lease": context.ingestion_lease}).one_or_none()
         if source is None:
             return None
         result.add(

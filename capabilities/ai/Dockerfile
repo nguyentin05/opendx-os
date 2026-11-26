@@ -12,6 +12,11 @@ WORKDIR /app
 ENV UV_PYTHON_DOWNLOADS=never UV_COMPILE_BYTECODE=1 PATH="/app/.venv/bin:$PATH"
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project
+RUN hf download docling-project/docling-layout-heron \
+      --revision 8f39ad3c0b4c58e9c2d2c84a38465abf757272d8 \
+      --include '*.json' '*.safetensors' LICENSE \
+      --local-dir /opt/docling-models/docling-project--docling-layout-heron
+ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HAYSTACK_TELEMETRY_ENABLED=false
 COPY alembic.ini ./
 COPY migrations ./migrations
 COPY src ./src
