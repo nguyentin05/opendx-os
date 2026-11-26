@@ -7,9 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -81,30 +83,21 @@ func TestKeycloakAccountsList(t *testing.T) {
 		first, _ := strconv.Atoi(r.URL.Query().Get("first"))
 		pages = append(pages, r.URL.Query().Get("first"))
 		w.Header().Set("Content-Type", "application/json")
-		if first == 0 {
-			// A full page: the reader must ask for the next one.
-			fmt.Fprint(w, "[")
-			for i := 0; i < keycloakPage; i++ {
-				if i > 0 {
-					fmt.Fprint(w, ",")
-				}
-				switch i {
-				case 0:
-					fmt.Fprint(w, `{"id":"44444444-4444-4444-8444-44444444444A","username":"hoa.pham","email":"hoa@example.org","firstName":"Phạm Thị","lastName":"Hoa","enabled":true}`)
-				case 1:
-					fmt.Fprint(w, `{"id":"55555555-5555-4555-8555-555555555555","username":"service-account-dxos-rag-worker","email":"","enabled":true}`)
-				case 2:
-					fmt.Fprint(w, `{"id":"66666666-6666-4666-8666-666666666666","username":"no.mail","enabled":true}`)
-				case 3:
-					fmt.Fprint(w, `{"id":"77777777-7777-4777-8777-777777777777","username":"left","email":"left@example.org","enabled":false}`)
-				default:
-					fmt.Fprintf(w, `{"id":"not-a-uuid-%d","username":"x%d","email":"x%d@example.org","enabled":true}`, i, i, i)
-				}
-			}
-			fmt.Fprint(w, "]")
+		if first > 0 {
+			_, _ = io.WriteString(w, `[{"id":"88888888-8888-4888-8888-888888888888","username":"an","email":"an@example.org","enabled":true}]`)
 			return
 		}
-		fmt.Fprint(w, `[{"id":"88888888-8888-4888-8888-888888888888","username":"an","email":"an@example.org","enabled":true}]`)
+		// A full page: the reader must ask for the next one.
+		users := []string{
+			`{"id":"44444444-4444-4444-8444-44444444444A","username":"hoa.pham","email":"hoa@example.org","firstName":"Phạm Thị","lastName":"Hoa","enabled":true}`,
+			`{"id":"55555555-5555-4555-8555-555555555555","username":"service-account-dxos-rag-worker","email":"","enabled":true}`,
+			`{"id":"66666666-6666-4666-8666-666666666666","username":"no.mail","enabled":true}`,
+			`{"id":"77777777-7777-4777-8777-777777777777","username":"left","email":"left@example.org","enabled":false}`,
+		}
+		for i := len(users); i < keycloakPage; i++ {
+			users = append(users, fmt.Sprintf(`{"id":"not-a-uuid-%d","username":"x%d","email":"x%d@example.org","enabled":true}`, i, i, i))
+		}
+		_, _ = io.WriteString(w, "["+strings.Join(users, ",")+"]")
 	}))
 	defer kc.Close()
 	k := &KeycloakAccounts{BaseURL: kc.URL, Realm: "dxos", Client: kc.Client(),
