@@ -47,7 +47,7 @@ deploy/k8s/
     onprem/             your own cluster: its default storage, any Gateway API implementation, cert-manager
   components/
     gateway-routes/     the public routes as Gateway API HTTPRoutes, shared by aks and onprem
-    keda/               opt-in: ClamAV runs only while files wait for a scan (needs KEDA)
+    keda/               opt-in: Tier 2 services and ClamAV run only while they have work (needs KEDA)
 ```
 
 Each service folder holds one object per file: `service.yaml`,
@@ -255,15 +255,37 @@ affected deployment
 only into an empty Keycloak store, so a new `DXOS_APP_URL` reaches an existing
 realm only through the Keycloak admin console (port-forwarded) or a new store.
 
-## Optional: scale ClamAV to zero with KEDA
+## Optional: run services only while they have work (KEDA)
 
-`components/keda` lets [KEDA](https://keda.sh) run ClamAV only while uploaded
-files wait for a scan (#175). ClamAV is the largest memory user (about 1.5 GiB),
-and scanning is already asynchronous: cap-process retries each waiting file with
-a backoff of up to 256 s, and a file cannot be downloaded until it is `CLEAN`.
+`components/keda` applies one rule to the platform (#175): a Tier 2 service, or
+ClamAV, runs only while it has work, and starts when work arrives. Tier 1 (PostgreSQL,
+Keycloak, dxos-authz, Hasura, APISIX, Kestra) always runs: every request or
+schedule depends on it, and Keycloak and Kestra start too slowly to wake on
+demand.
 
-1. Install KEDA in the cluster, for example with its Helm chart
-   (`helm install keda kedacore/keda --namespace keda --create-namespace`).
+| Service | Replicas | Wakes on |
+| --- | --- | --- |
+| cap-hr | 0–1 | a request to `/api/cap/hr` |
+| cap-process | 0–3 | a request to `/api/cap/process` (commands, uploads, workflow effects from Kestra), or background work in the database: outbox events not yet delivered, uploads waiting for a scan |
+| ClamAV | 0–1 | uploads waiting for a scan |
+
+A request that arrives while its service is at zero waits in the interceptor of
+the [KEDA HTTP add-on](https://github.com/kedacore/http-add-on) until a pod is
+ready, instead of failing. APISIX and Kestra keep calling `cap-hr:8083` and
+`cap-process:8081` (`platform/apisix/apisix.yaml` is shared with Compose): the
+component turns those two Services into names for the interceptor, and the pods
+move behind `cap-hr-app` and `cap-process-app`.
+
+1. Install KEDA and its HTTP add-on in namespace `keda`, for example:
+
+   ```bash
+   helm install keda kedacore/keda --namespace keda --create-namespace
+   # A small cluster does not need three interceptors and three scalers.
+   helm install http-add-on kedacore/keda-add-ons-http --namespace keda \
+     --set interceptor.replicas.min=1 --set scaler.replicas=1 \
+     --set interceptor.readinessTimeout=60s
+   ```
+
 2. Create the scaler's database password:
 
    ```bash
@@ -273,18 +295,26 @@ a backoff of up to 256 s, and a file cannot be downloaded until it is `CLEAN`.
 
 3. Add `components: [../../components/keda]` to your overlay and apply it.
 
-The Job `keda-setup` creates the login `dxos_keda`, which may only call
-`keda.files_waiting_for_scan()` (a count of files waiting for a scan). It reads no
-table and cannot reach the Kestra database. The ScaledObject keeps ClamAV at
-zero replicas while the count is zero, starts one when it is not, and waits ten
-minutes after the last scan before stopping it. To change the password, update
-the Secret, delete the Job and apply again.
+The Job `keda-setup` creates the login `dxos_keda`, which may only call two
+counting functions, `keda.files_waiting_for_scan()` and
+`keda.process_work_waiting()`. It reads no table and cannot reach the Kestra
+database. To change its password, or after an upgrade that changes `setup.sql`,
+update the Secret, delete the Job and apply again.
 
-On the EKS test cluster (2026-11-26), an upload made while ClamAV was stopped was
-`CLEAN` 69 s later: KEDA noticed it within 15 s, and ClamAV was ready 22 s after
-starting; the rest is the retry backoff. A file that never scans (its object
-missing, for example) keeps ClamAV running, as it would without KEDA. Without
-the component, the manifests are unchanged and ClamAV always runs.
+Measured on the EKS test cluster (2026-11-26, KEDA 2.21.1, HTTP add-on 0.16.0):
+
+- cap-hr answered its first request after a quiet period in 2.5 s;
+- an upload made while ClamAV was stopped was `CLEAN` 69 s later;
+- the whole procurement flow (`scripts/seed-demo.py flow`) passed with cap-process
+  started on demand, including the review that Kestra opens through
+  `cap-process:8081`.
+
+A service stops five minutes after its last work (ClamAV after ten, since
+loading its signatures takes a while). The first scan after a quiet period
+therefore takes a minute or two, longer than the minute `seed-demo.py` waits
+for it. A file that never scans (its object missing, for example) keeps ClamAV
+and cap-process running, as it would without KEDA. Without the component the
+manifests are unchanged and every service always runs.
 
 ## Example overlays (reference only)
 

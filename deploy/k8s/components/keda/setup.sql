@@ -23,3 +23,14 @@ CREATE OR REPLACE FUNCTION keda.files_waiting_for_scan() RETURNS bigint
   AS $$ SELECT count(*) FROM core.files WHERE scan_status = 'QUARANTINED' $$;
 REVOKE ALL ON FUNCTION keda.files_waiting_for_scan() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION keda.files_waiting_for_scan() TO dxos_keda;
+
+-- Work cap-process does in the background: outbox events it still has to
+-- deliver to the workflow engine, and uploads waiting for a scan.
+CREATE OR REPLACE FUNCTION keda.process_work_waiting() RETURNS bigint
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = pg_catalog, pg_temp
+  AS $$ SELECT (SELECT count(*) FROM core.outbox_events
+                 WHERE delivery_status <> 'delivered' AND event_type <> 'knowledge.publication')
+             + (SELECT count(*) FROM core.files WHERE scan_status = 'QUARANTINED') $$;
+REVOKE ALL ON FUNCTION keda.process_work_waiting() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION keda.process_work_waiting() TO dxos_keda;

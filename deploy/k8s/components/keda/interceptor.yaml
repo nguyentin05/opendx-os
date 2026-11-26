@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Entry points into the KEDA HTTP add-on's interceptor, which holds a request
+# while its service scales up from zero. APISIX and Kestra keep calling
+# cap-hr:8083 and cap-process:8081 (platform/apisix/apisix.yaml is shared with
+# Compose); in namespace dxos those names now point here, and the interceptor
+# forwards to cap-hr-app and cap-process-app. They live in the add-on's
+# namespace (keda), since a Service only selects pods of its own namespace.
+apiVersion: v1
+kind: Service
+metadata:
+  name: dxos-cap-hr
+  namespace: keda
+spec:
+  selector:
+    app.kubernetes.io/component: interceptor
+    app.kubernetes.io/part-of: keda-add-ons-http
+  ports:
+  - name: http
+    port: 8083
+    targetPort: proxy
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dxos-cap-process
+  namespace: keda
+spec:
+  selector:
+    app.kubernetes.io/component: interceptor
+    app.kubernetes.io/part-of: keda-add-ons-http
+  ports:
+  - name: http
+    port: 8081
+    targetPort: proxy
