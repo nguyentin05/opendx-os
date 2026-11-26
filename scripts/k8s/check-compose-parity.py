@@ -72,7 +72,7 @@ def kubernetes_workloads():
                 port.get('targetPort', port['port']) if isinstance(port.get('targetPort', 0), int) else port['port'])
     workloads = {}
     for d in docs:
-        if d['kind'] not in ('Deployment', 'StatefulSet'):
+        if d['kind'] not in ('Deployment', 'StatefulSet', 'Job'):
             continue
         container = d['spec']['template']['spec']['containers'][0]
         name = d['metadata']['name']

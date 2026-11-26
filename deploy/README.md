@@ -198,6 +198,12 @@ echo "S3_SECRET_ACCESS_KEY=$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0
 Keep the file: PostgreSQL takes its passwords only when it first initializes its
 volume.
 
+`KEYCLOAK_DIRECTORY_SECRET` lets operators see people who have not signed in
+yet, to grant them roles: the Job `keycloak-directory` sets up the read-only
+Keycloak client `dxos-directory` (`view-users`) with it. A secrets file written
+before that key existed needs it added:
+`echo "KEYCLOAK_DIRECTORY_SECRET=$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 32)" >> ~/dxos-k8s.env`.
+
 ### Deploy
 
 ```bash
@@ -221,6 +227,19 @@ the script:
 
 Point both host names at the Ingress address with your DNS provider.
 
+Pin the images by digest. The base runs the `:main` images, which move with
+every merge, and a node that already holds a `:main` image keeps using it when a
+pod restarts. In your overlay:
+
+```yaml
+images:
+- name: ghcr.io/nguyentin05/opendx-workspace-ui
+  digest: sha256:...   # docker buildx imagetools inspect ghcr.io/nguyentin05/opendx-workspace-ui:<tag>
+```
+
+Do the same for `opendx-dxos-controller`, `opendx-dxos-authz`, `opendx-cap-hr` and
+`opendx-cap-process`, with the digests of one release or one commit of `main`.
+
 Install an application:
 
 ```bash
@@ -231,7 +250,9 @@ kubectl get dxapplications -w
 After changing a file under `platform/`, run `make k8s-config`; then run
 `apply.sh` again (also after changing a value in the overlay) and restart the
 affected deployment
-(`kubectl -n dxos rollout restart deployment/<name>`).
+(`kubectl -n dxos rollout restart deployment/<name>`). The realm file is imported
+only into an empty Keycloak store, so a new `DXOS_APP_URL` reaches an existing
+realm only through the Keycloak admin console (port-forwarded) or a new store.
 
 ## Example overlays (reference only)
 
@@ -375,11 +396,9 @@ hosts at the Gateway's address (`kubectl -n dxos get gateway dxos`).
 
 ## Known gaps
 
-- Sign-in on a public host needs #167 (UI sign-in configuration) and #168
-  (Keycloak redirect URIs and hostname for the domain).
 - cap-ai and the RAG services are not deployed; requests to `/api/cap/ai/` fail.
 - Keycloak runs `start-dev` with its file store, as in Compose (#170).
 - `scripts/seed-demo.py` and the `scripts/test-*.sh` probes target the Compose
   ports and have not been adapted.
-- The deployment has not yet passed its tests on a cluster; until then the
-  manifests are checked by `kubectl kustomize` and `tests/test_deploy.py`.
+- Only the EKS overlay has run on a cluster; GKE, AKS and on-premises are checked
+  by `kubectl kustomize` and `tests/test_deploy.py`.

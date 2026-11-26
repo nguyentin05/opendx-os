@@ -69,6 +69,12 @@ type Directory interface {
 	GrantRole(ctx context.Context, actor, user, role string) error
 	// RevokeRole takes a role from user; revoking a role that is not held is a no-op.
 	RevokeRole(ctx context.Context, actor, user, role string) error
+	// UserIDs returns the id of every recorded account.
+	UserIDs(ctx context.Context) ([]string, error)
+	// MirrorStatus makes user ACTIVE (enabled) or DISABLED as the identity
+	// provider says, and reports whether it changed; platform service
+	// accounts never change.
+	MirrorStatus(ctx context.Context, user string, enabled bool) (bool, error)
 	// BootstrapOperator makes user the platform operator when nobody is one
 	// yet, and reports whether it did.
 	BootstrapOperator(ctx context.Context, user string) (bool, error)
@@ -118,7 +124,9 @@ func (r *Resolver) changeRole(ctx context.Context, s *Session, user, role string
 // registerAdmin adds the operator endpoints:
 //
 //	GET    /api/auth/roles                          every role in force
-//	GET    /api/auth/users                          accounts and the roles they hold
+//	GET    /api/auth/users                          accounts and the roles they hold, including
+//	                                                people of the identity provider who have not
+//	                                                signed in yet (when MirrorAccounts was called)
 //	PUT    /api/auth/users/{user_id}/roles/{role}   grant
 //	DELETE /api/auth/users/{user_id}/roles/{role}   revoke
 func registerAdmin(mux *http.ServeMux, r *Resolver) {
@@ -152,6 +160,7 @@ func registerAdmin(mux *http.ServeMux, r *Resolver) {
 		if _, ok := operator(w, req); !ok {
 			return
 		}
+		r.SyncAccounts(req.Context())
 		users, err := r.directory.Users(req.Context())
 		if err != nil {
 			unavailable(w, err)
@@ -264,6 +273,31 @@ func (s PostgresStore) RevokeRole(ctx context.Context, actor, user, role string)
 	}
 	_, err := s.DB.ExecContext(ctx, `SELECT core.revoke_role($1, $2, $3, $4)`, actor, OperatorRole, user, role)
 	return err
+}
+
+// UserIDs implements Directory.
+func (s PostgresStore) UserIDs(ctx context.Context) ([]string, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT id::text FROM core.users`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// MirrorStatus implements Directory.
+func (s PostgresStore) MirrorStatus(ctx context.Context, user string, enabled bool) (bool, error) {
+	var changed bool
+	err := s.DB.QueryRowContext(ctx, `SELECT core.mirror_account_status($1, $2)`, user, enabled).Scan(&changed)
+	return changed, err
 }
 
 // BootstrapOperator implements Directory.
