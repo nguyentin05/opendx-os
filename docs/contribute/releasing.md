@@ -118,9 +118,8 @@ image when `main` or a `v*` tag is pushed:
 | `opendx-cap-process` | `capabilities` | `capabilities/Dockerfile` | `SERVICE=cap-process` |
 | `opendx-cap-hr` | `capabilities` | `capabilities/Dockerfile` | `SERVICE=cap-hr` |
 | `opendx-cap-data` | `capabilities` | `capabilities/Dockerfile` | `SERVICE=cap-data` |
-| `opendx-cap-ai` | `capabilities` | `capabilities/Dockerfile` | `SERVICE=cap-ai` |
-| `opendx-cap-ai-worker` | `capabilities` | `capabilities/Dockerfile` | `SERVICE=cap-ai-worker` |
-| `opendx-cap-ai-parser` | `capabilities` | `capabilities/Dockerfile.parser` | |
+| `opendx-cap-ai` | `capabilities/ai` | `capabilities/ai/Dockerfile` | API, worker and Alembic share this image |
+| `opendx-ai-postgres` | `platform/postgres/ai` | `platform/postgres/ai/Dockerfile` | PostgreSQL with pgvector and PGMQ |
 | `opendx-workspace-ui` | `workspace-ui` | `workspace-ui/Dockerfile` | |
 
 Tag pushes publish `X.Y.Z` and `X.Y` tags; `main` pushes publish `main` and a

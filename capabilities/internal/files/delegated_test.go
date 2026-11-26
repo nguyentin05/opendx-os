@@ -5,7 +5,6 @@ package files
 import (
 	"context"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -19,9 +18,9 @@ func (f serviceVerifier) VerifySubject(c context.Context, s string) (auth.Subjec
 
 type delegationValidator struct{ calls int }
 
-func (v *delegationValidator) ValidateDelegation(context.Context, string, string, string) (knowledge.SourceGrant, error) {
+func (v *delegationValidator) ValidateDelegation(context.Context, string, string, string) (SourceGrant, error) {
 	v.calls++
-	return knowledge.SourceGrant{}, knowledge.ErrNotFound
+	return SourceGrant{}, ErrDenied
 }
 func TestDelegatedRejectsUserRole(t *testing.T) {
 	s := &Service{}

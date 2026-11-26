@@ -87,7 +87,7 @@ INSERT INTO core.schema_migrations(version,checksum) VALUES('legacy-bootstrap',r
 	u.Path = "/" + name
 	t.Setenv("RAG_MIGRATION_TEST_URL", u.String())
 	run := func() error {
-		cmd := exec.Command("../../../scripts/migrate-rag.sh", "--database-url-env", "RAG_MIGRATION_TEST_URL", "--scope", "core", "--through", "0001")
+		cmd := exec.Command("../../../scripts/migrate-core.sh", "--database-url-env", "RAG_MIGRATION_TEST_URL", "--through", "0001")
 		out, e := cmd.CombinedOutput()
 		t.Log(string(out))
 		return e

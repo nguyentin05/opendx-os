@@ -61,7 +61,7 @@ func platformDB(t *testing.T) *sql.DB {
 	if _, err := db.Exec(authzGrants); err != nil {
 		t.Fatal(err)
 	}
-	// Core migrations after the init files, as 09_rag_migrations.sh applies them.
+	// Core migrations after the init files, as 09_core_migrations.sh applies them.
 	b, err := os.ReadFile(filepath.Join("..", "..", "..", "platform", "postgres", "migrations", "core", "0008_account_status.sql"))
 	if err != nil {
 		t.Fatal(err)

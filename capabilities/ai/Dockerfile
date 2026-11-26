@@ -13,14 +13,15 @@ ENV UV_PYTHON_DOWNLOADS=never UV_COMPILE_BYTECODE=1 PATH="/app/.venv/bin:$PATH"
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project
 RUN hf download docling-project/docling-layout-heron \
+      config.json preprocessor_config.json model.safetensors README.md \
       --revision 8f39ad3c0b4c58e9c2d2c84a38465abf757272d8 \
-      --include '*.json' '*.safetensors' LICENSE \
       --local-dir /opt/docling-models/docling-project--docling-layout-heron
 ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HAYSTACK_TELEMETRY_ENABLED=false LANGSMITH_TRACING=false
 COPY alembic.ini ./
 COPY migrations ./migrations
 COPY src ./src
 RUN uv sync --locked --no-dev --no-editable
+COPY --from=legal LICENSE NOTICE COPYRIGHT.txt THIRD_PARTY_LICENSES.txt /usr/share/licenses/opendx-os/
 USER dxos
 EXPOSE 8084
 CMD ["uvicorn", "dxos_ai.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8084"]

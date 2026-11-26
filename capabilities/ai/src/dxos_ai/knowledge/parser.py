@@ -63,7 +63,9 @@ def parse_document(source: VerifiedSource, *, pictures: bool = False) -> ParsedD
 
     if source.media_type == "application/pdf":
         artifacts = Path(settings().ai_parser_artifacts) / "docling-project--docling-layout-heron"
-        if not (artifacts / "model.safetensors").is_file():
+        if not all((artifacts / name).is_file() for name in (
+            "model.safetensors", "config.json", "preprocessor_config.json",
+        )):
             raise ValueError("PARSER_ASSETS_UNAVAILABLE")
     extension = "pdf" if source.media_type == "application/pdf" else "md"
     stream = DocumentStream(name=f"source.{extension}", stream=BytesIO(source.data))

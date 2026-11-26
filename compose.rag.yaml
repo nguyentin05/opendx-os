@@ -4,13 +4,6 @@
 # AI migrations run in ai-migrate after PostgreSQL initialization.
 x-ai-image: &ai-image
   image: dxos-ai:dev
-  build:
-    context: ./capabilities/ai
-
-x-qualified: &qualified
-  RAG_SOURCE_QUALIFIED: ${RAG_SOURCE_QUALIFIED:-false}
-  RAG_METADATA_QUALIFIED: ${RAG_METADATA_QUALIFIED:-false}
-  RAG_PARSER_QUALIFIED: ${RAG_PARSER_QUALIFIED:-false}
 
 x-subjects: &subjects
   RAG_WORKER_SERVICE_SUBJECT: ${RAG_WORKER_SERVICE_SUBJECT:?set the worker OIDC subject}
@@ -21,8 +14,9 @@ services:
     image: dxos-ai-postgres:dev
     build:
       context: ./platform/postgres/ai
+      additional_contexts:
+        legal: .
     environment:
-      DXOS_AI_PYTHON: "true"
       AI_BROKER_DATABASE_PASSWORD: ${AI_BROKER_DATABASE_PASSWORD:?set the broker password}
       ENABLED_CAPABILITIES: ${ENABLED_CAPABILITIES:-cap-process,cap-hr,cap-work,cap-data,cap-ai}
       AI_DATABASE_PASSWORD: ${AI_DATABASE_PASSWORD:?set the API database password}
@@ -42,8 +36,7 @@ services:
   cap-process:
     environment:
       <<: *subjects
-      RAG_PRIVATE_UPLOAD_ENABLED: ${RAG_PRIVATE_UPLOAD_ENABLED:-false}
-      RAG_SOURCE_QUALIFIED: ${RAG_SOURCE_QUALIFIED:-false}
+      RAG_PRIVATE_UPLOAD_ENABLED: ${RAG_PRIVATE_UPLOAD_ENABLED:-true}
       RAG_INTERNAL_LISTEN: ":8181"
       RAG_INTERNAL_AI_URL: http://cap-ai:8084
       OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/token}
@@ -62,6 +55,10 @@ services:
 
   cap-ai:
     <<: *ai-image
+    build:
+      context: ./capabilities/ai
+      additional_contexts:
+        legal: .
     restart: unless-stopped
     environment:
       <<: *subjects
@@ -126,7 +123,6 @@ services:
     entrypoint: ["/usr/local/bin/dxos-knowledge-dispatcher"]
     restart: unless-stopped
     environment:
-      <<: *qualified
       DATABASE_URL: postgres://dxos_ai_dispatcher:${AI_DISPATCHER_DATABASE_PASSWORD}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
       RAG_INTERNAL_AI_URL: http://cap-ai:8084
       OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/token}

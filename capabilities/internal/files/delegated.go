@@ -15,11 +15,18 @@ import (
 	"time"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 )
 
+type SourceGrant struct {
+	SourceKind string    `json:"source_kind"`
+	SourceID   string    `json:"source_id"`
+	SHA256     string    `json:"sha256"`
+	OwnerID    string    `json:"owner_id"`
+	ExpiresAt  time.Time `json:"expires_at"`
+}
+
 type DelegationValidator interface {
-	ValidateDelegation(context.Context, string, string, string) (knowledge.SourceGrant, error)
+	ValidateDelegation(context.Context, string, string, string) (SourceGrant, error)
 }
 
 func (s *Service) DelegatedHandler(verifier auth.SubjectVerifier, workerSubject string, validator DelegationValidator) http.Handler {
@@ -31,7 +38,7 @@ func (s *Service) DelegatedHandler(verifier auth.SubjectVerifier, workerSubject 
 			fileError(w, 404)
 			return
 		}
-		worker := knowledge.ServiceSubject(r.Context())
+		worker := ServiceSubject(r.Context())
 		grant, err := validator.ValidateDelegation(r.Context(), tokens[0], worker, source)
 		if err != nil || grant.SourceKind != "UPLOAD" || grant.SourceID != source || !grant.ExpiresAt.After(time.Now()) {
 			fileError(w, 404)
@@ -62,10 +69,10 @@ func (s *Service) DelegatedHandler(verifier auth.SubjectVerifier, workerSubject 
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		_, _ = w.Write(data)
 	})
-	return knowledge.ServiceMiddleware(verifier, workerSubject, mux)
+	return ServiceMiddleware(verifier, workerSubject, mux)
 }
 
-func (s *Service) delegatedSource(ctx context.Context, g knowledge.SourceGrant) (string, error) {
+func (s *Service) delegatedSource(ctx context.Context, g SourceGrant) (string, error) {
 	var key string
 	err := s.db.QueryRowContext(ctx, `SELECT object_key FROM core.files WHERE id=$1 AND bucket=$2 AND uploaded_by=$3 AND sha256_hash=$4 AND scan_status='CLEAN' AND read_policy='OWNER_ONLY'`, g.SourceID, s.bucket, g.OwnerID, g.SHA256).Scan(&key)
 	return key, err
@@ -85,30 +92,30 @@ func NewDelegationClient(endpoint string, token auth.TokenGetter) (*DelegationCl
 	return &DelegationClient{endpoint: strings.TrimRight(endpoint, "/") + "/internal/v1/source-delegations/validate", token: token, client: &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 
-func (c *DelegationClient) ValidateDelegation(ctx context.Context, token, workerID, sourceID string) (knowledge.SourceGrant, error) {
-	var out knowledge.SourceGrant
+func (c *DelegationClient) ValidateDelegation(ctx context.Context, token, workerID, sourceID string) (SourceGrant, error) {
+	var out SourceGrant
 	bearer, err := c.token(ctx)
 	if err != nil || strings.TrimSpace(bearer) == "" {
-		return out, knowledge.ErrAuthorityUnavailable
+		return out, ErrAuthorityUnavailable
 	}
 	body, _ := json.Marshal(map[string]string{"token": token, "worker_id": workerID, "source_id": sourceID})
 	req, err := http.NewRequestWithContext(ctx, "POST", c.endpoint, bytes.NewReader(body))
 	if err != nil {
-		return out, knowledge.ErrAuthorityUnavailable
+		return out, ErrAuthorityUnavailable
 	}
 	req.Header.Set("Authorization", "Bearer "+bearer)
 	req.Header.Set("Content-Type", "application/json")
 	response, err := c.client.Do(req)
 	if err != nil {
-		return out, knowledge.ErrAuthorityUnavailable
+		return out, ErrAuthorityUnavailable
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != 200 {
-		return out, knowledge.ErrNotFound
+		return out, ErrDenied
 	}
 	raw, err := io.ReadAll(io.LimitReader(response.Body, 16385))
 	if err != nil || len(raw) > 16384 || json.Unmarshal(raw, &out) != nil {
-		return knowledge.SourceGrant{}, knowledge.ErrAuthorityUnavailable
+		return SourceGrant{}, ErrAuthorityUnavailable
 	}
 	return out, nil
 }

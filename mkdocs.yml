@@ -267,7 +267,6 @@ nav:
           - API: reference/rag/api.md
           - Authorization: reference/rag/authorization.md
       - dxos-operator CLI: reference/cli/dxos-operator.md
-      - dxos-model CLI: reference/cli/dxos-model.md
   - Architecture:
       - Overview: architecture/index.md
       - Three tiers: architecture/tiers.md
@@ -287,6 +286,7 @@ nav:
       - ADR 0008: adr/0008-an-application-declares-several-tables.md
       - ADR 0009: adr/0009-native-rag-identity-and-source-boundaries.md
       - ADR 0010: adr/0010-model-operations-without-monetary-admission.md
+      - ADR 0011: adr/0011-python-intelligence-runtime.md
   - Operate:
       - Overview: operations/index.md
       - Installation: operations/installation.md

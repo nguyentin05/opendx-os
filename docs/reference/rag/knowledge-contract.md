@@ -24,8 +24,8 @@ symlinks outside the package root. `access.mode` is ROLE or RESTRICTED;
 `access.grantsManagedBy` naming a `grantPolicies` map entry whose nonempty
 `allowedRoles` lists app-owned manager roles. Management does not grant READ.
 ROLE has no manager policy. Flat aliases, unknown fields/versions and cross-app
-roles are invalid. Package publication is implemented independently of indexing;
-package reconciliation, grants and serving require their own acceptance gates.
+roles are invalid. Publication and indexing are separate. The Python API verifies the current
+Core declaration before serving content or staging a version.
 
 The Operator stores a server-only `spec._publication` envelope, never accepted in
 user manifests or CRDs. It contains `generation`, `spec_digest`, `package_digest`
@@ -74,6 +74,6 @@ claims; legacy identity-only tokens are incompatible with these protected routes
 Hasura file permission branches constrain OWNER_ONLY to the owner, current ACTIVE
 user, current role membership, Ready app and enabled dependencies. Attachment
 relationships cannot widen the private branch. No cap_ai table is tracked.
-Private upload defaults off (`RAG_PRIVATE_UPLOAD_ENABLED` absent/false); enable
-only in a disposable qualified installation after the live source gate below.
+The AI Compose overlay enables private upload. Installations can disable it
+with `RAG_PRIVATE_UPLOAD_ENABLED=false`. Verify the live Core source gate.
 Disablement preserves originals and private guards; no destructive rollback.

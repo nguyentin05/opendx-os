@@ -127,29 +127,5 @@ spec:
                 path: migrations/core/0007_work_item_source_version.sql
               - key: core-0008_account_status.sql
                 path: migrations/core/0008_account_status.sql
-              - key: cap_ai-0001_metadata_jobs.sql
-                path: migrations/cap_ai/0001_metadata_jobs.sql
-              - key: cap_ai-0002_docir_fts.sql
-                path: migrations/cap_ai/0002_docir_fts.sql
-              - key: cap_ai-0003_package_knowledge.sql
-                path: migrations/cap_ai/0003_package_knowledge.sql
-              - key: cap_ai-0004_models_vectors.sql
-                path: migrations/cap_ai/0004_models_vectors.sql
-              - key: cap_ai-0005_model_registry.sql
-                path: migrations/cap_ai/0005_model_registry.sql
-              - key: cap_ai-0006_agent_conversations.sql
-                path: migrations/cap_ai/0006_agent_conversations.sql
-              - key: cap_ai-0007_agent_scopes.sql
-                path: migrations/cap_ai/0007_agent_scopes.sql
-              - key: cap_ai-0008_personal_model_processing.sql
-                path: migrations/cap_ai/0008_personal_model_processing.sql
-              - key: cap_ai-0009_personal_hybrid.sql
-                path: migrations/cap_ai/0009_personal_hybrid.sql
-              - key: cap_ai-0010_agent_model_authority.sql
-                path: migrations/cap_ai/0010_agent_model_authority.sql
-              - key: cap_ai-0011_model_administration.sql
-                path: migrations/cap_ai/0011_model_administration.sql
-              - key: cap_ai-0012_personal_admin_authority_locks.sql
-                path: migrations/cap_ai/0012_personal_admin_authority_locks.sql
       - name: data
         emptyDir: {}

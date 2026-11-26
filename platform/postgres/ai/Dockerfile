@@ -8,4 +8,8 @@ RUN tar -xzf /tmp/pgmq.tar.gz --strip-components=2 -C /tmp \
         pgmq-51468f6ba2afeb4a4a9a67e9a532f37b590a0929/pgmq-extension/sql/pgmq.sql \
     && install -m 644 /tmp/pgmq.control "$(pg_config --sharedir)/extension/pgmq.control" \
     && install -m 644 /tmp/sql/pgmq.sql "$(pg_config --sharedir)/extension/pgmq--1.13.2.sql" \
+    && mkdir -p /usr/share/licenses/pgmq \
+    && tar -xzf /tmp/pgmq.tar.gz --strip-components=1 -C /usr/share/licenses/pgmq \
+        pgmq-51468f6ba2afeb4a4a9a67e9a532f37b590a0929/LICENSE \
     && rm -rf /tmp/pgmq.tar.gz /tmp/pgmq.control /tmp/sql
+COPY --from=legal LICENSE NOTICE COPYRIGHT.txt THIRD_PARTY_LICENSES.txt /usr/share/licenses/opendx-os/

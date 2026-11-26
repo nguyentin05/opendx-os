@@ -52,7 +52,7 @@ services:
       - ./platform/postgres/init/08_runtime_passwords.sh:/docker-entrypoint-initdb.d/08_runtime_passwords.sh:ro
       - ./platform/postgres/capabilities:/docker-entrypoint-initdb.d/capabilities:ro
       - ./platform/postgres/migrations:/docker-entrypoint-initdb.d/migrations:ro
-      - ./platform/postgres/init/09_rag_migrations.sh:/docker-entrypoint-initdb.d/09_rag_migrations.sh:ro
+      - ./platform/postgres/init/09_core_migrations.sh:/docker-entrypoint-initdb.d/09_core_migrations.sh:ro
     healthcheck:
       # TCP, not the socket: the init-time server listens on the socket only, so
       # this passes once init scripts have finished and the real server is up.

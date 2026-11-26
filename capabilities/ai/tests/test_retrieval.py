@@ -25,10 +25,10 @@ def active_chunk(client, admin_db, app, actor, body, page=1):
         chunk = db.scalar(text("""
             INSERT INTO cap_ai.document_chunks(version_id,ordinal,body,provenance)
             VALUES (:version,0,:body,jsonb_build_object(
-                'pages',jsonb_build_array(:page::int), 'section_path','["Safety"]'::jsonb,
+                'pages',jsonb_build_array(CAST(:page AS int)), 'section_path','["Safety"]'::jsonb,
                 'element_ids','["#/texts/1"]'::jsonb
             )) RETURNING id
-        """.replace(":page::int", "CAST(:page AS int)")), {
+        """), {
             "version": doc["version_id"], "body": body, "page": page,
         })
     return doc | {"chunk_id": str(chunk)}

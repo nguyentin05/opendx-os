@@ -29,7 +29,7 @@ network. `restore.sh` empties `OBJECTS_DIR` before copying the backup in.
    transitions do not straddle the snapshot:
 
    ```bash
-   docker compose stop cap-process cap-ai
+   docker compose stop cap-process cap-ai cap-ai-worker knowledge-dispatcher
    ```
 
    (`cap-ai` runs only with `compose.rag.yaml`.)
@@ -46,7 +46,7 @@ network. `restore.sh` empties `OBJECTS_DIR` before copying the backup in.
 3. Resume services:
 
    ```bash
-   docker compose start cap-process cap-ai
+   docker compose start cap-process cap-ai cap-ai-worker knowledge-dispatcher
    ```
 
 Record the application revision and enabled capabilities outside the backup

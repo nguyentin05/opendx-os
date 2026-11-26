@@ -76,7 +76,7 @@ class TestInstallationAndPackaging(unittest.TestCase):
                 self.assertTrue((target_dir / "bin" / "dxos-operator").is_file())
                 self.assertTrue((target_dir / "bin" / "cap-process").is_file())
                 self.assertTrue((target_dir / "contracts" / "manifest-v1.schema.json").is_file())
-                for overlay in ("compose.rag.yaml", "compose.models.yaml"):
+                for overlay in ("compose.rag.yaml",):
                     self.assertTrue((target_dir / overlay).is_file())
 
                 # Missing prerequisite ('go' absent from PATH) must fail explicitly

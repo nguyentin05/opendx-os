@@ -36,7 +36,7 @@ the current `Makefile`, module manifests, and prerequisites first.
 | Tier boundaries | Root | `make check-architecture` | Python 3; static check that Tier 1 and Tier 2 runtime code does not name Tier 3 applications |
 | Static contracts | Root | `python3 -m unittest discover -s tests -v` | Python 3 and PyYAML; source/fixture checks, not live database authorization |
 | Operator unit tests | `operator/` | `go test ./...` | Go version/dependencies from `go.mod` |
-| Capability unit tests | `capabilities/` | `go test ./...` | Go version/dependencies from `go.mod`; PDF parser subtests skip unless `poppler-utils` (`pdfinfo`, `pdfimages`, `pdftotext`) is installed |
+| Capability unit tests | `capabilities/` | `go test ./...` | Go version/dependencies from `go.mod` |
 | Operator integration | `operator/` | `make test-integration` | `TEST_DATABASE_URL` naming a disposable PostgreSQL 17 test database; Hasura is a local fake |
 | Operator CRD schema | `operator/` | `make test-envtest` | Downloads envtest binaries (kube-apiserver, etcd) into `operator/bin/` |
 | Operator controller lifecycle | `operator/` | `make test-controller` | envtest plus `TEST_DATABASE_URL`; Hasura is a fake modelling `export_metadata` |
@@ -53,7 +53,7 @@ Inspect tests before attributing S01–S08 coverage. Neither a `make test` resul
 static DDL assertions establish live PostgreSQL/Hasura behavior, concurrency,
 event delivery, or complete acceptance coverage. Integration verification must
 identify the test, environment, and observed behavior for each affected group.
-The capability module is Go; pytest does not run its Go tests.
+The Python AI suite runs separately from the Go capability module.
 
 ## Continuous integration
 
@@ -72,7 +72,7 @@ toolchain bump fails instead of silently downloading another Go release.
 | `unit-test` | `python3 -m unittest discover -s tests -p 'test_*.py' -v` | none | `python3 -m pip install pyyaml && python3 -m unittest discover -s tests -p 'test_*.py' -v` |
 | `ui` | `npm ci`, `npm test`, `npm run build` in `workspace-ui/` | none | `cd workspace-ui && npm ci && npm test && npm run build` |
 | `integration` | `go test -tags=integration -p 1 -count=1 ./...` in both modules, then the same pair again against one server | `pgvector/pgvector:pg17`, superuser login, database name containing `test`, passwordless host auth for test roles | see below |
-| `parser` | `go test -count=1 -v ./internal/knowledge/docir/...` on Alpine with the pinned `poppler-utils`; the job fails if a PDF check reports `--- SKIP` | none | `docker run --rm -v "$PWD:/src" -w /src golang:1.27.4-alpine3.23 sh -c 'apk add --no-cache poppler-utils=25.12.0-r0 git && cd capabilities && go test -count=1 -v ./internal/knowledge/docir/...'` |
+| `ai` | Locked Python dependencies, Ruff and the focused AI suite | Disposable PostgreSQL with PGMQ and pgvector, Docling and Tesseract | `make test-ai` |
 
 The Go jobs publish a coverage total in the job summary. Every job that runs a
 suite also runs `.github/actions/assert-clean-tree`, which fails if the suite
@@ -168,47 +168,7 @@ change and rationale, affected consumers, results, remaining gaps, and open
 decisions. Review findings include a location, failure scenario, impact, and fix
 direction; distinguish contract defects from unimplemented requirements.
 
-The optional model slice uses `scripts/test-rag.sh models` with real PostgreSQL
-17/pgvector, Operator, File/scanner/Hasura and controlled HTTP model spies; see
-[model qualification](../guides/knowledge/models.md#qualification). Run Go integration
-packages with `-p 1` when fixtures share PostgreSQL cluster-global roles.
-After provisioning the disposable `TEST_DATABASE_URL`, run
-`(cd capabilities && go test -tags=integration -p 1 ./internal/agent -run TestAgentEndToEnd -count=1)`
-for signed identity, mixed-source turns, revocation and missing approval.
-These tests install parsed fixture chunks. The full `models` gate separately
-requires actual worker/parser processing, three authenticated user fixtures,
-two loopback adapter spies and browser state. Its preflight prints each missing
-environment variable and exits 2 before starting the test.
-Deterministic fake responses establish boundary, operation-state, token and
-citation behavior, not real-provider groundedness or provider invoicing. A fake
-LOCAL case exercises the shared dispatch boundary; it is not evidence that a
-LOCAL serving adapter ships.
-
-The model runner asserts the current baseline rather than the retired one: no
-budget, reservation or usage-ledger setup is performed or required, a successful
-call must be observed as a `SUCCEEDED` operation with its recorded token counters,
-and an ambiguous call must be observed as a durable `UNCERTAIN` operation with
-null counters, no public usage and no second invocation. Schema presence, absence
-of the retired relations, migration checksum refusal and restricted-role
-privileges are qualified by the dedicated Go integration cases instead, so a
-missing stack prerequisite is reported as `NOT_RUN` and never as a pass.
-
-A qualification run also has to record the rollout gate separately from the test
-suite: fresh bootstrap, checksum refusal against an old applied model checksum,
-database privileges, standalone capability behavior and the full-stack fake
-gate. The named-database rebuild for an installation that applied the earlier
-model checksums is an owner-run action with a human execution gate
-([installation](../operations/installation.md#rebuilding-an-existing-model-installation));
-no qualification run performs it, and a skipped rebuild stays pending rather than
-counting as verified.
-
-The separate `scripts/test-rag.sh real-models` mode requires explicit consent
-through `RAG_REAL_MODELS_OPT_IN=true`, a disposable test database, independently
-reviewed active hosted profiles and PERSONAL approvals, and the actual ingestion
-services. Follow [real hosted qualification](../guides/knowledge/models.md#explicit-real-hosted-qualification)
-for fixture setup, approval UUIDs, protected CLI identity and the approval
-withdrawal performed by the gate. Run its offline guards with
-`python3 -m unittest discover -s scripts/integration -p test_rag_real_models.py -v`.
-Record live results under `.scratch/`, including commit, command, qualified
-provider/model pair and any `NOT_RUN` live revision-switch criterion. This mode
-is excluded from default CI and `make rag-up`.
+The Python AI suite uses `make test-ai` with disposable PostgreSQL,
+PGMQ, Docling and a fake model provider. Run a synthetic provider probe
+for each deployed protocol you need. The Core source gate remains
+`scripts/test-rag.sh source` with its live prerequisites.

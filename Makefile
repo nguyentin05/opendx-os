@@ -24,7 +24,7 @@ help:
 	@echo "  make test-unit          Run fast unit and contract tests without external service dependencies"
 	@echo "  make test-integration   Run real-database and service integration suites (requires TEST_DATABASE_URL)"
 	@echo "  make k8s-config         Regenerate the Kubernetes ConfigMaps from platform/"
-	@echo "  make rag-up             Start the stack with cap-ai, the personal library and FTS-only Assistant"
+	@echo "  make rag-up             Start the stack with cap-ai, the personal library and Python Assistant"
 	@echo "  make clean              Remove temporary build and dist artifacts"
 
 check: check-hygiene check-architecture
@@ -72,3 +72,7 @@ test: test-unit
 
 clean:
 	rm -rf dist/ build/ coverage/
+
+.PHONY: test-ai
+test-ai: ## Run the focused AI suite against disposable PostgreSQL and PGMQ
+	./scripts/test-ai.sh

@@ -50,7 +50,10 @@ def subject(request: Request) -> tuple[UUID, int]:
             audience=cfg.oidc_audience,
             options={"require": ["sub", "iss", "aud", "exp"]},
         )
-        return UUID(claims["sub"]), claims["exp"]
+        user_id = UUID(claims["sub"])
+        if str(user_id) != claims["sub"].lower() or type(claims["exp"]) is not int:
+            raise ValueError
+        return user_id, claims["exp"]
     except jwt.PyJWKClientConnectionError:
         raise HTTPException(503, "Identity service unavailable") from None
     except (jwt.PyJWTError, TypeError, ValueError):

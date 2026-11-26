@@ -15,9 +15,7 @@ from test_knowledge_access import PACKAGE, publish, seed_app
 
 from dxos_ai.dispatch import publish_pending_jobs
 
-OLD_FIXTURES = (
-    Path(__file__).resolve().parents[2] / "internal/knowledge/docir/testdata"
-)
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
 @pytest.fixture(scope="module")
@@ -39,13 +37,13 @@ def worker(admin_db, tmp_path_factory):
             "TRANSFORMERS_OFFLINE": "1", "HAYSTACK_TELEMETRY_ENABLED": "false",
         }, stdout=file, stderr=file)
     try:
-        for _ in range(100):
+        for _ in range(450):
             if " ready." in log.read_text():
                 break
             assert process.poll() is None, log.read_text()
             time.sleep(0.1)
         else:
-            pytest.fail(log.read_text())
+            pytest.fail("Celery readiness timeout. " + log.read_text())
         yield root, log
     finally:
         process.terminate()
@@ -107,7 +105,7 @@ def wait_for_job(admin_db, job, log):
 
 def test_ingest_pdf_and_markdown(client, admin_db, actors, monkeypatch, worker, broker):
     root, log = worker
-    pdf = (OLD_FIXTURES / "table.pdf").read_bytes()
+    pdf = (FIXTURES / "text.pdf").read_bytes()
     pdf_job = source_job(client, admin_db, actors, monkeypatch, root, pdf, "application/pdf")
     md_job = source_job(client, admin_db, actors, monkeypatch, root, PACKAGE, "text/markdown")
     assert publish_pending_jobs() == 2

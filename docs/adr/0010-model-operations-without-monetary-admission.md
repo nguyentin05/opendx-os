@@ -10,6 +10,9 @@ last_reviewed: 2026-11-23
 
 # ADR 0010: Model operations without monetary admission
 
+[ADR 0011](0011-python-intelligence-runtime.md) updates the runtime,
+model administration, parser and deployment decisions below.
+
 - **Status:** Accepted. Supersedes parts of
   [ADR 0009](0009-native-rag-identity-and-source-boundaries.md) listed under
   [Supersession](#supersession-of-adr-0009); all other ADR 0009 decisions stand.
@@ -159,7 +162,7 @@ never selected from request JSON.
 
 ## Consequences for documentation
 
-- [Authorization](../reference/rag/authorization.md#model-operation-attribution-and-durable-state),
+- [Authorization](../reference/rag/authorization.md#model-processing-policy),
   [answers](../reference/rag/answers.md) and the
   [API contract](../reference/rag/api.md#model-gateway) describe durable
   operation state and token observation instead of budgets and settlement.

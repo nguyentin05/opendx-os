@@ -70,18 +70,12 @@ jobs:
             build-args: |
               SERVICE=cap-data
           - image: opendx-cap-ai
-            context: capabilities
-            file: capabilities/Dockerfile
-            build-args: |
-              SERVICE=cap-ai
-          - image: opendx-cap-ai-worker
-            context: capabilities
-            file: capabilities/Dockerfile
-            build-args: |
-              SERVICE=cap-ai-worker
-          - image: opendx-cap-ai-parser
-            context: capabilities
-            file: capabilities/Dockerfile.parser
+            context: capabilities/ai
+            file: capabilities/ai/Dockerfile
+            build-args: ""
+          - image: opendx-ai-postgres
+            context: platform/postgres/ai
+            file: platform/postgres/ai/Dockerfile
             build-args: ""
           - image: opendx-workspace-ui
             context: workspace-ui

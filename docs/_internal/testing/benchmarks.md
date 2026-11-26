@@ -48,7 +48,6 @@ service, so anyone can repeat them from the source tree.
 | --- | --- | --- |
 | Operator planner: `BuildPlan`, `GenerateDDL`, `GenerateHasuraOperations` | Generated manifests with 5, 20 and 50 tables | ns/op, B/op, allocs/op |
 | Capability authorization: `CanSee`, `Matches` | Rules with own, department and organization scope; nested record filters | ns/op, B/op, allocs/op |
-| Knowledge extraction: DocIR chunking and the `unicode-rune-v1` tokenizer | The gold fixtures in `capabilities/internal/knowledge/docir/testdata/` | ns/op per page, B/op |
 
 Each result records an allocation ceiling. These benchmarks are the first
 candidates for a CI regression gate.

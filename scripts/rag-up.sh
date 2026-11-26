@@ -38,17 +38,6 @@ ensure_env() {
     grep -q "^${key}=" "$ENV_FILE" || printf '%s=%s\n' "$key" "$value" >>"$ENV_FILE"
 }
 
-set_env() {
-    local key="$1" value="$2"
-    if grep -q "^${key}=" "$ENV_FILE"; then
-        if [ "$(grep -m1 "^${key}=" "$ENV_FILE" | cut -d= -f2-)" != "$value" ]; then
-            sed -i "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
-        fi
-    else
-        printf '%s=%s\n' "$key" "$value" >>"$ENV_FILE"
-    fi
-}
-
 umask 077
 touch "$ENV_FILE"
 chmod 600 "$ENV_FILE"
@@ -56,8 +45,8 @@ chmod 600 "$ENV_FILE"
 ensure_env AI_DATABASE_PASSWORD "$(random_secret)"
 ensure_env AI_WORKER_DATABASE_PASSWORD "$(random_secret)"
 ensure_env AI_DISPATCHER_DATABASE_PASSWORD "$(random_secret)"
-ensure_env AI_GATEWAY_DATABASE_PASSWORD "$(random_secret)"
-ensure_env PARSER_SERVICE_TOKEN "$(random_secret)"
+ensure_env AI_BROKER_DATABASE_PASSWORD "$(random_secret)"
+ensure_env AI_MODEL_MASTER_KEY "$(python3 -c 'import secrets; print(secrets.token_urlsafe(32) + "=")')"
 ensure_env RAG_WORKER_CLIENT_SECRET "$(random_secret)"
 ensure_env RAG_FILE_CLIENT_SECRET "$(random_secret)"
 ensure_env RAG_DISPATCHER_CLIENT_SECRET "$(random_secret)"
@@ -68,21 +57,7 @@ ensure_env RAG_WORKER_CLIENT_ID "dxos-rag-worker"
 ensure_env RAG_FILE_CLIENT_ID "dxos-file-service"
 ensure_env RAG_DISPATCHER_CLIENT_ID "dxos-rag-dispatcher"
 ensure_env ENABLED_CAPABILITIES "cap-process,cap-hr,cap-work,cap-data,cap-ai"
-ensure_env RAG_SOURCE_QUALIFIED true
-ensure_env RAG_METADATA_QUALIFIED true
-ensure_env RAG_PARSER_QUALIFIED true
-ensure_env RAG_METADATA_ENABLED true
-ensure_env RAG_PACKAGE_ENABLED true
-ensure_env RAG_PERSONAL_ENABLED true
 ensure_env RAG_PRIVATE_UPLOAD_ENABLED true
-ensure_env RAG_MODELS_QUALIFIED false
-ensure_env RAG_MODELS_ENABLED false
-ensure_env RAG_GLOBAL_MODEL_REGISTRY_ENABLED false
-ensure_env RAG_GLOBAL_MODEL_REGISTRY_SCHEMA_ENABLED false
-ensure_env RAG_MODELS_SCHEMA_ENABLED false
-ensure_env RAG_AGENT_MODELS_SCHEMA_ENABLED false
-ensure_env RAG_AGENT_ENABLED false
-ensure_env AI_AGENT_PROCESSING_APP_ID ""
 
 # A caller's exported list takes precedence over every env file; use the list
 # this installation was created with so cap-ai is not silently absent.
@@ -121,7 +96,7 @@ if [ "$multiple_env_files" -eq 0 ]; then
 fi
 
 compose() {
-    docker compose "${env_args[@]}" -f compose.yaml -f compose.rag.yaml "$@"
+    docker compose -p "${COMPOSE_PROJECT_NAME:-opendx-os-ai}" "${env_args[@]}" -f compose.yaml -f compose.rag.yaml "$@"
 }
 
 psql_value() {
@@ -213,12 +188,7 @@ done
 capability="$(psql_value "SELECT count(*) FROM core.capabilities WHERE cap_id='cap-ai' AND enabled")"
 schema="$(psql_value "SELECT count(*) FROM pg_namespace WHERE nspname='cap_ai'")"
 if [ "$capability" != "1" ] || [ "$schema" != "1" ]; then
-    cat >&2 <<EOF
-[rag-up] FAIL: the PostgreSQL volume was initialized without cap-ai.
-Recreate this stack's data so the overlay's capability list is applied:
-  docker compose --env-file .env.rag -f compose.yaml -f compose.rag.yaml down -v
-Then run make rag-up again. This script does not delete data.
-EOF
+    printf '[rag-up] Choose a new Compose project and fresh database for the Python AI deployment.\n' >&2
     exit 1
 fi
 
@@ -234,11 +204,7 @@ while :; do
     sleep 5
 done
 
-set_env AI_AGENT_PROCESSING_APP_ID personal_library
-set_env RAG_AGENT_ENABLED true
-compose up -d
-
 cat <<EOF
 [rag-up] UI: http://localhost:5173
-[rag-up] Assistant and personal library are on; models stay off.
+[rag-up] Personal Library is available. Configure the Assistant's LLM from Workspace AI Management.
 EOF

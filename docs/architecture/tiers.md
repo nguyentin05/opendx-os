@@ -80,24 +80,18 @@ Tier 2 provides reusable H-P-D-I services:
 | `cap-process` (P) | Commands, business validation, file upload and scanning, record history, and event delivery to workflows | Service and schema |
 | `cap-work` | Work items opened and closed by workflow effects, read through Hasura | Schema only; a cap-work service and a Kanban board are planned (#27, #44) |
 | `cap-data` (D) | OT validation and deduplication, reconciled export, BI, and lineage | Schema only; the service moves to the `cap_data` schema in v1.1.0 (#111) |
-| `cap-ai` (I) | Knowledge ingestion of Markdown and text PDFs, role-scoped search with citations, the personal library and the Assistant | Service, parser and worker in the `compose.rag.yaml` overlay; scanned PDFs need OCR, which is not available |
-| `cap-ai-model-adapter` | Boundary integration for hosted inference: one reviewed `bounded-http-v1` request becomes one OpenAI-compatible upstream call | Opt-in `compose.model-adapter.yaml` overlay; no database, identity or policy; private TLS only |
+| `cap-ai` (I) | Document retrieval with citations, personal and application knowledge, model administration, and the general Assistant | FastAPI and a Celery worker share one Python image. The worker handles Markdown, PDF and English OCR. |
 | `workspace-ui` | Registry-driven navigation, lists, forms, record detail with commands and history, inbox, My Work, knowledge pages, and the Assistant | Implemented; Kanban, Calendar and OT/BI views are not |
 
 Capabilities own their schemas, register themselves in `core.capabilities`, and
 are enabled per installation. Disabling a capability does not delete its stored
 data.
 
-The model adapter is a Tier 2 boundary integration, not a capability with its own
-schema: it holds no database connection, no application identity and no policy or
-approval decision. It translates one already-authorized bounded request into one
-reviewed upstream call over a private TLS listener, with no published host port and
-no APISIX route, and it never selects a model, changes a provider or retries an
-ambiguously sent call. The
-[Model Gateway](../reference/rag/api.md#model-gateway) remains the sole production
-dispatch authority, and the database registry remains the sole active-model
-authority. Its opt-in overlay is documented in
-[model answers](../guides/knowledge/models.md#bundled-hosted-adapter-opt-in).
+AI uses PostgreSQL full-text search, pgvector and PGMQ. Alembic owns
+`cap_ai`, and Core remains the authority for users, roles, applications and
+originals. The [Model Gateway](../reference/rag/api.md#model-gateway) is
+the only provider dispatch path. [ADR 0011](../adr/0011-python-intelligence-runtime.md)
+describes the runtime and parser trust boundary.
 
 ## Tier 3: application packages
 

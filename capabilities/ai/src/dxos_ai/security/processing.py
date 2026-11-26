@@ -27,7 +27,7 @@ class ProcessingContext:
     ingestion_lease: UUID | None = None
 
 
-def hosted_allowed(
+def processing_allowed(
     session: Session, model: ModelBinding, classes: set[tuple[DataClass, str | None]],
 ) -> bool:
     rows = session.execute(text("""
@@ -41,7 +41,7 @@ def hosted_allowed(
             if row["data_class"] == data_class and row["app_id"] in (None, app_id)
         ]
         decisions = {row["decision"] for row in matching}
-        if "DENY" in decisions or "ALLOW" not in decisions:
+        if "DENY" in decisions or (model.execution == "HOSTED" and "ALLOW" not in decisions):
             return False
     return bool(classes)
 
@@ -61,4 +61,4 @@ def may_process(session: Session, model: ModelBinding, context: ProcessingContex
         if source_classes is None:
             return False
         classes.update(source_classes)
-    return model.execution == "LOCAL" or hosted_allowed(session, model, classes)
+    return processing_allowed(session, model, classes)

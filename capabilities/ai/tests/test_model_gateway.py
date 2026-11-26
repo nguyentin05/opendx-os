@@ -16,7 +16,7 @@ from dxos_ai.database import engine
 from dxos_ai.models import gateway
 from dxos_ai.models.gateway import ChatResult, ModelError, ModelGateway, ProviderResult
 from dxos_ai.models.registry import ModelPurpose, binding
-from dxos_ai.security.processing import ProcessingContext, hosted_allowed
+from dxos_ai.security.processing import ProcessingContext, processing_allowed
 
 PREFIX = "/api/cap/ai/admin"
 HOSTED = "https://models.test.invalid/v1"
@@ -121,8 +121,8 @@ def test_mixed_source_restrictions(client, actors):
     with Session(engine()) as session:
         model = binding(session, ModelPurpose.LLM)
         classes = {("QUERY", None), ("APPLICATION", "library")}
-        assert hosted_allowed(session, model, classes)
-        assert not hosted_allowed(session, model, classes | {("PERSONAL", None)})
+        assert processing_allowed(session, model, classes)
+        assert not processing_allowed(session, model, classes | {("PERSONAL", None)})
 
 
 def test_uncertain_call_not_resent(client, actors, monkeypatch):

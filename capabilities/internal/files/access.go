@@ -23,8 +23,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
-
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
 )
@@ -60,7 +58,7 @@ func (s *Service) readable(ctx context.Context, id *auth.Identity, file string) 
 		if !strings.EqualFold(owner, id.UserID) {
 			return "", "", "", "", ErrDenied
 		}
-		if err := knowledge.CheckIdentity(ctx, s.db, id); err != nil {
+		if err := CheckIdentity(ctx, s.db, id); err != nil {
 			return "", "", "", "", privateAuthorityError(err)
 		}
 	}
@@ -121,5 +119,5 @@ func privateAuthorityError(err error) error {
 	if errors.Is(err, auth.ErrUnauthenticated) || errors.Is(err, auth.ErrForbidden) {
 		return ErrDenied
 	}
-	return knowledge.ErrAuthorityUnavailable
+	return ErrAuthorityUnavailable
 }

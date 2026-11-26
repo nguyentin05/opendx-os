@@ -2,7 +2,7 @@
 
 | Target | Files | Status |
 | --- | --- | --- |
-| Docker Compose, one host | `compose.yaml` (+ `compose.rag.yaml`, `compose.models.yaml`) at the repository root | Supported; see `docs/operations/installation.md` |
+| Docker Compose, one host | `compose.yaml` (+ `compose.rag.yaml`) at the repository root | Supported; see `docs/operations/installation.md` |
 | Local Kubernetes for controller development (kind) | `platform/k8s/dev`, `scripts/k8s/dev-cluster.sh` | PostgreSQL, Hasura and the controller only |
 | Kubernetes, whole platform, any cluster | `deploy/k8s/base` plus an overlay for your cluster | Being tested (#166) |
 | Example overlay: Amazon EKS | `deploy/k8s/overlays/eks` | Reference; the cluster used to test the Kubernetes deployment (#166, #169) |

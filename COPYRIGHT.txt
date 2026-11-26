@@ -33,10 +33,8 @@ License: Apache-2.0
 Comment:
  Third-party inventory, checked on 2026-11-23 against the module cache, the
  npm lockfile, the Dockerfiles and the Compose and Kubernetes manifests.
- No third-party source code is vendored or copied into this repository. Every
- license below is OSI-approved and compatible with distributing the project
- under Apache-2.0; none is copyleft except where noted for components that run
- as separate programs and are not linked into project code.
+ No third-party source code is vendored or copied into this repository. Upstream components retain their
+ copyright and licenses independently of project code.
  .
  1. Go modules compiled into the project's binaries
  .
@@ -46,7 +44,7 @@ Comment:
  scripts/third_party_notices.py. The last column names the module directory
  whose commands link them ("operator" covers dxos-operator, dxos-controller and
  dxos-knowledge-dispatcher; "capabilities" covers dxos-authz, cap-process,
- cap-hr, cap-data, cap-ai, cap-ai-worker and cap-ai-parser).
+ cap-hr and cap-data).
  .
   Go standard library (go1.27.4)         BSD-3-Clause, linked into every binary
  .
@@ -87,7 +85,6 @@ Comment:
   github.com/prometheus/procfs           v0.21.1                                  Apache-2.0                           operator
   github.com/spf13/pflag                 v1.0.10                                  BSD-3-Clause                         operator
   github.com/x448/float16                v0.8.4                                   MIT                                  operator
-  github.com/yuin/goldmark               v1.8.7                                   MIT                                  capabilities (direct)
   go.uber.org/multierr                   v1.11.0                                  MIT                                  operator
   go.uber.org/zap                        v1.27.1                                  MIT                                  operator
   go.yaml.in/yaml/v2                     v2.4.4                                   Apache-2.0 AND MIT                   operator
@@ -141,23 +138,22 @@ Comment:
                                           MIT), BusyBox, ssl_client, apk-tools,
                                           scanelf, alpine-baselayout
                                           (GPL-2.0-only)
-  poppler-utils 25.12.0-r0 (Alpine)       GPL-2.0-or-later; only in the
-                                          opendx-cap-ai-parser image, run as a
-                                          separate executable
+  python:3.12-slim-bookworm                Python PSF license and Debian packages
+  tesseract-ocr and English traineddata   Apache-2.0, separate OCR executable
+  pgvector 0.8.7 and PGMQ 1.13.2          PostgreSQL License
   nginxinc/nginx-unprivileged:1.27-alpine nginx (BSD-2-Clause), image packaging
                                           Apache-2.0; Workspace UI image
   golang:1.27.4-alpine, node:22-alpine    build stages only, not in the images
  .
- These GPL packages and Poppler are programs
+ The Alpine GPL packages are programs
  distributed unmodified inside the images and are not linked with project code. Their corresponding source is published
  by Alpine Linux (https://gitlab.alpinelinux.org/alpine/aports, branch 3.23)
- and upstream (https://busybox.net, https://poppler.freedesktop.org).
+ and upstream (https://busybox.net).
  .
  4. Services run as separate, unmodified upstream containers (not distributed
     in this repository or its archive; pulled at deployment time)
  .
   postgres:17-alpine                      PostgreSQL License
-  pgvector/pgvector:pg17                  PostgreSQL License (compose.models.yaml)
   hasura/graphql-engine:v2.45.1-ce        Apache-2.0 (the -ce image contains only
                                           the open-source components)
   quay.io/keycloak/keycloak:26.0          Apache-2.0
@@ -177,3 +173,14 @@ Comment:
   mkdocs-llmstxt 0.5.1 (ISC), pillow 13.0.0 (HPND), cairosvg 2.9.1
   (LGPL-3.0-or-later). They build the documentation site and are not part of
   the software.
+
+ .
+ Python AI image runtime distributions are pinned in capabilities/ai/uv.lock.
+ Their upstream license files ship in the installed wheel metadata.
+ FastAPI, Pydantic, SQLAlchemy, Alembic, Docling, LangGraph and LiteLLM are MIT.
+ Haystack, PGMQ Python and OpenAI's SDK are Apache-2.0.
+ Celery, Kombu and Uvicorn are BSD-3-Clause. Cryptography offers Apache-2.0
+ or BSD-3-Clause. Psycopg is LGPL-3.0-only. PyTorch has its own composite
+ permissive notices in its wheel. The offline docling-layout-heron snapshot
+ (8f39ad3c0b4c58e9c2d2c84a38465abf757272d8) is Apache-2.0 and its model card
+ ships alongside its weights.
