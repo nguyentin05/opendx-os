@@ -14,7 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Demo organization for a running `docker compose up` stack.
+"""Demo organization for a running `docker compose up` stack, or for a
+Kubernetes deployment through scripts/k8s/seed-demo.sh.
 
     scripts/seed-demo.py seed     accounts, departments and roles (re-runnable)
     scripts/seed-demo.py scopes   sample purchase requests, then what each
@@ -43,7 +44,12 @@ after. Everything else goes through the gateway as the UI would: quotes are
 uploaded to cap-process and scanned by ClamAV, requests are filed through
 GraphQL, and state changes are cap-process commands.
 
-For local demos only: never point it at a stack holding real data.
+Environment: DXOS_PSQL is the command that runs psql in the PostgreSQL container
+(default: docker compose exec -T postgres); DXOS_APP_URL is the Workspace UI
+address it prints; SCAN_WAIT_SECONDS bounds the wait for a quote's virus scan
+(default 180: with services started on demand the first scan takes a minute or two).
+
+For demos only: never point it at a stack holding real data.
 """
 
 from __future__ import annotations
@@ -52,6 +58,7 @@ import argparse
 import json
 import os
 import pathlib
+import shlex
 import subprocess
 import sys
 import time
@@ -147,8 +154,8 @@ def http(url, data=None, token=None, form=False, method=None, headers=None):
 
 def psql(sql: str) -> str:
     """Runs SQL in the platform database as the bootstrap administrator."""
-    cmd = ["docker", "compose", "exec", "-T", "postgres", "sh", "-c",
-           'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -qtA']
+    cmd = shlex.split(ENV.get("DXOS_PSQL", "docker compose exec -T postgres")) + [
+        "sh", "-c", 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -qtA']
     res = subprocess.run(cmd, input=sql, text=True, capture_output=True, cwd=ROOT)
     if res.returncode != 0:
         sys.exit(f"psql failed: {res.stderr.strip()}")
@@ -201,7 +208,7 @@ def wait_for_roles(names: set[str]) -> None:
             return
         if time.time() > deadline:
             sys.exit("roles not registered yet: " + ", ".join(sorted(missing))
-                     + "\nthe operator installs the sample apps; see: docker compose logs operator")
+                     + "\nthe operator installs the sample apps; see its logs")
         time.sleep(3)
 
 
@@ -230,7 +237,8 @@ def seed() -> dict[str, str]:
     sql.append("COMMIT;")
     psql("\n".join(sql))
 
-    print(f"Demo accounts (password: {PASSWORD}), sign in at http://localhost:{ENV.get('WORKSPACE_UI_PORT', '5173')}")
+    app_url = ENV.get("DXOS_APP_URL", f"http://localhost:{ENV.get('WORKSPACE_UI_PORT', '5173')}")
+    print(f"Demo accounts (password: {PASSWORD}), sign in at {app_url}")
     print()
     rows = [("Username", "Name", "Department", "Roles")]
     depts = dict(DEPARTMENTS)
@@ -338,7 +346,7 @@ def upload_quote(token: str, name: str, vendor: str, item: str, amount: int) -> 
             file_id = json.loads(resp.read())["file_id"]
     except urllib.error.HTTPError as err:
         sys.exit(f"upload failed: {err.code} {err.read().decode(errors='replace')}")
-    deadline = time.time() + 60
+    deadline = time.time() + int(ENV.get("SCAN_WAIT_SECONDS", "180"))
     while time.time() < deadline:
         data, err = graphql(token, REQUESTER, "query($id: uuid!) { core_files(where: {id: {_eq: $id}}) { scan_status } }", {"id": file_id})
         status = (data or {}).get("core_files", [{}])[0].get("scan_status") if data and data["core_files"] else None
@@ -347,7 +355,7 @@ def upload_quote(token: str, name: str, vendor: str, item: str, amount: int) -> 
         if status == "INFECTED":
             sys.exit("the sample quote was flagged as infected")
         time.sleep(1)
-    sys.exit("the quote was not scanned within a minute; see: docker compose logs cap-process clamav")
+    sys.exit("the quote was not scanned in time; see the logs of cap-process and clamav")
 
 
 def file_request(token: str, vendor: str, item: str, amount: int) -> dict:
