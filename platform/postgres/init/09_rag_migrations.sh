@@ -27,6 +27,7 @@ SQL
 # checksum is rejected even when optional model SQL is disabled. No connection
 # secrets enter argv/output.
 for folder in core cap_ai; do
+ if [ "$folder" = cap_ai ] && [ "${DXOS_AI_PYTHON:-false}" = true ]; then continue; fi
  scope=$(echo "$folder" | tr _ -)
  for file in "$migration_dir/$folder"/[0-9][0-9][0-9][0-9]_*.sql; do
   [ -f "$file" ] || continue
@@ -45,6 +46,7 @@ done
 # Apply phase: capability gates, opt-ins and the migration set still control
 # what is installed. Missing ledger rows in preflight install nothing.
 for folder in core cap_ai; do
+ if [ "$folder" = cap_ai ] && [ "${DXOS_AI_PYTHON:-false}" = true ]; then continue; fi
  scope=$(echo "$folder" | tr _ -)
  if [ "$folder" = cap_ai ]; then printf '\\if :ai_enabled\n' >> "$migration_script"; fi
  for file in "$migration_dir/$folder"/[0-9][0-9][0-9][0-9]_*.sql; do
