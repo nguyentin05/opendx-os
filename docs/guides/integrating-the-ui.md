@@ -271,18 +271,21 @@ For users holding the platform role `role_operator` (it appears in
 | --- | --- |
 | `GET /api/auth/users` | `users`: every account with `id`, `email`, `display_name`, `status` and the `roles` it holds |
 | `GET /api/auth/roles` | `roles`: every role that can be granted now, with `name`, `description` and its owner (`app_id` or `cap_id`) |
+| `POST /api/auth/users` | Creates an account from `{"email", "display_name", "username"?}` (`username` defaults to the email). 201 with `id`, `email`, `display_name`, `username` and `temporary_password`, shown once and never stored; the person replaces it at their first sign-in. The account can be given roles and a department at once |
 | `PUT /api/auth/users/{user_id}/roles/{role}` | Grants the role. 204, also when it was already held |
 | `DELETE /api/auth/users/{user_id}/roles/{role}` | Revokes the role. 204, also when it was not held |
 
 | Status | Meaning |
 | --- | --- |
+| 400 | `POST /api/auth/users`: a field is missing or invalid; `error` says which |
 | 404 | Unknown user, or a role that does not exist or is not in force (its application is not installed) |
-| 409 | An assignment nobody changes here: `role_workflow` belongs to the workflow service, and an operator cannot revoke their own `role_operator` |
+| 409 | An assignment nobody changes here: `role_workflow` belongs to the workflow service, and an operator cannot revoke their own `role_operator`. For `POST /api/auth/users`: an account with that email or username exists |
+| 503 | `POST /api/auth/users` when account creation is not configured (no `KEYCLOAK_PROVISIONER_SECRET`): create the account in Keycloak instead |
 
 A change shows in the user's `/api/auth/me` and GraphQL at once and in
 cap-process within a few seconds, without a new sign-in. Every change is
 recorded with the operator who made it. An account is listed once it has signed
-in.
+in, or as soon as an operator creates it here.
 
 ### Departments and staff (cap-hr)
 

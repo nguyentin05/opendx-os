@@ -75,9 +75,19 @@ The Compose files:
    ([knowledge models](../guides/knowledge/models.md#compose-installation)).
 
    Sign-in uses Keycloak (realm `dxos`, client `dxos-portal`, browser flow with
-   PKCE). Create accounts in the Keycloak admin console
-   (`http://localhost:8085/admin`, `KEYCLOAK_ADMIN`/`KEYCLOAK_ADMIN_PASSWORD`). A
-   user appears in `core.users` on their first request. Set
+   PKCE). Operators create accounts with `POST /api/auth/users`
+   ([integrating the UI](../guides/integrating-the-ui.md#8-administration)): the
+   account gets a temporary password, shown once, and can hold roles and a
+   department before its first sign-in. This needs `KEYCLOAK_PROVISIONER_SECRET`
+   (`scripts/init-env.sh` sets it); the one-shot service `keycloak-provisioner`
+   then sets up the Keycloak client `dxos-provisioner`, whose service account may
+   only manage the users of realm `dxos`. Without the secret, create accounts in
+   the Keycloak admin console (`http://localhost:8085/admin`,
+   `KEYCLOAK_ADMIN`/`KEYCLOAK_ADMIN_PASSWORD`); such a user appears in
+   `core.users` on their first request. An existing database needs the core
+   migration first: `scripts/migrate-rag.sh --database-url-env <VAR> --scope core
+   --through 0008`, with `<VAR>` naming an environment variable that holds the
+   administrator's connection URL. Set
    `BOOTSTRAP_OPERATOR_EMAIL` to the email of the account that should administer
    the installation, and mark that email verified in Keycloak: its first sign-in
    makes it the platform operator (`role_operator`), once, while nobody holds

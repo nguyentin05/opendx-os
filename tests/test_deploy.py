@@ -206,7 +206,7 @@ class RenderedManifests(unittest.TestCase):
         # Accepted exceptions, each recorded with its reason in .trivyignore.yaml.
         writable_root = {'apisix', 'keycloak', 'clamav'}
         starts_as_root = {'clamav'}
-        for workload in self.kinds('Deployment') + self.kinds('StatefulSet'):
+        for workload in self.kinds('Deployment') + self.kinds('StatefulSet') + self.kinds('Job'):
             name = workload['metadata']['name']
             with self.subTest(name):
                 pod = workload['spec']['template']['spec']

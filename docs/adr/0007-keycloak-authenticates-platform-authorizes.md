@@ -157,7 +157,26 @@ import is a follow-up that changes no behaviour.
   its authenticated endpoints reject the new tokens.
 - Users exist in `core.users` from their first request; the periodic sync is
   needed before an administrator can assign roles to someone who has never
-  signed in.
+  signed in. Superseded by the amendment below.
+
+## Amendment (2026-11-26): operators create accounts
+
+Operators create accounts through `dxos-authz` (`POST /api/auth/users`, #188),
+so the identity provider's console is not needed and a new account can hold
+roles and a department before its first sign-in.
+
+- `dxos-authz` creates the account in Keycloak with the client
+  `dxos-provisioner`, whose service account holds only `manage-users` and
+  `view-users` of the realm, never anything in `master`. The account must
+  replace a temporary password at its first sign-in.
+- It then records the account in `core.users` with the Keycloak id
+  (`core.create_user`, audited as `CREATE_USER`). The first sign-in finds that
+  row.
+- Keycloak still never holds a role: decision 1 stands for authorization.
+- The client exists only when a secret is configured
+  (`platform/keycloak/provisioner.sh`). Without it the endpoint answers 503 and
+  accounts are created in the identity provider, which is also the case when
+  Keycloak federates an external directory (LDAP, Active Directory, Entra ID).
 
 ## Alternatives considered
 

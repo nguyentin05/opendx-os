@@ -125,6 +125,8 @@ spec:
                 path: migrations/core/0006_runtime_statement_limits.sql
               - key: core-0007_work_item_source_version.sql
                 path: migrations/core/0007_work_item_source_version.sql
+              - key: core-0008_account_provisioning.sql
+                path: migrations/core/0008_account_provisioning.sql
               - key: cap_ai-0001_metadata_jobs.sql
                 path: migrations/cap_ai/0001_metadata_jobs.sql
               - key: cap_ai-0002_docir_fts.sql

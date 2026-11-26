@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Sets up the Keycloak client dxos-authz creates accounts with
+# (platform/keycloak/provisioner.sh), like keycloak-provisioner in compose.yaml.
+# A finished Job is removed after an hour, so the next apply runs it again
+# (it is idempotent) and picks up a new secret or a re-created realm.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-provisioner
+spec:
+  backoffLimit: 4
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: keycloak-provisioner
+        image: quay.io/keycloak/keycloak:26.0
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+        command: ["bash", "/opt/dxos/provisioner.sh"]
+        env:
+        - name: KEYCLOAK_URL
+          value: http://keycloak:8085
+        - name: KEYCLOAK_ADMIN
+          value: admin
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: KEYCLOAK_ADMIN_PASSWORD}}
+        - name: KEYCLOAK_PROVISIONER_SECRET
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: KEYCLOAK_PROVISIONER_SECRET}}
+        resources:
+          requests: {cpu: 50m, memory: 128Mi}
+          limits: {memory: 384Mi}
+        volumeMounts:
+        - name: script
+          mountPath: /opt/dxos/provisioner.sh
+          subPath: provisioner.sh
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: script
+        configMap:
+          name: keycloak-realm
+      - name: tmp
+        emptyDir: {}

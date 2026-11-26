@@ -198,6 +198,15 @@ echo "S3_SECRET_ACCESS_KEY=$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0
 Keep the file: PostgreSQL takes its passwords only when it first initializes its
 volume.
 
+`KEYCLOAK_PROVISIONER_SECRET` lets operators create accounts through
+`dxos-authz` (`POST /api/auth/users`): the Job `keycloak-provisioner` sets up the
+Keycloak client `dxos-provisioner` with it. A secrets file written before that
+key existed needs it added
+(`echo "KEYCLOAK_PROVISIONER_SECRET=$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 32)" >> ~/dxos-k8s.env`),
+and an existing database needs the core migration 0008
+(`scripts/migrate-rag.sh --scope core --through 0008`, see
+[installation](../docs/operations/installation.md)).
+
 ### Deploy
 
 ```bash

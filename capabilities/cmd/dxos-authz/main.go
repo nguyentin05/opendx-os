@@ -65,6 +65,16 @@ func main() {
 	// Operators manage role assignments here. BOOTSTRAP_OPERATOR_EMAIL names
 	// the account that becomes the first operator of a new installation.
 	resolver.Administer(store, os.Getenv("BOOTSTRAP_OPERATOR_EMAIL"))
+	// Operators create accounts when the Keycloak client dxos-provisioner has a
+	// secret (platform/keycloak/provisioner.sh); without one, accounts are
+	// created in the identity provider itself.
+	if secret := os.Getenv("KEYCLOAK_PROVISIONER_SECRET"); secret != "" {
+		accounts, err := authz.NewKeycloakAccounts(envOr("KEYCLOAK_URL", "http://keycloak:8085"), envOr("KEYCLOAK_REALM", "dxos"), secret)
+		if err != nil {
+			log.Fatalf("account creation: %v", err)
+		}
+		resolver.Provision(accounts)
+	}
 	srv := &http.Server{
 		Addr:              ":" + port,
 		Handler:           authz.Handler(resolver),

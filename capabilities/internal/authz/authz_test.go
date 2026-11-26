@@ -298,6 +298,10 @@ func (d *fakeDirectory) RevokeRole(_ context.Context, actor, user, role string) 
 	d.calls = append(d.calls, "revoke:"+actor+":"+user+":"+role)
 	return d.err
 }
+func (d *fakeDirectory) CreateUser(_ context.Context, actor, id, email, name string) error {
+	d.calls = append(d.calls, "create:"+actor+":"+id+":"+email+":"+name)
+	return d.err
+}
 func (d *fakeDirectory) BootstrapOperator(_ context.Context, user string) (bool, error) {
 	d.bootstrap = append(d.bootstrap, user)
 	return len(d.bootstrap) == 1, d.err

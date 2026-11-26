@@ -61,6 +61,14 @@ func platformDB(t *testing.T) *sql.DB {
 	if _, err := db.Exec(authzGrants); err != nil {
 		t.Fatal(err)
 	}
+	// Core migrations after the init files, as 09_rag_migrations.sh applies them.
+	b, err := os.ReadFile(filepath.Join("..", "..", "..", "platform", "postgres", "migrations", "core", "0008_account_provisioning.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(string(b)); err != nil {
+		t.Fatalf("0008_account_provisioning.sql: %v", err)
+	}
 	return db
 }
 
@@ -291,5 +299,49 @@ INSERT INTO core.roles (name, app_id, description) VALUES ('role_ready', 'ready_
 	// Another connection cannot use the functions, even a privileged one.
 	if _, err := db.Exec(`SELECT core.grant_role($1, 'role_operator', $2, 'role_ready')`, admin, user); err == nil || !strings.Contains(err.Error(), "untrusted database connection") {
 		t.Fatalf("role functions must refuse other connections, got %v", err)
+	}
+}
+
+// An account created by an operator can hold roles before its first sign-in,
+// and its first sign-in keeps that record.
+func TestPostgresStoreCreatesAccountsIntegration(t *testing.T) {
+	db := platformDB(t)
+	ctx := context.Background()
+	const admin, user = "11111111-1111-4111-8111-111111111111", "55555555-5555-4555-8555-555555555555"
+	setup := `
+INSERT INTO core.users (id, email, display_name) VALUES ('` + admin + `', 'admin@example.test', 'Admin'),
+  ('66666666-6666-4666-8666-666666666666', 'Bob@example.test', 'Old mirror');
+INSERT INTO core.apps (app_id, display_name, version, spec, status) VALUES ('ready_app', 'Ready', '1', '{}', 'Ready');
+INSERT INTO core.roles (name, app_id, description) VALUES ('role_ready', 'ready_app', '');`
+	if _, err := db.Exec(setup); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`SELECT core.create_user($1, 'role_operator', $2, 'x@example.test', 'X')`, admin, user); err == nil ||
+		!strings.Contains(err.Error(), "untrusted database connection") {
+		t.Fatalf("create_user outside dxos_authz: %v", err)
+	}
+	asAuthz(t, db, func(store PostgresStore) {
+		if err := store.CreateUser(ctx, admin, user, "bob@example.test", "Bob Tran"); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.GrantRole(ctx, admin, user, "role_ready"); err != nil {
+			t.Fatalf("grant before the first sign-in: %v", err)
+		}
+		if status, err := store.Mirror(ctx, auth.Principal{Subject: user, Email: "bob@example.test", Name: "Bob Tran"}); err != nil || status != "ACTIVE" {
+			t.Fatalf("first sign-in: %q %v", status, err)
+		}
+		grants, err := store.Grants(ctx, user)
+		if err != nil || len(grants) != 1 || grants[0].Role != "role_ready" {
+			t.Fatalf("grants after the first sign-in = %v %v", grants, err)
+		}
+	})
+	var stale, action, actor string
+	if err := db.QueryRow(`SELECT email FROM core.users WHERE id = '66666666-6666-4666-8666-666666666666'`).Scan(&stale); err != nil ||
+		!strings.HasSuffix(stale, "@released.invalid") {
+		t.Fatalf("the stale mirror kept the address: %q %v", stale, err)
+	}
+	if err := db.QueryRow(`SELECT action, actor_id::text FROM core.audit_logs WHERE entity_type = 'core.users' AND entity_id = $1`, user).Scan(&action, &actor); err != nil ||
+		action != "CREATE_USER" || actor != admin {
+		t.Fatalf("audit = %q by %q (%v)", action, actor, err)
 	}
 }

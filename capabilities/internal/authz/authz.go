@@ -104,6 +104,8 @@ type Resolver struct {
 	// Role administration; nil unless Administer was called.
 	directory      Directory
 	bootstrapEmail string
+	// Account creation; nil unless Provision was called.
+	accounts Accounts
 }
 
 type cached struct {

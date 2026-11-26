@@ -69,6 +69,9 @@ type Directory interface {
 	GrantRole(ctx context.Context, actor, user, role string) error
 	// RevokeRole takes a role from user; revoking a role that is not held is a no-op.
 	RevokeRole(ctx context.Context, actor, user, role string) error
+	// CreateUser records an account the identity provider just created (id is
+	// its sub), on behalf of actor, so it can hold roles before signing in.
+	CreateUser(ctx context.Context, actor, id, email, displayName string) error
 	// BootstrapOperator makes user the platform operator when nobody is one
 	// yet, and reports whether it did.
 	BootstrapOperator(ctx context.Context, user string) (bool, error)
@@ -119,6 +122,7 @@ func (r *Resolver) changeRole(ctx context.Context, s *Session, user, role string
 //
 //	GET    /api/auth/roles                          every role in force
 //	GET    /api/auth/users                          accounts and the roles they hold
+//	POST   /api/auth/users                          create an account (needs a provisioner)
 //	PUT    /api/auth/users/{user_id}/roles/{role}   grant
 //	DELETE /api/auth/users/{user_id}/roles/{role}   revoke
 func registerAdmin(mux *http.ServeMux, r *Resolver) {
@@ -178,6 +182,11 @@ func registerAdmin(mux *http.ServeMux, r *Resolver) {
 			}
 		}
 	}
+	mux.HandleFunc("POST /api/auth/users", func(w http.ResponseWriter, req *http.Request) {
+		if s, ok := operator(w, req); ok {
+			r.createAccount(w, req, s)
+		}
+	})
 	mux.HandleFunc("PUT /api/auth/users/{user_id}/roles/{role}", change(true))
 	mux.HandleFunc("DELETE /api/auth/users/{user_id}/roles/{role}", change(false))
 }
@@ -263,6 +272,12 @@ func (s PostgresStore) RevokeRole(ctx context.Context, actor, user, role string)
 		return ErrNotFound
 	}
 	_, err := s.DB.ExecContext(ctx, `SELECT core.revoke_role($1, $2, $3, $4)`, actor, OperatorRole, user, role)
+	return err
+}
+
+// CreateUser implements Directory.
+func (s PostgresStore) CreateUser(ctx context.Context, actor, id, email, displayName string) error {
+	_, err := s.DB.ExecContext(ctx, `SELECT core.create_user($1, $2, $3, $4, $5)`, actor, OperatorRole, id, email, displayName)
 	return err
 }
 

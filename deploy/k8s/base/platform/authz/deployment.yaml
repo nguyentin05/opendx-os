@@ -47,6 +47,12 @@ spec:
           value: 5s
         - name: BOOTSTRAP_OPERATOR_EMAIL
           valueFrom: {configMapKeyRef: {name: dxos-public, key: BOOTSTRAP_OPERATOR_EMAIL}}
+        # Operators create accounts through the Keycloak client set up by the
+        # keycloak-provisioner Job.
+        - name: KEYCLOAK_URL
+          value: http://keycloak:8085
+        - name: KEYCLOAK_PROVISIONER_SECRET
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: KEYCLOAK_PROVISIONER_SECRET}}
         ports:
         - containerPort: 8090
           name: http
