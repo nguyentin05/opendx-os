@@ -5,7 +5,7 @@ diataxis: how-to
 audience: [operator]
 status: active
 owner: platform
-last_reviewed: 2026-11-26
+last_reviewed: 2026-11-27
 ---
 
 # Operate on Kubernetes
@@ -69,7 +69,8 @@ kubectl -n dxos rollout restart deployment
 `KEYCLOAK_DIRECTORY_SECRET` is also set in Keycloak, on the client
 `dxos-directory`, by the Job `keycloak-directory` that `apply.sh` runs again.
 `KEDA_DATABASE_PASSWORD` is set on the login `dxos_keda` by `keda-setup` in the
-same way.
+same way, and `KEYCLOAK_DATABASE_PASSWORD` on the login `dxos_keycloak` by the
+init container of the Keycloak Pod, at its next start.
 
 ## Accounts
 
@@ -116,15 +117,16 @@ cluster:
 ```bash
 kubectl -n dxos exec postgres-0 -c postgres -- sh -c 'pg_dump -U "$POSTGRES_USER" -d dxos_db -Fc' > dxos_db.dump
 kubectl -n dxos exec postgres-0 -c postgres -- sh -c 'pg_dump -U "$POSTGRES_USER" -d dxos_kestra -Fc' > dxos_kestra.dump
+kubectl -n dxos exec postgres-0 -c postgres -- sh -c 'pg_dump -U "$POSTGRES_USER" -d dxos_keycloak -Fc' > dxos_keycloak.dump
 kubectl -n dxos exec postgres-0 -c postgres -- sh -c 'pg_dumpall -U "$POSTGRES_USER" --roles-only --no-role-passwords' > roles.sql
 ```
 
 Check a dump by restoring it into a throwaway PostgreSQL 17 (`pg_restore`). The
-role passwords are not in the dump; they come from the secrets file. Keycloak's
-accounts are not in PostgreSQL yet: Keycloak keeps them on its own volume
-`keycloak-data` (#170). Snapshot that volume with your provider, or recreate demo
-accounts with `seed-demo.sh`. [Backup and restore](backup-restore.md) describes
-the full procedure, including object storage, for Compose.
+role passwords are not in the dump; they come from the secrets file.
+`dxos_keycloak` holds Keycloak's accounts, sessions and realm settings, including
+password hashes and client secrets: keep that dump like a secret.
+[Backup and restore](backup-restore.md) describes the full procedure, including
+object storage, for Compose.
 
 ## Remove
 
