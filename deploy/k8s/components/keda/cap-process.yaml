@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# cap-process answers commands, uploads and workflow effects, and in the
+# background delivers outbox events to the workflow engine and sends uploads to
+# ClamAV. It runs while either kind of work exists: requests (through the
+# interceptor) or rows waiting in the database (keda.process_work_waiting()).
+# Several replicas are safe: the background loops claim rows with
+# FOR UPDATE SKIP LOCKED and leases.
+apiVersion: v1
+kind: Service
+metadata:
+  name: cap-process-app
+  namespace: dxos
+spec:
+  selector:
+    app: cap-process
+  ports:
+  - name: http
+    port: 8081
+---
+# Routing only: the ScaledObject below combines its request signal with the database.
+apiVersion: http.keda.sh/v1alpha1
+kind: HTTPScaledObject
+metadata:
+  name: cap-process
+  namespace: dxos
+  annotations:
+    httpscaledobject.keda.sh/skip-scaledobject-creation: "true"
+spec:
+  pathPrefixes: ["/api/cap/process"]
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: cap-process
+    service: cap-process-app
+    port: 8081
+  replicas:
+    min: 0
+    max: 3
+  scaledownPeriod: 300
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: cap-process
+  namespace: dxos
+spec:
+  scaleTargetRef:
+    name: cap-process
+  minReplicaCount: 0
+  maxReplicaCount: 3
+  pollingInterval: 15
+  cooldownPeriod: 300
+  triggers:
+  - type: external-push
+    metadata:
+      httpScaledObject: cap-process
+      scalerAddress: keda-add-ons-http-external-scaler.keda:9090
+  - type: postgresql
+    metadata:
+      host: postgres.dxos.svc.cluster.local
+      port: "5432"
+      userName: dxos_keda
+      dbName: dxos_db
+      sslmode: disable
+      query: SELECT keda.process_work_waiting()
+      # One replica per 50 waiting rows, up to maxReplicaCount.
+      targetQueryValue: "50"
+      activationTargetQueryValue: "0"
+    authenticationRef:
+      name: dxos-keda-postgres

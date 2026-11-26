@@ -246,6 +246,69 @@ class RenderedManifests(unittest.TestCase):
 
 
 @unittest.skipUnless(shutil.which('kubectl'), 'kubectl is not installed')
+class KedaComponent(unittest.TestCase):
+    """components/keda (#175): opt-in; Tier 2 services and ClamAV run only while they have work,
+    and the scaler never uses an administrator login."""
+
+    @classmethod
+    def setUpClass(cls):
+        with tempfile.TemporaryDirectory(dir=ROOT / 'deploy') as overlay:
+            rel = lambda p: os.path.relpath(ROOT / p, overlay)
+            Path(overlay, 'kustomization.yaml').write_text(
+                f"resources: [{rel('deploy/k8s/overlays/eks')}]\ncomponents: [{rel('deploy/k8s/components/keda')}]\n")
+            out = subprocess.run(['kubectl', 'kustomize', overlay], capture_output=True, text=True, check=True).stdout
+        cls.docs = [d for d in yaml.safe_load_all(out) if d]
+
+    def one(self, kind, name):
+        return next(d for d in self.docs if d['kind'] == kind and d['metadata']['name'] == name)
+
+    def test_keda_owns_the_clamav_replicas(self):
+        self.assertNotIn('replicas', self.one('Deployment', 'clamav')['spec'])
+        scaled = self.one('ScaledObject', 'clamav')['spec']
+        self.assertEqual((scaled['scaleTargetRef']['name'], scaled['minReplicaCount'], scaled['maxReplicaCount']),
+                         ('clamav', 0, 1))
+
+    def test_tier_2_services_run_on_demand(self):
+        for name, port, most in (('cap-hr', 8083, 1), ('cap-process', 8081, 3)):
+            with self.subTest(name):
+                self.assertNotIn('replicas', self.one('Deployment', name)['spec'])
+                # APISIX and Kestra keep calling <name>:<port>; it now leads to the interceptor.
+                entry = self.one('Service', name)['spec']
+                self.assertEqual((entry['type'], entry['externalName'], entry['ports'][0]['port']),
+                                 ('ExternalName', f'dxos-{name}.keda.svc.cluster.local', port))
+                gate = self.one('Service', f'dxos-{name}')
+                self.assertEqual((gate['metadata']['namespace'], gate['spec']['ports'][0]),
+                                 ('keda', {'name': 'http', 'port': port, 'targetPort': 'proxy'}))
+                app = self.one('Service', f'{name}-app')['spec']
+                self.assertEqual((app['selector'], app['ports'][0]['port']), ({'app': name}, port))
+                http = self.one('HTTPScaledObject', name)['spec']
+                self.assertEqual((http['scaleTargetRef']['service'], http['scaleTargetRef']['port'],
+                                  http['replicas']), (f'{name}-app', port, {'min': 0, 'max': most}))
+        # cap-process also wakes for background work, with the scaler's own login.
+        scaled = self.one('ScaledObject', 'cap-process')['spec']
+        kinds = {t['type']: t['metadata'] for t in scaled['triggers']}
+        self.assertEqual(kinds['external-push']['httpScaledObject'], 'cap-process')
+        self.assertEqual((kinds['postgresql']['userName'], kinds['postgresql']['query']),
+                         ('dxos_keda', 'SELECT keda.process_work_waiting()'))
+        self.assertEqual(self.one('HTTPScaledObject', 'cap-process')['metadata']['annotations'],
+                         {'httpscaledobject.keda.sh/skip-scaledobject-creation': 'true'})
+
+    def test_scaler_uses_its_own_login(self):
+        trigger = self.one('ScaledObject', 'clamav')['spec']['triggers'][0]['metadata']
+        self.assertEqual(trigger['userName'], 'dxos_keda')
+        self.assertEqual(trigger['query'], 'SELECT keda.files_waiting_for_scan()')
+        auth = self.one('TriggerAuthentication', 'dxos-keda-postgres')['spec']['secretTargetRef']
+        self.assertEqual({(a['name'], a['key']) for a in auth}, {('dxos-keda', 'KEDA_DATABASE_PASSWORD')})
+
+    def test_setup_job_is_hardened(self):
+        pod = self.one('Job', 'keda-setup')['spec']['template']['spec']
+        self.assertTrue(pod['securityContext']['runAsNonRoot'])
+        c = pod['containers'][0]['securityContext']
+        self.assertEqual((c['allowPrivilegeEscalation'], c['readOnlyRootFilesystem'], c['capabilities']),
+                         (False, True, {'drop': ['ALL']}))
+
+
+@unittest.skipUnless(shutil.which('kubectl'), 'kubectl is not installed')
 class EveryOverlay(unittest.TestCase):
     """Each example overlay (eks, gke, aks, onprem, and any added later) keeps the same public surface."""
 

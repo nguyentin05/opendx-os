@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Opt-in (#175): Tier 2 services and ClamAV run only while they have work.
+# Add to an overlay with `components: [../../components/keda]`. Requires KEDA
+# and its HTTP add-on in the cluster (namespace keda) and the Secret dxos-keda
+# (deploy/README.md, "Run services only while they have work").
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+- setup-job.yaml
+- triggerauthentication.yaml
+- clamav.yaml
+- interceptor.yaml
+- cap-hr.yaml
+- cap-process.yaml
+# A fixed name: a Job's pod template cannot change once created.
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+- name: keda-setup-sql
+  namespace: dxos
+  files:
+  - setup.sql
+# KEDA owns the replica counts; an apply must not reset them to 1.
+patches:
+- target: {kind: Deployment, name: clamav}
+  patch: |-
+    - op: remove
+      path: /spec/replicas
+- target: {kind: Deployment, name: cap-hr}
+  patch: |-
+    - op: remove
+      path: /spec/replicas
+- target: {kind: Deployment, name: cap-process}
+  patch: |-
+    - op: remove
+      path: /spec/replicas
+# The names APISIX and Kestra call now lead to the interceptor (interceptor.yaml).
+- target: {kind: Service, name: cap-hr}
+  patch: |-
+    - op: replace
+      path: /spec
+      value:
+        type: ExternalName
+        externalName: dxos-cap-hr.keda.svc.cluster.local
+        ports: [{name: http, port: 8083}]
+- target: {kind: Service, name: cap-process}
+  patch: |-
+    - op: replace
+      path: /spec
+      value:
+        type: ExternalName
+        externalName: dxos-cap-process.keda.svc.cluster.local
+        ports: [{name: http, port: 8081}]
