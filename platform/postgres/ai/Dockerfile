@@ -11,5 +11,9 @@ RUN tar -xzf /tmp/pgmq.tar.gz --strip-components=2 -C /tmp \
     && mkdir -p /usr/share/licenses/pgmq \
     && tar -xzf /tmp/pgmq.tar.gz --strip-components=1 -C /usr/share/licenses/pgmq \
         pgmq-51468f6ba2afeb4a4a9a67e9a532f37b590a0929/LICENSE \
-    && rm -rf /tmp/pgmq.tar.gz /tmp/pgmq.control /tmp/sql
+    && rm -rf /tmp/pgmq.tar.gz /tmp/pgmq.control /tmp/sql \
+    && rm -f /usr/local/bin/gosu /usr/local/bin/gosu.asc
 COPY --from=legal LICENSE NOTICE COPYRIGHT.txt THIRD_PARTY_LICENSES.txt /usr/share/licenses/opendx-os/
+# The upstream entrypoint only uses gosu to drop privileges when started as
+# root. Run as postgres directly so no root-run Go helper ships in the image.
+USER postgres
