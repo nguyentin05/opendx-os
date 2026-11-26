@@ -35,6 +35,13 @@ ALLOWED = {
     ('cap-hr', 'DB_PASSWORD'): 'k8s only: the connection URL is built from the Secret with $(DB_PASSWORD)',
     ('cap-process', 'DB_PASSWORD'): 'k8s only: the connection URL is built from the Secret with $(DB_PASSWORD)',
     ('keycloak', 'KC_PROXY_HEADERS'): 'k8s only: Keycloak runs behind the Ingress, which sets X-Forwarded-*',
+    ('keycloak', 'KC_DB'): 'k8s only: production mode on PostgreSQL (#170); Compose keeps start-dev with a file store',
+    ('keycloak', 'KC_DB_URL'): 'k8s only: production mode on PostgreSQL (#170); Compose keeps start-dev with a file store',
+    ('keycloak', 'KC_DB_USERNAME'): 'k8s only: production mode on PostgreSQL (#170); Compose keeps start-dev with a file store',
+    ('keycloak', 'KC_DB_PASSWORD'): 'k8s only: production mode on PostgreSQL (#170); Compose keeps start-dev with a file store',
+    ('keycloak', 'KC_HTTP_ENABLED'): 'k8s only: production mode on PostgreSQL (#170); Compose keeps start-dev with a file store',
+    ('keycloak', 'KC_CACHE'): 'k8s only: production mode would form a cluster cache; one replica keeps it local',
+    ('keycloak', 'KC_HOSTNAME_ADMIN'): 'k8s only: the admin console answers only through a port-forward; Compose serves it on localhost',
 }
 # The controller is configured from its own Secret (dxos-operator-config) and
 # operator/config/default, not from per-variable environment entries.

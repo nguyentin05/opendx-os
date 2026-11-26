@@ -458,10 +458,41 @@ from `components/gateway-routes`. Set the six `dxos-public` values in
 `deploy/k8s/apply.sh deploy/k8s/overlays/onprem ~/dxos-k8s.env`, and point both
 hosts at the Gateway's address (`kubectl -n dxos get gateway dxos`).
 
+## Keycloak in production mode
+
+On Kubernetes, Keycloak runs `start` (production mode) on its own PostgreSQL
+database `dxos_keycloak`, owned by the login `dxos_keycloak` whose password is
+`KEYCLOAK_DATABASE_PASSWORD`. The init container `database` of the Keycloak Pod
+creates the login and the database when missing and sets the password at every
+start, on a new or a running installation. Compose keeps `start-dev` with a file
+store for local work. The admin console answers only through
+`kubectl -n dxos port-forward svc/keycloak 8085:8085`, at
+`http://localhost:8085/admin`.
+
+A deployment made before this change kept its accounts in the file store on the
+volume `keycloak-data`. Move them once, keeping every account id, so that
+records stay with their owners:
+
+1. Add `KEYCLOAK_DATABASE_PASSWORD` to the secrets file and run `apply.sh`.
+2. Scale Keycloak to zero. In a Pod of the Keycloak image that mounts
+   `keycloak-data` at `/opt/keycloak/data`, run
+   `kc.sh export --dir /tmp/export --realm dxos --users realm_file`, and copy
+   `dxos-realm.json` out. It holds password hashes and client secrets, so keep
+   it like a secret.
+3. In a Pod of the Keycloak image with the `KC_DB*` variables of the Deployment,
+   and the init container above, run `kc.sh import --file dxos-realm.json`,
+   with the file mounted from a temporary Secret. Then run
+   `kc.sh bootstrap-admin user --username admin --password:env KC_BOOTSTRAP_ADMIN_PASSWORD`
+   with `KC_BOOTSTRAP_ADMIN_PASSWORD` from `KEYCLOAK_ADMIN_PASSWORD`, since the
+   import creates realm `master` without an administrator.
+4. Scale Keycloak to one. It logs `Realm 'dxos' already exists. Import skipped`.
+
+The file store stays on the volume, so going back to the previous release is a
+rollback of the Deployment. Back up `dxos_keycloak` with the other databases.
+
 ## Known gaps
 
 - cap-ai and the RAG services are not deployed; requests to `/api/cap/ai/` fail.
-- Keycloak runs `start-dev` with its file store, as in Compose (#170).
 - `scripts/seed-demo.py` and the `scripts/test-*.sh` probes target the Compose
   ports and have not been adapted.
 - Only the EKS overlay has run on a cluster; GKE, AKS and on-premises are checked
