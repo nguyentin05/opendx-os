@@ -51,7 +51,7 @@ Organized as sequential initialization files natively executed by Docker Postgre
 Separated into standalone capability schemas loaded conditionally on startup via `04_capabilities.sh` (filtered by `ENABLED_CAPABILITIES`):
 - `cap_process.sql` ([P]): Process orchestration & OCC transitions, command idempotency receipts (`core.command_receipts`), and workflow step idempotency tracking (`core.processed_workflow_steps`).
 - `cap_data.sql` ([D]): Physical machinery catalog (`core.devices`), IoT task association (`core.device_work_items`), telemetry ingestion (`core.ot_events`), and lakehouse export/lineage (`core.export_batches`, `core.data_lineage`).
-- `cap_ai.sql` ([I]): Registers AI OCR and workspace policy RAG capability.
+- `cap_ai.sql` ([I]): Registers the cap-ai capability; its `cap_ai` schema is owned by Alembic ([ADR 0011](0011-python-intelligence-runtime.md)).
 
 ### 4. Capability-Gated Application Access
 Domain applications (Tier 3) declare their capability requirements in `manifest.yaml`:

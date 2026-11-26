@@ -26,7 +26,7 @@ stopped.
 | `dxos-controller` | The same lifecycle for `DXApplication` resources on Kubernetes | Implemented |
 | `cap-hr` | Departments and staff for the `department` scope | Implemented |
 | `cap-process` | Commands, validation, files, record history and event delivery | Implemented |
-| `cap-ai`, parser, worker, `dxos-knowledge-dispatcher` | Knowledge ingestion, role-scoped search with citations, personal library, Assistant | Implemented in the `compose.rag.yaml` overlay; no OCR |
+| `cap-ai`, `cap-ai-worker`, `dxos-knowledge-dispatcher` | Knowledge ingestion through Docling with English OCR, role-scoped search with citations, personal library, Assistant | Implemented in the `compose.rag.yaml` overlay |
 | `cap-data` | OT validation and deduplication, reconciled export, BI and lineage | Planned for v1.1.0 (#111) |
 | `workspace-ui` | Registry-driven navigation, lists, forms, record detail, inbox, My Work, knowledge pages, Assistant | Implemented; no Kanban, Calendar or OT/BI views |
 | Audit checkpoint store | Signed audit checkpoints outside PostgreSQL | Not implemented |

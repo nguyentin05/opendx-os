@@ -21,6 +21,6 @@
 /platform/postgres/capabilities/cap_ai.sql @ximofam
 /compose.rag.yaml @ximofam
 /scripts/test-ai.sh @ximofam
-/scripts/rag-up.sh @ximofam
+/scripts/ai-up.sh @ximofam
 /docs/guides/knowledge/ @ximofam
 /docs/reference/rag/ @ximofam

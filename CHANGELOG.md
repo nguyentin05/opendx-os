@@ -11,6 +11,13 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ## [Unreleased]
 
+### Changed
+
+- AI: `make rag-up` and `scripts/rag-up.sh` are now `make ai-up` and
+  `scripts/ai-up.sh`, and the `RAG_ENV_FILE` override is now `AI_ENV_FILE`.
+  The helper still defaults to `.env.rag`; set `AI_ENV_FILE=.env` to keep the
+  generated secrets in `.env`.
+
 ## [0.3.0] - 2026-11-23
 
 ### Added

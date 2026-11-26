@@ -67,8 +67,9 @@ The Compose files:
    package in `apps/` to be Ready, except a package that declares a capability
    `ENABLED_CAPABILITIES` leaves off, which the operator refuses to install.
 
-   For AI, start with `make rag-up` on a fresh named Compose project. It creates
-   service credentials in `.env.rag`, initializes PostgreSQL and enables the
+   For AI, start with `make ai-up` on a fresh named Compose project. It creates
+   service credentials in `.env.rag` (set `AI_ENV_FILE=.env` to keep them in
+   `.env` instead), initializes PostgreSQL and enables the
    Personal Library after its application is Ready. Configure an LLM in
    Workspace AI Management to enable generated answers.
    [AI installation and setup](../guides/knowledge/models.md).

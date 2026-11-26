@@ -12,10 +12,14 @@ last_reviewed: 2026-11-26
 
 ## Compose installation
 
-Run `scripts/init-env.sh`, then `make rag-up` on a fresh named project.
+Run `scripts/init-env.sh`, then `make ai-up` on a fresh named project.
 The helper defaults to `opendx-os-ai` and creates restricted database,
 broker and service-identity credentials in `.env.rag`. Set
-`COMPOSE_PROJECT_NAME` to use another isolated project. The project needs
+`COMPOSE_PROJECT_NAME` to use another isolated project. Set
+`AI_ENV_FILE=.env` to keep those credentials in `.env` instead; the helper
+fills its empty placeholders. Switching files after the database volume
+exists needs the same credential values or a fresh volume, because PostgreSQL
+applies role passwords only on first initialization. The project needs
 free ports for the base stack. The overlay builds PostgreSQL 17 with
 pgvector 0.8.7 and PGMQ 1.13.2 and shares one AI image across the API,
 Celery worker and one-shot Alembic service.
