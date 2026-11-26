@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# ClamAV: scans attachments before they can be downloaded, as in compose.yaml.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clamav
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: clamav
+  template:
+    metadata:
+      labels:
+        app: clamav
+    spec:
+      securityContext:
+        # The image starts as root to prepare its directories, then drops to clamav.
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: clamav
+        image: clamav/clamav:1.4
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop: [ALL]
+            add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+        env:
+        - name: CLAMD_CONF_StreamMaxLength
+          value: 25M
+        - name: CLAMD_CONF_MaxFileSize
+          value: 25M
+        - name: CLAMD_CONF_MaxScanSize
+          value: 50M
+        ports:
+        - containerPort: 3310
+          name: clamd
+        # The first start downloads the signature database.
+        startupProbe:
+          exec:
+            command: ["/usr/local/bin/clamdcheck.sh"]
+          periodSeconds: 10
+          failureThreshold: 60
+        readinessProbe:
+          exec:
+            command: ["/usr/local/bin/clamdcheck.sh"]
+          periodSeconds: 10
+        resources:
+          requests: {cpu: 250m, memory: 1536Mi}
+          limits: {memory: 3Gi}
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/clamav
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: clamav-data

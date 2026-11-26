@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# APISIX with the same standalone configuration as Compose. On Kubernetes the
+# entry point (an Ingress in an overlay) sends /api/ and /v1/graphql to APISIX
+# directly.
+apiVersion: v1
+kind: Service
+metadata:
+  name: apisix
+spec:
+  selector:
+    app: apisix
+  ports:
+  - name: http
+    port: 9080

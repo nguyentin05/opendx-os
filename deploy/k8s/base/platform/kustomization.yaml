@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Tier 1: shared infrastructure, one folder per service. Service names match
+# compose.yaml, so the configuration under platform/ is used unchanged. Each
+# configmap.yaml is generated from platform/ by `make k8s-config`; do not edit.
+namespace: dxos
+resources:
+- postgres/configmap.yaml
+- postgres/service.yaml
+- postgres/statefulset.yaml
+- keycloak/configmap.yaml
+- keycloak/deployment.yaml
+- keycloak/pvc.yaml
+- keycloak/service.yaml
+- authz/deployment.yaml
+- authz/service.yaml
+- hasura/deployment.yaml
+- hasura/service.yaml
+- apisix/configmap.yaml
+- apisix/deployment.yaml
+- apisix/service.yaml
+- kestra/configmap.yaml
+- kestra/deployment.yaml
+- kestra/pvc.yaml
+- kestra/service.yaml
+- seaweedfs/deployment.yaml
+- seaweedfs/pvc.yaml
+- seaweedfs/service.yaml
+- clamav/deployment.yaml
+- clamav/pvc.yaml
+- clamav/service.yaml

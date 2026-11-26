@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Reference only, not tested. Google-managed certificate for both hosts; it
+# becomes Active once both host names resolve to the Ingress address.
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: dxos
+  namespace: dxos
+spec:
+  domains:
+  - APP_HOST
+  - AUTH_HOST

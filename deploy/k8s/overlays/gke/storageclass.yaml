@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Reference only, not tested. Default storage on GKE: balanced persistent disks
+# through the Compute Engine PD CSI driver (enabled on GKE by default). Retain:
+# a deleted claim keeps its disk, so data survives a mistaken delete.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: dxos-pd
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: pd-balanced
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

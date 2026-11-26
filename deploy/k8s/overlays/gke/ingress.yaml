@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Reference only, not tested. One external Application Load Balancer (GKE
+# Ingress), TLS from a Google-managed certificate (managedcertificate.yaml),
+# HTTP redirected to HTTPS (frontendconfig.yaml). Only the UI, the gateway routes
+# and the Keycloak realm endpoints are public. GKE Ingress has no fixed
+# response, so /admin and /realms/master go to not-found, a Service without
+# endpoints, and answer 502: the Keycloak console is never reached.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dxos
+  namespace: dxos
+  annotations:
+    kubernetes.io/ingress.class: gce
+    networking.gke.io/managed-certificates: dxos
+    networking.gke.io/v1beta1.FrontendConfig: dxos
+spec:
+  rules:
+  - host: APP_HOST
+    http:
+      paths:
+      - path: /api/
+        pathType: Prefix
+        backend:
+          service: {name: apisix, port: {number: 9080}}
+      - path: /v1/graphql
+        pathType: Exact
+        backend:
+          service: {name: apisix, port: {number: 9080}}
+      - path: /
+        pathType: Prefix
+        backend:
+          service: {name: workspace-ui, port: {number: 8080}}
+  - host: AUTH_HOST
+    http:
+      paths:
+      - path: /admin
+        pathType: Prefix
+        backend:
+          service: {name: not-found, port: {number: 80}}
+      - path: /realms/master
+        pathType: Prefix
+        backend:
+          service: {name: not-found, port: {number: 80}}
+      - path: /
+        pathType: Prefix
+        backend:
+          service: {name: keycloak, port: {number: 8085}}

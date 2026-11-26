@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# The platform is deployed two ways, Docker Compose and Kubernetes (deploy/k8s).
+# This fails a change that updates one side without the other.
+name: Deploy drift
+
+on:
+  push:
+    branches: [main, "release/**"]
+    paths:
+      - "compose.yaml"
+      - "platform/**"
+      - "deploy/**"
+      - "operator/config/**"
+      - "scripts/k8s/**"
+      - "tests/test_deploy.py"
+      - ".github/workflows/deploy-drift.yml"
+  pull_request:
+    branches: [main, "release/**"]
+    paths:
+      - "compose.yaml"
+      - "platform/**"
+      - "deploy/**"
+      - "operator/config/**"
+      - "scripts/k8s/**"
+      - "tests/test_deploy.py"
+      - ".github/workflows/deploy-drift.yml"
+
+concurrency:
+  group: deploy-drift-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: compose and k8s agree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install PyYAML
+        run: python3 -m pip install pyyaml
+
+      - name: ConfigMaps match the files under platform/
+        run: python3 scripts/k8s/render-configmaps.py --check
+
+      - name: Services, images, ports and variables match compose.yaml
+        run: python3 scripts/k8s/check-compose-parity.py
+
+      - name: Base and overlays render
+        run: |
+          kubectl kustomize deploy/k8s/base > /dev/null
+          for overlay in deploy/k8s/overlays/*/; do kubectl kustomize "$overlay" > /dev/null; done
+
+      - name: Deploy tests
+        run: python3 -m unittest tests.test_deploy -v

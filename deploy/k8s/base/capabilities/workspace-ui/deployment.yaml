@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# The Workspace UI (App Shell). The UI image's own proxy uses the Docker DNS
+# address and is not used here: the Ingress routes /api/ and /v1/graphql to APISIX.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workspace-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: workspace-ui
+  template:
+    metadata:
+      labels:
+        app: workspace-ui
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: workspace-ui
+        image: opendx-workspace-ui
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+        env:
+        - name: DXOS_OIDC_ORIGIN
+          valueFrom: {configMapKeyRef: {name: dxos-public, key: DXOS_OIDC_ORIGIN}}
+        ports:
+        - containerPort: 8080
+          name: http
+        readinessProbe:
+          httpGet: {path: /, port: http}
+          periodSeconds: 5
+        resources:
+          requests: {cpu: 50m, memory: 32Mi}
+          limits: {memory: 128Mi}
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: nginx-conf
+          mountPath: /etc/nginx/conf.d
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: nginx-conf
+        emptyDir: {}

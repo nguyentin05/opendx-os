@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Default storage for every volume of the platform: encrypted gp3 through the
+# EBS CSI driver (the aws-ebs-csi-driver add-on must be installed). Retain: a
+# deleted claim keeps its EBS volume, so data survives a mistaken delete.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: dxos-gp3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

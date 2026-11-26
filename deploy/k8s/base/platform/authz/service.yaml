@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# dxos-authz: resolves the caller's roles on every request (Hasura webhook and
+# /api/auth). Connects with its own restricted database role; tokens are
+# verified against the public issuer (dxos-public) with keys fetched in the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: authz
+spec:
+  selector:
+    app: authz
+  ports:
+  - name: http
+    port: 8090

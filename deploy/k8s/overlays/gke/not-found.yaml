@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Reference only, not tested. A Service that selects no pod: the paths the
+# Ingress sends here (the Keycloak console) fail instead of reaching Keycloak.
+apiVersion: v1
+kind: Service
+metadata:
+  name: not-found
+  namespace: dxos
+spec:
+  selector:
+    app: not-found
+  ports:
+  - port: 80

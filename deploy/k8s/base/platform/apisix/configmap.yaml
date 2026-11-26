@@ -1,0 +1,175 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Generated from platform/apisix by `make k8s-config`. Do not edit:
+# change the file under platform/ and regenerate.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apisix-config
+data:
+  apisix.yaml: |
+    routes:
+      - id: hasura-graphql
+        uri: /v1/graphql
+        plugins:
+          cors:
+            allow_origins: "http://localhost:5173,http://localhost:15173"
+            allow_methods: "GET,POST,PUT,OPTIONS"
+            allow_headers: "Authorization,Content-Type,X-Hasura-Role,Idempotency-Key"
+          client-control:
+            max_body_size: 262144
+          limit-count:
+            count: 600
+            time_window: 60
+            # Per caller token: behind the UI proxy every browser shares one address.
+            # A request without Authorization falls back to the client address.
+            key: http_authorization
+            policy: local
+            rejected_code: 429
+          serverless-pre-function:
+            phase: rewrite
+            functions:
+              - |
+                return function(conf, ctx)
+                  if ngx.req.get_method() == "POST" then
+                    ngx.req.read_body()
+                    local body = ngx.req.get_body_data()
+                    if not body then
+                      -- A body over the in-memory buffer is spooled to a file (at most 256 KiB here).
+                      local path = ngx.req.get_body_file()
+                      local f = path and io.open(path, "rb")
+                      if f then body = f:read("*a"); f:close() end
+                    end
+                    if body and body:match("^%s*%[") then
+                      return 400, { error = { code = "Bad Request", message = "Bad Request" } }
+                    end
+                  end
+                end
+          proxy-rewrite:
+            headers:
+              remove:
+                - X-Hasura-Admin-Secret
+                - X-Hasura-User-Id
+                - X-Hasura-Workspace-Id
+        upstream:
+          type: roundrobin
+          nodes:
+            "hasura:8080": 1
+
+      # Workflow effects are called by the workflow engine inside the network,
+      # never through the gateway.
+      - id: cap-process-effects-closed
+        uri: /api/cap/process/effects/*
+        priority: 10
+        plugins:
+          response-rewrite:
+            status_code: 404
+            body: '{"error":{"code":"Not Found","message":"Not Found"}}'
+            headers:
+              set:
+                Content-Type: application/json
+        upstream:
+          type: roundrobin
+          nodes:
+            "cap-process:8081": 1
+
+      - id: cap-process-commands
+        uri: /api/cap/process/*
+        plugins:
+          cors:
+            allow_origins: "http://localhost:5173,http://localhost:15173"
+            allow_methods: "GET,POST,PUT,OPTIONS"
+            allow_headers: "Authorization,Content-Type,X-Hasura-Role,Idempotency-Key"
+          proxy-rewrite:
+            headers:
+              remove:
+                - X-Hasura-Admin-Secret
+                - X-Hasura-User-Id
+                - X-Hasura-Workspace-Id
+        upstream:
+          type: roundrobin
+          nodes:
+            "cap-process:8081": 1
+
+      - id: cap-ai
+        uri: /api/cap/ai/*
+        plugins:
+          cors:
+            allow_origins: "http://localhost:5173,http://localhost:15173"
+            allow_methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+            allow_headers: "Authorization,Content-Type,X-Hasura-Role,Idempotency-Key,If-Match"
+          proxy-rewrite:
+            headers:
+              remove:
+                - X-Hasura-Admin-Secret
+                - X-Hasura-User-Id
+                - X-Hasura-Workspace-Id
+                - X-Hasura-Allowed-Roles
+                - X-Hasura-Default-Role
+                - X-Source-Delegation
+        upstream:
+          type: roundrobin
+          retries: 0
+          timeout:
+            connect: 5
+            send: 30
+            read: 480
+          nodes:
+            "cap-ai:8084": 1
+
+      # The caller's identity and the roles they hold (dxos-authz, ADR 0007).
+      - id: cap-hr
+        uri: /api/cap/hr/*
+        plugins:
+          cors:
+            allow_origins: "http://localhost:5173,http://localhost:15173"
+            allow_methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+            allow_headers: "Authorization,Content-Type"
+          proxy-rewrite:
+            headers:
+              remove:
+                - X-Hasura-Admin-Secret
+                - X-Hasura-User-Id
+                - X-Hasura-Workspace-Id
+        upstream:
+          type: roundrobin
+          nodes:
+            "cap-hr:8083": 1
+
+      - id: authz-me
+        uri: /api/auth/*
+        plugins:
+          cors:
+            allow_origins: "http://localhost:5173,http://localhost:15173"
+            allow_methods: "GET,PUT,DELETE,OPTIONS"
+            allow_headers: "Authorization,Content-Type"
+        upstream:
+          type: roundrobin
+          nodes:
+            "authz:8090": 1
+
+      - id: keycloak-oidc
+        uri: /realms/*
+        upstream:
+          type: roundrobin
+          nodes:
+            "keycloak:8085": 1
+
+    #END
+  config.yaml: |
+    apisix:
+      node_listen: 9080
+      # Docker service addresses can change after a retained-volume restart.
+      dns_resolver_valid: 5
+      # The control API answers inside the container only; it is not published.
+      enable_control: true
+      control:
+        ip: "127.0.0.1"
+        port: 9092
+
+    # No plugin list is set, so APISIX loads its built-in defaults. These include
+    # client-control, limit-count and serverless-pre-function used by /v1/graphql.
+    deployment:
+      role: data_plane
+      role_data_plane:
+        config_provider: yaml

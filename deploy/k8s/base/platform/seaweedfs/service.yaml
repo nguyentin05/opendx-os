@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# SeaweedFS: the S3 store for attachments, as in compose.yaml. The service name
+# matches Compose, so the shared configuration under platform/ resolves the host.
+apiVersion: v1
+kind: Service
+metadata:
+  name: seaweedfs
+spec:
+  selector:
+    app: seaweedfs
+  ports:
+  - name: s3
+    port: 8333

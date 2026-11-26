@@ -1,0 +1,82 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Keycloak as in compose.yaml: start-dev with its own file store on a volume,
+# the realm imported only into an empty store.
+# shortcut: start-dev with the file store, not `start` with a database; move to
+# production mode with PostgreSQL when the deployment outlives the demo (#170).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 0
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: keycloak
+        image: quay.io/keycloak/keycloak:26.0
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop: [ALL]
+        args: ["start-dev", "--import-realm"]
+        env:
+        - name: KEYCLOAK_ADMIN
+          value: admin
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: KEYCLOAK_ADMIN_PASSWORD}}
+        # Tokens carry this issuer whichever address requested them.
+        - name: KC_HOSTNAME
+          valueFrom: {configMapKeyRef: {name: dxos-public, key: KEYCLOAK_HOSTNAME}}
+        # TLS ends at the load balancer, which sets X-Forwarded-*.
+        - name: KC_PROXY_HEADERS
+          value: xforwarded
+        - name: KC_HTTP_PORT
+          value: "8085"
+        - name: KC_HEALTH_ENABLED
+          value: "true"
+        ports:
+        - containerPort: 8085
+          name: http
+        - containerPort: 9000
+          name: management
+        startupProbe:
+          httpGet: {path: /health/started, port: management}
+          periodSeconds: 5
+          failureThreshold: 60
+        readinessProbe:
+          httpGet: {path: /health/ready, port: management}
+          periodSeconds: 10
+        resources:
+          requests: {cpu: 250m, memory: 768Mi}
+          limits: {memory: 1536Mi}
+        volumeMounts:
+        - name: data
+          mountPath: /opt/keycloak/data
+        - name: realm
+          mountPath: /opt/keycloak/data/import/realm-export.json
+          subPath: realm-export.json
+          readOnly: true
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: keycloak-data
+      - name: realm
+        configMap:
+          name: keycloak-realm

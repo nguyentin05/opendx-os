@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Example overlay for Azure Kubernetes Service (AKS). Reference only: it has not
+# been run on a cluster, and nothing in deploy/k8s/base depends on it. It uses the
+# Gateway API implementation of the application routing add-on, a certificate
+# from Azure Key Vault and Standard SSD managed disks. Set the five values under
+# dxos-public to your domain, and the Key Vault certificate URI and the managed
+# identity's client ID in gateway.yaml and serviceaccount.yaml.
+resources:
+- ../../base
+- storageclass.yaml
+- gateway.yaml
+- serviceaccount.yaml
+components:
+- ../../components/gateway-routes
+configMapGenerator:
+- name: dxos-public
+  namespace: dxos
+  behavior: merge
+  literals:
+  - APP_HOST=app.example.com
+  - AUTH_HOST=auth.example.com
+  - KEYCLOAK_HOSTNAME=https://auth.example.com
+  - OIDC_ISSUER_URL=https://auth.example.com/realms/dxos
+  - DXOS_OIDC_ORIGIN=https://auth.example.com

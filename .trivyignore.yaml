@@ -30,3 +30,27 @@ misconfigurations:
     statement: >-
       Same disposable kind fixtures; the official postgres and hasura images
       start as root to prepare their directories.
+  - id: KSV-0014
+    paths:
+      - deploy/k8s/base/platform/apisix/deployment.yaml
+    statement: >-
+      APISIX writes the nginx.conf it generates at start, its logs and its proxy
+      temporary files under /usr/local/apisix, next to configuration the image
+      ships there; a read-only root would need that tree copied into a volume.
+      It still runs as uid 636 without capabilities or privilege escalation. #170.
+  - id: KSV-0014
+    paths:
+      - deploy/k8s/base/platform/keycloak/deployment.yaml
+    statement: >-
+      Keycloak runs start-dev, which rebuilds its server into /opt/keycloak/lib at
+      every start. Moving to an optimized image with `start` would allow a
+      read-only root. It runs as uid 1000 without capabilities or privilege
+      escalation. #170.
+  - id: KSV-0014
+    paths:
+      - deploy/k8s/base/platform/clamav/deployment.yaml
+    statement: >-
+      The official ClamAV image starts as root to prepare /var/lib/clamav,
+      /var/log/clamav and /run/clamav, then runs freshclam and clamd as the clamav
+      user. Its capabilities are limited to the five that setup needs (CHOWN,
+      DAC_OVERRIDE, FOWNER, SETGID, SETUID), without privilege escalation. #170.

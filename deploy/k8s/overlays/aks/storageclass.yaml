@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Reference only, not tested. Default storage on AKS: Standard SSD managed disks
+# through the Azure Disk CSI driver (enabled on AKS by default). Retain: a deleted
+# claim keeps its disk, so data survives a mistaken delete.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: dxos-disk
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: disk.csi.azure.com
+parameters:
+  skuName: StandardSSD_LRS
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

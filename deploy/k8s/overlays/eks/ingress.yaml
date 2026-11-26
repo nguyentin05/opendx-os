@@ -1,0 +1,58 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# One internet-facing ALB (AWS Load Balancer Controller). TLS ends at the ALB
+# with an ACM certificate found from the hosts below; the hosts come from
+# dxos-public (APP_HOST, AUTH_HOST) through the replacements in
+# kustomization.yaml. Only the UI, the gateway routes and the Keycloak realm
+# endpoints are public: Hasura, Kestra, PostgreSQL, SeaweedFS and ClamAV have no
+# rule, and the Keycloak admin console answers 404.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dxos
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    # Longer than the default 60 s: some commands take longer to answer.
+    alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=120
+    alb.ingress.kubernetes.io/actions.not-found: >-
+      {"type":"fixed-response","fixedResponseConfig":{"contentType":"text/plain","statusCode":"404","messageBody":"Not found"}}
+spec:
+  ingressClassName: alb
+  tls:
+  - hosts:
+    - APP_HOST
+    - AUTH_HOST
+  rules:
+  - host: APP_HOST
+    http:
+      paths:
+      - path: /api/
+        pathType: Prefix
+        backend:
+          service: {name: apisix, port: {number: 9080}}
+      - path: /v1/graphql
+        pathType: Exact
+        backend:
+          service: {name: apisix, port: {number: 9080}}
+      - path: /
+        pathType: Prefix
+        backend:
+          service: {name: workspace-ui, port: {number: 8080}}
+  - host: AUTH_HOST
+    http:
+      paths:
+      - path: /admin
+        pathType: Prefix
+        backend:
+          service: {name: not-found, port: {name: use-annotation}}
+      - path: /realms/master
+        pathType: Prefix
+        backend:
+          service: {name: not-found, port: {name: use-annotation}}
+      - path: /
+        pathType: Prefix
+        backend:
+          service: {name: keycloak, port: {number: 8085}}

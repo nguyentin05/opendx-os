@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Reference only, not tested. Redirects plain HTTP to HTTPS on the load balancer.
+apiVersion: networking.gke.io/v1beta1
+kind: FrontendConfig
+metadata:
+  name: dxos
+  namespace: dxos
+spec:
+  redirectToHttps:
+    enabled: true

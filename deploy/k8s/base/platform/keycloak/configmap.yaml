@@ -1,0 +1,164 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Generated from platform/keycloak by `make k8s-config`. Do not edit:
+# change the file under platform/ and regenerate.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm
+data:
+  realm-export.json: |
+    {
+      "realm": "dxos",
+      "enabled": true,
+      "displayName": "DX-OS Open-Core Realm",
+      "sslRequired": "external",
+      "accessTokenLifespan": 300,
+      "registrationAllowed": false,
+      "clients": [
+        {
+          "clientId": "dxos-portal",
+          "enabled": true,
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": false,
+          "redirectUris": [
+            "http://localhost:5173/*",
+            "http://127.0.0.1:5173/*",
+            "http://localhost:9080/*",
+            "http://localhost:15173/*",
+            "http://127.0.0.1:15173/*"
+          ],
+          "webOrigins": [
+            "+"
+          ],
+          "protocolMappers": [
+            {
+              "name": "dxos-runtime-audience",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.custom.audience": "dxos-runtime",
+                "id.token.claim": "false",
+                "access.token.claim": "true"
+              }
+            }
+          ],
+          "attributes": {
+            "pkce.code.challenge.method": "S256",
+            "post.logout.redirect.uris": "+"
+          }
+        },
+        {
+          "clientId": "dxos-rag-worker",
+          "enabled": false,
+          "publicClient": false,
+          "serviceAccountsEnabled": true,
+          "standardFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "protocolMappers": [
+            {
+              "name": "dxos-runtime-audience",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.custom.audience": "dxos-runtime",
+                "id.token.claim": "false",
+                "access.token.claim": "true"
+              }
+            }
+          ]
+        },
+        {
+          "clientId": "dxos-file-service",
+          "enabled": false,
+          "publicClient": false,
+          "serviceAccountsEnabled": true,
+          "standardFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "protocolMappers": [
+            {
+              "name": "dxos-runtime-audience",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.custom.audience": "dxos-runtime",
+                "id.token.claim": "false",
+                "access.token.claim": "true"
+              }
+            }
+          ]
+        },
+        {
+          "clientId": "dxos-rag-dispatcher",
+          "enabled": false,
+          "publicClient": false,
+          "serviceAccountsEnabled": true,
+          "standardFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "protocolMappers": [
+            {
+              "name": "dxos-runtime-audience",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.custom.audience": "dxos-runtime",
+                "id.token.claim": "false",
+                "access.token.claim": "true"
+              }
+            }
+          ]
+        }
+      ],
+      "users": [
+        {
+          "id": "33333333-3333-4333-8333-000000000001",
+          "username": "service-account-dxos-rag-worker",
+          "enabled": true,
+          "emailVerified": true,
+          "serviceAccountClientId": "dxos-rag-worker"
+        },
+        {
+          "id": "33333333-3333-4333-8333-000000000002",
+          "username": "service-account-dxos-file-service",
+          "enabled": true,
+          "emailVerified": true,
+          "serviceAccountClientId": "dxos-file-service"
+        },
+        {
+          "id": "33333333-3333-4333-8333-000000000003",
+          "username": "service-account-dxos-rag-dispatcher",
+          "enabled": true,
+          "emailVerified": true,
+          "serviceAccountClientId": "dxos-rag-dispatcher"
+        }
+      ],
+      "loginWithEmailAllowed": true,
+      "duplicateEmailsAllowed": false,
+      "bruteForceProtected": true,
+      "permanentLockout": false,
+      "failureFactor": 5,
+      "waitIncrementSeconds": 60,
+      "maxFailureWaitSeconds": 900,
+      "maxDeltaTimeSeconds": 43200,
+      "quickLoginCheckMilliSeconds": 1000,
+      "minimumQuickLoginWaitSeconds": 60,
+      "passwordPolicy": "length(8) and notUsername and notEmail",
+      "components": {
+        "org.keycloak.userprofile.UserProfileProvider": [
+          {
+            "providerId": "declarative-user-profile",
+            "subComponents": {},
+            "config": {
+              "kc.user.profile.config": [
+                "{\"attributes\": [{\"name\": \"username\", \"displayName\": \"${username}\", \"validations\": {\"length\": {\"min\": 3, \"max\": 255}, \"username-prohibited-characters\": {}, \"up-username-not-idn-homograph\": {}}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\"]}, \"multivalued\": false}, {\"name\": \"email\", \"displayName\": \"${email}\", \"validations\": {\"email\": {}, \"length\": {\"max\": 255}}, \"required\": {\"roles\": [\"user\"]}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\"]}, \"multivalued\": false}, {\"name\": \"firstName\", \"displayName\": \"${firstName}\", \"validations\": {\"length\": {\"max\": 255}, \"person-name-prohibited-characters\": {}}, \"required\": {\"roles\": [\"user\"]}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\"]}, \"multivalued\": false}, {\"name\": \"lastName\", \"displayName\": \"${lastName}\", \"validations\": {\"length\": {\"max\": 255}, \"person-name-prohibited-characters\": {}}, \"required\": {\"roles\": [\"user\"]}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\"]}, \"multivalued\": false}], \"groups\": [{\"name\": \"user-metadata\", \"displayHeader\": \"User metadata\", \"displayDescription\": \"Attributes, which refer to user metadata\"}]}"
+              ]
+            }
+          }
+        ]
+      }
+    }

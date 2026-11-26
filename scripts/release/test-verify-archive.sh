@@ -42,7 +42,7 @@ expect_fail() {
 new_tree() {
     local root="$1"
     mkdir -p "${root}/package/scripts"
-    for dir in platform apps contracts operator capabilities workspace-ui; do
+    for dir in platform apps contracts operator capabilities workspace-ui deploy; do
         mkdir -p "${root}/package/${dir}"
         echo content > "${root}/package/${dir}/.keep"
     done

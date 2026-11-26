@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Reference only. The entry point on a cluster you run yourself, through
+# Gateway API, which any conformant implementation serves (Envoy Gateway,
+# Traefik, Cilium, Istio, NGINX Gateway Fabric, ...). Set gatewayClassName to the
+# class your implementation installed (kubectl get gatewayclass); "eg" is Envoy
+# Gateway's default. TLS comes from cert-manager: it issues one certificate for
+# both hosts into the Secret dxos-tls from the ClusterIssuer named below (an ACME
+# issuer such as Let's Encrypt, or your internal CA). The routes are in
+# components/gateway-routes.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: dxos
+  namespace: dxos
+  annotations:
+    cert-manager.io/cluster-issuer: dxos-issuer
+spec:
+  gatewayClassName: eg
+  listeners:
+  - name: http
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces: {from: Same}
+  - name: https-app
+    hostname: APP_HOST
+    port: 443
+    protocol: HTTPS
+    allowedRoutes:
+      namespaces: {from: Same}
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - {kind: Secret, name: dxos-tls}
+  - name: https-auth
+    hostname: AUTH_HOST
+    port: 443
+    protocol: HTTPS
+    allowedRoutes:
+      namespaces: {from: Same}
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - {kind: Secret, name: dxos-tls}

@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Example overlay for Amazon EKS, the cluster used to test the Kubernetes
+# deployment: gp3 volumes, one public ALB, and the deployment's own domain.
+# Other clusters use their own overlay; deploy/k8s/base has nothing AWS-specific.
+# Set the five values under dxos-public below to your domain before applying.
+# Requires the AWS Load Balancer Controller and the EBS CSI driver add-on.
+resources:
+- ../../base
+- storageclass.yaml
+- ingress.yaml
+configMapGenerator:
+- name: dxos-public
+  namespace: dxos
+  behavior: merge
+  literals:
+  - APP_HOST=app.example.com
+  - AUTH_HOST=auth.example.com
+  - KEYCLOAK_HOSTNAME=https://auth.example.com
+  - OIDC_ISSUER_URL=https://auth.example.com/realms/dxos
+  - DXOS_OIDC_ORIGIN=https://auth.example.com
+# The Ingress lives in namespace dxos with the services it routes to.
+patches:
+- target: {kind: Ingress, name: dxos}
+  patch: |-
+    - op: add
+      path: /metadata/namespace
+      value: dxos
+# ALB health checks: APISIX has no route at /, Keycloak redirects there.
+- target: {kind: Service, name: apisix}
+  patch: |-
+    - op: add
+      path: /metadata/annotations
+      value:
+        alb.ingress.kubernetes.io/healthcheck-path: /
+        alb.ingress.kubernetes.io/success-codes: 200-404
+- target: {kind: Service, name: keycloak}
+  patch: |-
+    - op: add
+      path: /metadata/annotations
+      value:
+        alb.ingress.kubernetes.io/healthcheck-path: /realms/dxos
+        alb.ingress.kubernetes.io/success-codes: "200"
+replacements:
+- source: {kind: ConfigMap, name: dxos-public, fieldPath: data.APP_HOST}
+  targets:
+  - select: {kind: Ingress, name: dxos}
+    fieldPaths: [spec.tls.0.hosts.0, spec.rules.0.host]
+- source: {kind: ConfigMap, name: dxos-public, fieldPath: data.AUTH_HOST}
+  targets:
+  - select: {kind: Ingress, name: dxos}
+    fieldPaths: [spec.tls.0.hosts.1, spec.rules.1.host]
