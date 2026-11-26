@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# ClamAV is the largest memory user (about 1.5 GiB) and scanning is already
+# asynchronous: cap-process retries each waiting file with a backoff of up to
+# 256 s. So ClamAV can be at zero while nothing waits; a new upload starts it,
+# and the file is scanned once ClamAV has loaded its signatures.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: clamav
+  namespace: dxos
+spec:
+  scaleTargetRef:
+    name: clamav
+  minReplicaCount: 0
+  maxReplicaCount: 1
+  pollingInterval: 15
+  # Keep ClamAV a while after the last scan: loading the signatures takes minutes.
+  cooldownPeriod: 600
+  triggers:
+  - type: postgresql
+    metadata:
+      host: postgres.dxos.svc.cluster.local
+      port: "5432"
+      userName: dxos_keda
+      dbName: dxos_db
+      sslmode: disable
+      query: SELECT keda.files_waiting_for_scan()
+      targetQueryValue: "1"
+      activationTargetQueryValue: "0"
+    authenticationRef:
+      name: dxos-keda-postgres

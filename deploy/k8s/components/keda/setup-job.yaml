@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Creates the scaler's login and its count function (setup.sql) as the database
+# administrator. To run it again (a new password), delete the Job and apply.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keda-setup
+  namespace: dxos
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: setup
+        image: postgres:17-alpine
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+        command: ["sh", "-c", "psql -v ON_ERROR_STOP=1 -v password=\"$KEDA_DATABASE_PASSWORD\" -f /sql/setup.sql"]
+        env:
+        - name: PGHOST
+          value: postgres
+        - name: PGUSER
+          value: dxos_admin
+        - name: PGDATABASE
+          value: dxos_db
+        - name: PGPASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: POSTGRES_PASSWORD}}
+        - name: KEDA_DATABASE_PASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-keda, key: KEDA_DATABASE_PASSWORD}}
+        resources:
+          requests: {cpu: 10m, memory: 16Mi}
+          limits: {memory: 64Mi}
+        volumeMounts:
+        - name: sql
+          mountPath: /sql
+      volumes:
+      - name: sql
+        configMap:
+          name: keda-setup-sql

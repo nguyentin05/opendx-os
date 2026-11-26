@@ -246,6 +246,43 @@ class RenderedManifests(unittest.TestCase):
 
 
 @unittest.skipUnless(shutil.which('kubectl'), 'kubectl is not installed')
+class KedaComponent(unittest.TestCase):
+    """components/keda (#175): opt-in, and the scaler never uses an administrator login."""
+
+    @classmethod
+    def setUpClass(cls):
+        with tempfile.TemporaryDirectory(dir=ROOT / 'deploy') as overlay:
+            rel = lambda p: os.path.relpath(ROOT / p, overlay)
+            Path(overlay, 'kustomization.yaml').write_text(
+                f"resources: [{rel('deploy/k8s/overlays/eks')}]\ncomponents: [{rel('deploy/k8s/components/keda')}]\n")
+            out = subprocess.run(['kubectl', 'kustomize', overlay], capture_output=True, text=True, check=True).stdout
+        cls.docs = [d for d in yaml.safe_load_all(out) if d]
+
+    def one(self, kind, name):
+        return next(d for d in self.docs if d['kind'] == kind and d['metadata']['name'] == name)
+
+    def test_keda_owns_the_clamav_replicas(self):
+        self.assertNotIn('replicas', self.one('Deployment', 'clamav')['spec'])
+        scaled = self.one('ScaledObject', 'clamav')['spec']
+        self.assertEqual((scaled['scaleTargetRef']['name'], scaled['minReplicaCount'], scaled['maxReplicaCount']),
+                         ('clamav', 0, 1))
+
+    def test_scaler_uses_its_own_login(self):
+        trigger = self.one('ScaledObject', 'clamav')['spec']['triggers'][0]['metadata']
+        self.assertEqual(trigger['userName'], 'dxos_keda')
+        self.assertEqual(trigger['query'], 'SELECT keda.files_waiting_for_scan()')
+        auth = self.one('TriggerAuthentication', 'dxos-keda-postgres')['spec']['secretTargetRef']
+        self.assertEqual({(a['name'], a['key']) for a in auth}, {('dxos-keda', 'KEDA_DATABASE_PASSWORD')})
+
+    def test_setup_job_is_hardened(self):
+        pod = self.one('Job', 'keda-setup')['spec']['template']['spec']
+        self.assertTrue(pod['securityContext']['runAsNonRoot'])
+        c = pod['containers'][0]['securityContext']
+        self.assertEqual((c['allowPrivilegeEscalation'], c['readOnlyRootFilesystem'], c['capabilities']),
+                         (False, True, {'drop': ['ALL']}))
+
+
+@unittest.skipUnless(shutil.which('kubectl'), 'kubectl is not installed')
 class EveryOverlay(unittest.TestCase):
     """Each example overlay (eks, gke, aks, onprem, and any added later) keeps the same public surface."""
 

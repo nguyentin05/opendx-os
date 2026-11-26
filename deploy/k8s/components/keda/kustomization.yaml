@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+# Opt-in (#175): ClamAV runs only while uploaded files wait for a scan. Add to an
+# overlay with `components: [../../components/keda]`. Requires KEDA in the
+# cluster and the Secret dxos-keda (deploy/README.md, "Scale ClamAV to zero").
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+- setup-job.yaml
+- triggerauthentication.yaml
+- scaledobject.yaml
+# A fixed name: a Job's pod template cannot change once created.
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+- name: keda-setup-sql
+  namespace: dxos
+  files:
+  - setup.sql
+# KEDA owns the replica count; an apply must not reset it to 1.
+patches:
+- target: {kind: Deployment, name: clamav}
+  patch: |-
+    - op: remove
+      path: /spec/replicas

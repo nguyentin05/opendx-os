@@ -47,6 +47,7 @@ deploy/k8s/
     onprem/             your own cluster: its default storage, any Gateway API implementation, cert-manager
   components/
     gateway-routes/     the public routes as Gateway API HTTPRoutes, shared by aks and onprem
+    keda/               opt-in: ClamAV runs only while files wait for a scan (needs KEDA)
 ```
 
 Each service folder holds one object per file: `service.yaml`,
@@ -232,6 +233,37 @@ After changing a file under `platform/`, run `make k8s-config`; then run
 `apply.sh` again (also after changing a value in the overlay) and restart the
 affected deployment
 (`kubectl -n dxos rollout restart deployment/<name>`).
+
+## Optional: scale ClamAV to zero with KEDA
+
+`components/keda` lets [KEDA](https://keda.sh) run ClamAV only while uploaded
+files wait for a scan (#175). ClamAV is the largest memory user (about 1.5 GiB),
+and scanning is already asynchronous: cap-process retries each waiting file with
+a backoff of up to 256 s, and a file cannot be downloaded until it is `CLEAN`.
+
+1. Install KEDA in the cluster, for example with its Helm chart
+   (`helm install keda kedacore/keda --namespace keda --create-namespace`).
+2. Create the scaler's database password:
+
+   ```bash
+   kubectl -n dxos create secret generic dxos-keda \
+     --from-literal=KEDA_DATABASE_PASSWORD="$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 32)"
+   ```
+
+3. Add `components: [../../components/keda]` to your overlay and apply it.
+
+The Job `keda-setup` creates the login `dxos_keda`, which may only call
+`keda.files_waiting_for_scan()` (a count of files waiting for a scan). It reads no
+table and cannot reach the Kestra database. The ScaledObject keeps ClamAV at
+zero replicas while the count is zero, starts one when it is not, and waits ten
+minutes after the last scan before stopping it. To change the password, update
+the Secret, delete the Job and apply again.
+
+On the EKS test cluster (2026-11-26), an upload made while ClamAV was stopped was
+`CLEAN` 69 s later: KEDA noticed it within 15 s, and ClamAV was ready 22 s after
+starting; the rest is the retry backoff. A file that never scans (its object
+missing, for example) keeps ClamAV running, as it would without KEDA. Without
+the component, the manifests are unchanged and ClamAV always runs.
 
 ## Example overlays (reference only)
 
