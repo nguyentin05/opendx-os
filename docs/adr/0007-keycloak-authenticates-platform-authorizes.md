@@ -155,9 +155,11 @@ import is a follow-up that changes no behaviour.
 - cap-process must stop reading roles from token claims, as part of its
   migration to the application-scoped model (issues #29 and #31). Until then
   its authenticated endpoints reject the new tokens.
-- Users exist in `core.users` from their first request; the periodic sync is
-  needed before an administrator can assign roles to someone who has never
-  signed in.
+- Users exist in `core.users` from their first request. With the read-only
+  Keycloak client `dxos-directory` (`view-users` only), `dxos-authz` also mirrors
+  the realm's people when an operator lists accounts, so roles and a department
+  can be given before a first sign-in (#188). People are still created only in
+  Keycloak, or in the directory it federates; the platform never writes there.
 
 ## Alternatives considered
 

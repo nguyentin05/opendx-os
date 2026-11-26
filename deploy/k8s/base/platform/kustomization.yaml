@@ -10,6 +10,7 @@ resources:
 - postgres/statefulset.yaml
 - keycloak/configmap.yaml
 - keycloak/deployment.yaml
+- keycloak/job.yaml
 - keycloak/pvc.yaml
 - keycloak/service.yaml
 - authz/deployment.yaml

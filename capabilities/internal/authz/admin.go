@@ -118,7 +118,9 @@ func (r *Resolver) changeRole(ctx context.Context, s *Session, user, role string
 // registerAdmin adds the operator endpoints:
 //
 //	GET    /api/auth/roles                          every role in force
-//	GET    /api/auth/users                          accounts and the roles they hold
+//	GET    /api/auth/users                          accounts and the roles they hold, including
+//	                                                people of the identity provider who have not
+//	                                                signed in yet (when MirrorAccounts was called)
 //	PUT    /api/auth/users/{user_id}/roles/{role}   grant
 //	DELETE /api/auth/users/{user_id}/roles/{role}   revoke
 func registerAdmin(mux *http.ServeMux, r *Resolver) {
@@ -152,6 +154,7 @@ func registerAdmin(mux *http.ServeMux, r *Resolver) {
 		if _, ok := operator(w, req); !ok {
 			return
 		}
+		r.syncAccounts(req.Context())
 		users, err := r.directory.Users(req.Context())
 		if err != nil {
 			unavailable(w, err)

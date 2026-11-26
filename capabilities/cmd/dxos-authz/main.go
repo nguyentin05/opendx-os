@@ -65,6 +65,16 @@ func main() {
 	// Operators manage role assignments here. BOOTSTRAP_OPERATOR_EMAIL names
 	// the account that becomes the first operator of a new installation.
 	resolver.Administer(store, os.Getenv("BOOTSTRAP_OPERATOR_EMAIL"))
+	// With the read-only Keycloak client dxos-directory
+	// (platform/keycloak/directory-client.sh), the operator's account list also
+	// shows people who have not signed in yet.
+	if secret := os.Getenv("KEYCLOAK_DIRECTORY_SECRET"); secret != "" {
+		accounts, err := authz.NewKeycloakAccounts(envOr("KEYCLOAK_URL", "http://keycloak:8085"), envOr("KEYCLOAK_REALM", "dxos"), secret)
+		if err != nil {
+			log.Fatalf("account directory: %v", err)
+		}
+		resolver.MirrorAccounts(accounts)
+	}
 	srv := &http.Server{
 		Addr:              ":" + port,
 		Handler:           authz.Handler(resolver),

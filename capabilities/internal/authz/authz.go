@@ -104,6 +104,11 @@ type Resolver struct {
 	// Role administration; nil unless Administer was called.
 	directory      Directory
 	bootstrapEmail string
+
+	// People who have not signed in yet; nil unless MirrorAccounts was called.
+	accounts Accounts
+	syncMu   sync.Mutex
+	synced   time.Time
 }
 
 type cached struct {

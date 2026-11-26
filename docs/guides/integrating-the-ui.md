@@ -285,7 +285,10 @@ reasons are shown as the API returns them.
 A change shows in the user's `/api/auth/me` and GraphQL at once and in
 cap-process within a few seconds, without a new sign-in. Every change is
 recorded with the operator who made it. An account is listed once it has signed
-in.
+in, or, when the installation sets `KEYCLOAK_DIRECTORY_SECRET`, as soon as it
+exists in Keycloak: listing reads the identity provider (at most every 10 s), so
+an operator can grant roles before the person's first sign-in. Accounts
+themselves are created in Keycloak or the directory it federates, never here.
 
 ### Departments and staff (cap-hr)
 

@@ -198,6 +198,12 @@ echo "S3_SECRET_ACCESS_KEY=$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0
 Keep the file: PostgreSQL takes its passwords only when it first initializes its
 volume.
 
+`KEYCLOAK_DIRECTORY_SECRET` lets operators see people who have not signed in
+yet, to grant them roles: the Job `keycloak-directory` sets up the read-only
+Keycloak client `dxos-directory` (`view-users`) with it. A secrets file written
+before that key existed needs it added:
+`echo "KEYCLOAK_DIRECTORY_SECRET=$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 32)" >> ~/dxos-k8s.env`.
+
 ### Deploy
 
 ```bash

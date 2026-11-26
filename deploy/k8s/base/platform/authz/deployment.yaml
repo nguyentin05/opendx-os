@@ -47,6 +47,12 @@ spec:
           value: 5s
         - name: BOOTSTRAP_OPERATOR_EMAIL
           valueFrom: {configMapKeyRef: {name: dxos-public, key: BOOTSTRAP_OPERATOR_EMAIL}}
+        # Reads the realm's users (view-users only) through the Keycloak client
+        # set up by the keycloak-directory Job.
+        - name: KEYCLOAK_URL
+          value: http://keycloak:8085
+        - name: KEYCLOAK_DIRECTORY_SECRET
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: KEYCLOAK_DIRECTORY_SECRET}}
         ports:
         - containerPort: 8090
           name: http
