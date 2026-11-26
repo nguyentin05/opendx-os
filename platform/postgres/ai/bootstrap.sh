@@ -13,9 +13,12 @@ GRANT USAGE ON SCHEMA core TO dxos_ai_owner;
 GRANT SELECT (id, status), UPDATE (display_name) ON core.users TO dxos_ai_owner;
 GRANT SELECT (user_id, role_name), UPDATE (granted_at) ON core.user_roles TO dxos_ai_owner;
 GRANT SELECT (name, app_id, cap_id) ON core.roles TO dxos_ai_owner;
-GRANT SELECT (app_id, status) ON core.apps TO dxos_ai_owner;
+GRANT SELECT (app_id, status, spec, publication_generation) ON core.apps TO dxos_ai_owner;
 GRANT SELECT (cap_id, enabled) ON core.capabilities TO dxos_ai_owner;
-GRANT REFERENCES (id) ON core.users TO dxos_ai_owner;
+GRANT SELECT (app_id, cap_id) ON core.app_capabilities TO dxos_ai_owner;
+GRANT SELECT (id, app_id, file_name, sha256_hash, size_bytes, mime_type, scan_status,
+    uploaded_by, read_policy) ON core.files TO dxos_ai_owner;
+GRANT REFERENCES (id) ON core.users, core.files TO dxos_ai_owner;
 GRANT REFERENCES (app_id) ON core.apps TO dxos_ai_owner;
 CREATE ROLE dxos_ai_broker LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
 ALTER ROLE dxos_ai_broker PASSWORD :'broker_pw';

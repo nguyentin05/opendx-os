@@ -74,7 +74,14 @@ services:
       OIDC_JWKS_URL: ${OIDC_JWKS_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/certs}
       OIDC_AUDIENCE: ${OIDC_AUDIENCE:-dxos-runtime}
       RAG_DISPATCHER_SERVICE_SUBJECT: ${RAG_DISPATCHER_SERVICE_SUBJECT:?set the dispatcher OIDC subject}
-      RAG_FILE_API_URL: http://cap-process:8081
+      RAG_PACKAGE_ARTIFACT_ROOT: /var/lib/dxos/package-artifacts
+    volumes:
+      - type: volume
+        source: package-artifacts
+        target: /var/lib/dxos/package-artifacts
+        read_only: true
+        volume:
+          nocopy: true
     healthcheck:
       test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8084/readyz', timeout=3)"]
       interval: 5s

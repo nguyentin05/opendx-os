@@ -3,19 +3,27 @@
 
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from dxos_ai.config import settings
 from dxos_ai.database import get_session
+from dxos_ai.knowledge.documents import router as document_router
+from dxos_ai.knowledge.sources import router as internal_router
 from dxos_ai.models.gateway import router as model_router
 
 
 def create_app() -> FastAPI:
     settings()
     app = FastAPI(title="OpenDX-OS AI", docs_url=None, redoc_url=None, openapi_url=None)
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request: Request, error: RequestValidationError) -> JSONResponse:
+        return JSONResponse({"error": {"code": "INVALID_REQUEST"}}, status_code=422)
 
     @app.get("/healthz")
     def health() -> dict[str, str]:
@@ -32,4 +40,6 @@ def create_app() -> FastAPI:
         return {"status": "ready"}
 
     app.include_router(model_router)
+    app.include_router(document_router)
+    app.include_router(internal_router)
     return app
