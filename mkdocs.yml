@@ -291,6 +291,7 @@ nav:
       - Overview: operations/index.md
       - Installation: operations/installation.md
       - Backup and restore: operations/backup-restore.md
+      - Kubernetes: operations/kubernetes.md
   - Contribute:
       - Overview: contribute/index.md
       - Verification: contribute/verification.md

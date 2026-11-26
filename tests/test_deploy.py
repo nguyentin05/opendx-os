@@ -91,6 +91,25 @@ class ApplyScript(unittest.TestCase):
             self.assertNotIn('dxos_s3_', s3)
             self.assertIn(secrets['S3_SECRET_ACCESS_KEY'], s3)
             self.assertIn('@postgres.dxos.svc:5432/dxos_db', (capture / 'operator.env').read_text())
+            # Without the optional KEDA password, no dxos-keda; the setup Jobs run again.
+            self.assertNotIn('dxos-keda', calls)
+            self.assertIn('delete job keycloak-directory keda-setup', calls)
+            self.assertLess(calls.index('delete job'), calls.index('kustomize'))
+
+    def test_creates_the_keda_secret_when_given(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env = env_file(directory)
+            env.write_text(env.read_text() + 'KEDA_DATABASE_PASSWORD=K3daK3daK3daK3daK3da\n')
+            result, capture = self.run_script(directory, env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(' dxos-keda ', (capture / 'calls').read_text())
+            self.assertEqual((capture / 'keda.env').read_text(), 'KEDA_DATABASE_PASSWORD=K3daK3daK3daK3daK3da\n')
+        with tempfile.TemporaryDirectory() as directory:
+            env = env_file(directory)
+            env.write_text(env.read_text() + 'KEDA_DATABASE_PASSWORD=short\n')
+            result, capture = self.run_script(directory, env)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn('KEDA_DATABASE_PASSWORD', result.stderr)
 
 
 class GeneratedConfigMaps(unittest.TestCase):
