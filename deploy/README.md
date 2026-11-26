@@ -286,11 +286,11 @@ move behind `cap-hr-app` and `cap-process-app`.
      --set interceptor.readinessTimeout=60s
    ```
 
-2. Create the scaler's database password:
+2. Add the scaler's database password to the secrets file; `apply.sh` turns it
+   into the Secret `dxos-keda`:
 
    ```bash
-   kubectl -n dxos create secret generic dxos-keda \
-     --from-literal=KEDA_DATABASE_PASSWORD="$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 32)"
+   echo "KEDA_DATABASE_PASSWORD=$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 32)" >> ~/dxos-k8s.env
    ```
 
 3. Add `components: [../../components/keda]` to your overlay and apply it.
@@ -313,8 +313,8 @@ Measured on the EKS test cluster (2026-11-26, KEDA 2.21.1, HTTP add-on 0.16.0):
 
 A service stops five minutes after its last work (ClamAV after ten, since
 loading its signatures takes a while). The first scan after a quiet period
-therefore takes a minute or two, longer than the minute `seed-demo.py` waits
-for it. A file that never scans (its object missing, for example) keeps ClamAV
+therefore takes a minute or two; `seed-demo.py` waits up to three minutes for
+it (`SCAN_WAIT_SECONDS`). A file that never scans (its object missing, for example) keeps ClamAV
 and cap-process running, as it would without KEDA. Without the component the
 manifests are unchanged and every service always runs.
 
@@ -495,5 +495,9 @@ rollback of the Deployment. Back up `dxos_keycloak` with the other databases.
 - cap-ai and the RAG services are not deployed; requests to `/api/cap/ai/` fail.
 - `scripts/seed-demo.py` and the `scripts/test-*.sh` probes target the Compose
   ports and have not been adapted.
+- Keycloak runs `start-dev` with its file store, as in Compose (#170).
+- Demo data comes from `scripts/k8s/seed-demo.sh`, and `scripts/test-identity.sh`
+  runs against the public hosts. The other `scripts/test-*.sh` probes still
+  assume Compose. Day-to-day operation: [Operate on Kubernetes](../docs/operations/kubernetes.md).
 - Only the EKS overlay has run on a cluster; GKE, AKS and on-premises are checked
   by `kubectl kustomize` and `tests/test_deploy.py`.
