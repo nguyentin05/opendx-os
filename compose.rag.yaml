@@ -66,6 +66,9 @@ services:
     environment:
       <<: *subjects
       DATABASE_URL: postgres://dxos_ai_api:${AI_DATABASE_PASSWORD}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
+      AI_MODEL_MASTER_KEY: &model-key ${AI_MODEL_MASTER_KEY:-}
+      AI_HOSTED_MODEL_ENDPOINTS: &hosted-endpoints ${AI_HOSTED_MODEL_ENDPOINTS:-[]}
+      AI_LOCAL_MODEL_ENDPOINTS: &local-endpoints ${AI_LOCAL_MODEL_ENDPOINTS:-{}}
       AI_BROKER_URL: &broker-db pgmq://dxos_ai_broker:${AI_BROKER_DATABASE_PASSWORD}@postgres:5432/${POSTGRES_DB:-dxos_db}
       OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-http://localhost:8085/realms/dxos}
       OIDC_JWKS_URL: ${OIDC_JWKS_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/certs}
@@ -88,6 +91,9 @@ services:
     environment:
       DATABASE_URL: postgres://dxos_ai_worker:${AI_WORKER_DATABASE_PASSWORD}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
       AI_BROKER_URL: *broker-db
+      AI_MODEL_MASTER_KEY: *model-key
+      AI_HOSTED_MODEL_ENDPOINTS: *hosted-endpoints
+      AI_LOCAL_MODEL_ENDPOINTS: *local-endpoints
       OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/token}
       RAG_WORKER_CLIENT_ID: ${RAG_WORKER_CLIENT_ID:-dxos-rag-worker}
       RAG_WORKER_CLIENT_SECRET: ${RAG_WORKER_CLIENT_SECRET:-}

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from dxos_ai.config import settings
 from dxos_ai.database import get_session
+from dxos_ai.models.gateway import router as model_router
 
 
 def create_app() -> FastAPI:
@@ -30,4 +31,5 @@ def create_app() -> FastAPI:
             raise HTTPException(503, "AI database migration required")
         return {"status": "ready"}
 
+    app.include_router(model_router)
     return app
