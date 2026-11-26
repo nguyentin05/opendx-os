@@ -35,7 +35,19 @@ class WorkspaceUIImage(unittest.TestCase):
     def test_runtime_stage_is_pinned_and_renders_the_template(self):
         self.assertRegex(self.dockerfile, r'FROM nginxinc/nginx-unprivileged:[\w.-]+@sha256:[0-9a-f]{64}')
         self.assertIn('COPY nginx.conf /etc/nginx/templates/default.conf.template', self.dockerfile)
-        self.assertIn('ENV DXOS_OIDC_ORIGIN=', self.dockerfile)
+        self.assertIn('DXOS_OIDC_ORIGIN=', self.dockerfile)
+
+    def test_sign_in_settings_come_from_the_deployment(self):
+        # One image serves any host: the issuer is rendered at start, not built in.
+        location = re.search(r'location = /config\.js \{(.*?)\n    \}', self.conf, re.S).group(1)
+        self.assertIn('window.DXOS_CONFIG={issuer:"${DXOS_OIDC_ISSUER}",clientID:"${DXOS_OIDC_CLIENT_ID}"}',
+                      location)
+        self.assertIn('default_type application/javascript;', location)
+        self.assertIn('expires -1;', location)
+        for name in ('DXOS_OIDC_ISSUER=', 'DXOS_OIDC_CLIENT_ID='):
+            self.assertIn(name, self.dockerfile)
+        html = (ROOT / 'workspace-ui/index.html').read_text()
+        self.assertLess(html.index('<script src="/config.js"></script>'), html.index('type="module"'))
 
 
 if __name__ == '__main__':

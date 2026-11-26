@@ -3,7 +3,7 @@
 # Example overlay for Google Kubernetes Engine (GKE). Reference only: it has not
 # been run on a cluster, and nothing in deploy/k8s/base depends on it. It uses
 # GKE's built-in Ingress controller, a Google-managed certificate and balanced
-# persistent disks. Set the five values under dxos-public to your domain.
+# persistent disks. Set the six values under dxos-public to your domain.
 resources:
 - ../../base
 - storageclass.yaml
@@ -22,6 +22,7 @@ configMapGenerator:
   - KEYCLOAK_HOSTNAME=https://auth.example.com
   - OIDC_ISSUER_URL=https://auth.example.com/realms/dxos
   - DXOS_OIDC_ORIGIN=https://auth.example.com
+  - DXOS_APP_URL=https://app.example.com
 # Load balancer health checks per backend (backendconfig.yaml).
 patches:
 - target: {kind: Service, name: apisix}

@@ -94,10 +94,21 @@ The Compose files:
 
    The Workspace UI sends a `Content-Security-Policy` that lets the browser call
    only its own origin and the Keycloak origin in `DXOS_OIDC_ORIGIN` (default
-   `http://localhost:8085`). If Keycloak is served from another origin, set
-   `DXOS_OIDC_ORIGIN` in the environment of `docker compose` (for example
-   `DXOS_OIDC_ORIGIN=https://id.example.org`), or as a container environment
-   variable when you run the image elsewhere.
+   `http://localhost:8085`), and signs in with the realm in `OIDC_ISSUER_URL`,
+   which it reads from `/config.js` at start-up. To serve the platform on other
+   addresses, set these in the environment of `docker compose` (or as container
+   environment variables when you run the images elsewhere), for example:
+
+   ```bash
+   KEYCLOAK_HOSTNAME=https://id.example.org
+   OIDC_ISSUER_URL=https://id.example.org/realms/dxos
+   DXOS_OIDC_ORIGIN=https://id.example.org
+   DXOS_APP_URL=https://app.example.org
+   ```
+
+   `DXOS_APP_URL` is the Workspace UI address that the realm import accepts as a
+   sign-in redirect; like the other realm settings it only applies to a new
+   `keycloak-data` volume. Browsers sign in only on HTTPS or `localhost`.
 
    For a demo organization, run `scripts/seed-demo.py seed`. It creates three
    departments and six Keycloak accounts (password `DEMO_PASSWORD`, default

@@ -45,6 +45,9 @@ spec:
         - name: KC_HOSTNAME
           valueFrom: {configMapKeyRef: {name: dxos-public, key: KEYCLOAK_HOSTNAME}}
         # TLS ends at the load balancer, which sets X-Forwarded-*.
+        # The realm import allows sign-in redirects back to the Workspace UI here.
+        - name: DXOS_APP_URL
+          valueFrom: {configMapKeyRef: {name: dxos-public, key: DXOS_APP_URL}}
         - name: KC_PROXY_HEADERS
           value: xforwarded
         - name: KC_HTTP_PORT

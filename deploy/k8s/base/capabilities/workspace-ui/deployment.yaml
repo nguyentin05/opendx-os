@@ -30,6 +30,8 @@ spec:
           capabilities:
             drop: [ALL]
         env:
+        - name: DXOS_OIDC_ISSUER
+          valueFrom: {configMapKeyRef: {name: dxos-public, key: OIDC_ISSUER_URL}}
         - name: DXOS_OIDC_ORIGIN
           valueFrom: {configMapKeyRef: {name: dxos-public, key: DXOS_OIDC_ORIGIN}}
         ports:

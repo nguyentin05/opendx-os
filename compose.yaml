@@ -150,6 +150,8 @@ services:
       # Tokens must carry the same issuer the services verify, even when they
       # are requested from another container over the internal hostname.
       KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-http://localhost:8085}
+      # Address of the Workspace UI, allowed as a sign-in redirect by the realm import.
+      DXOS_APP_URL: ${DXOS_APP_URL:-http://localhost:5173}
       KC_HTTP_PORT: 8085
       KC_HEALTH_ENABLED: "true"
     ports:
@@ -317,7 +319,9 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      # Keycloak origin the browser may call (Content-Security-Policy connect-src).
+      # Realm the UI signs in with, and its origin the browser may call
+      # (Content-Security-Policy connect-src).
+      DXOS_OIDC_ISSUER: ${OIDC_ISSUER_URL:-http://localhost:8085/realms/dxos}
       DXOS_OIDC_ORIGIN: ${DXOS_OIDC_ORIGIN:-http://localhost:8085}
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${WORKSPACE_UI_PORT:-5173}:8080"

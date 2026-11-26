@@ -21,6 +21,7 @@ configMapGenerator:
   - KEYCLOAK_HOSTNAME=http://localhost:8085
   - OIDC_ISSUER_URL=http://localhost:8085/realms/dxos
   - DXOS_OIDC_ORIGIN=http://localhost:8085
+  - DXOS_APP_URL=http://localhost:5173
   - KESTRA_USER=admin@dxos.local
   - BOOTSTRAP_OPERATOR_EMAIL=
 images:
