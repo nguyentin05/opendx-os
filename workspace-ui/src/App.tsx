@@ -4,9 +4,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { endKeycloakSession, endSession, finishSignIn, registerSession, signIn, signedInMarker, watchSession } from './auth';
 import type { Session } from './auth';
-import { canAdministerPeople, toTableURL, useWorkspaceRoute } from './core/routes';
+import { canAdministerOrganization, canAdministerPeople, toTableURL, useWorkspaceRoute } from './core/routes';
 import type { WorkspaceRoute } from './core/routes';
 import { resolveAppRole, useSessionContext } from './core/session-context';
+import { listAccounts } from './features/admin/client';
 import { People } from './features/admin/People';
 import { AgentDrawer, agentDrawerID } from './features/agent/AgentDrawer';
 import type { Pending } from './features/agent/AgentChat';
@@ -20,6 +21,7 @@ import { MyWorkspace } from './features/home/MyWorkspace';
 import { targetURL, updateRecentTargets, workTarget } from './features/home/recent';
 import type { RecentTarget } from './features/home/recent';
 import type { WorkItem } from './features/home/work-items';
+import { Organization } from './features/hr/Organization';
 import { AppKnowledge } from './features/knowledge/AppKnowledge';
 import { PersonalLibrary } from './features/knowledge/PersonalLibrary';
 import { allowsPersonalLibrary, hasAppKnowledge, knowledgeOnlyView } from './features/knowledge/routes';
@@ -267,7 +269,19 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
       return <MyWork session={session} onOpenWorkItem={openWorkItem} />;
     }
     if (route.kind === 'people' && canAdministerPeople(session.user)) {
-      return <People key={session.user.id} token={token} />;
+      return <People
+        key={session.user.id}
+        token={token}
+        onOpenDepartments={canAdministerOrganization(session.user) ? go : undefined}
+      />;
+    }
+    if (route.kind === 'organization' && canAdministerOrganization(session.user)) {
+      return <Organization
+        key={JSON.stringify([session.user.id, route.userID])}
+        token={token}
+        initialUserID={route.userID}
+        loadAccounts={canAdministerPeople(session.user) ? listAccounts : undefined}
+      />;
     }
     if (route.kind !== 'app' || targetDenied || !context || (requestedTable && !table)) {
       return (

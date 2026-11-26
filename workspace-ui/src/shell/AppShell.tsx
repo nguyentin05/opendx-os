@@ -5,7 +5,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import type { MouseEvent, ReactNode } from 'react';
 import type { Session } from '../auth';
 import { roleLabel } from '../core/labels';
-import { canAdministerPeople } from '../core/routes';
+import { canAdministerOrganization, canAdministerPeople } from '../core/routes';
 import type { WorkspaceRoute } from '../core/routes';
 import { resolveAppRole } from '../core/session-context';
 import type { AppRoleContext } from '../core/session-context';
@@ -134,6 +134,11 @@ export function AppShell({
         {session && canAdministerPeople(session.user) && (
           <WorkspaceLink href="/people" onNavigate={go} current={!auxiliaryViewActive && route.kind === 'people'}>
             Người dùng & quyền
+          </WorkspaceLink>
+        )}
+        {session && canAdministerOrganization(session.user) && (
+          <WorkspaceLink href="/organization" onNavigate={go} current={!auxiliaryViewActive && route.kind === 'organization'}>
+            Tổ chức
           </WorkspaceLink>
         )}
         {apps.length > 0 && (

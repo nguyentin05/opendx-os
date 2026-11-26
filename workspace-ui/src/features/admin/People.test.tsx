@@ -128,3 +128,17 @@ it('hides the people link and page without role_operator', () => {
   expect(screen.getByRole('heading', { name: 'Không thể truy cập' })).toBeTruthy();
   expect(fetch.mock.calls.some(([url]) => String(url).startsWith('/api/auth/users'))).toBe(false);
 });
+
+it('links an account to the organization screen only when the viewer may use it', async () => {
+  directory();
+  const onOpenDepartments = vi.fn();
+  const { unmount } = render(<People token="tok" />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Quản lý An Nguyễn' }));
+  expect(screen.queryByRole('link', { name: 'Xếp phòng ban' })).toBeNull();
+  unmount();
+
+  render(<People token="tok" onOpenDepartments={onOpenDepartments} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Quản lý An Nguyễn' }));
+  fireEvent.click(screen.getByRole('link', { name: 'Xếp phòng ban' }));
+  expect(onOpenDepartments).toHaveBeenCalledWith('/organization?user=u-an');
+});

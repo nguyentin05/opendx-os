@@ -290,7 +290,13 @@ in.
 ### Departments and staff (cap-hr)
 
 Reads are for every signed-in user; changes need the capability role
-`role_hr_admin` (403 otherwise).
+`role_hr_admin` (403 otherwise). In the portal, users holding a cap-hr role see
+**Tổ chức** (`/organization`): the department tree with staff counts, create
+and edit a department, the staff of the selected department, and place, move
+or remove a person. Picking a person lists every account only for a viewer who
+also holds `role_operator`; otherwise it offers people already in a department.
+From an account in **Người dùng & quyền**, **Xếp phòng ban** opens this screen
+with that person selected (`/organization?user=<id>`).
 
 | Call | Does |
 | --- | --- |
@@ -335,8 +341,5 @@ is interrupted.
   no service route yet. See [Work items](#7-work-items) for reads.
 - Accounts that have never signed in are not listed for role assignment
   (account sync, #23).
-- The portal has no screen for departments; use the calls in
-  [Departments and staff](#departments-and-staff-cap-hr), or
-  `scripts/seed-demo.py org` on a demo stack.
 - The portal cannot create accounts yet (#188).
 - Custom dashboards, board and calendar views, and an Assistant model picker.

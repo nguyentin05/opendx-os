@@ -2,6 +2,7 @@
 // Copyright 2026 DX-OS Open-Core Contributors
 
 import { useEffect, useRef, useState } from 'react';
+import { WorkspaceLink } from '../../shell/AppShell';
 import { changeRole, listAccounts, listRoles } from './client';
 import type { Account, GrantableRole } from './client';
 
@@ -14,7 +15,11 @@ function owner(role: GrantableRole | undefined): string {
   return 'Nền tảng';
 }
 
-export function People({ token }: { token: string }) {
+export function People({ token, onOpenDepartments }: {
+  token: string;
+  // Given when the viewer may also place people in departments (cap-hr).
+  onOpenDepartments?: (href: string) => void;
+}) {
   const [accounts, setAccounts] = useState<Account[]>();
   const [roles, setRoles] = useState<GrantableRole[]>([]);
   const [query, setQuery] = useState('');
@@ -94,6 +99,11 @@ export function People({ token }: { token: string }) {
         <section className="workspace-panel" aria-labelledby="people-account">
           <h2 id="people-account" ref={accountHeading} tabIndex={-1}>{account.display_name}</h2>
           <p>{account.email} · {statuses[account.status] ?? account.status}</p>
+          {onOpenDepartments && (
+            <p><WorkspaceLink href={'/organization?' + new URLSearchParams({ user: account.id })} onNavigate={onOpenDepartments}>
+              Xếp phòng ban
+            </WorkspaceLink></p>
+          )}
           {messages}
           <h3>Vai trò đang giữ</h3>
           {account.roles.length === 0 && <p>Tài khoản này chưa giữ vai trò nào.</p>}
