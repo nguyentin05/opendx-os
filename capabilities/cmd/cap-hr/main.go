@@ -32,11 +32,25 @@ import (
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/authz"
 	"github.com/opendx-os/opendx-os/capabilities/internal/hr"
+	"github.com/opendx-os/opendx-os/capabilities/internal/telemetry"
 )
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	shutdownTelemetry, err := telemetry.Start(ctx, "cap-hr")
+	if err != nil {
+		log.Fatalf("telemetry: %v", err)
+	}
+	defer func() {
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTelemetry(shutdown); err != nil {
+			log.Printf("telemetry shutdown: %v", err)
+		}
+	}()
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8083"
@@ -71,7 +85,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           hr.Handler(sessions, hr.Store{DB: db}),
+		Handler:           telemetry.Handler(hr.Handler(sessions, hr.Store{DB: db})),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {

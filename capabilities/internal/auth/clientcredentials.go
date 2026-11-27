@@ -26,6 +26,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/telemetry"
 )
 
 // TokenGetter returns an access token without the "Bearer " prefix.
@@ -82,7 +84,7 @@ func NewClientCredentials(endpoint, clientID, clientSecret string) (*ClientCrede
 		endpoint:     u.String(),
 		clientID:     clientID,
 		clientSecret: clientSecret,
-		client:       &http.Client{Timeout: 10 * time.Second},
+		client:       &http.Client{Timeout: 10 * time.Second, Transport: telemetry.Client(nil)},
 		now:          time.Now,
 	}, nil
 }

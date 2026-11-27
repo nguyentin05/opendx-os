@@ -36,11 +36,24 @@ import (
 	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 	"github.com/opendx-os/opendx-os/capabilities/internal/process"
 	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
+	"github.com/opendx-os/opendx-os/capabilities/internal/telemetry"
 )
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	shutdownTelemetry, err := telemetry.Start(ctx, "cap-process")
+	if err != nil {
+		log.Fatalf("telemetry: %v", err)
+	}
+	defer func() {
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTelemetry(shutdown); err != nil {
+			log.Printf("telemetry shutdown: %v", err)
+		}
+	}()
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8081"
@@ -123,7 +136,11 @@ func main() {
 	}
 	// Events go to the flow the operator deployed for their application
 	// (core.app_workflows), so installing an application needs no restart here.
-	client := &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+	client := &http.Client{
+		Timeout:       20 * time.Second,
+		Transport:     telemetry.Client(nil),
+		CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse },
+	}
 	publisher, err := events.NewPublisher(db, client, events.Config{
 		BaseURL:    os.Getenv("KESTRA_URL"),
 		User:       os.Getenv("KESTRA_USER"),
@@ -184,7 +201,7 @@ func main() {
 	mux.Handle("POST /api/cap/process/effects/work-item", effects)
 
 	log.Printf("[cap-process] Listening on port %s", port)
-	server := &http.Server{Addr: ":" + port, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	server := &http.Server{Addr: ":" + port, Handler: telemetry.Handler(mux), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
