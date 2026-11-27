@@ -14,7 +14,8 @@ data:
         # GraphQL subscriptions (live updates) use a WebSocket on the same path.
         enable_websocket: true
         plugins:
-          opentelemetry: {}
+          opentelemetry:
+            sampler: {name: always_on}
           prometheus: {}
           cors:
             allow_origins: "http://localhost:5173,http://localhost:15173"
@@ -66,7 +67,8 @@ data:
         uri: /api/cap/process/effects/*
         priority: 10
         plugins:
-          opentelemetry: {}
+          opentelemetry:
+            sampler: {name: always_on}
           prometheus: {}
           response-rewrite:
             status_code: 404
@@ -82,7 +84,8 @@ data:
       - id: cap-process-commands
         uri: /api/cap/process/*
         plugins:
-          opentelemetry: {}
+          opentelemetry:
+            sampler: {name: always_on}
           prometheus: {}
           cors:
             allow_origins: "http://localhost:5173,http://localhost:15173"
@@ -102,7 +105,8 @@ data:
       - id: cap-ai
         uri: /api/cap/ai/*
         plugins:
-          opentelemetry: {}
+          opentelemetry:
+            sampler: {name: always_on}
           prometheus: {}
           cors:
             allow_origins: "http://localhost:5173,http://localhost:15173"
@@ -131,7 +135,8 @@ data:
       - id: cap-hr
         uri: /api/cap/hr/*
         plugins:
-          opentelemetry: {}
+          opentelemetry:
+            sampler: {name: always_on}
           prometheus: {}
           cors:
             allow_origins: "http://localhost:5173,http://localhost:15173"
@@ -151,7 +156,8 @@ data:
       - id: authz-me
         uri: /api/auth/*
         plugins:
-          opentelemetry: {}
+          opentelemetry:
+            sampler: {name: always_on}
           prometheus: {}
           cors:
             allow_origins: "http://localhost:5173,http://localhost:15173"
@@ -165,7 +171,8 @@ data:
       - id: keycloak-oidc
         uri: /realms/*
         plugins:
-          opentelemetry: {}
+          opentelemetry:
+            sampler: {name: always_on}
           prometheus: {}
         upstream:
           type: roundrobin

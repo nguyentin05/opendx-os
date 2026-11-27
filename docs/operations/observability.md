@@ -58,13 +58,13 @@ Kestra and Keycloak have their own switches:
 On Compose these are read from `.env`; see `.env.example`. On Kubernetes the
 opt-in component described below sets them.
 
-APISIX loads the `opentelemetry` plugin on every route but its sampler defaults
-to `always_off`: enable sampling by giving a route or global rule
-`opentelemetry: {sampler: {name: always_on}}`. The Collector address comes from
-`OTEL_COLLECTOR_ADDRESS`; the APISIX config default is `127.0.0.1:4318`. If the
-collector is unreachable, span export is asynchronous and requests continue;
-APISIX logs export errors. The Prometheus endpoint is enabled unconditionally
-and only listens on the internal network.
+APISIX loads the `opentelemetry` plugin on every route with the `always_on`
+sampler, so a Collector receives its spans and `traceparent` reaches the
+upstream. The Collector address comes from `OTEL_COLLECTOR_ADDRESS`; the APISIX
+config default is `127.0.0.1:4318`. Span export uses an asynchronous batch
+processor: with no Collector listening, APISIX logs export errors and requests
+continue. The Prometheus endpoint on `:9091` is enabled unconditionally and only
+listens on the internal network.
 
 ## Kubernetes component
 
