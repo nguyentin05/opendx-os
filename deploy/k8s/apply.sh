@@ -40,8 +40,14 @@ SECRETS=(
     AUTHZ_DATABASE_PASSWORD
     HR_DATABASE_PASSWORD
     KEYCLOAK_DIRECTORY_SECRET
+    KEYCLOAK_DATABASE_PASSWORD
     S3_ACCESS_KEY_ID
     S3_SECRET_ACCESS_KEY
+)
+# Only for components/keda: the scaler's database login. Without it, create the
+# Secret dxos-keda yourself or leave the component out.
+OPTIONAL=(
+    KEDA_DATABASE_PASSWORD
 )
 
 die() { echo "[deploy] ERROR: $*" >&2; exit 1; }
@@ -55,7 +61,7 @@ env_file="$2"
 # Read only the secret keys; the file is data, never executed.
 declare -A value
 while IFS= read -r line || [ -n "$line" ]; do
-    for key in "${SECRETS[@]}"; do
+    for key in "${SECRETS[@]}" "${OPTIONAL[@]}"; do
         if [[ "$line" == "$key="* ]]; then
             value[$key]="${line#*=}"
         fi
@@ -66,6 +72,10 @@ for key in "${SECRETS[@]}"; do
     # Letters and digits only: the values are embedded in connection URLs.
     [[ "${value[$key]:-}" =~ ^[A-Za-z0-9]{16,}$ ]] ||
         die "$key in $env_file must be at least 16 letters or digits (development defaults are refused)"
+done
+for key in "${OPTIONAL[@]}"; do
+    [ -z "${value[$key]:-}" ] || [[ "${value[$key]}" =~ ^[A-Za-z0-9]{16,}$ ]] ||
+        die "$key in $env_file must be at least 16 letters or digits"
 done
 
 command -v "$KUBECTL" >/dev/null || die "kubectl is required"
@@ -106,5 +116,17 @@ EOF
 "$KUBECTL" -n "$OPERATOR_NS" create secret generic dxos-operator-config --from-env-file="$tmp/operator.env" \
     --dry-run=client -o yaml | apply
 
+if [ -n "${value[KEDA_DATABASE_PASSWORD]:-}" ]; then
+    printf 'KEDA_DATABASE_PASSWORD=%s\n' "${value[KEDA_DATABASE_PASSWORD]}" >"$tmp/keda.env"
+    "$KUBECTL" -n "$NS" create secret generic dxos-keda --from-env-file="$tmp/keda.env" \
+        --dry-run=client -o yaml | apply
+fi
+
+# The setup Jobs (Keycloak's read-only client, the KEDA login) run once each;
+# removing finished ones runs them again with the secrets just applied. Both
+# are idempotent.
+"$KUBECTL" -n "$NS" delete job keycloak-directory keda-setup --ignore-not-found --interactive=false >/dev/null
+
 "$KUBECTL" kustomize "$overlay" | apply
 echo "[deploy] applied $overlay; watch: $KUBECTL -n $NS get pods -w"
+echo "[deploy] after changing a secret, restart what reads it: $KUBECTL -n $NS rollout restart deployment"

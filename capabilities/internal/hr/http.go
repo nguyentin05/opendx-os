@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/authz"
+	"github.com/opendx-os/opendx-os/capabilities/internal/telemetry"
 )
 
 var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -98,7 +99,7 @@ func (h handler) caller(w http.ResponseWriter, req *http.Request, admin bool) (*
 		fail(w, http.StatusUnauthorized, "invalid token or disabled account")
 		return nil, false
 	case err != nil:
-		log.Printf("authorization lookup failed: %v", err)
+		telemetry.Logger(req.Context()).Error("authorization lookup failed", "error", err)
 		fail(w, http.StatusServiceUnavailable, "authorization unavailable")
 		return nil, false
 	}

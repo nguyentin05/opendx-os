@@ -48,7 +48,18 @@ deploy/k8s/
   components/
     gateway-routes/     the public routes as Gateway API HTTPRoutes, shared by aks and onprem
     keda/               opt-in: Tier 2 services and ClamAV run only while they have work (needs KEDA)
+    otel/               opt-in: OpenTelemetry variables, scrape annotations and an example Collector
 ```
+
+## Observability
+
+`components/otel` turns on traces, metrics and JSON logs for the Go services,
+Keycloak, Kestra and APISIX, and points them at an OpenTelemetry Collector you
+operate. It is off unless an overlay lists it under `components:`; the base
+renders exactly as before. The Collector itself is not deployed by the platform:
+copy and adapt `components/otel/collector-example.yaml`. See
+[docs/operations/observability.md](../docs/operations/observability.md) for the
+variables, what each component emits and the Hasura CE limits.
 
 Each service folder holds one object per file: `service.yaml`,
 `deployment.yaml` (`statefulset.yaml` for PostgreSQL), `pvc.yaml` when it keeps
@@ -286,11 +297,11 @@ move behind `cap-hr-app` and `cap-process-app`.
      --set interceptor.readinessTimeout=60s
    ```
 
-2. Create the scaler's database password:
+2. Add the scaler's database password to the secrets file; `apply.sh` turns it
+   into the Secret `dxos-keda`:
 
    ```bash
-   kubectl -n dxos create secret generic dxos-keda \
-     --from-literal=KEDA_DATABASE_PASSWORD="$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 32)"
+   echo "KEDA_DATABASE_PASSWORD=$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 32)" >> ~/dxos-k8s.env
    ```
 
 3. Add `components: [../../components/keda]` to your overlay and apply it.
@@ -313,8 +324,8 @@ Measured on the EKS test cluster (2026-11-26, KEDA 2.21.1, HTTP add-on 0.16.0):
 
 A service stops five minutes after its last work (ClamAV after ten, since
 loading its signatures takes a while). The first scan after a quiet period
-therefore takes a minute or two, longer than the minute `seed-demo.py` waits
-for it. A file that never scans (its object missing, for example) keeps ClamAV
+therefore takes a minute or two; `seed-demo.py` waits up to three minutes for
+it (`SCAN_WAIT_SECONDS`). A file that never scans (its object missing, for example) keeps ClamAV
 and cap-process running, as it would without KEDA. Without the component the
 manifests are unchanged and every service always runs.
 
@@ -458,11 +469,46 @@ from `components/gateway-routes`. Set the six `dxos-public` values in
 `deploy/k8s/apply.sh deploy/k8s/overlays/onprem ~/dxos-k8s.env`, and point both
 hosts at the Gateway's address (`kubectl -n dxos get gateway dxos`).
 
+## Keycloak in production mode
+
+On Kubernetes, Keycloak runs `start` (production mode) on its own PostgreSQL
+database `dxos_keycloak`, owned by the login `dxos_keycloak` whose password is
+`KEYCLOAK_DATABASE_PASSWORD`. The init container `database` of the Keycloak Pod
+creates the login and the database when missing and sets the password at every
+start, on a new or a running installation. Compose keeps `start-dev` with a file
+store for local work. The admin console answers only through
+`kubectl -n dxos port-forward svc/keycloak 8085:8085`, at
+`http://localhost:8085/admin`.
+
+A deployment made before this change kept its accounts in the file store on the
+volume `keycloak-data`. Move them once, keeping every account id, so that
+records stay with their owners:
+
+1. Add `KEYCLOAK_DATABASE_PASSWORD` to the secrets file and run `apply.sh`.
+2. Scale Keycloak to zero. In a Pod of the Keycloak image that mounts
+   `keycloak-data` at `/opt/keycloak/data`, run
+   `kc.sh export --dir /tmp/export --realm dxos --users realm_file`, and copy
+   `dxos-realm.json` out. It holds password hashes and client secrets, so keep
+   it like a secret.
+3. In a Pod of the Keycloak image with the `KC_DB*` variables of the Deployment,
+   and the init container above, run `kc.sh import --file dxos-realm.json`,
+   with the file mounted from a temporary Secret. Then run
+   `kc.sh bootstrap-admin user --username admin --password:env KC_BOOTSTRAP_ADMIN_PASSWORD`
+   with `KC_BOOTSTRAP_ADMIN_PASSWORD` from `KEYCLOAK_ADMIN_PASSWORD`, since the
+   import creates realm `master` without an administrator.
+4. Scale Keycloak to one. It logs `Realm 'dxos' already exists. Import skipped`.
+
+The file store stays on the volume, so going back to the previous release is a
+rollback of the Deployment. Back up `dxos_keycloak` with the other databases.
+
 ## Known gaps
 
 - cap-ai and the RAG services are not deployed; requests to `/api/cap/ai/` fail.
-- Keycloak runs `start-dev` with its file store, as in Compose (#170).
 - `scripts/seed-demo.py` and the `scripts/test-*.sh` probes target the Compose
   ports and have not been adapted.
+- Keycloak runs `start-dev` with its file store, as in Compose (#170).
+- Demo data comes from `scripts/k8s/seed-demo.sh`, and `scripts/test-identity.sh`
+  runs against the public hosts. The other `scripts/test-*.sh` probes still
+  assume Compose. Day-to-day operation: [Operate on Kubernetes](../docs/operations/kubernetes.md).
 - Only the EKS overlay has run on a cluster; GKE, AKS and on-premises are checked
   by `kubectl kustomize` and `tests/test_deploy.py`.

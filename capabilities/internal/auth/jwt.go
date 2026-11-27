@@ -32,6 +32,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/opendx-os/opendx-os/capabilities/internal/telemetry"
 )
 
 // VerifierConfig names the token issuer, the audience tokens must carry, and
@@ -63,7 +65,7 @@ func NewAuthenticator(ctx context.Context, cfg VerifierConfig) (Authenticator, e
 	if cfg.Audience == "" {
 		return nil, errors.New("audience required")
 	}
-	v := &jwtVerifier{cfg: cfg, client: &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	v := &jwtVerifier{cfg: cfg, client: &http.Client{Timeout: 5 * time.Second, Transport: telemetry.Client(nil), CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 	if e := v.refresh(ctx); e != nil {
 		return nil, e
 	}

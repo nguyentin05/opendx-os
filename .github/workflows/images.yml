@@ -135,6 +135,9 @@ jobs:
           load: true
           tags: ${{ matrix.image }}:scan
           cache-from: type=gha,scope=${{ matrix.image }}
+          # A cached `apk upgrade` layer would never pick up new fixes; the
+          # runtime stage is rebuilt every time, the build stages stay cached.
+          no-cache-filters: runtime
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
       - name: Scan image
@@ -164,6 +167,9 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.image }}
+          # A cached `apk upgrade` layer would never pick up new fixes; the
+          # runtime stage is rebuilt every time, the build stages stay cached.
+          no-cache-filters: runtime
 
       - name: Attest image provenance
         if: github.event_name != 'pull_request'

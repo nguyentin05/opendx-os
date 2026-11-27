@@ -165,6 +165,19 @@ Rules to build on:
   increments the record's `version`. Re-read the record before running a
   command on it.
 
+### Live updates
+
+The same queries run as GraphQL subscriptions over a WebSocket on `/v1/graphql`
+(protocol `graphql-transport-ws`). Send the headers in the `connection_init`
+payload: `{"headers": {"Authorization": "Bearer <token>", "X-Hasura-Role": "<role>"}}`.
+One connection carries one role, and Hasura pushes a new result when the data
+changes (about once a second at most). The Workspace UI uses this to reload an
+open list or record when someone else changes it.
+
+The authorization of a connection expires after 60 seconds. Hasura then closes
+the WebSocket, and the client connects again with its current token, so a
+revoked role or a disabled account stops receiving updates within a minute.
+
 ## 5. Change a record's state (commands)
 
 ```
@@ -345,7 +358,6 @@ is interrupted.
 
 - Changing work items (assign, move between columns): `cap_work.work_items` has
   no service route yet. See [Work items](#7-work-items) for reads.
-- Accounts that have never signed in are not listed for role assignment
-  (account sync, #23).
-- The portal cannot create accounts yet (#188).
+- Accounts are created in Keycloak or the directory it federates, not in the
+  portal; they are listed for role assignment before their first sign-in.
 - Custom dashboards, board and calendar views, and an Assistant model picker.

@@ -91,6 +91,25 @@ class ApplyScript(unittest.TestCase):
             self.assertNotIn('dxos_s3_', s3)
             self.assertIn(secrets['S3_SECRET_ACCESS_KEY'], s3)
             self.assertIn('@postgres.dxos.svc:5432/dxos_db', (capture / 'operator.env').read_text())
+            # Without the optional KEDA password, no dxos-keda; the setup Jobs run again.
+            self.assertNotIn('dxos-keda', calls)
+            self.assertIn('delete job keycloak-directory keda-setup', calls)
+            self.assertLess(calls.index('delete job'), calls.index('kustomize'))
+
+    def test_creates_the_keda_secret_when_given(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env = env_file(directory)
+            env.write_text(env.read_text() + 'KEDA_DATABASE_PASSWORD=K3daK3daK3daK3daK3da\n')
+            result, capture = self.run_script(directory, env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(' dxos-keda ', (capture / 'calls').read_text())
+            self.assertEqual((capture / 'keda.env').read_text(), 'KEDA_DATABASE_PASSWORD=K3daK3daK3daK3daK3da\n')
+        with tempfile.TemporaryDirectory() as directory:
+            env = env_file(directory)
+            env.write_text(env.read_text() + 'KEDA_DATABASE_PASSWORD=short\n')
+            result, capture = self.run_script(directory, env)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn('KEDA_DATABASE_PASSWORD', result.stderr)
 
 
 class GeneratedConfigMaps(unittest.TestCase):
@@ -360,3 +379,59 @@ class EveryOverlay(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipUnless(shutil.which('kubectl'), 'kubectl is not installed')
+class OtelComponent(unittest.TestCase):
+    """The telemetry component is opt-in and sets every signal once enabled."""
+
+    @classmethod
+    def setUpClass(cls):
+        def render(path):
+            out = subprocess.run(['kubectl', 'kustomize', str(path)],
+                                 capture_output=True, text=True, check=True).stdout
+            return [d for d in yaml.safe_load_all(out) if d]
+
+        cls.base = render(ROOT / 'deploy/k8s/base')
+        with tempfile.TemporaryDirectory(dir=ROOT / 'deploy/k8s') as directory:
+            Path(directory, 'kustomization.yaml').write_text(
+                'resources:\n- ../base\ncomponents:\n- ../components/otel\n')
+            cls.otel = render(Path(directory))
+
+    @staticmethod
+    def env_by_workload(docs):
+        workloads = {}
+        for d in docs:
+            if d['kind'] == 'Deployment':
+                workloads[d['metadata']['name']] = {
+                    env['name'] for env in d['spec']['template']['spec']['containers'][0].get('env', [])
+                }
+        return workloads
+
+    def test_base_has_no_telemetry_when_the_component_is_absent(self):
+        for name, env in self.env_by_workload(self.base).items():
+            self.assertFalse({v for v in env if v.startswith(('OTEL_', 'KC_TRACING', 'KESTRA_OTEL'))}, name)
+        self.assertFalse(any(d['kind'] == 'ConfigMap' and d['metadata']['name'].startswith('dxos-otel')
+                             for d in self.base))
+        for d in self.base:
+            if d['kind'] == 'Deployment':
+                self.assertNotIn('prometheus.io/scrape',
+                                 d['spec']['template']['metadata'].get('annotations', {}))
+
+    def test_component_enables_every_signal(self):
+        env = self.env_by_workload(self.otel)
+        for service in ('authz', 'cap-hr', 'cap-process'):
+            self.assertLessEqual({'OTEL_EXPORTER_OTLP_ENDPOINT', 'OTEL_SERVICE_NAME',
+                                  'OTEL_RESOURCE_ATTRIBUTES'}, env[service], service)
+        self.assertLessEqual({'KC_FEATURES', 'KC_TRACING_ENABLED', 'KC_TRACING_ENDPOINT',
+                              'KC_METRICS_ENABLED', 'KC_LOG_CONSOLE_OUTPUT'}, env['keycloak'])
+        self.assertLessEqual({'KESTRA_OTEL_ENABLED', 'KESTRA_TRACES_ROOT',
+                              'KESTRA_OTLP_METRICS_ENABLED', 'OTEL_EXPORTER_OTLP_ENDPOINT'},
+                             env['kestra'])
+        self.assertLessEqual({'OTEL_COLLECTOR_ADDRESS', 'OTEL_APISIX_SAMPLER'}, env['apisix'])
+        configmaps = {d['metadata']['name'] for d in self.otel if d['kind'] == 'ConfigMap'}
+        self.assertTrue(any(name.startswith('dxos-otel') for name in configmaps))
+        annotations = {d['metadata']['name']: d['spec']['template']['metadata'].get('annotations', {})
+                       for d in self.otel if d['kind'] == 'Deployment'}
+        for name in ('apisix', 'keycloak', 'dxos-operator-controller-manager'):
+            self.assertEqual(annotations[name].get('prometheus.io/scrape'), 'true', name)

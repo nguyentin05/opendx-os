@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 DX-OS Open-Core Contributors
-# Keycloak as in compose.yaml: start-dev with its own file store on a volume,
-# the realm imported only into an empty store.
-# shortcut: start-dev with the file store, not `start` with a database; move to
-# production mode with PostgreSQL when the deployment outlives the demo (#170).
+# Keycloak in production mode (#170): accounts, sessions and realm settings in
+# its own PostgreSQL database (dxos_keycloak, owned by the login dxos_keycloak),
+# the realm imported only into an empty database. Compose keeps start-dev with
+# a file store for local work.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -27,6 +27,47 @@ spec:
         fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
+      # Creates Keycloak's login and database if missing and sets the password
+      # from the Secret, on a new or a running installation (PostgreSQL runs its
+      # init scripts only once). Idempotent.
+      initContainers:
+      - name: database
+        image: postgres:17-alpine
+        securityContext:
+          runAsUser: 70
+          runAsGroup: 70
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+        command:
+        - sh
+        - -c
+        - |
+          psql -v ON_ERROR_STOP=1 -v pw="$KC_DB_PASSWORD" <<'SQL'
+          SELECT 'CREATE ROLE dxos_keycloak LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS'
+          WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dxos_keycloak')
+          \gexec
+          ALTER ROLE dxos_keycloak PASSWORD :'pw';
+          SELECT 'CREATE DATABASE dxos_keycloak OWNER dxos_keycloak'
+          WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'dxos_keycloak')
+          \gexec
+          REVOKE CONNECT ON DATABASE dxos_keycloak FROM PUBLIC;
+          SQL
+        env:
+        - name: PGHOST
+          value: postgres
+        - name: PGUSER
+          value: dxos_admin
+        - name: PGDATABASE
+          value: postgres
+        - name: PGPASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: POSTGRES_PASSWORD}}
+        - name: KC_DB_PASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: KEYCLOAK_DATABASE_PASSWORD}}
+        resources:
+          requests: {cpu: 10m, memory: 16Mi}
+          limits: {memory: 64Mi}
       containers:
       - name: keycloak
         image: quay.io/keycloak/keycloak:26.0
@@ -35,7 +76,8 @@ spec:
           readOnlyRootFilesystem: false
           capabilities:
             drop: [ALL]
-        args: ["start-dev", "--import-realm"]
+        # Without --optimized, Keycloak builds its configuration at start (about a minute).
+        args: ["start", "--import-realm"]
         env:
         - name: KEYCLOAK_ADMIN
           value: admin
@@ -44,12 +86,29 @@ spec:
         # Tokens carry this issuer whichever address requested them.
         - name: KC_HOSTNAME
           valueFrom: {configMapKeyRef: {name: dxos-public, key: KEYCLOAK_HOSTNAME}}
-        # TLS ends at the load balancer, which sets X-Forwarded-*.
+        # The admin console is not public: it answers through a port-forward only
+        # (kubectl -n dxos port-forward svc/keycloak 8085:8085).
+        - name: KC_HOSTNAME_ADMIN
+          value: http://localhost:8085
         # The realm import allows sign-in redirects back to the Workspace UI here.
         - name: DXOS_APP_URL
           valueFrom: {configMapKeyRef: {name: dxos-public, key: DXOS_APP_URL}}
+        # TLS ends at the load balancer, which sets X-Forwarded-*.
         - name: KC_PROXY_HEADERS
           value: xforwarded
+        - name: KC_HTTP_ENABLED
+          value: "true"
+        # One replica (strategy Recreate): no cluster cache, no multicast.
+        - name: KC_CACHE
+          value: local
+        - name: KC_DB
+          value: postgres
+        - name: KC_DB_URL
+          value: jdbc:postgresql://postgres:5432/dxos_keycloak
+        - name: KC_DB_USERNAME
+          value: dxos_keycloak
+        - name: KC_DB_PASSWORD
+          valueFrom: {secretKeyRef: {name: dxos-secrets, key: KEYCLOAK_DATABASE_PASSWORD}}
         - name: KC_HTTP_PORT
           value: "8085"
         - name: KC_HEALTH_ENABLED
@@ -69,6 +128,8 @@ spec:
         resources:
           requests: {cpu: 250m, memory: 768Mi}
           limits: {memory: 1536Mi}
+        # The volume only holds the import directory and temporary files now, and
+        # the file store of the start-dev releases, kept for a rollback.
         volumeMounts:
         - name: data
           mountPath: /opt/keycloak/data

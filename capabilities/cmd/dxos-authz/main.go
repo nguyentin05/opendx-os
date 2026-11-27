@@ -33,11 +33,24 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/authz"
+	"github.com/opendx-os/opendx-os/capabilities/internal/telemetry"
 )
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	shutdownTelemetry, err := telemetry.Start(ctx, "dxos-authz")
+	if err != nil {
+		log.Fatalf("telemetry: %v", err)
+	}
+	defer func() {
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTelemetry(shutdown); err != nil {
+			log.Printf("telemetry shutdown: %v", err)
+		}
+	}()
 
 	port := envOr("PORT", "8090")
 	ttl, err := time.ParseDuration(envOr("ROLE_CACHE_TTL", "5s"))
@@ -83,7 +96,7 @@ func main() {
 	}
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           authz.Handler(resolver),
+		Handler:           telemetry.Handler(authz.Handler(resolver)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {

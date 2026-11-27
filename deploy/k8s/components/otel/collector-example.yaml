@@ -1,0 +1,90 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+#
+# Example OpenTelemetry Collector configuration for an operator's own cluster.
+# This file is documentation, not a deployed workload: copy it, replace the
+# exporter endpoint and the scrape targets, and run the Collector yourself.
+#
+# The platform does not ship a Collector, Jaeger, Prometheus or Grafana.
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+  # The components that expose Prometheus in their own format. Adjust the
+  # targets to the Services in your cluster (namespace dxos unless noted).
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: apisix
+          metrics_path: /apisix/prometheus/metrics
+          static_configs:
+            - targets: ["apisix.dxos.svc.cluster.local:9091"]
+        - job_name: keycloak
+          metrics_path: /metrics
+          static_configs:
+            - targets: ["keycloak.dxos.svc.cluster.local:9000"]
+        # The controller has no metrics Service; discover its pod and rewrite
+        # the port to the one the otel component enables.
+        - job_name: dxos-controller
+          metrics_path: /metrics
+          kubernetes_sd_configs:
+            - role: pod
+              namespaces:
+                names: [dxos-operator-system]
+          relabel_configs:
+            - source_labels: [__meta_kubernetes_pod_label_control_plane]
+              regex: controller-manager
+              action: keep
+            - source_labels: [__address__]
+              regex: '([^:]+)(?::\d+)?'
+              replacement: '$1:8080'
+              target_label: __address__
+
+  # Container logs on stdout. The platform does not export logs over OTLP;
+  # this receiver attaches the Kubernetes metadata a backend needs to find
+  # them. Point include_file_paths at your container runtime's log location.
+  filelog:
+    include: [/var/log/pods/dxos_*/*/*.log, /var/log/pods/dxos-operator-system_*/*/*.log]
+    start_at: end
+    include_file_path: true
+    operators:
+      - type: container
+        id: container
+
+processors:
+  k8sattributes:
+    auth_type: serviceAccount
+    extract:
+      metadata:
+        - k8s.namespace.name
+        - k8s.pod.name
+        - k8s.container.name
+        - k8s.deployment.name
+  batch: {}
+
+exporters:
+  # Replace with the OTLP endpoint of your backend.
+  otlp:
+    endpoint: https://otel-backend.example.invalid:4317
+    tls:
+      insecure: false
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [k8sattributes, batch]
+      exporters: [otlp]
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [k8sattributes, batch]
+      exporters: [otlp]
+    logs:
+      receivers: [filelog]
+      processors: [k8sattributes, batch]
+      exporters: [otlp]

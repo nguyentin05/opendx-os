@@ -215,6 +215,7 @@ extra:
     Operate: Vận hành
     Installation: Cài đặt
     Backup and restore: Sao lưu và khôi phục
+    Observability: Quan sát
     Contribute: Đóng góp
     Verification: Kiểm chứng
     Source hygiene: Vệ sinh mã nguồn
@@ -291,6 +292,8 @@ nav:
       - Overview: operations/index.md
       - Installation: operations/installation.md
       - Backup and restore: operations/backup-restore.md
+      - Kubernetes: operations/kubernetes.md
+      - Observability: operations/observability.md
   - Contribute:
       - Overview: contribute/index.md
       - Verification: contribute/verification.md
