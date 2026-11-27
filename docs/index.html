@@ -91,7 +91,6 @@ button { font: inherit; }
 /* Announcement and header */
 .notice { background: var(--text); color: var(--bg); font-size: 14px; text-align: center; padding: 8px 16px; }
 .notice a { color: inherit; font-weight: 600; text-underline-offset: 3px; }
-.notice .tag { font-family: var(--mono); font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; margin-right: 8px; }
 header.top { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: saturate(1.4) blur(12px); border-bottom: 1px solid var(--line); }
 header.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 62px; gap: 12px; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 750; color: var(--text); text-decoration: none; letter-spacing: -.01em; font-size: 17px; }
@@ -224,9 +223,6 @@ pre .ok { color: var(--code-ok); }
 .edge { font-size: 13px; color: var(--muted); padding: 8px 2px 0; line-height: 1.45; }
 .edge code { color: var(--text); font-size: 12px; font-weight: 500; }
 .branch { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 34px; margin-top: 18px; padding-top: 18px; border-top: 1px dashed var(--line-strong); }
-.branch .node { grid-row: 1; }
-.branch .edge { grid-row: 2; }
-.branch .wide2 { grid-column: 2 / span 2; }
 .node.done { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 .node.current { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
 .node.current.good { border-color: var(--ok); background: var(--ok-soft); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 18%, transparent); }
@@ -295,12 +291,6 @@ ol.steps span { color: var(--muted); font-size: 15.5px; }
 .cell .txt { padding: 22px 22px 18px; }
 .cell .txt p { margin: 0; color: var(--muted); font-size: 15px; }
 .cell .vis { margin-top: auto; padding: 0 22px 22px; }
-.overlays { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-.overlays span { font-family: var(--mono); font-size: 13px; padding: 5px 11px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface-2); }
-.overlays span.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
-.mini-term { border-radius: 12px; background: var(--code-bg); color: var(--code-text); font-family: var(--mono); font-size: 13px; padding: 14px 16px; line-height: 1.7; overflow-x: auto; white-space: nowrap; }
-.mini-term .p { color: var(--code-ok); }
-.mini-term .c { color: var(--code-muted); }
 .chart { width: 100%; height: auto; display: block; }
 .chart .grid { stroke: var(--line); }
 .chart .lineA { stroke: var(--accent); fill: none; stroke-width: 2.5; stroke-linejoin: round; }
@@ -338,9 +328,42 @@ ol.steps span { color: var(--muted); font-size: 15.5px; }
 .links a:hover span { color: var(--accent); }
 
 section.intro { border-top: 1px solid var(--line); }
-.community { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 32px; align-items: center; padding: 44px; border-radius: 22px; border: 1px solid var(--line-strong); background: radial-gradient(500px 260px at 0% 0%, var(--glow), transparent 70%), radial-gradient(500px 260px at 100% 100%, var(--glow-2), transparent 70%), var(--surface); }
-.community .sub { margin-bottom: 0; }
-.community .cta { justify-content: flex-start; }
+
+/* Docs menu */
+.menu { position: relative; }
+.menu-btn { display: inline-flex; align-items: center; gap: 4px; padding: 6px 11px; border: 0; border-radius: 8px; background: none; color: var(--muted); font-size: 15px; font-weight: 500; cursor: pointer; }
+.menu-btn:hover, .menu-btn[aria-expanded="true"] { color: var(--text); background: var(--surface-2); }
+.menu-btn svg { width: 15px; height: 15px; transition: transform .2s; }
+.menu-btn[aria-expanded="true"] svg { transform: rotate(180deg); }
+.menu-panel { position: absolute; top: calc(100% + 10px); right: -120px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: min(520px, calc(100vw - 32px)); padding: 14px; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); z-index: 20; }
+.menu-panel[hidden] { display: none; }
+.menu-title { margin: 2px 10px 6px; font-family: var(--mono); font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+nav .menu-panel a { display: block; padding: 8px 10px; border-radius: 9px; color: var(--text); font-weight: 600; font-size: 14.5px; }
+nav .menu-panel a span { display: block; color: var(--muted); font-weight: 400; font-size: 13px; }
+nav .menu-panel a:hover { background: var(--surface-2); }
+
+/* Highlight chips, state-machine branches, providers, requirements, team */
+.tags { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: -18px 0 40px; padding: 0; }
+.tags li { font-size: 14px; font-weight: 500; padding: 6px 13px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--muted); }
+.providers { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(96px, 100%), 1fr)); }
+.providers li { padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); }
+.providers li.on { border-color: var(--accent); background: var(--accent-soft); }
+.providers b { display: block; font-size: 15px; }
+.providers span { font-size: 13px; color: var(--muted); }
+.reqs { margin-top: 28px; }
+.reqs h3 { font-size: 16px; }
+.reqs ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.reqs li { color: var(--muted); font-size: 15px; }
+.reqs b { display: inline-block; min-width: 72px; color: var(--text); font-weight: 600; }
+.team { list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); }
+.team li { display: grid; justify-items: center; gap: 4px; padding: 26px 18px 22px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); text-align: center; }
+.team img { width: 80px; height: 80px; border-radius: 50%; margin-bottom: 8px; box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--accent); }
+.team b { font-size: 16.5px; }
+.team span { color: var(--muted); font-size: 14.5px; }
+.team a { font-size: 14px; }
+.team i { margin-top: 8px; font-style: normal; font-size: 12.5px; font-weight: 600; padding: 3px 11px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); }
+:root[data-theme="dark"] .team i { color: var(--accent); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .team i { color: var(--accent); } }
 footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--muted); font-size: 14.5px; }
 .foot { display: grid; grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr)); gap: 32px; }
 .foot p { margin: 12px 0 0; max-width: 360px; }
@@ -376,13 +399,14 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--m
   .rules div:nth-child(even), .principles div:nth-child(even) { padding-left: 18px; }
   .foot { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .foot > div:first-child { grid-column: 1 / -1; }
-  .community { grid-template-columns: minmax(0, 1fr); padding: 28px 22px; }
 }
 @media (max-width: 720px) {
   nav a.hide-sm { display: none; }
   .hero { padding-top: 56px; }
   section { padding: 68px 0; }
   .flow, .branch { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .bitem .edge { padding: 6px 0 14px; }
+  .menu-panel { right: -60px; grid-template-columns: minmax(0, 1fr); }
   .flow > .node:not(:nth-child(4))::after { content: "↓"; right: auto; left: 18px; top: auto; bottom: -26px; transform: none; }
   .flow > .node { margin-bottom: 4px; }
   .flow > .edge { padding: 6px 0 14px 34px; }
@@ -391,9 +415,6 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--m
   .flow > .node:nth-child(3) { order: 5; } .flow > .edge:nth-child(7) { order: 6; }
   .flow > .node:nth-child(4) { order: 7; } .flow > .edge:nth-child(8) { display: none; }
   .branch { order: 9; }
-  .branch .node, .branch .edge, .branch .wide2 { grid-row: auto; grid-column: auto; }
-  .branch .edge { padding: 6px 0 14px; }
-  .branch > :nth-child(1) { order: 1; } .branch > :nth-child(3) { order: 2; } .branch > :nth-child(2) { order: 3; } .branch > :nth-child(4) { order: 4; }
   .shots { grid-template-columns: minmax(0, 1fr); }
   .bar span { display: none; }
 }
@@ -403,21 +424,42 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--m
   .stat:first-child { border-top: 0; }
   .rules div, .principles div, .rules div:nth-child(even), .principles div:nth-child(even) { padding: 20px 0; border-left: 0; }
   .rules div + div, .principles div + div { border-top: 1px solid var(--line); }
-  .notice .tag, .hide-xs { display: none; }
+  .hide-xs { display: none; }
   .media .soon { position: static; transform: none; margin: 10px; white-space: normal; }
 }
 </style>
 </head>
 <body>
 <a class="skip" href="#noi-dung">Bỏ qua tới nội dung</a>
-<div class="notice"><span class="tag">Mã nguồn mở</span>Một nền tảng cho mọi ứng dụng nội bộ, chạy trên Docker Compose hoặc bất kỳ cụm Kubernetes nào. <a href="https://github.com/nguyentin05/opendx-os/releases">Xem bản phát hành →</a></div>
+<div class="notice">Một nền tảng chung cho mọi ứng dụng nội bộ, triển khai được ở mọi nơi: máy chủ riêng, Docker Compose hay Kubernetes trên EKS, GKE, AKS. <a href="operations/">Xem cách triển khai →</a></div>
 <header class="top">
   <div class="wrap">
     <a class="brand" href="./"><img src="assets/landing/logo.webp" alt="" width="32" height="26">OpenDX-OS</a>
     <nav aria-label="Liên kết chính">
-      <a href="get-started/">Tài liệu</a>
-      <a class="hide-sm" href="architecture/">Kiến trúc</a>
-      <a class="hide-sm" href="en/get-started/" hreflang="en" lang="en">English docs</a>
+      <div class="menu">
+        <button type="button" class="menu-btn" id="docs-btn" aria-expanded="false" aria-controls="docs-menu">Tài liệu <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+        <div class="menu-panel" id="docs-menu" hidden>
+          <div>
+            <p class="menu-title">Tiếng Việt</p>
+            <a href="get-started/">Bắt đầu<span>Cài đặt và chạy thử</span></a>
+            <a href="guides/">Hướng dẫn<span>Thêm ứng dụng, giao diện, luồng</span></a>
+            <a href="operations/">Vận hành<span>Kubernetes, sao lưu, giám sát</span></a>
+            <a href="architecture/">Kiến trúc<span>Ba tầng và mô hình bảo mật</span></a>
+            <a href="reference/">Tham chiếu<span>Manifest, API, hợp đồng dữ liệu</span></a>
+            <a href="adr/">Quyết định kiến trúc<span>Các ADR</span></a>
+          </div>
+          <div lang="en">
+            <p class="menu-title">English</p>
+            <a href="en/get-started/" hreflang="en">Get started<span>Install and first run</span></a>
+            <a href="en/guides/" hreflang="en">Guides<span>Apps, UI, workflows</span></a>
+            <a href="en/operations/" hreflang="en">Operations<span>Kubernetes, backup, monitoring</span></a>
+            <a href="en/architecture/" hreflang="en">Architecture<span>Three tiers, security model</span></a>
+            <a href="en/reference/" hreflang="en">Reference<span>Manifest, API, data contracts</span></a>
+          </div>
+        </div>
+      </div>
+      <a class="hide-sm" href="#demo">Demo</a>
+      <a class="hide-sm" href="https://discord.gg/Mt7zskvcpU">Cộng đồng</a>
       <a class="gh hide-sm" href="https://github.com/nguyentin05/opendx-os"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
       <button class="theme" type="button" id="theme" aria-label="Đổi giao diện sáng hoặc tối">
         <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
@@ -431,8 +473,8 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--m
   <div class="hero">
     <div class="wrap">
       <span class="pill"><i aria-hidden="true"></i>Mã nguồn mở · Apache-2.0<span class="hide-xs"> · Tự vận hành</span></span>
-      <h1>Ứng dụng nội bộ,<br><em>không cần viết backend</em></h1>
-      <p class="lead">Mỗi ứng dụng chỉ là một gói khai báo: dữ liệu, vai trò và quy trình duyệt. OpenDX-OS biến gói đó thành ứng dụng hoàn chỉnh, có phân quyền, giao diện và lịch sử, và cài được ngay khi hệ thống đang chạy.</p>
+      <h1>Một nền tảng cho mọi ứng dụng nội bộ,<br><em>số hoá chỉ bằng khai báo</em></h1>
+      <p class="lead">Khai báo dữ liệu, vai trò và quy trình duyệt; OpenDX-OS dựng thành ứng dụng hoàn chỉnh, có phân quyền, giao diện và lịch sử, và cài được ngay khi hệ thống đang chạy.</p>
       <div class="cta">
         <a class="btn primary" href="get-started/">Bắt đầu
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
@@ -456,10 +498,10 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--m
     </div>
     <div class="wrap">
       <div class="stats reveal">
-        <div class="stat"><b>3 tầng</b><span>hạ tầng headless, năng lực dùng chung, ứng dụng khai báo</span></div>
+        <div class="stat"><b>3 tầng</b><span>nền tảng lõi, năng lực dùng chung, ứng dụng khai báo</span></div>
         <div class="stat"><b>&lt; 30 giây</b><span>để cài một ứng dụng, không build, không deploy lại</span></div>
         <div class="stat"><b>~ 3 giây</b><span>để thay đổi của người khác hiện trên màn hình đang mở</span></div>
-        <div class="stat"><b>0 pod</b><span>cho năng lực đang rảnh, khi bật KEDA</span></div>
+        <div class="stat"><b>4 nơi</b><span>triển khai mẫu: Docker Compose, EKS, GKE, AKS và máy chủ riêng</span></div>
       </div>
       <div class="stack" aria-label="Xây trên các dự án mã nguồn mở">
         <small>Xây trên</small>
@@ -468,11 +510,14 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--m
     </div>
   </div>
 
-  <section class="intro" aria-labelledby="gioi-thieu">
+<section class="intro" aria-labelledby="gioi-thieu">
     <div class="wrap">
       <p class="eyebrow">Giới thiệu</p>
       <h2 id="gioi-thieu">OpenDX-OS là gì?</h2>
-      <p class="sub">OpenDX-OS là nền tảng mã nguồn mở giúp một tổ chức đưa các quy trình nội bộ như mua sắm, bảo trì thiết bị hay chấm công lên cùng một hệ thống. Thay vì mua hoặc viết một phần mềm riêng cho từng việc, tổ chức mô tả mỗi quy trình bằng một gói khai báo, và nền tảng lo phần còn lại.</p>
+      <p class="sub">OpenDX-OS là nền tảng mã nguồn mở giúp các tổ chức doanh nghiệp số hóa các quy trình nội bộ như mua sắm, bảo trì thiết bị hay chấm công lên cùng một hệ thống. Thay vì mua hoặc viết một phần mềm riêng cho từng việc, tổ chức mô tả mỗi quy trình bằng một gói khai báo, và nền tảng lo phần còn lại.</p>
+      <ul class="tags" aria-label="Điểm nổi bật">
+        <li>Mã nguồn mở Apache-2.0</li><li>Tự vận hành</li><li>Không viết backend</li><li>Đăng nhập một lần</li><li>Phân quyền theo phòng ban</li><li>Lịch sử đầy đủ</li><li>Compose và Kubernetes</li>
+      </ul>
       <div class="principles">
         <div class="reveal"><span class="n">Vấn đề</span><h3>Mỗi quy trình một phần mềm</h3><p>Tài khoản, phân quyền và dữ liệu nằm rải rác, khó biết ai được làm gì và đã làm gì.</p></div>
         <div class="reveal"><span class="n">Cách làm</span><h3>Một nền tảng dùng chung</h3><p>Đăng nhập, phân quyền, lưu trữ, quy trình và giao diện do nền tảng lo; ứng dụng chỉ khai báo phần nghiệp vụ.</p></div>
@@ -482,13 +527,13 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--m
     </div>
   </section>
 
-  <section class="alt" aria-labelledby="ba-tang">
+<section class="alt" aria-labelledby="ba-tang">
     <div class="wrap">
       <p class="eyebrow">Kiến trúc</p>
-      <h2 id="ba-tang">Ba tầng, ranh giới rõ ràng</h2>
-      <p class="sub">Ứng dụng không bao giờ kèm code backend. Ứng dụng dùng năng lực của tầng 2, tầng 2 chạy trên một nền tảng headless chỉ cung cấp API.</p>
+      <h2 id="ba-tang">Kiến trúc ba tầng</h2>
+      <p class="sub">Mỗi tầng một vai trò. Ứng dụng ở trên cùng chỉ gồm khai báo, ở giữa là các năng lực mọi ứng dụng dùng chung, và dưới cùng là nền tảng lõi lo dữ liệu, đăng nhập và bảo mật.</p>
       <div class="layer reveal" style="--c:var(--t3);--cs:var(--t3-soft)">
-        <div><span class="num">Tầng 3 · Ứng dụng</span><h3>Gói khai báo</h3><p>Manifest, workflow và tri thức. Cài và gỡ khi hệ thống đang chạy.</p></div>
+        <div><span class="num">Tầng 3 · Ứng dụng</span><h3>Gói khai báo</h3><p>Mỗi ứng dụng mô tả dữ liệu, vai trò, quy trình duyệt và tài liệu của mình. Cài và gỡ khi hệ thống đang chạy.</p></div>
         <div class="chips">
           <div class="chip"><b>Mua sắm vật tư</b><span>phê duyệt liên phòng ban</span></div>
           <div class="chip"><b>Bảo trì thiết bị</b><span>công việc theo thiết bị</span></div>
@@ -496,30 +541,29 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--m
           <div class="chip"><b>Thư viện cá nhân</b><span>tài liệu riêng cho Trợ lý</span></div>
         </div>
       </div>
-      <div class="link" aria-hidden="true">dùng năng lực qua API</div>
+      <div class="link" aria-hidden="true">dùng chung qua API</div>
       <div class="layer reveal" style="--c:var(--t2);--cs:var(--t2-soft)">
-        <div><span class="num">Tầng 2 · Năng lực H-P-D-I</span><h3>Năng lực và giao diện</h3><p>Dùng chung cho mọi ứng dụng, mỗi năng lực một dịch vụ riêng.</p></div>
+        <div><span class="num">Tầng 2 · Năng lực dùng chung</span><h3>Viết một lần, ứng dụng nào cũng dùng</h3><p>Những khả năng mà hầu hết ứng dụng nội bộ đều cần: con người, quy trình, dữ liệu và trí tuệ nhân tạo (H-P-D-I).</p></div>
         <div class="chips">
-          <div class="chip"><code>cap-hr</code> <span>(H) phòng ban, nhân sự</span></div>
-          <div class="chip"><code>cap-process</code> <span>(P) command, tệp, lịch sử</span></div>
-          <div class="chip"><code>cap-data</code> <span>(D) dữ liệu thiết bị</span></div>
-          <div class="chip"><code>cap-ai</code> <span>(I) Trợ lý, tri thức</span></div>
-          <div class="chip"><code>cap-work</code> <span>“Việc của tôi”</span></div>
-          <div class="chip"><b>Cổng làm việc</b><span>dựng giao diện từ manifest</span></div>
+          <div class="chip"><b>Nhân sự</b><span>phòng ban, nhân viên</span></div>
+          <div class="chip"><b>Quy trình</b><span>lệnh, tệp đính kèm, lịch sử</span></div>
+          <div class="chip"><b>Dữ liệu thiết bị</b><span>số liệu từ máy móc</span></div>
+          <div class="chip"><b>Trợ lý AI</b><span>hỏi đáp có trích dẫn</span></div>
+          <div class="chip"><b>Việc của tôi</b><span>việc cần xử lý của mỗi người</span></div>
+          <div class="chip"><b>Cổng làm việc</b><span>giao diện dựng từ khai báo</span></div>
         </div>
       </div>
-      <div class="link" aria-hidden="true">chỉ gọi API của tầng 1</div>
+      <div class="link" aria-hidden="true">chỉ gọi API của nền tảng lõi</div>
       <div class="layer reveal" style="--c:var(--t1);--cs:var(--t1-soft)">
-        <div><span class="num">Tầng 1 · Nền tảng headless</span><h3>Dịch vụ lõi dùng chung</h3><p>Không giao diện, chỉ API. Mọi request đều qua gateway và được kiểm quyền.</p></div>
+        <div><span class="num">Tầng 1 · Nền tảng lõi</span><h3>Dữ liệu, đăng nhập và bảo mật</h3><p>Không có giao diện, chỉ cung cấp API. Mọi yêu cầu đều đi qua cổng API và được kiểm quyền.</p></div>
         <div class="chips">
-          <div class="chip"><b>PostgreSQL 17</b><span>dữ liệu và lịch sử</span></div>
-          <div class="chip"><b>Hasura</b><span>GraphQL và subscription</span></div>
-          <div class="chip"><b>Keycloak</b><span>xác thực, SSO</span></div>
-          <div class="chip"><code>dxos-authz</code> <span>phân quyền mỗi request</span></div>
-          <div class="chip"><b>APISIX</b><span>gateway</span></div>
-          <div class="chip"><b>Kestra</b><span>workflow</span></div>
-          <div class="chip"><b>SeaweedFS + ClamAV</b><span>tệp đã quét virus</span></div>
-          <div class="chip"><code>dxos-operator</code> <span>cài gói ứng dụng</span></div>
+          <div class="chip"><b>PostgreSQL</b><span>dữ liệu và lịch sử</span></div>
+          <div class="chip"><b>Hasura</b><span>API GraphQL, cập nhật trực tiếp</span></div>
+          <div class="chip"><b>Keycloak</b><span>đăng nhập một lần</span></div>
+          <div class="chip"><b>Phân quyền</b><span>kiểm tra từng yêu cầu</span></div>
+          <div class="chip"><b>APISIX</b><span>cổng API</span></div>
+          <div class="chip"><b>Kestra</b><span>chạy các luồng duyệt</span></div>
+          <div class="chip"><b>SeaweedFS + ClamAV</b><span>lưu tệp, quét virus</span></div>
         </div>
       </div>
     </div>
@@ -528,13 +572,13 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--m
   <section aria-labelledby="khai-bao">
     <div class="wrap">
       <p class="eyebrow">Thêm ứng dụng</p>
-      <h2 id="khai-bao">Từ manifest tới màn hình, không deploy lại</h2>
-      <p class="sub">Một ứng dụng mới được cài khi hệ thống đang chạy. Trên Kubernetes, gói ứng dụng là một tài nguyên <code>DXApplication</code>.</p>
+      <h2 id="khai-bao">Thêm ứng dụng khi hệ thống đang chạy</h2>
+      <p class="sub">Operator liên tục theo dõi các gói ứng dụng: gói mới hay gói vừa sửa đều được tự động áp dụng trong vài giây, để người dùng có ngay phiên bản mới nhất mà không phải build hay deploy lại.</p>
       <div class="tabs reveal" id="tabs">
         <div class="tablist" role="tablist" aria-label="Các bước thêm ứng dụng" aria-orientation="vertical">
-          <button class="tab" type="button" role="tab" id="tab-1" aria-controls="panel-1" aria-selected="true"><span class="n">01</span><strong>Viết manifest</strong><span>Vai trò, bảng, cột mỗi vai trò được xem, máy trạng thái và các command.</span></button>
-          <button class="tab" type="button" role="tab" id="tab-2" aria-controls="panel-2" aria-selected="false" tabindex="-1"><span class="n">02</span><strong>Operator cài gói</strong><span>Tạo bảng, trigger, quyền GraphQL, flow Kestra và vai trò, rồi báo Ready.</span></button>
-          <button class="tab" type="button" role="tab" id="tab-3" aria-controls="panel-3" aria-selected="false" tabindex="-1"><span class="n">03</span><strong>Giao diện tự xuất hiện</strong><span>Cổng làm việc đọc manifest và dựng danh sách, form, trang chi tiết đúng vai trò.</span></button>
+          <button class="tab" type="button" role="tab" id="tab-1" aria-controls="panel-1" aria-selected="true"><span class="n">01</span><strong>Viết gói khai báo</strong><span>Vai trò, bảng dữ liệu, cột mỗi vai trò được xem, các trạng thái và lệnh.</span></button>
+          <button class="tab" type="button" role="tab" id="tab-2" aria-controls="panel-2" aria-selected="false" tabindex="-1"><span class="n">02</span><strong>Operator tự động cập nhật</strong><span>Phát hiện gói mới hoặc thay đổi, rồi tạo bảng, quyền, luồng duyệt và vai trò cho tới khi sẵn sàng.</span></button>
+          <button class="tab" type="button" role="tab" id="tab-3" aria-controls="panel-3" aria-selected="false" tabindex="-1"><span class="n">03</span><strong>Giao diện tự xuất hiện</strong><span>Cổng làm việc đọc gói khai báo và dựng danh sách, biểu mẫu, trang chi tiết đúng vai trò.</span></button>
         </div>
         <div class="panels">
           <div class="panel" role="tabpanel" id="panel-1" aria-labelledby="tab-1" tabindex="0">
@@ -577,8 +621,8 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
               <ul class="facts">
                 <li>Bảng, khoá ngoại, trigger version và lịch sử trong PostgreSQL</li>
                 <li>Quyền GraphQL theo cột và theo dòng cho từng vai trò</li>
-                <li>Flow Kestra cho các command và việc được giao</li>
-                <li>Ready sau khoảng 10 đến 20 giây trên cụm EKS thử nghiệm</li>
+                <li>Luồng duyệt trong Kestra cho các lệnh và việc được giao</li>
+                <li>Sẵn sàng sau khoảng 10 đến 20 giây trên cụm EKS thử nghiệm; mỗi lần sửa gói được áp dụng lại tự động</li>
               </ul>
             </div>
           </div>
@@ -597,7 +641,7 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
     <div class="wrap">
       <p class="eyebrow">Thử ngay</p>
       <h2 id="demo-title">Đưa một yêu cầu qua chuỗi phê duyệt</h2>
-      <p class="sub">Bản mô phỏng ứng dụng Mua sắm vật tư chạy ngay trên trang này, với đúng máy trạng thái, nhãn và vai trò trong manifest. Đổi vai trò để thấy mỗi người chỉ có các thao tác của mình.</p>
+      <p class="sub">Bản mô phỏng ứng dụng Mua sắm vật tư chạy ngay trên trang này, với đúng các trạng thái, nhãn và vai trò trong gói khai báo. Đổi vai trò để thấy mỗi người chỉ có các thao tác của mình.</p>
       <div class="sim reveal">
         <div class="flow" id="flow" aria-label="Máy trạng thái của yêu cầu mua sắm">
           <div class="node" data-s="DRAFT"><small>DRAFT</small>Nháp</div>
@@ -608,11 +652,9 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
           <div class="edge"><code>Duyệt</code> · trưởng phòng, không tự duyệt</div>
           <div class="edge"><code>Duyệt ngân sách</code> · tài chính</div>
           <div class="edge"></div>
-          <div class="branch">
-            <div class="node" data-s="CANCELLED"><small>CANCELLED</small>Đã huỷ</div>
-            <div class="node wide2" data-s="REJECTED"><small>REJECTED</small>Bị từ chối</div>
-            <div class="edge"><code>Huỷ yêu cầu</code> · người đề nghị, từ Nháp hoặc Chờ quản lý duyệt</div>
-            <div class="edge wide2"><code>Từ chối</code> · trưởng phòng hoặc tài chính, phải nêu lý do</div>
+<div class="branch">
+            <div class="bitem"><div class="node" data-s="CANCELLED"><small>CANCELLED</small>Đã huỷ</div><div class="edge"><code>Huỷ yêu cầu</code> · người đề nghị, khi còn ở Nháp hoặc Chờ quản lý duyệt</div></div>
+            <div class="bitem"><div class="node" data-s="REJECTED"><small>REJECTED</small>Bị từ chối</div><div class="edge"><code>Từ chối</code> · trưởng phòng hoặc tài chính, phải nêu lý do</div></div>
           </div>
         </div>
         <div class="console">
@@ -624,7 +666,7 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
             </div>
             <dl class="rec">
               <dt>Mô tả hàng hoá</dt><dd>Màn hình 27 inch</dd>
-              <dt>Nhà cung cấp</dt><dd>Phong Vũ</dd>
+              <dt>Nhà cung cấp</dt><dd>Công ty Thiết bị XYZ</dd>
               <dt>Số tiền báo giá</dt><dd>6.900.000 ₫</dd>
               <dt>Tệp báo giá</dt><dd>bao-gia.pdf <span class="safe">· đã quét an toàn</span></dd>
               <dt>Trạng thái</dt><dd><span class="badge draft" id="state">Nháp</span></dd>
@@ -633,7 +675,7 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
             <div class="actions" id="actions"></div>
             <p class="hint" id="hint" aria-live="polite"></p>
             <div class="tools">
-              <button type="button" id="stale">Thử gửi command với phiên bản cũ</button>
+              <button type="button" id="stale">Thử gửi lệnh với phiên bản cũ</button>
               <button type="button" id="reset">Làm lại từ đầu</button>
             </div>
           </div>
@@ -654,14 +696,14 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
         <figure class="reveal">
           <div class="window"><div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>Việc của tôi</span></div>
             <img src="assets/landing/work.webp" width="1280" height="800" loading="lazy"
-                 alt="Trang Việc của tôi của trưởng phòng: hộp chờ xử lý và danh sách việc duyệt yêu cầu mua sắm do workflow giao"></div>
-          <figcaption><b>Ảnh thật: Việc của tôi</b>Workflow giao việc duyệt cho đúng trưởng phòng; việc tự đóng khi yêu cầu được duyệt hoặc từ chối.</figcaption>
+                 alt="Trang Việc của tôi của trưởng phòng: hộp chờ xử lý và danh sách việc duyệt yêu cầu mua sắm do luồng duyệt giao"></div>
+          <figcaption><b>Ảnh thật: Việc của tôi</b>Luồng duyệt giao việc cho đúng trưởng phòng; việc tự đóng khi yêu cầu được duyệt hoặc từ chối.</figcaption>
         </figure>
       </div>
       <div class="rules">
-        <div><h3>Phạm vi phòng ban</h3><p>Trưởng phòng chỉ thấy và duyệt yêu cầu của phòng mình; tài chính thấy mọi phòng.</p></div>
-        <div><h3>Không tự duyệt</h3><p>Trưởng phòng không duyệt được yêu cầu do chính mình tạo; nền tảng từ chối.</p></div>
-        <div><h3>Không ghi đè</h3><p>Command mang phiên bản đã cũ bị từ chối, không đè lên quyết định mới hơn.</p></div>
+        <div><h3>Phạm vi phòng ban</h3><p>Mỗi phòng ban chỉ thấy và xử lý hồ sơ của chính phòng mình.</p></div>
+        <div><h3>Không tự duyệt</h3><p>Trưởng phòng không duyệt được yêu cầu do chính mình tạo.</p></div>
+        <div><h3>Không ghi đè</h3><p>Lệnh dựa trên phiên bản cũ bị từ chối, không đè lên quyết định mới hơn.</p></div>
         <div><h3>Cập nhật trực tiếp</h3><p>Khi người khác duyệt, danh sách và hồ sơ đang mở tự đổi sau vài giây.</p></div>
       </div>
     </div>
@@ -671,12 +713,12 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
     <div class="wrap split">
       <div>
         <p class="eyebrow">Quản trị</p>
-        <h2 id="quan-tri">Keycloak xác thực, nền tảng phân quyền</h2>
-        <p class="sub">Tài khoản nằm ở Keycloak hoặc danh bạ mà Keycloak liên kết. Vai trò và phòng ban nằm ở nền tảng, được kiểm lại ở mỗi request.</p>
+        <h2 id="quan-tri">Quản lý người dùng ở một nơi</h2>
+        <p class="sub">Mỗi người có một tài khoản đăng nhập cho mọi ứng dụng. Quyền và phòng ban được quản lý ngay trong cổng làm việc.</p>
         <ol class="steps">
-          <li><strong>Tạo người ở một nơi</strong><span>Người mới tạo trong Keycloak hiện ngay trong “Người dùng &amp; quyền”, cấp vai trò được trước lần đăng nhập đầu.</span></li>
-          <li><strong>Thu quyền có hiệu lực ngay</strong><span>Vai trò bị thu mất tác dụng trong vài giây; tài khoản bị tắt trong Keycloak bị từ chối trong vài phút, kể cả với token còn hạn.</span></li>
-          <li><strong>Tổ chức theo phòng ban</strong><span>Màn hình “Tổ chức” quản lý cây phòng ban và nhân sự, quyết định ai thấy dòng dữ liệu nào.</span></li>
+          <li><strong>Thêm người một lần</strong><span>Tài khoản mới hiện ngay trong “Người dùng &amp; quyền” để cấp vai trò, kể cả trước lần đăng nhập đầu tiên.</span></li>
+          <li><strong>Thu quyền có hiệu lực ngay</strong><span>Khi bị thu quyền hay khoá tài khoản, người dùng mất quyền truy cập gần như ngay lập tức, không cần chờ họ đăng xuất.</span></li>
+          <li><strong>Tổ chức theo phòng ban</strong><span>Màn hình “Tổ chức” quản lý phòng ban và nhân sự, từ đó quyết định ai thấy dữ liệu nào.</span></li>
         </ol>
       </div>
       <figure class="reveal">
@@ -691,17 +733,22 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
     <div class="wrap">
       <p class="eyebrow">Vận hành</p>
       <h2 id="van-hanh">Từ máy cá nhân tới cụm Kubernetes</h2>
-      <p class="sub">Cùng một bộ cấu hình chạy bằng Docker Compose trên máy hoặc trên bất kỳ cụm Kubernetes nào; một workflow kiểm tra hai cách triển khai không lệch nhau.</p>
+      <p class="sub">Cùng một bộ cấu hình chạy bằng Docker Compose trên một máy chủ, hoặc trên cụm Kubernetes của nhà cung cấp đám mây nào cũng được. Hai cách triển khai được kiểm tra tự động để luôn khớp nhau.</p>
       <div class="bento">
         <div class="cell wide reveal">
-          <div class="txt"><h3>Kubernetes cho mọi cụm</h3><p>Manifest theo tầng, Pod đã siết bảo mật, overlay mẫu cho từng nền tảng. Đã chạy thật trên EKS với HTTPS qua ALB.</p></div>
+          <div class="txt"><h3>Triển khai ở đâu cũng được</h3><p>Có sẵn ví dụ triển khai cho các nền tảng phổ biến, đã chạy thật trên Amazon EKS với HTTPS.</p></div>
           <div class="vis">
-            <div class="overlays" aria-label="Các overlay và component có sẵn"><span class="on">eks</span><span>gke</span><span>aks</span><span>onprem</span><span>+ keda</span><span>+ gateway-routes</span></div>
-            <div class="mini-term"><span class="p">$ </span>deploy/k8s/apply.sh eks ~/dxos-k8s.env<br><span class="c"># mật khẩu đọc từ file của bạn, không nằm trong Git</span></div>
+            <ul class="providers" aria-label="Ví dụ triển khai có sẵn">
+              <li class="on"><b>Amazon EKS</b><span>đã chạy thật</span></li>
+              <li><b>Google GKE</b><span>ví dụ có sẵn</span></li>
+              <li><b>Azure AKS</b><span>ví dụ có sẵn</span></li>
+              <li><b>Máy chủ riêng</b><span>Kubernetes tự dựng</span></li>
+              <li><b>Docker Compose</b><span>một máy, chạy thử nhanh</span></li>
+            </ul>
           </div>
         </div>
         <div class="cell reveal">
-          <div class="txt"><h3>Không dùng thì không chạy</h3><p>Với component KEDA, năng lực tầng 2 và ClamAV về 0 khi rảnh, tự bật khi có việc.</p></div>
+          <div class="txt"><h3>Không dùng thì không chạy</h3><p>Dịch vụ ít dùng tự tắt khi rảnh và tự bật lại khi có việc, nhờ KEDA.</p></div>
           <div class="vis">
             <svg class="chart" viewBox="0 0 240 110" role="img" aria-label="Số pod theo thời gian: 0, tăng lên 1 khi có request, rồi về 0 khi rảnh">
               <line class="grid" x1="40" y1="20" x2="236" y2="20"/><line class="grid" x1="40" y1="86" x2="236" y2="86"/>
@@ -713,7 +760,7 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
           </div>
         </div>
         <div class="cell reveal">
-          <div class="txt"><h3>Cập nhật trực tiếp</h3><p>Subscription GraphQL qua WebSocket; quyền của kết nối được kiểm lại mỗi phút.</p></div>
+          <div class="txt"><h3>Cập nhật trực tiếp</h3><p>Màn hình đang mở tự cập nhật khi người khác thao tác, quyền vẫn được kiểm lại liên tục.</p></div>
           <div class="vis">
             <div class="live" aria-hidden="true">
               <div class="live-row"><span><small>Trưởng phòng</small>Màn hình 27 inch</span><span class="swap"><span>Chờ quản lý duyệt</span><span>Chờ duyệt ngân sách</span></span></div>
@@ -732,7 +779,7 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
           </div>
         </div>
         <div class="cell reveal">
-          <div class="txt"><h3>Bí mật ngoài Git</h3><p>Mọi mật khẩu sinh lúc cài đặt; mỗi thay đổi đều được quét.</p></div>
+          <div class="txt"><h3>Bảo mật từ đầu</h3><p>Mật khẩu sinh riêng lúc cài đặt; mỗi thay đổi mã nguồn đều được quét tự động.</p></div>
           <div class="vis">
             <div class="pipe" role="list" aria-label="Các bước quét trên mỗi thay đổi"><span role="listitem">gitleaks</span><span role="listitem">trivy</span><span role="listitem">codeql</span></div>
           </div>
@@ -746,11 +793,11 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
       <p class="eyebrow">Nguyên tắc</p>
       <h2 id="nguyen-tac">Nguyên tắc thiết kế</h2>
       <p class="sub">Những quyết định giữ cho nền tảng nhỏ, dễ hiểu và tự vận hành được.</p>
-      <div class="principles">
-        <div class="reveal"><span class="n">01</span><h3>Khai báo thay cho code</h3><p>Quy tắc nghiệp vụ nằm trong manifest và workflow, nên cài ứng dụng không cần deploy.</p></div>
-        <div class="reveal"><span class="n">02</span><h3>Một nguồn quyền</h3><p>Vai trò nằm trong <code>core.user_roles</code>; Keycloak chỉ trả lời “bạn là ai”.</p></div>
-        <div class="reveal"><span class="n">03</span><h3>Không dùng thì không chạy</h3><p>Năng lực chỉ chạy khi có ứng dụng cần đến và có việc để làm.</p></div>
-        <div class="reveal"><span class="n">04</span><h3>Mã nguồn mở hoàn toàn</h3><p>Code Apache-2.0 trên hạ tầng mã nguồn mở mà tổ chức tự vận hành được.</p></div>
+<div class="principles">
+        <div class="reveal"><span class="n">01</span><h3>Khai báo thay cho lập trình</h3><p>Quy tắc nghiệp vụ nằm trong gói khai báo, nên thêm hay sửa ứng dụng không cần viết lại phần mềm.</p></div>
+        <div class="reveal"><span class="n">02</span><h3>Một nơi quản lý quyền</h3><p>Quyền của mọi ứng dụng được cấp và thu ở cùng một chỗ; hệ thống đăng nhập chỉ xác nhận bạn là ai.</p></div>
+        <div class="reveal"><span class="n">03</span><h3>Không dùng thì không chạy</h3><p>Một năng lực chỉ chạy khi có ứng dụng cần đến và có việc để làm.</p></div>
+        <div class="reveal"><span class="n">04</span><h3>Mở và tự chủ</h3><p>Giấy phép Apache-2.0, xây trên phần mềm mã nguồn mở mà tổ chức tự vận hành được.</p></div>
       </div>
     </div>
   </section>
@@ -766,6 +813,15 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
           <a href="operations/kubernetes/">Triển khai Kubernetes <span>Vận hành →</span></a>
           <a href="guides/knowledge/personal-library/">Trợ lý và thư viện cá nhân <span>Tri thức →</span></a>
         </div>
+        <div class="reqs">
+          <h3>Yêu cầu hệ thống</h3>
+          <ul>
+            <li><b>Docker</b> Engine 24+ và Docker Compose v2</li>
+            <li><b>RAM</b> ít nhất 8 GB cho Docker, khuyến nghị 16 GB</li>
+            <li><b>Công cụ</b> <code>bash</code>, <code>curl</code>, <code>git</code></li>
+            <li><b>Hoặc</b> một cụm Kubernetes cho bản triển khai thật</li>
+          </ul>
+        </div>
       </div>
       <div class="window dark reveal">
         <div class="bar"><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i><button class="copy" type="button" data-copy="quick" aria-label="Chép các lệnh chạy thử">Chép</button></div>
@@ -779,20 +835,16 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
       </div>
     </div>
   </section>
-  <section aria-labelledby="cong-dong">
+<section aria-labelledby="doi-ngu">
     <div class="wrap">
-      <div class="community reveal">
-        <div>
-          <p class="eyebrow">Cộng đồng</p>
-          <h2 id="cong-dong">Cùng xây OpenDX-OS</h2>
-          <p class="sub">Hỏi đáp, góp ý tính năng và chia sẻ cách tổ chức của bạn dùng OpenDX-OS. Mọi đóng góp, từ báo lỗi tới một ứng dụng mẫu mới, đều được chào đón.</p>
-        </div>
-        <div class="cta">
-          <a class="btn primary" href="https://discord.gg/Mt7zskvcpU"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01"/></svg>Tham gia Discord</a>
-          <a class="btn" href="https://github.com/nguyentin05/opendx-os/issues">Báo lỗi trên GitHub</a>
-          <a class="btn" href="https://github.com/nguyentin05/opendx-os/blob/main/CONTRIBUTING.md">Hướng dẫn đóng góp</a>
-        </div>
-      </div>
+      <p class="eyebrow">Đội ngũ</p>
+      <h2 id="doi-ngu">Những người xây OpenDX-OS</h2>
+      <p class="sub">Dự án mã nguồn mở do một nhóm nhỏ phát triển và duy trì. Mọi đóng góp đều được chào đón: <a href="https://github.com/nguyentin05/opendx-os/blob/main/CONTRIBUTING.md">hướng dẫn đóng góp</a>, <a href="https://discord.gg/Mt7zskvcpU">Discord</a>.</p>
+      <ul class="team">
+        <li class="reveal"><img src="assets/landing/team-nguyentin05.webp" alt="" width="80" height="80" loading="lazy"><b>nguyentin05</b><span>Developer · Maintainer</span><a href="https://github.com/nguyentin05" aria-label="GitHub của nguyentin05">GitHub</a><i>Maintainer</i></li>
+        <li class="reveal"><img src="assets/landing/team-ximofam.webp" alt="" width="80" height="80" loading="lazy"><b>ximofam</b><span>Kỹ sư AI</span><a href="https://github.com/ximofam" aria-label="GitHub của ximofam">GitHub</a><i>Trợ lý AI</i></li>
+        <li class="reveal"><img src="assets/landing/team-teaching2504.webp" alt="" width="80" height="80" loading="lazy"><b>Teaching2504</b><span>Tài liệu</span><a href="https://github.com/Teaching2504" aria-label="GitHub của Teaching2504">GitHub</a><i>Tài liệu</i></li>
+      </ul>
     </div>
   </section>
 </main>
@@ -840,6 +892,14 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
       }));
     } catch (e) {}
   });
+
+  // Docs menu: opens on click, closes on Escape, an outside click or when focus leaves it.
+  var menuBtn = $('docs-btn'), menu = $('docs-menu'), menuBox = menuBtn.parentNode;
+  function setMenu(open) { menu.hidden = !open; menuBtn.setAttribute('aria-expanded', open); }
+  menuBtn.addEventListener('click', function () { setMenu(menu.hidden); });
+  document.addEventListener('click', function (e) { if (!menu.hidden && !menuBox.contains(e.target)) setMenu(false); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !menu.hidden) { setMenu(false); menuBtn.focus(); } });
+  menuBox.addEventListener('focusout', function (e) { if (e.relatedTarget && !menuBox.contains(e.relatedTarget)) setMenu(false); });
 
   // Copy buttons.
   document.querySelectorAll('[data-copy]').forEach(function (b) {
@@ -955,7 +1015,7 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
   });
   $('reset').addEventListener('click', reset);
   $('stale').addEventListener('click', function () {
-    log('Bị từ chối: command mang phiên bản ' + (ver - 1) + ' nhưng hồ sơ đã ở phiên bản ' + ver, 'Một tab mở từ trước · không có gì bị ghi đè', true);
+    log('Bị từ chối: lệnh mang phiên bản ' + (ver - 1) + ' nhưng hồ sơ đã ở phiên bản ' + ver, 'Một tab mở từ trước · không có gì bị ghi đè', true);
   });
   reset();
 
