@@ -1,0 +1,145 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+#
+# Opt-in telemetry. Add this component to an overlay with
+#   components:
+#   - ../../components/otel
+# and point dxos-otel's endpoint at the operator's OpenTelemetry Collector.
+# Without the component, the base renders exactly as before: no OTEL_* variable,
+# no scrape annotation and no Collector configuration.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+# One value for the Collector address. Change the literals here (or patch the
+# generated ConfigMap) to match the Collector Service in your cluster.
+configMapGenerator:
+- name: dxos-otel
+  namespace: dxos
+  literals:
+  - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.observability.svc.cluster.local:4318
+  - KESTRA_OTEL_ENDPOINT=http://otel-collector.observability.svc.cluster.local:4317
+  - OTEL_COLLECTOR_ADDRESS=otel-collector.observability.svc.cluster.local:4318
+patches:
+# dxos-authz
+- target: {kind: Deployment, name: authz}
+  patch: |-
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: OTEL_EXPORTER_OTLP_ENDPOINT
+        valueFrom: {configMapKeyRef: {name: dxos-otel, key: OTEL_EXPORTER_OTLP_ENDPOINT}}
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value: {name: OTEL_SERVICE_NAME, value: dxos-authz}
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value: {name: OTEL_RESOURCE_ATTRIBUTES, value: deployment.environment=kubernetes,service.namespace=dxos}
+# cap-hr
+- target: {kind: Deployment, name: cap-hr}
+  patch: |-
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: OTEL_EXPORTER_OTLP_ENDPOINT
+        valueFrom: {configMapKeyRef: {name: dxos-otel, key: OTEL_EXPORTER_OTLP_ENDPOINT}}
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value: {name: OTEL_SERVICE_NAME, value: cap-hr}
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value: {name: OTEL_RESOURCE_ATTRIBUTES, value: deployment.environment=kubernetes,service.namespace=dxos}
+# cap-process
+- target: {kind: Deployment, name: cap-process}
+  patch: |-
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: OTEL_EXPORTER_OTLP_ENDPOINT
+        valueFrom: {configMapKeyRef: {name: dxos-otel, key: OTEL_EXPORTER_OTLP_ENDPOINT}}
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value: {name: OTEL_SERVICE_NAME, value: cap-process}
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value: {name: OTEL_RESOURCE_ATTRIBUTES, value: deployment.environment=kubernetes,service.namespace=dxos}
+# Keycloak 26.0: tracing is a preview feature; metrics are Prometheus on the
+# management port (9000), logs are JSON on stdout.
+- target: {kind: Deployment, name: keycloak}
+  patch: |-
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value: {name: KC_FEATURES, value: opentelemetry}
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value: {name: KC_TRACING_ENABLED, value: "true"}
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: KC_TRACING_ENDPOINT
+        valueFrom: {configMapKeyRef: {name: dxos-otel, key: OTEL_EXPORTER_OTLP_ENDPOINT}}
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value: {name: KC_TRACING_PROTOCOL, value: http/protobuf}
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value: {name: KC_METRICS_ENABLED, value: "true"}
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value: {name: KC_LOG_CONSOLE_OUTPUT, value: json}
+    - op: add
+      path: /spec/template/metadata/annotations
+      value:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9000"
+        prometheus.io/path: /metrics
+# Kestra: Micronaut OTel traces and OTLP metrics.
+- target: {kind: Deployment, name: kestra}
+  patch: |-
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value: {name: KESTRA_OTEL_ENABLED, value: "true"}
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value: {name: KESTRA_TRACES_ROOT, value: DEFAULT}
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value: {name: KESTRA_OTLP_METRICS_ENABLED, value: "true"}
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: OTEL_EXPORTER_OTLP_ENDPOINT
+        valueFrom: {configMapKeyRef: {name: dxos-otel, key: OTEL_EXPORTER_OTLP_ENDPOINT}}
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: KESTRA_OTEL_ENDPOINT
+        valueFrom: {configMapKeyRef: {name: dxos-otel, key: KESTRA_OTEL_ENDPOINT}}
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value: {name: OTEL_TRACES_EXPORTER, value: otlp}
+# APISIX: the plugin list and plugin_attr live in platform/apisix/config.yaml.
+# This only supplies the Collector address it reads.
+- target: {kind: Deployment, name: apisix}
+  patch: |-
+    - op: add
+      path: /spec/template/spec/containers/0/env
+      value:
+        - name: OTEL_COLLECTOR_ADDRESS
+          valueFrom: {configMapKeyRef: {name: dxos-otel, key: OTEL_COLLECTOR_ADDRESS}}
+    - op: add
+      path: /spec/template/metadata/annotations
+      value:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9091"
+        prometheus.io/path: /apisix/prometheus/metrics
+# dxos-controller exposes Prometheus on :8080 when asked; the default disables it.
+- target: {kind: Deployment, name: dxos-operator-controller-manager}
+  patch: |-
+    - op: add
+      path: /spec/template/spec/containers/0/args/-
+      value: --metrics-bind-address=:8080
+    - op: add
+      path: /spec/template/metadata/annotations
+      value:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
