@@ -428,7 +428,7 @@ class OtelComponent(unittest.TestCase):
         self.assertLessEqual({'KESTRA_OTEL_ENABLED', 'KESTRA_TRACES_ROOT',
                               'KESTRA_OTLP_METRICS_ENABLED', 'OTEL_EXPORTER_OTLP_ENDPOINT'},
                              env['kestra'])
-        self.assertIn('OTEL_COLLECTOR_ADDRESS', env['apisix'])
+        self.assertLessEqual({'OTEL_COLLECTOR_ADDRESS', 'OTEL_APISIX_SAMPLER'}, env['apisix'])
         configmaps = {d['metadata']['name'] for d in self.otel if d['kind'] == 'ConfigMap'}
         self.assertTrue(any(name.startswith('dxos-otel') for name in configmaps))
         annotations = {d['metadata']['name']: d['spec']['template']['metadata'].get('annotations', {})

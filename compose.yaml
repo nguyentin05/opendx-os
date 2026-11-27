@@ -163,7 +163,7 @@ services:
       KC_TRACING_ENDPOINT: ${KC_TRACING_ENDPOINT:-}
       KC_TRACING_PROTOCOL: ${KC_TRACING_PROTOCOL:-http/protobuf}
       KC_METRICS_ENABLED: ${KC_METRICS_ENABLED:-false}
-      KC_LOG_CONSOLE_OUTPUT: ${KC_LOG_CONSOLE_OUTPUT:-json}
+      KC_LOG_CONSOLE_OUTPUT: ${KC_LOG_CONSOLE_OUTPUT:-default}
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       # Tokens must carry the same issuer the services verify, even when they
@@ -345,8 +345,9 @@ services:
     image: apache/apisix:3.10.0-debian
     restart: unless-stopped
     environment:
-      # Read by platform/apisix/config.yaml; the plugin samples nothing until a
-      # route sets sampler always_on.
+      # Gateway spans are off until a Collector is set: with nothing listening,
+      # every export attempt would log an error.
+      OTEL_APISIX_SAMPLER: ${OTEL_APISIX_SAMPLER:-always_off}
       OTEL_COLLECTOR_ADDRESS: ${OTEL_COLLECTOR_ADDRESS:-127.0.0.1:4318}
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${APISIX_GATEWAY_PORT:-9080}:9080"

@@ -117,12 +117,14 @@ patches:
       path: /spec/template/spec/containers/0/env/-
       value: {name: OTEL_TRACES_EXPORTER, value: otlp}
 # APISIX: the plugin list and plugin_attr live in platform/apisix/config.yaml.
-# This only supplies the Collector address it reads.
+# This supplies the Collector address and turns the routes' sampler on.
 - target: {kind: Deployment, name: apisix}
   patch: |-
     - op: add
       path: /spec/template/spec/containers/0/env
       value:
+        - name: OTEL_APISIX_SAMPLER
+          value: always_on
         - name: OTEL_COLLECTOR_ADDRESS
           valueFrom: {configMapKeyRef: {name: dxos-otel, key: OTEL_COLLECTOR_ADDRESS}}
     - op: add

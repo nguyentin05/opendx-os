@@ -20,7 +20,7 @@ routes:
     enable_websocket: true
     plugins:
       opentelemetry:
-        sampler: {name: always_on}
+        sampler: {name: "${{OTEL_APISIX_SAMPLER:=always_off}}"}
       prometheus: {}
       cors:
         allow_origins: "http://localhost:5173,http://localhost:15173"
@@ -73,7 +73,7 @@ routes:
     priority: 10
     plugins:
       opentelemetry:
-        sampler: {name: always_on}
+        sampler: {name: "${{OTEL_APISIX_SAMPLER:=always_off}}"}
       prometheus: {}
       response-rewrite:
         status_code: 404
@@ -90,7 +90,7 @@ routes:
     uri: /api/cap/process/*
     plugins:
       opentelemetry:
-        sampler: {name: always_on}
+        sampler: {name: "${{OTEL_APISIX_SAMPLER:=always_off}}"}
       prometheus: {}
       cors:
         allow_origins: "http://localhost:5173,http://localhost:15173"
@@ -111,7 +111,7 @@ routes:
     uri: /api/cap/ai/*
     plugins:
       opentelemetry:
-        sampler: {name: always_on}
+        sampler: {name: "${{OTEL_APISIX_SAMPLER:=always_off}}"}
       prometheus: {}
       cors:
         allow_origins: "http://localhost:5173,http://localhost:15173"
@@ -141,7 +141,7 @@ routes:
     uri: /api/cap/hr/*
     plugins:
       opentelemetry:
-        sampler: {name: always_on}
+        sampler: {name: "${{OTEL_APISIX_SAMPLER:=always_off}}"}
       prometheus: {}
       cors:
         allow_origins: "http://localhost:5173,http://localhost:15173"
@@ -162,7 +162,7 @@ routes:
     uri: /api/auth/*
     plugins:
       opentelemetry:
-        sampler: {name: always_on}
+        sampler: {name: "${{OTEL_APISIX_SAMPLER:=always_off}}"}
       prometheus: {}
       cors:
         allow_origins: "http://localhost:5173,http://localhost:15173"
@@ -177,7 +177,7 @@ routes:
     uri: /realms/*
     plugins:
       opentelemetry:
-        sampler: {name: always_on}
+        sampler: {name: "${{OTEL_APISIX_SAMPLER:=always_off}}"}
       prometheus: {}
     upstream:
       type: roundrobin

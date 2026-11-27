@@ -66,6 +66,7 @@ ALLOWED = {
     ('kestra', 'OTEL_EXPORTER_OTLP_ENDPOINT'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
     ('kestra', 'KESTRA_OTEL_ENDPOINT'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
     ('kestra', 'OTEL_TRACES_EXPORTER'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('apisix', 'OTEL_APISIX_SAMPLER'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
     ('apisix', 'OTEL_COLLECTOR_ADDRESS'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
 }
 # The controller is configured from its own Secret (dxos-operator-config) and

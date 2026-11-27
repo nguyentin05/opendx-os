@@ -52,18 +52,19 @@ Kestra and Keycloak have their own switches:
 | `KC_FEATURES` | `opentelemetry` enables the preview tracing feature |
 | `KC_TRACING_ENABLED`, `KC_TRACING_ENDPOINT`, `KC_TRACING_PROTOCOL` | Keycloak tracing; use `http/protobuf` with the OTLP/HTTP endpoint |
 | `KC_METRICS_ENABLED` | Expose Keycloak metrics on the management port |
-| `KC_LOG_CONSOLE_OUTPUT` | `json` for structured console logs |
+| `KC_LOG_CONSOLE_OUTPUT` | `json` for structured console logs (default `default`) |
+| `OTEL_APISIX_SAMPLER` | `always_on` to send gateway spans; default `always_off` |
 | `OTEL_COLLECTOR_ADDRESS` | Collector `host:port` for APISIX (OTLP/HTTP) |
 
 On Compose these are read from `.env`; see `.env.example`. On Kubernetes the
 opt-in component described below sets them.
 
-APISIX loads the `opentelemetry` plugin on every route with the `always_on`
-sampler, so a Collector receives its spans and `traceparent` reaches the
-upstream. The Collector address comes from `OTEL_COLLECTOR_ADDRESS`; the APISIX
-config default is `127.0.0.1:4318`. Span export uses an asynchronous batch
-processor: with no Collector listening, APISIX logs export errors and requests
-continue. The Prometheus endpoint on `:9091` is enabled unconditionally and only
+APISIX loads the `opentelemetry` plugin on every route. Its sampler comes from
+`OTEL_APISIX_SAMPLER` and defaults to `always_off`: with no Collector listening,
+each export attempt would log an error, although requests continue. Set it to
+`always_on` together with `OTEL_COLLECTOR_ADDRESS` (default `127.0.0.1:4318`) to
+send gateway spans and pass `traceparent` to the upstream; the Kubernetes
+component sets both. The Prometheus endpoint on `:9091` is enabled unconditionally and only
 listens on the internal network.
 
 ## Kubernetes component

@@ -55,7 +55,9 @@ class TelemetryPlugins(unittest.TestCase):
         for route in self.routes:
             self.assertIn('opentelemetry', route['plugins'], route['id'])
             self.assertIn('prometheus', route['plugins'], route['id'])
-            self.assertEqual(route['plugins']['opentelemetry']['sampler']['name'], 'always_on', route['id'])
+            # Off unless OTEL_APISIX_SAMPLER turns it on: without a Collector every export would log an error.
+            self.assertEqual(route['plugins']['opentelemetry']['sampler']['name'],
+                             '${{OTEL_APISIX_SAMPLER:=always_off}}', route['id'])
 
 
 if __name__ == '__main__':
