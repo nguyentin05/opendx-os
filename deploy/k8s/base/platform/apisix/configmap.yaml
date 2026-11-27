@@ -14,6 +14,8 @@ data:
         # GraphQL subscriptions (live updates) use a WebSocket on the same path.
         enable_websocket: true
         plugins:
+          opentelemetry: {}
+          prometheus: {}
           cors:
             allow_origins: "http://localhost:5173,http://localhost:15173"
             allow_methods: "GET,POST,PUT,OPTIONS"
@@ -64,6 +66,8 @@ data:
         uri: /api/cap/process/effects/*
         priority: 10
         plugins:
+          opentelemetry: {}
+          prometheus: {}
           response-rewrite:
             status_code: 404
             body: '{"error":{"code":"Not Found","message":"Not Found"}}'
@@ -78,6 +82,8 @@ data:
       - id: cap-process-commands
         uri: /api/cap/process/*
         plugins:
+          opentelemetry: {}
+          prometheus: {}
           cors:
             allow_origins: "http://localhost:5173,http://localhost:15173"
             allow_methods: "GET,POST,PUT,OPTIONS"
@@ -96,6 +102,8 @@ data:
       - id: cap-ai
         uri: /api/cap/ai/*
         plugins:
+          opentelemetry: {}
+          prometheus: {}
           cors:
             allow_origins: "http://localhost:5173,http://localhost:15173"
             allow_methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
@@ -123,6 +131,8 @@ data:
       - id: cap-hr
         uri: /api/cap/hr/*
         plugins:
+          opentelemetry: {}
+          prometheus: {}
           cors:
             allow_origins: "http://localhost:5173,http://localhost:15173"
             allow_methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
@@ -141,6 +151,8 @@ data:
       - id: authz-me
         uri: /api/auth/*
         plugins:
+          opentelemetry: {}
+          prometheus: {}
           cors:
             allow_origins: "http://localhost:5173,http://localhost:15173"
             allow_methods: "GET,PUT,DELETE,OPTIONS"
@@ -152,6 +164,9 @@ data:
 
       - id: keycloak-oidc
         uri: /realms/*
+        plugins:
+          opentelemetry: {}
+          prometheus: {}
         upstream:
           type: roundrobin
           nodes:
@@ -171,8 +186,38 @@ data:
         ip: "127.0.0.1"
         port: 9092
 
-    # No plugin list is set, so APISIX loads its built-in defaults. These include
-    # client-control, limit-count and serverless-pre-function used by /v1/graphql.
+    # A plugin list replaces the image defaults, so it names every plugin the
+    # routes use. opentelemetry and prometheus are opt-in telemetry (observability
+    # docs): the plugin is loaded but samples nothing until a route asks for it.
+    plugins:
+      - cors
+      - client-control
+      - limit-count
+      - serverless-pre-function
+      - proxy-rewrite
+      - response-rewrite
+      - prometheus
+      - opentelemetry
+
+    plugin_attr:
+      opentelemetry:
+        resource:
+          service.name: apisix
+        collector:
+          address: "${{OTEL_COLLECTOR_ADDRESS:=127.0.0.1:4318}}"
+          request_timeout: 3
+        batch_span_processor:
+          drop_on_queue_full: true
+          max_queue_size: 1024
+          batch_timeout: 2
+          inactive_timeout: 1
+          max_export_batch_size: 16
+      prometheus:
+        # Scraped by the operator's Collector, never published outside the network.
+        export_addr:
+          ip: 0.0.0.0
+          port: 9091
+
     deployment:
       role: data_plane
       role_data_plane:

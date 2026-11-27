@@ -92,6 +92,9 @@ services:
     restart: unless-stopped
     environment:
       PORT: "8090"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-dxos-authz}
+      OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-}
       DATABASE_URL: postgres://dxos_authz:${AUTHZ_DATABASE_PASSWORD:-change-me-local-authz-db}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
       OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-http://localhost:8085/realms/dxos}
       OIDC_JWKS_URL: ${OIDC_JWKS_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/certs}
@@ -129,6 +132,9 @@ services:
     restart: unless-stopped
     environment:
       PORT: "8083"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-cap-hr}
+      OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-}
       DATABASE_URL: postgres://dxos_hr:${HR_DATABASE_PASSWORD:-change-me-local-hr-db}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
       OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-http://localhost:8085/realms/dxos}
       OIDC_JWKS_URL: ${OIDC_JWKS_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/certs}
@@ -150,6 +156,14 @@ services:
     restart: unless-stopped
     command: start-dev --import-realm
     environment:
+      # Tracing is a preview feature in Keycloak 26.0; off until the operator
+      # sets KC_TRACING_ENABLED and an endpoint.
+      KC_FEATURES: ${KC_FEATURES:-opentelemetry}
+      KC_TRACING_ENABLED: ${KC_TRACING_ENABLED:-false}
+      KC_TRACING_ENDPOINT: ${KC_TRACING_ENDPOINT:-}
+      KC_TRACING_PROTOCOL: ${KC_TRACING_PROTOCOL:-http/protobuf}
+      KC_METRICS_ENABLED: ${KC_METRICS_ENABLED:-false}
+      KC_LOG_CONSOLE_OUTPUT: ${KC_LOG_CONSOLE_OUTPUT:-json}
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       # Tokens must carry the same issuer the services verify, even when they
@@ -231,6 +245,12 @@ services:
       DXOS_WEBHOOK_KEY: ${KESTRA_WEBHOOK_KEY:-change-me-local-webhook-key}
       DXOS_PROCESS_URL: http://cap-process:8081
       DXOS_WORKFLOW_TOKEN: ${WORKFLOW_SERVICE_TOKEN:-change-me-local-workflow-service-token}
+      KESTRA_OTEL_ENABLED: ${KESTRA_OTEL_ENABLED:-false}
+      KESTRA_TRACES_ROOT: ${KESTRA_TRACES_ROOT:-DISABLED}
+      KESTRA_OTLP_METRICS_ENABLED: ${KESTRA_OTLP_METRICS_ENABLED:-false}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      KESTRA_OTEL_ENDPOINT: ${KESTRA_OTEL_ENDPOINT:-}
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-otlp}
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${KESTRA_PORT:-8082}:8080"
     volumes:
@@ -285,6 +305,9 @@ services:
     restart: unless-stopped
     environment:
       PORT: "8081"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-cap-process}
+      OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-}
       DATABASE_URL: postgres://dxos_process:${PROCESS_DATABASE_PASSWORD:-change-me-local-process-db}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
       OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-http://localhost:8085/realms/dxos}
       OIDC_JWKS_URL: ${OIDC_JWKS_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/certs}
@@ -321,6 +344,10 @@ services:
   apisix:
     image: apache/apisix:3.10.0-debian
     restart: unless-stopped
+    environment:
+      # Read by platform/apisix/config.yaml; the plugin samples nothing until a
+      # route sets sampler always_on.
+      OTEL_COLLECTOR_ADDRESS: ${OTEL_COLLECTOR_ADDRESS:-127.0.0.1:4318}
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${APISIX_GATEWAY_PORT:-9080}:9080"
     volumes:

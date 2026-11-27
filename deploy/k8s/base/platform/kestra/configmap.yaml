@@ -8,6 +8,26 @@ metadata:
   name: kestra-config
 data:
   config.yaml: |
+    # OpenTelemetry is off unless the operator enables it and points the OTLP
+    # endpoint at a Collector. Traces and OTLP metrics are independent switches.
+    micronaut:
+      otel:
+        enabled: ${KESTRA_OTEL_ENABLED:false}
+      metrics:
+        export:
+          otlp:
+            enabled: ${KESTRA_OTLP_METRICS_ENABLED:false}
+            url: "${OTEL_EXPORTER_OTLP_ENDPOINT:http://127.0.0.1:4318}/v1/metrics"
+
+    # Kestra's OTLP trace exporter speaks gRPC only, so it takes the Collector's
+    # gRPC address, not the OTLP/HTTP one the other services use.
+    otel:
+      traces:
+        exporter: ${OTEL_TRACES_EXPORTER:otlp}
+      exporter:
+        otlp:
+          endpoint: "${KESTRA_OTEL_ENDPOINT:http://127.0.0.1:4317}"
+
     datasources:
       postgres:
         url: "jdbc:postgresql://${KESTRA_DATABASE_HOST:postgres}:5432/${KESTRA_DATABASE_NAME:dxos_kestra}"
@@ -16,6 +36,8 @@ data:
         password: "${KESTRA_DATABASE_PASSWORD}"
 
     kestra:
+      traces:
+        root: ${KESTRA_TRACES_ROOT:DISABLED}
       repository:
         type: postgres
       queue:
