@@ -57,7 +57,7 @@ class TestInstallationAndPackaging(unittest.TestCase):
                 tmp_path = pathlib.Path(tmp)
                 extract_dir = tmp_path / "extracted source"
                 extract_dir.mkdir()
-                tar.extractall(extract_dir)
+                tar.extractall(extract_dir, filter="data")
                 extracted_root = extract_dir / "dxos-open-core-0.1.0-demo"
                 self.assertFalse((extracted_root / ".git").exists())
 
