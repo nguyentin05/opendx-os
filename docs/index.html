@@ -6,224 +6,461 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="algolia-site-verification" content="AA59E63408D7A23B">
-<title>OpenDX-OS</title>
+<title>OpenDX-OS: ứng dụng nghiệp vụ chỉ là khai báo</title>
 <link rel="icon" href="assets/logo.png">
-<meta name="description" content="Nền tảng mã nguồn mở dạng ghép nối: ứng dụng nghiệp vụ chỉ là các khai báo (manifest, workflow, tri thức) chạy trên hạ tầng dùng chung.">
+<meta name="description" content="OpenDX-OS là nền tảng mã nguồn mở ba tầng cho chuyển đổi số nội bộ: tầng 1 headless, tầng 2 các năng lực H-P-D-I dùng chung, tầng 3 các ứng dụng chỉ gồm khai báo, cài khi hệ thống đang chạy.">
+<meta name="theme-color" content="#3949ab">
+<link rel="canonical" href="https://nguyentin05.github.io/opendx-os/">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://nguyentin05.github.io/opendx-os/">
+<meta property="og:title" content="OpenDX-OS: ứng dụng nghiệp vụ chỉ là khai báo">
+<meta property="og:description" content="Nền tảng mã nguồn mở ba tầng cho chuyển đổi số nội bộ. Cài ứng dụng mới khi hệ thống đang chạy, không cần deploy.">
+<meta property="og:image" content="https://nguyentin05.github.io/opendx-os/assets/landing/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="OpenDX-OS: logo, khẩu hiệu và giao diện danh sách yêu cầu mua sắm">
+<meta property="og:locale" content="vi_VN">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="OpenDX-OS: ứng dụng nghiệp vụ chỉ là khai báo">
+<meta name="twitter:description" content="Nền tảng mã nguồn mở ba tầng cho chuyển đổi số nội bộ.">
+<meta name="twitter:image" content="https://nguyentin05.github.io/opendx-os/assets/landing/og-card.png">
+<script>
+// Follow the colour scheme chosen on the documentation site (Material stores it per site scope).
+(function () {
+  try {
+    var p = JSON.parse(localStorage.getItem(new URL('./', location.href).pathname + '.__palette'));
+    if (p && p.color) document.documentElement.setAttribute('data-theme', p.color.scheme === 'slate' ? 'dark' : 'light');
+  } catch (e) {}
+})();
+</script>
 <style>
 :root {
-  --bg: #fbfbfd; --surface: #ffffff; --text: #16202b; --muted: #5a6876;
-  --line: #e2e6ec; --accent: #3949ab; --accent-soft: #e8eaf6; --code-bg: #f3f5f8;
+  --bg: #f7f8fc; --surface: #ffffff; --surface-2: #f1f3fa; --text: #141b2d; --muted: #556070;
+  --line: #dfe3ee; --accent: #3949ab; --accent-strong: #283593; --accent-soft: #e8eaf6; --on-accent: #ffffff;
+  --code-bg: #f3f5fa; --ok: #166b3d; --ok-soft: #e3f4ea; --warn: #9a5b00; --warn-soft: #fff1d6; --bad: #b3261e; --bad-soft: #fde7e5;
+  --shadow: 0 18px 50px -20px rgba(31, 41, 100, .35); --glow-a: rgba(57, 73, 171, .14); --glow-b: rgba(0, 150, 136, .10);
 }
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #11151b; --surface: #181e26; --text: #e6eaef; --muted: #9aa6b2;
-    --line: #2a323d; --accent: #8c9eff; --accent-soft: #232a45; --code-bg: #0d1116;
+  :root:not([data-theme="light"]) {
+    --bg: #0f131c; --surface: #161c28; --surface-2: #1b2232; --text: #e7ebf3; --muted: #a0abbd;
+    --line: #2a3346; --accent: #9fa8ff; --accent-strong: #c5cae9; --accent-soft: #232a4a; --on-accent: #0f131c;
+    --code-bg: #0c1018; --ok: #6fd19a; --ok-soft: #173326; --warn: #f2c26b; --warn-soft: #3a2c12; --bad: #ff9a8f; --bad-soft: #3b1d1b;
+    --shadow: 0 18px 50px -20px rgba(0, 0, 0, .7); --glow-a: rgba(159, 168, 255, .12); --glow-b: rgba(100, 220, 200, .07);
   }
 }
+:root[data-theme="dark"] {
+  --bg: #0f131c; --surface: #161c28; --surface-2: #1b2232; --text: #e7ebf3; --muted: #a0abbd;
+  --line: #2a3346; --accent: #9fa8ff; --accent-strong: #c5cae9; --accent-soft: #232a4a; --on-accent: #0f131c;
+  --code-bg: #0c1018; --ok: #6fd19a; --ok-soft: #173326; --warn: #f2c26b; --warn-soft: #3a2c12; --bad: #ff9a8f; --bad-soft: #3b1d1b;
+  --shadow: 0 18px 50px -20px rgba(0, 0, 0, .7); --glow-a: rgba(159, 168, 255, .12); --glow-b: rgba(100, 220, 200, .07);
+}
 * { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 body {
-  margin: 0; background: var(--bg); color: var(--text);
-  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  margin: 0; background: var(--bg); color: var(--text); overflow-x: hidden;
+  font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
 }
 a { color: var(--accent); }
-.wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
-header.top { border-bottom: 1px solid var(--line); }
-header.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 56px; }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--text); text-decoration: none; }
-nav a { margin-left: 20px; color: var(--muted); text-decoration: none; }
-nav a:hover { color: var(--text); }
-.hero { padding: 72px 0 56px; }
-.hero-logo { display: block; height: auto; margin-bottom: 20px; }
-.eyebrow { color: var(--accent); font-weight: 600; font-size: 14px; letter-spacing: .04em; text-transform: uppercase; }
-h1 { font-size: clamp(32px, 6vw, 52px); line-height: 1.1; margin: 12px 0 16px; letter-spacing: -.02em; }
-.lead { font-size: 19px; color: var(--muted); max-width: 640px; margin: 0 0 28px; }
+a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+img { max-width: 100%; height: auto; display: block; }
+.skip { position: absolute; left: -999px; top: 8px; background: var(--surface); padding: 8px 12px; z-index: 10; }
+.skip:focus { left: 16px; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+
+/* Header */
+header.top { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+header.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; gap: 12px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 750; color: var(--text); text-decoration: none; letter-spacing: -.01em; }
+nav { display: flex; align-items: center; gap: 4px; }
+nav a { padding: 6px 10px; color: var(--muted); text-decoration: none; border-radius: 8px; font-size: 15px; }
+nav a:hover { color: var(--text); background: var(--surface-2); }
+.theme { display: grid; place-items: center; width: 38px; height: 38px; margin-left: 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--text); cursor: pointer; }
+.theme svg { width: 18px; height: 18px; }
+.theme .sun { display: none; }
+:root[data-theme="dark"] .theme .sun { display: block; }
+:root[data-theme="dark"] .theme .moon { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme .sun { display: block; }
+  :root:not([data-theme="light"]) .theme .moon { display: none; }
+}
+
+/* Hero */
+.hero { position: relative; padding: 72px 0 64px; }
+.hero::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: radial-gradient(600px 320px at 15% 10%, var(--glow-a), transparent 70%),
+              radial-gradient(520px 300px at 85% 30%, var(--glow-b), transparent 70%);
+}
+.hero .wrap { display: grid; gap: 48px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); align-items: center; }
+.badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.badge { font-size: 13px; font-weight: 650; padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); }
+:root[data-theme="dark"] .badge { color: var(--accent); }
+h1 { font-size: clamp(34px, 5.4vw, 56px); line-height: 1.06; margin: 0 0 18px; letter-spacing: -.03em; }
+h1 em { font-style: normal; background: linear-gradient(90deg, var(--accent), #00897b); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.lead { font-size: 18.5px; color: var(--muted); margin: 0 0 28px; max-width: 560px; }
 .cta { display: flex; flex-wrap: wrap; gap: 12px; }
-.btn { display: inline-block; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; border: 1px solid var(--line); color: var(--text); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-@media (prefers-color-scheme: dark) { .btn.primary { color: #11151b; } }
-section { padding: 48px 0; border-top: 1px solid var(--line); }
-h2 { font-size: 26px; margin: 0 0 8px; letter-spacing: -.01em; }
-.sub { color: var(--muted); margin: 0 0 28px; max-width: 680px; }
-.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
-.card h3 { margin: 0 0 8px; font-size: 17px; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; border-radius: 10px; text-decoration: none; font-weight: 650; border: 1px solid var(--line); color: var(--text); background: var(--surface); }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+.window { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); overflow: hidden; }
+.window .bar { display: flex; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.window .bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+.stats { grid-column: 1 / -1; display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 8px; }
+.stat { padding: 14px 16px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); }
+.stat b { display: block; font-size: 22px; letter-spacing: -.02em; }
+.stat span { color: var(--muted); font-size: 14px; }
+
+/* Sections */
+section { padding: 72px 0; }
+section.alt { background: var(--surface-2); border-block: 1px solid var(--line); }
+.eyebrow { color: var(--accent); font-weight: 700; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 8px; }
+h2 { font-size: clamp(26px, 3.4vw, 34px); line-height: 1.15; margin: 0 0 12px; letter-spacing: -.02em; }
+h3 { margin: 0 0 8px; font-size: 18px; letter-spacing: -.01em; }
+.sub { color: var(--muted); margin: 0 0 36px; max-width: 720px; font-size: 17px; }
+.grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
 .card p { margin: 0; color: var(--muted); }
-.tag { display: inline-block; font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 2px 10px; margin-bottom: 10px; }
-ul.plain { margin: 8px 0 0; padding-left: 18px; color: var(--muted); }
-.split { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; }
-pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px; padding: 16px; overflow-x: auto; font-size: 13.5px; line-height: 1.5; margin: 0; }
-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-.c { color: var(--muted); }
+.icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 11px; background: var(--accent-soft); color: var(--accent); margin-bottom: 14px; }
+.icon svg { width: 22px; height: 22px; }
+
+/* Tiers */
+.tiers { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); }
+.tier { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 24px 22px 20px; overflow: hidden; }
+.tier::before { content: ""; position: absolute; inset: 0 0 auto; height: 4px; background: var(--c); }
+.tier .num { font-size: 13px; font-weight: 750; color: var(--c); letter-spacing: .06em; text-transform: uppercase; }
+.tier ul { margin: 12px 0 0; padding: 0; list-style: none; }
+.tier li { padding: 7px 0; border-top: 1px dashed var(--line); color: var(--muted); }
+.tier li:first-child { border-top: 0; }
+.tier li b { color: var(--text); font-weight: 650; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; }
+.tier code { color: var(--text); }
+
+/* Steps and code */
+.split { display: grid; gap: 40px; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); align-items: start; }
 ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 0; }
-ol.steps li { counter-increment: s; position: relative; padding: 0 0 18px 44px; }
-ol.steps li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; display: grid; place-items: center; font-size: 14px; }
-ol.steps strong { display: block; }
+ol.steps li { counter-increment: s; position: relative; padding: 0 0 22px 50px; }
+ol.steps li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 34px; height: 34px; border-radius: 10px; background: var(--accent); color: var(--on-accent); font-weight: 750; display: grid; place-items: center; }
+ol.steps strong { display: block; font-size: 17px; }
 ol.steps span { color: var(--muted); }
-.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 20px; }
-.state { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
-.state.end { border-color: var(--accent); color: var(--accent); }
+pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 14px; padding: 18px; overflow-x: auto; font-size: 13.5px; line-height: 1.55; margin: 0; }
+.c { color: var(--muted); }
+.k { color: var(--accent); }
+
+/* Demo */
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 28px; }
+.state { font-size: 14px; font-weight: 650; padding: 6px 12px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
+.state.go { background: var(--accent-soft); color: var(--accent); }
+.state.ok { background: var(--ok-soft); color: var(--ok); }
+.state.no { background: var(--bad-soft); color: var(--bad); }
 .arrow { color: var(--muted); }
-footer { border-top: 1px solid var(--line); padding: 28px 0 40px; color: var(--muted); font-size: 14px; }
-footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
-@media (max-width: 560px) { nav a.hide-sm { display: none; } .hero { padding: 48px 0 40px; } }
+.gallery { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); margin-bottom: 28px; }
+figure { margin: 0; }
+figure .window { transition: transform .2s ease; }
+figure:hover .window { transform: translateY(-3px); }
+@media (prefers-reduced-motion: reduce) { figure .window { transition: none; } figure:hover .window { transform: none; } }
+figcaption { margin-top: 12px; color: var(--muted); font-size: 15px; }
+figcaption b { color: var(--text); display: block; }
+
+/* Quick start */
+.term { background: #0c1018; color: #d7deea; border-color: #1f2735; }
+.term .c { color: #7d8aa0; }
+.term .p { color: #8fd4a8; user-select: none; }
+.links { display: grid; gap: 12px; margin-top: 18px; }
+.links a { display: flex; justify-content: space-between; gap: 12px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; text-decoration: none; color: var(--text); font-weight: 600; }
+.links a:hover { border-color: var(--accent); }
+.links a span { color: var(--muted); font-weight: 400; }
+
+footer { border-top: 1px solid var(--line); padding: 32px 0 44px; color: var(--muted); font-size: 14.5px; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 28px; justify-content: space-between; align-items: center; }
+footer a { color: var(--muted); }
+footer .brand { font-size: 15px; }
+
+@media (max-width: 900px) {
+  .hero .wrap { grid-template-columns: minmax(0, 1fr); gap: 36px; }
+  .hero { padding: 48px 0 40px; }
+}
+@media (max-width: 640px) {
+  nav a.hide-sm { display: none; }
+  .stats { grid-template-columns: minmax(0, 1fr); }
+  section { padding: 56px 0; }
+}
 </style>
 </head>
 <body>
+<a class="skip" href="#noi-dung">Bỏ qua tới nội dung</a>
 <header class="top">
   <div class="wrap">
     <a class="brand" href="./"><img src="assets/logo.png" alt="" width="32" height="26">OpenDX-OS</a>
-    <nav>
+    <nav aria-label="Liên kết chính">
       <a href="get-started/">Tài liệu</a>
       <a class="hide-sm" href="architecture/">Kiến trúc</a>
-      <a class="hide-sm" href="en/get-started/" hreflang="en">English</a>
-      <a href="https://github.com/nguyentin05/opendx-os">GitHub</a>
+      <a class="hide-sm" href="en/get-started/" hreflang="en" lang="en">English docs</a>
+      <a class="hide-sm" href="https://github.com/nguyentin05/opendx-os">GitHub</a>
+      <button class="theme" type="button" id="theme" aria-label="Đổi giao diện sáng hoặc tối">
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
+      </button>
     </nav>
   </div>
 </header>
 
-<main>
-  <div class="wrap hero">
-    <img class="hero-logo" src="assets/logo.png" alt="Logo OpenDX-OS" width="140" height="112">
-    <div class="eyebrow">Open-core · Apache-2.0</div>
-    <h1>Ứng dụng nghiệp vụ chỉ là khai báo</h1>
-    <p class="lead">OpenDX-OS là nền tảng ba tầng dạng ghép nối cho chuyển đổi số nội bộ của tổ chức. Mỗi ứng dụng là một gói khai báo (dữ liệu, vai trò, máy trạng thái, workflow và tri thức), và nền tảng biến gói đó thành bảng, phân quyền, API và luồng xử lý.</p>
-    <div class="cta">
-      <a class="btn primary" href="get-started/">Bắt đầu</a>
-      <a class="btn" href="architecture/">Đọc kiến trúc</a>
-      <a class="btn" href="https://github.com/nguyentin05/opendx-os">Xem mã nguồn</a>
+<main id="noi-dung">
+  <div class="hero">
+    <div class="wrap">
+      <div>
+        <div class="badges">
+          <span class="badge">Bản phát hành v0.3.0</span>
+          <span class="badge">Apache-2.0</span>
+          <span class="badge">Docker Compose · Kubernetes</span>
+        </div>
+        <h1>Ứng dụng nghiệp vụ <em>chỉ là khai báo</em></h1>
+        <p class="lead">OpenDX-OS là nền tảng mã nguồn mở ba tầng cho chuyển đổi số nội bộ. Mỗi ứng dụng là một gói khai báo gồm dữ liệu, vai trò, máy trạng thái, workflow và tri thức. Nền tảng biến gói đó thành bảng, phân quyền, API, giao diện và luồng xử lý, ngay khi hệ thống đang chạy.</p>
+        <div class="cta">
+          <a class="btn primary" href="get-started/">Bắt đầu
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+          <a class="btn" href="architecture/">Đọc kiến trúc</a>
+          <a class="btn" href="https://github.com/nguyentin05/opendx-os">Mã nguồn</a>
+        </div>
+      </div>
+      <div class="window">
+        <div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
+        <img src="assets/landing/list.webp" width="1280" height="800" fetchpriority="high"
+             alt="Cổng làm việc OpenDX-OS: danh sách yêu cầu mua sắm của các phòng ban, có nhà cung cấp, số tiền, tệp báo giá đã quét và trạng thái phê duyệt">
+      </div>
+    </div>
+    <div class="wrap">
+      <div class="stats">
+        <div class="stat"><b>3 tầng</b><span>hạ tầng headless, năng lực dùng chung, ứng dụng khai báo</span></div>
+        <div class="stat"><b>Dưới 30 giây</b><span>để cài một ứng dụng mới, không cần deploy lại</span></div>
+        <div class="stat"><b>Vài giây</b><span>để thay đổi của người khác hiện trên màn hình đang mở</span></div>
+      </div>
     </div>
   </div>
 
-  <section>
+  <section class="alt" aria-labelledby="ba-tang">
     <div class="wrap">
-      <h2>Ba tầng, ranh giới rõ ràng</h2>
-      <p class="sub">Ứng dụng không bao giờ kèm code backend. Ứng dụng dùng các capability dùng chung, chạy trên một nền tảng headless.</p>
-      <div class="grid">
-        <div class="card">
-          <span class="tag">Tầng 1 · Nền tảng</span>
-          <h3>Hạ tầng headless</h3>
-          <ul class="plain">
-            <li>PostgreSQL 17 và Hasura GraphQL</li>
-            <li>Keycloak SSO và gateway APISIX</li>
-            <li>Workflow engine Kestra</li>
-            <li>Lưu trữ SeaweedFS có quét ClamAV</li>
-            <li>Operator viết bằng Go để cài gói ứng dụng</li>
+      <p class="eyebrow">Kiến trúc</p>
+      <h2 id="ba-tang">Ba tầng, ranh giới rõ ràng</h2>
+      <p class="sub">Ứng dụng không bao giờ kèm code backend. Ứng dụng dùng các năng lực dùng chung ở tầng 2, chạy trên một nền tảng headless chỉ cung cấp API ở tầng 1.</p>
+      <div class="tiers">
+        <div class="tier" style="--c:#3949ab">
+          <span class="num">Tầng 1 · Nền tảng headless</span>
+          <h3>Dịch vụ lõi dùng chung</h3>
+          <ul>
+            <li><b>PostgreSQL 17</b> và <b>Hasura</b> GraphQL</li>
+            <li><b>Keycloak</b> xác thực, <code>dxos-authz</code> phân quyền ở mỗi request</li>
+            <li>Gateway <b>APISIX</b> và workflow engine <b>Kestra</b></li>
+            <li>Lưu trữ <b>SeaweedFS</b>, quét virus <b>ClamAV</b></li>
+            <li><code>dxos-operator</code> và controller Kubernetes cài gói ứng dụng</li>
           </ul>
         </div>
-        <div class="card">
-          <span class="tag">Tầng 2 · Capability</span>
-          <h3>Dịch vụ H-P-D-I dùng chung</h3>
-          <ul class="plain">
-            <li><code>cap-process</code>: command có version và file</li>
-            <li><code>cap-hr</code>: phòng ban và nhân sự</li>
-            <li><code>cap-ai</code>: tìm kiếm tri thức theo phạm vi</li>
-            <li><code>dxos-authz</code>: xác định vai trò ở mỗi request</li>
-            <li>App Shell dựng giao diện từ schema</li>
+        <div class="tier" style="--c:#00897b">
+          <span class="num">Tầng 2 · Năng lực H-P-D-I</span>
+          <h3>Năng lực và giao diện</h3>
+          <ul>
+            <li><code>cap-hr</code> (H): phòng ban và nhân sự</li>
+            <li><code>cap-process</code> (P): command có version, tệp, lịch sử, sự kiện</li>
+            <li><code>cap-work</code>: việc được giao, hiện trong “Việc của tôi”</li>
+            <li><code>cap-data</code> (D): dữ liệu thiết bị</li>
+            <li><code>cap-ai</code> (I): Trợ lý và tri thức có trích dẫn</li>
+            <li><b>Cổng làm việc</b> dựng giao diện từ manifest</li>
           </ul>
         </div>
-        <div class="card">
-          <span class="tag">Tầng 3 · Ứng dụng</span>
+        <div class="tier" style="--c:#ef6c00">
+          <span class="num">Tầng 3 · Ứng dụng</span>
           <h3>Gói khai báo</h3>
-          <ul class="plain">
-            <li>Phê duyệt mua sắm</li>
-            <li>Bảo trì thiết bị</li>
-            <li>Chấm công</li>
-            <li>Thư viện tri thức cá nhân</li>
+          <ul>
+            <li><b>Mua sắm vật tư</b>: phê duyệt liên phòng ban</li>
+            <li><b>Bảo trì thiết bị</b>: công việc theo thiết bị</li>
+            <li><b>Bảng công nhân viên</b>: chấm công và duyệt</li>
+            <li><b>Thư viện cá nhân</b>: tài liệu riêng cho Trợ lý</li>
           </ul>
         </div>
       </div>
     </div>
   </section>
 
-  <section>
+  <section aria-labelledby="khai-bao">
     <div class="wrap split">
       <div>
-        <h2>Khai báo, operator lo phần còn lại</h2>
-        <p class="sub">Manifest khai báo vai trò, các bảng, những cột mỗi vai trò được xem và các command chuyển bản ghi giữa các trạng thái.</p>
+        <p class="eyebrow">Thêm ứng dụng</p>
+        <h2 id="khai-bao">Khai báo, operator lo phần còn lại</h2>
+        <p class="sub">Một ứng dụng mới được cài khi hệ thống đang chạy, không build và không deploy lại.</p>
         <ol class="steps">
-          <li><strong>Viết gói ứng dụng</strong><span>Một <code>manifest.yaml</code>, kèm flow Kestra và file tri thức nếu cần.</span></li>
-          <li><strong>Thả vào <code>apps/</code></strong><span>Operator sinh bảng <code>domain.*</code>, phân quyền theo dòng và cột trong Hasura, vai trò và flow Kestra.</span></li>
-          <li><strong>Sử dụng</strong><span>Đọc dữ liệu qua GraphQL; đổi trạng thái qua command của <code>cap-process</code> kèm version mong đợi.</span></li>
+          <li><strong>Viết manifest</strong><span>Vai trò, bảng, cột mỗi vai trò được xem, máy trạng thái và các command.</span></li>
+          <li><strong>Operator cài gói</strong><span>Tạo bảng, trigger, quyền GraphQL, flow Kestra và vai trò, rồi báo <code>Ready</code>. Trên Kubernetes, gói là một tài nguyên <code>DXApplication</code>.</span></li>
+          <li><strong>Giao diện tự xuất hiện</strong><span>Cổng làm việc đọc manifest và dựng danh sách, form, trang chi tiết cho đúng vai trò.</span></li>
         </ol>
       </div>
       <pre><code><span class="c"># apps/procurement/manifest.yaml (trích)</span>
-kind: DXApplication
-metadata:
-  name: procurement
-spec:
-  roles:
+<span class="k">kind</span>: DXApplication
+<span class="k">spec</span>:
+  <span class="k">roles</span>:
   - name: role_procurement_requester
   - name: role_procurement_manager
   - name: role_procurement_finance
-  ...
+  <span class="k">tables</span>:
+  - name: domain.procurement_requests
+    <span class="k">stateMachine</span>:
+      initial: DRAFT
       commands:
       - name: approve
         from: [SUBMITTED]
         to: BUDGET_REVIEW
         allowedRoles: [role_procurement_manager]
-        recordFilter:   <span class="c"># cấm tự duyệt</span>
+        recordFilter:   <span class="c"># không tự duyệt</span>
           created_by:
             _neq: X-Hasura-User-Id
       - name: reject
+        from: [SUBMITTED, BUDGET_REVIEW]
+        to: REJECTED
         payload:
         - column: rejection_reason
-          required: true</code></pre>
+          required: true   <span class="c"># từ chối phải nêu lý do</span></code></pre>
     </div>
   </section>
 
-  <section>
+  <section class="alt" aria-labelledby="demo">
     <div class="wrap">
-      <h2>Demo: phê duyệt mua sắm liên phòng ban</h2>
-      <p class="sub">Người đề nghị tạo đề nghị mua sắm kèm báo giá đã quét virus. Trưởng phòng duyệt, sau đó tài chính xét ngân sách. Mỗi bước là một command có version, được ghi vào audit log và gửi tới workflow.</p>
-      <div class="flow" aria-label="Các trạng thái của đề nghị mua sắm">
-        <span class="state">DRAFT</span><span class="arrow">→</span>
-        <span class="state">SUBMITTED</span><span class="arrow">→</span>
-        <span class="state">BUDGET_REVIEW</span><span class="arrow">→</span>
-        <span class="state end">APPROVED</span>
+      <p class="eyebrow">Ứng dụng minh hoạ</p>
+      <h2 id="demo">Phê duyệt mua sắm liên phòng ban</h2>
+      <p class="sub">Người đề nghị gửi yêu cầu kèm báo giá đã quét virus. Trưởng phòng duyệt, rồi tài chính xét ngân sách. Mỗi bước là một command có version, được ghi vào lịch sử và gửi tới workflow.</p>
+      <div class="flow" aria-label="Các trạng thái của yêu cầu mua sắm">
+        <span class="state go">Nháp</span><span class="arrow" aria-hidden="true">→</span>
+        <span class="state">Chờ quản lý duyệt</span><span class="arrow" aria-hidden="true">→</span>
+        <span class="state">Chờ duyệt ngân sách</span><span class="arrow" aria-hidden="true">→</span>
+        <span class="state ok">Đã duyệt</span><span class="arrow" aria-hidden="true">hoặc</span>
+        <span class="state no">Bị từ chối</span>
+      </div>
+      <div class="gallery">
+        <figure>
+          <div class="window"><div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
+            <img src="assets/landing/detail.webp" width="1280" height="960" loading="lazy"
+                 alt="Trang chi tiết một yêu cầu đã duyệt: tệp báo giá đã quét an toàn và lịch sử bốn bước từ người đề nghị, trưởng phòng tới tài chính"></div>
+          <figcaption><b>Hồ sơ và lịch sử</b>Tệp đính kèm chỉ tải được sau khi ClamAV quét sạch. Mỗi bước ghi rõ ai làm, lúc nào, với vai trò gì.</figcaption>
+        </figure>
+        <figure>
+          <div class="window"><div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
+            <img src="assets/landing/work.webp" width="1280" height="800" loading="lazy"
+                 alt="Trang Việc của tôi của trưởng phòng: hộp chờ xử lý và danh sách việc duyệt yêu cầu mua sắm do workflow giao"></div>
+          <figcaption><b>Việc của tôi</b>Workflow giao việc duyệt cho đúng trưởng phòng; việc tự đóng khi yêu cầu được duyệt hoặc từ chối.</figcaption>
+        </figure>
       </div>
       <div class="grid">
-        <div class="card"><h3>Phạm vi phòng ban</h3><p>Trưởng phòng chỉ thấy và duyệt đề nghị của phòng mình.</p></div>
-        <div class="card"><h3>Không tự duyệt</h3><p>Trưởng phòng không duyệt được đề nghị do chính mình tạo; nền tảng từ chối.</p></div>
-        <div class="card"><h3>Từ chối ghi đè dữ liệu cũ</h3><p>Command mang version đã cũ bị từ chối, không ghi đè lên quyết định mới hơn.</p></div>
+        <div class="card"><h3>Phạm vi phòng ban</h3><p>Trưởng phòng chỉ thấy và duyệt yêu cầu của phòng mình; tài chính thấy mọi phòng.</p></div>
+        <div class="card"><h3>Không tự duyệt</h3><p>Trưởng phòng không duyệt được yêu cầu do chính mình tạo; nền tảng từ chối.</p></div>
+        <div class="card"><h3>Không ghi đè dữ liệu mới</h3><p>Command mang version đã cũ bị từ chối, không đè lên quyết định mới hơn.</p></div>
+        <div class="card"><h3>Cập nhật trực tiếp</h3><p>Khi người khác duyệt, danh sách và hồ sơ đang mở tự đổi sau vài giây, không cần tải lại.</p></div>
       </div>
     </div>
   </section>
 
-  <section>
-    <div class="wrap">
-      <h2>Nguyên tắc thiết kế</h2>
-      <div class="grid">
-        <div class="card"><h3>Keycloak xác thực, nền tảng phân quyền</h3><p>Vai trò nằm trong <code>core.user_roles</code> và được xác định lại ở mỗi request.</p></div>
-        <div class="card"><h3>Một tổ chức, ứng dụng tách biệt</h3><p>Dữ liệu được tách theo ứng dụng và phòng ban, không theo khóa tenant.</p></div>
-        <div class="card"><h3>Khai báo thay cho code</h3><p>Quy tắc nghiệp vụ nằm trong manifest và workflow, nên cài ứng dụng không cần deploy.</p></div>
-        <div class="card"><h3>Mã nguồn mở hoàn toàn</h3><p>Code Apache-2.0 chạy trên hạ tầng mã nguồn mở mà bạn tự vận hành được.</p></div>
-      </div>
-    </div>
-  </section>
-
-  <section>
+  <section aria-labelledby="quan-tri">
     <div class="wrap split">
       <div>
-        <h2>Chạy trên máy</h2>
-        <p class="sub">Docker Compose khởi động toàn bộ nền tảng trên máy của bạn. Script seed tạo một tổ chức demo và chạy một đề nghị qua toàn bộ chuỗi phê duyệt.</p>
-        <p><a href="get-started/">Hướng dẫn cài đặt đầy đủ →</a></p>
+        <p class="eyebrow">Quản trị</p>
+        <h2 id="quan-tri">Keycloak xác thực, nền tảng phân quyền</h2>
+        <p class="sub">Tài khoản nằm ở Keycloak hoặc danh bạ mà Keycloak liên kết. Vai trò và phòng ban nằm ở nền tảng, được kiểm lại ở mỗi request.</p>
+        <ol class="steps">
+          <li><strong>Tạo người ở một nơi</strong><span>Người mới tạo trong Keycloak hiện ngay trong “Người dùng &amp; quyền”, cấp vai trò được trước lần đăng nhập đầu.</span></li>
+          <li><strong>Thu quyền có hiệu lực ngay</strong><span>Vai trò bị thu mất tác dụng trong vài giây; tài khoản bị tắt trong Keycloak bị từ chối trong vài phút, kể cả với token còn hạn.</span></li>
+          <li><strong>Tổ chức theo phòng ban</strong><span>Màn hình “Tổ chức” quản lý cây phòng ban và nhân sự, quyết định ai thấy dòng dữ liệu nào.</span></li>
+        </ol>
       </div>
-      <pre><code>git clone https://github.com/nguyentin05/opendx-os
-cd opendx-os
-scripts/init-env.sh
-docker compose up -d --build
-scripts/test-compose.sh
-scripts/seed-demo.py seed
-scripts/seed-demo.py flow</code></pre>
+      <figure>
+        <div class="window"><div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
+          <img src="assets/landing/people.webp" width="1280" height="800" loading="lazy"
+               alt="Màn hình Người dùng và quyền: danh sách tài khoản, trạng thái và vai trò đang giữ"></div>
+      </figure>
+    </div>
+  </section>
+
+  <section class="alt" aria-labelledby="van-hanh">
+    <div class="wrap">
+      <p class="eyebrow">Vận hành</p>
+      <h2 id="van-hanh">Từ máy cá nhân tới cụm Kubernetes</h2>
+      <p class="sub">Cùng một bộ cấu hình chạy bằng Docker Compose trên máy hoặc trên bất kỳ cụm Kubernetes nào; một workflow kiểm tra hai cách triển khai không lệch nhau.</p>
+      <div class="grid">
+        <div class="card">
+          <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l8.7 5v10L12 22l-8.7-5V7z"/><path d="M12 22V12M20.7 7L12 12 3.3 7"/></svg></div>
+          <h3>Kubernetes cho mọi cụm</h3><p>Manifest theo tầng, Pod đã siết bảo mật, overlay mẫu cho EKS, GKE, AKS và cụm tự dựng. Đã chạy thật trên EKS.</p>
+        </div>
+        <div class="card">
+          <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></div>
+          <h3>Không dùng thì không chạy</h3><p>Với component KEDA tuỳ chọn, các dịch vụ tầng 2 và ClamAV về 0 khi không có việc và tự khởi động khi có request hay việc tồn đọng.</p>
+        </div>
+        <div class="card">
+          <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3"/><path d="M18 3v4h-4M6 21v-4h4"/></svg></div>
+          <h3>Thời gian thực</h3><p>Subscription GraphQL qua WebSocket; quyền của kết nối hết hạn sau một phút để thu quyền luôn có tác dụng.</p>
+        </div>
+        <div class="card">
+          <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l8 4v6c0 5-3.4 8.6-8 10-4.6-1.4-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg></div>
+          <h3>Bí mật ngoài Git</h3><p>Mọi mật khẩu sinh lúc cài đặt; quét gitleaks, Trivy và CodeQL trên mỗi thay đổi.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="nguyen-tac">
+    <div class="wrap">
+      <p class="eyebrow">Nguyên tắc</p>
+      <h2 id="nguyen-tac">Nguyên tắc thiết kế</h2>
+      <div class="grid">
+        <div class="card"><h3>Khai báo thay cho code</h3><p>Quy tắc nghiệp vụ nằm trong manifest và workflow, nên cài ứng dụng không cần deploy.</p></div>
+        <div class="card"><h3>Một nguồn quyền duy nhất</h3><p>Vai trò nằm trong <code>core.user_roles</code>; Keycloak chỉ trả lời “bạn là ai”.</p></div>
+        <div class="card"><h3>Một tổ chức, ứng dụng tách biệt</h3><p>Dữ liệu tách theo ứng dụng và phòng ban, không theo khoá tenant.</p></div>
+        <div class="card"><h3>Mã nguồn mở hoàn toàn</h3><p>Code Apache-2.0 trên hạ tầng mã nguồn mở mà tổ chức tự vận hành được.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="alt" aria-labelledby="chay-thu">
+    <div class="wrap split">
+      <div>
+        <p class="eyebrow">Chạy thử</p>
+        <h2 id="chay-thu">Chạy trên máy trong vài phút</h2>
+        <p class="sub">Docker Compose khởi động toàn bộ nền tảng. Script seed tạo một tổ chức demo và đưa một yêu cầu đi hết chuỗi phê duyệt.</p>
+        <div class="links">
+          <a href="get-started/">Hướng dẫn cài đặt <span>Docker Compose →</span></a>
+          <a href="operations/kubernetes/">Triển khai Kubernetes <span>Vận hành →</span></a>
+          <a href="guides/knowledge/personal-library/">Trợ lý và thư viện cá nhân <span>Tri thức →</span></a>
+        </div>
+      </div>
+      <pre class="term"><code><span class="p">$ </span>git clone https://github.com/nguyentin05/opendx-os
+<span class="p">$ </span>cd opendx-os
+<span class="p">$ </span>scripts/init-env.sh
+<span class="p">$ </span>docker compose up -d --build
+<span class="p">$ </span>scripts/test-compose.sh
+<span class="p">$ </span>scripts/seed-demo.py seed
+<span class="p">$ </span>scripts/seed-demo.py flow</code></pre>
     </div>
   </section>
 </main>
 
 <footer>
   <div class="wrap">
-    <span>OpenDX-OS · Apache-2.0 · Đang phát triển</span>
-    <span><a href="get-started/">Tài liệu</a> · <a href="adr/">ADR</a> · <a href="en/get-started/" hreflang="en">English</a> · <a href="https://github.com/nguyentin05/opendx-os">GitHub</a></span>
+    <span class="brand"><img src="assets/logo.png" alt="" width="24" height="19">OpenDX-OS · Apache-2.0 · v0.3.0</span>
+    <span><a href="get-started/">Tài liệu</a> · <a href="architecture/">Kiến trúc</a> · <a href="adr/">ADR</a> · <a href="https://github.com/nguyentin05/opendx-os/releases">Bản phát hành</a> · <a href="en/get-started/" hreflang="en" lang="en">English docs</a> · <a href="https://github.com/nguyentin05/opendx-os">GitHub</a></span>
   </div>
 </footer>
+
+<script>
+// Writes the same palette entry Material uses, so the docs pages follow this choice too.
+document.getElementById('theme').addEventListener('click', function () {
+  var root = document.documentElement;
+  var current = root.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  var next = current === 'dark' ? 'light' : 'dark';
+  root.setAttribute('data-theme', next);
+  try {
+    localStorage.setItem(new URL('./', location.href).pathname + '.__palette', JSON.stringify({
+      index: next === 'dark' ? 1 : 0,
+      color: { media: next === 'dark' ? '(prefers-color-scheme: dark)' : '(prefers-color-scheme: light)',
+               scheme: next === 'dark' ? 'slate' : 'default', primary: 'indigo', accent: 'indigo' }
+    }));
+  } catch (e) {}
+});
+</script>
 </body>
 </html>
