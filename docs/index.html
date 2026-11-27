@@ -227,7 +227,7 @@ pre .ok { color: var(--code-ok); }
 .node.current { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
 .node.current.good { border-color: var(--ok); background: var(--ok-soft); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 18%, transparent); }
 .node.current.stop { border-color: var(--bad); background: var(--bad-soft); box-shadow: 0 0 0 4px color-mix(in srgb, var(--bad) 18%, transparent); }
-.console { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 22px; }
+.console { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
 .panel-box { border: 1px solid var(--line); border-radius: 18px; background: var(--surface); padding: 22px; }
 .roles { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); margin-bottom: 18px; }
 .roles button { flex: 1 1 140px; border: 0; background: transparent; color: var(--muted); padding: 8px 10px; border-radius: 9px; cursor: pointer; text-align: left; line-height: 1.3; }
@@ -345,9 +345,8 @@ nav .menu-panel a:hover { background: var(--surface-2); }
 /* Highlight chips, state-machine branches, providers, requirements, team */
 .tags { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: -18px 0 40px; padding: 0; }
 .tags li { font-size: 14px; font-weight: 500; padding: 6px 13px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--muted); }
-.providers { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(96px, 100%), 1fr)); }
+.providers { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(190px, 100%), 1fr)); }
 .providers li { padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); }
-.providers li.on { border-color: var(--accent); background: var(--accent-soft); }
 .providers b { display: block; font-size: 15px; }
 .providers span { font-size: 13px; color: var(--muted); }
 .reqs { margin-top: 28px; }
@@ -361,7 +360,8 @@ nav .menu-panel a:hover { background: var(--surface-2); }
 .team b { font-size: 16.5px; }
 .team span { color: var(--muted); font-size: 14.5px; }
 .team a { font-size: 14px; }
-.team i { margin-top: 8px; font-style: normal; font-size: 12.5px; font-weight: 600; padding: 3px 11px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); }
+.team .badges { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 8px 0 0; }
+.team i { font-style: normal; font-size: 12.5px; font-weight: 600; padding: 3px 11px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); }
 :root[data-theme="dark"] .team i { color: var(--accent); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .team i { color: var(--accent); } }
 footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--muted); font-size: 14.5px; }
@@ -431,7 +431,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--m
 </head>
 <body>
 <a class="skip" href="#noi-dung">Bỏ qua tới nội dung</a>
-<div class="notice">Một nền tảng chung cho mọi ứng dụng nội bộ, triển khai được ở mọi nơi: máy chủ riêng, Docker Compose hay Kubernetes trên EKS, GKE, AKS. <a href="operations/">Xem cách triển khai →</a></div>
+<div class="notice">Một nền tảng chung cho mọi ứng dụng nội bộ, triển khai được đa dạng trên nhiều nền tảng khác nhau. <a href="operations/">Tìm hiểu thêm →</a></div>
 <header class="top">
   <div class="wrap">
     <a class="brand" href="./"><img src="assets/landing/logo.webp" alt="" width="32" height="26">OpenDX-OS</a>
@@ -446,7 +446,6 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--m
             <a href="operations/">Vận hành<span>Kubernetes, sao lưu, giám sát</span></a>
             <a href="architecture/">Kiến trúc<span>Ba tầng và mô hình bảo mật</span></a>
             <a href="reference/">Tham chiếu<span>Manifest, API, hợp đồng dữ liệu</span></a>
-            <a href="adr/">Quyết định kiến trúc<span>Các ADR</span></a>
           </div>
           <div lang="en">
             <p class="menu-title">English</p>
@@ -473,8 +472,8 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--m
   <div class="hero">
     <div class="wrap">
       <span class="pill"><i aria-hidden="true"></i>Mã nguồn mở · Apache-2.0<span class="hide-xs"> · Tự vận hành</span></span>
-      <h1>Một nền tảng cho mọi ứng dụng nội bộ,<br><em>số hoá chỉ bằng khai báo</em></h1>
-      <p class="lead">Khai báo dữ liệu, vai trò và quy trình duyệt; OpenDX-OS dựng thành ứng dụng hoàn chỉnh, có phân quyền, giao diện và lịch sử, và cài được ngay khi hệ thống đang chạy.</p>
+      <h1>Một nền tảng số hoá<br><em>cho mọi ứng dụng nội bộ</em></h1>
+      <p class="lead">Mỗi ứng dụng chỉ là một gói khai báo: dữ liệu, vai trò và quy trình duyệt. OpenDX-OS biến gói đó thành ứng dụng hoàn chỉnh, có phân quyền, giao diện và lịch sử, và cài được ngay khi hệ thống đang chạy.</p>
       <div class="cta">
         <a class="btn primary" href="get-started/">Bắt đầu
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
@@ -501,10 +500,10 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--m
         <div class="stat"><b>3 tầng</b><span>nền tảng lõi, năng lực dùng chung, ứng dụng khai báo</span></div>
         <div class="stat"><b>&lt; 30 giây</b><span>để cài một ứng dụng, không build, không deploy lại</span></div>
         <div class="stat"><b>~ 3 giây</b><span>để thay đổi của người khác hiện trên màn hình đang mở</span></div>
-        <div class="stat"><b>4 nơi</b><span>triển khai mẫu: Docker Compose, EKS, GKE, AKS và máy chủ riêng</span></div>
+        <div class="stat"><b>5 nền tảng</b><span>có ví dụ triển khai: Docker Compose, EKS, GKE, AKS và máy chủ riêng</span></div>
       </div>
-      <div class="stack" aria-label="Xây trên các dự án mã nguồn mở">
-        <small>Xây trên</small>
+      <div class="stack" aria-label="Phát triển dựa trên các dự án mã nguồn mở">
+        <small>Phát triển dựa trên</small>
         <span>PostgreSQL</span><span>Hasura</span><span>Keycloak</span><span>APISIX</span><span>Kestra</span><span>SeaweedFS</span><span>ClamAV</span><span>Kubernetes</span><span>KEDA</span>
       </div>
     </div>
@@ -516,13 +515,13 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--m
       <h2 id="gioi-thieu">OpenDX-OS là gì?</h2>
       <p class="sub">OpenDX-OS là nền tảng mã nguồn mở giúp các tổ chức doanh nghiệp số hóa các quy trình nội bộ như mua sắm, bảo trì thiết bị hay chấm công lên cùng một hệ thống. Thay vì mua hoặc viết một phần mềm riêng cho từng việc, tổ chức mô tả mỗi quy trình bằng một gói khai báo, và nền tảng lo phần còn lại.</p>
       <ul class="tags" aria-label="Điểm nổi bật">
-        <li>Mã nguồn mở Apache-2.0</li><li>Tự vận hành</li><li>Không viết backend</li><li>Đăng nhập một lần</li><li>Phân quyền theo phòng ban</li><li>Lịch sử đầy đủ</li><li>Compose và Kubernetes</li>
+        <li>Mã nguồn mở Apache-2.0</li><li>Tự vận hành</li><li>Nền tảng dùng chung</li><li>Lịch sử đầy đủ</li><li>Docker Compose và Kubernetes</li>
       </ul>
       <div class="principles">
         <div class="reveal"><span class="n">Vấn đề</span><h3>Mỗi quy trình một phần mềm</h3><p>Tài khoản, phân quyền và dữ liệu nằm rải rác, khó biết ai được làm gì và đã làm gì.</p></div>
-        <div class="reveal"><span class="n">Cách làm</span><h3>Một nền tảng dùng chung</h3><p>Đăng nhập, phân quyền, lưu trữ, quy trình và giao diện do nền tảng lo; ứng dụng chỉ khai báo phần nghiệp vụ.</p></div>
+        <div class="reveal"><span class="n">Cách làm</span><h3>Một nền tảng dùng chung</h3><p>Đăng nhập, phân quyền, lưu trữ, quy trình và giao diện do nền tảng lo và ứng dụng chỉ khai báo phần nghiệp vụ.</p></div>
         <div class="reveal"><span class="n">Kết quả</span><h3>Một cổng cho mọi ứng dụng</h3><p>Một lần đăng nhập, một nơi cấp quyền, lịch sử đầy đủ cho mỗi hồ sơ.</p></div>
-        <div class="reveal"><span class="n">Mở rộng</span><h3>Thêm ứng dụng khi đang chạy</h3><p>Cài hoặc gỡ một ứng dụng trong vài giây, không build và không deploy lại.</p></div>
+        <div class="reveal"><span class="n">Mở rộng</span><h3>Mở rộng liên tục</h3><p>Cài đặt và gỡ ứng dụng liên tục, không build, không triển khai lại và không gián đoạn hệ thống.</p></div>
       </div>
     </div>
   </section>
@@ -736,19 +735,19 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
       <p class="sub">Cùng một bộ cấu hình chạy bằng Docker Compose trên một máy chủ, hoặc trên cụm Kubernetes của nhà cung cấp đám mây nào cũng được. Hai cách triển khai được kiểm tra tự động để luôn khớp nhau.</p>
       <div class="bento">
         <div class="cell wide reveal">
-          <div class="txt"><h3>Triển khai ở đâu cũng được</h3><p>Có sẵn ví dụ triển khai cho các nền tảng phổ biến, đã chạy thật trên Amazon EKS với HTTPS.</p></div>
+          <div class="txt"><h3>Triển khai linh hoạt</h3><p>Có sẵn cấu hình mẫu cho các nền tảng phổ biến, từ một máy chủ đơn lẻ đến cụm Kubernetes trên đám mây.</p></div>
           <div class="vis">
             <ul class="providers" aria-label="Ví dụ triển khai có sẵn">
-              <li class="on"><b>Amazon EKS</b><span>đã chạy thật</span></li>
-              <li><b>Google GKE</b><span>ví dụ có sẵn</span></li>
-              <li><b>Azure AKS</b><span>ví dụ có sẵn</span></li>
-              <li><b>Máy chủ riêng</b><span>Kubernetes tự dựng</span></li>
-              <li><b>Docker Compose</b><span>một máy, chạy thử nhanh</span></li>
+              <li><b>Amazon EKS</b><span>Kubernetes trên AWS</span></li>
+              <li><b>Google GKE</b><span>Kubernetes trên Google Cloud</span></li>
+              <li><b>Azure AKS</b><span>Kubernetes trên Azure</span></li>
+              <li><b>Máy chủ riêng</b><span>Cụm Kubernetes tự quản</span></li>
+              <li><b>Docker Compose</b><span>Một máy, dùng thử nhanh</span></li>
             </ul>
           </div>
         </div>
         <div class="cell reveal">
-          <div class="txt"><h3>Không dùng thì không chạy</h3><p>Dịch vụ ít dùng tự tắt khi rảnh và tự bật lại khi có việc, nhờ KEDA.</p></div>
+          <div class="txt"><h3>Tự tắt khi rảnh, tự bật khi cần</h3><p>Dịch vụ ít dùng sẽ tạm nghỉ khi không có việc và khởi động lại ngay khi có yêu cầu mới, nhờ vậy tiết kiệm tài nguyên.</p></div>
           <div class="vis">
             <svg class="chart" viewBox="0 0 240 110" role="img" aria-label="Số pod theo thời gian: 0, tăng lên 1 khi có request, rồi về 0 khi rảnh">
               <line class="grid" x1="40" y1="20" x2="236" y2="20"/><line class="grid" x1="40" y1="86" x2="236" y2="86"/>
@@ -807,7 +806,7 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
       <div>
         <p class="eyebrow">Chạy thử</p>
         <h2 id="chay-thu">Chạy trên máy trong vài phút</h2>
-        <p class="sub">Docker Compose khởi động toàn bộ nền tảng. Script seed tạo một tổ chức demo và đưa một yêu cầu đi hết chuỗi phê duyệt.</p>
+        <p class="sub">Chỉ cần Docker Compose và vài lệnh là toàn bộ nền tảng chạy trên máy của bạn.</p>
         <div class="links">
           <a href="get-started/">Hướng dẫn cài đặt <span>Docker Compose →</span></a>
           <a href="operations/kubernetes/">Triển khai Kubernetes <span>Vận hành →</span></a>
@@ -828,22 +827,19 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
 <pre><code id="quick"><span class="p">$ </span>git clone https://github.com/nguyentin05/opendx-os
 <span class="p">$ </span>cd opendx-os
 <span class="p">$ </span>scripts/init-env.sh
-<span class="p">$ </span>docker compose up -d --build
-<span class="p">$ </span>scripts/test-compose.sh
-<span class="p">$ </span>scripts/seed-demo.py seed
-<span class="p">$ </span>scripts/seed-demo.py flow</code></pre>
+<span class="p">$ </span>docker compose up -d --build</code></pre>
       </div>
     </div>
   </section>
 <section aria-labelledby="doi-ngu">
     <div class="wrap">
       <p class="eyebrow">Đội ngũ</p>
-      <h2 id="doi-ngu">Những người xây OpenDX-OS</h2>
+      <h2 id="doi-ngu">Những người đứng sau OpenDX-OS</h2>
       <p class="sub">Dự án mã nguồn mở do một nhóm nhỏ phát triển và duy trì. Mọi đóng góp đều được chào đón: <a href="https://github.com/nguyentin05/opendx-os/blob/main/CONTRIBUTING.md">hướng dẫn đóng góp</a>, <a href="https://discord.gg/Mt7zskvcpU">Discord</a>.</p>
       <ul class="team">
-        <li class="reveal"><img src="assets/landing/team-nguyentin05.webp" alt="" width="80" height="80" loading="lazy"><b>nguyentin05</b><span>Developer · Maintainer</span><a href="https://github.com/nguyentin05" aria-label="GitHub của nguyentin05">GitHub</a><i>Maintainer</i></li>
-        <li class="reveal"><img src="assets/landing/team-ximofam.webp" alt="" width="80" height="80" loading="lazy"><b>ximofam</b><span>Kỹ sư AI</span><a href="https://github.com/ximofam" aria-label="GitHub của ximofam">GitHub</a><i>Trợ lý AI</i></li>
-        <li class="reveal"><img src="assets/landing/team-teaching2504.webp" alt="" width="80" height="80" loading="lazy"><b>Teaching2504</b><span>Tài liệu</span><a href="https://github.com/Teaching2504" aria-label="GitHub của Teaching2504">GitHub</a><i>Tài liệu</i></li>
+        <li class="reveal"><img src="assets/landing/team-nguyentin05.webp" alt="" width="80" height="80" loading="lazy"><b>nguyentin05</b><span lang="en">DevOps Engineer</span><a href="https://github.com/nguyentin05" aria-label="GitHub của nguyentin05">GitHub</a><p class="badges" lang="en"><i>Developer</i><i>Maintainer</i></p></li>
+        <li class="reveal"><img src="assets/landing/team-ximofam.webp" alt="" width="80" height="80" loading="lazy"><b>ximofam</b><span lang="en">Software Engineer</span><a href="https://github.com/ximofam" aria-label="GitHub của ximofam">GitHub</a><p class="badges" lang="en"><i>AI Developer</i><i>Maintainer</i></p></li>
+        <li class="reveal"><img src="assets/landing/team-teaching2504.webp" alt="" width="80" height="80" loading="lazy"><b>Teaching2504</b><span lang="en">Software Engineer</span><a href="https://github.com/Teaching2504" aria-label="GitHub của Teaching2504">GitHub</a><p class="badges" lang="en"><i>Documentation</i></p></li>
       </ul>
     </div>
   </section>
