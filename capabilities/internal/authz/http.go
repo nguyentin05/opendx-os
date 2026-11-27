@@ -18,10 +18,12 @@ package authz
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
@@ -33,7 +35,10 @@ import (
 //	                  forwards the client's headers; the caller acts as the
 //	                  role named in X-Hasura-Role, which they must hold. With
 //	                  no X-Hasura-Role, a caller holding exactly one role acts
-//	                  as it.
+//	                  as it. The answer expires after SubscriptionMaxAge, so
+//	                  Hasura closes a subscription's WebSocket then and the
+//	                  client must authorize again (a revoked role or a
+//	                  disabled account stops receiving updates).
 //	GET /api/auth/me  The caller's identity and the roles they hold, so the UI
 //	                  can offer a role switcher. Routed through the gateway.
 //	GET /api/auth/apps
@@ -44,6 +49,11 @@ import (
 //	                  discovery. Hasura and cap-process enforce access on
 //	                  every request.
 //	GET /healthz
+//
+// SubscriptionMaxAge bounds how long a subscription keeps the authorization it
+// opened with: Hasura authorizes a WebSocket once, at connection time.
+const SubscriptionMaxAge = 60 * time.Second
+
 func Handler(r *Resolver) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -71,6 +81,8 @@ func Handler(r *Resolver) http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{
 			"X-Hasura-User-Id": id.UserID,
 			"X-Hasura-Role":    id.Role,
+			// Read by Hasura for WebSocket connections only (ADR 0007).
+			"Cache-Control": fmt.Sprintf("max-age=%d", int(SubscriptionMaxAge.Seconds())),
 		})
 	})
 	mux.HandleFunc("GET /api/auth/me", func(w http.ResponseWriter, req *http.Request) {

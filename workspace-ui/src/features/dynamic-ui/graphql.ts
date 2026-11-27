@@ -178,6 +178,23 @@ function projectRecord(
   }));
 }
 
+/** The query loadRecord runs, or why it cannot run for this role. */
+export function recordQuery(
+  role: string, table: InstalledTable, fields: string[],
+): { query: string; root: string; selected: string[] } | GraphQLErrorKind {
+  const readable = new Set(readableRecordFields(table, role));
+  if (!readable.has('id')) return 'forbidden';
+  if (fields.some(field => !readable.has(field))) return 'unavailable';
+  const selected = [...new Set(['id', ...fields])];
+  const root = recordRoot(table) + '_by_pk';
+  const query = `query RecordDetail($id: uuid!) {
+    ${root}(id: $id) {
+      ${selected.join(' ')}
+    }
+  }`;
+  return { query, root, selected };
+}
+
 export async function loadRecord(
   ctx: ScopedRequestContext,
   table: InstalledTable,
@@ -186,17 +203,9 @@ export async function loadRecord(
   signal: AbortSignal,
 ): Promise<Record<string, unknown> | null> {
   if (!isRecordID(id)) throw new GraphQLRequestError('unavailable');
-  const readable = new Set(readableRecordFields(table, ctx.role));
-  if (!readable.has('id')) throw new GraphQLRequestError('forbidden');
-  if (fields.some(field => !readable.has(field))) throw new GraphQLRequestError('unavailable');
-  const selected = [...new Set(['id', ...fields])];
-
-  const root = recordRoot(table) + '_by_pk';
-  const query = `query RecordDetail($id: uuid!) {
-    ${root}(id: $id) {
-      ${selected.join(' ')}
-    }
-  }`;
+  const built = recordQuery(ctx.role, table, fields);
+  if (typeof built === 'string') throw new GraphQLRequestError(built);
+  const { query, root, selected } = built;
   const data = await executeGraphQL<Record<string, unknown>>(ctx, query, { id }, signal);
   const record = projectRecord(data[root], selected, id);
   if (record && !table.belongsTo) markVisibleRecord(ctx, table, record);

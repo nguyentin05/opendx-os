@@ -102,6 +102,10 @@ func TestHasuraWebhookActsOnlyAsHeldRoles(t *testing.T) {
 	if code != http.StatusOK || body["X-Hasura-User-Id"] != alice || body["X-Hasura-Role"] != "role_procurement_manager" {
 		t.Fatalf("held role: %d %v", code, body)
 	}
+	// A subscription's WebSocket must authorize again within a minute.
+	if body["Cache-Control"] != "max-age=60" {
+		t.Fatalf("Cache-Control = %v, want max-age=60", body["Cache-Control"])
+	}
 	for name, tc := range map[string]struct{ token, role string }{
 		"role not held":     {"good", "role_procurement_finance"},
 		"no role, several":  {"good", ""},

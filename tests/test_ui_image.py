@@ -31,6 +31,10 @@ class WorkspaceUIImage(unittest.TestCase):
         api = self.conf.split('\n    location ', 1)[1]
         self.assertIn('proxy_connect_timeout 3s;', api)
         self.assertIn('proxy_read_timeout 490s;', api)
+        # GraphQL subscriptions upgrade to a WebSocket through this location.
+        for line in ('proxy_http_version 1.1;', 'proxy_set_header Upgrade $http_upgrade;',
+                     'proxy_set_header Connection $connection_upgrade;'):
+            self.assertIn(line, api)
 
     def test_runtime_stage_is_pinned_and_renders_the_template(self):
         self.assertRegex(self.dockerfile, r'FROM nginxinc/nginx-unprivileged:[\w.-]+@sha256:[0-9a-f]{64}')
