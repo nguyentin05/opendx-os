@@ -121,12 +121,10 @@ nav a.gh svg { width: 16px; height: 16px; }
   content: ""; position: absolute; inset: 0; z-index: -2; pointer-events: none;
   background: radial-gradient(700px 360px at 30% 8%, var(--glow), transparent 70%), radial-gradient(600px 340px at 75% 20%, var(--glow-2), transparent 70%);
 }
-.pill { display: inline-flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 13px; color: var(--muted); padding: 5px 14px 5px 6px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface); }
-.pill b { font-weight: 500; color: var(--on-accent); background: var(--accent); border-radius: 999px; padding: 1px 9px; }
+.pill { display: inline-flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 13px; color: var(--muted); padding: 6px 14px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface); }
+.pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--t2); box-shadow: 0 0 0 4px color-mix(in srgb, var(--t2) 20%, transparent); }
 h1 { font-size: clamp(38px, 6.6vw, 76px); line-height: 1.06; margin: 24px auto 22px; letter-spacing: -.035em; font-weight: 800; max-width: 920px; }
-.rot { display: inline-grid; vertical-align: bottom; text-align: left; }
-.rot span { grid-area: 1 / 1; background: linear-gradient(90deg, var(--accent), var(--t2)); -webkit-background-clip: text; background-clip: text; color: transparent; padding-bottom: .08em; transition: opacity .45s ease, transform .45s ease; }
-.rot span:not(.on) { opacity: 0; transform: translateY(.35em); }
+h1 em { font-style: normal; background: linear-gradient(90deg, var(--accent), var(--t2)); -webkit-background-clip: text; background-clip: text; color: transparent; padding-bottom: .06em; }
 .lead { font-size: clamp(17px, 2.1vw, 20px); color: var(--muted); margin: 0 auto 34px; max-width: 680px; }
 .cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
 .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 11px; text-decoration: none; font-weight: 600; border: 1px solid var(--line-strong); color: var(--text); background: var(--surface); }
@@ -201,7 +199,9 @@ h3 { margin: 0 0 6px; font-size: 18px; letter-spacing: -.015em; font-weight: 650
 .tabs.manual .tab[aria-selected="true"]::after { animation: none; opacity: .4; }
 @keyframes fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 .panels .panel + .panel { margin-top: 20px; }
-.js .panels .panel + .panel { margin-top: 0; }
+.js .panels { display: grid; grid-template-columns: minmax(0, 1fr); }
+.js .panels > .panel { grid-area: 1 / 1; margin-top: 0; }
+.js .panels > .panel.off { visibility: hidden; }
 pre { margin: 0; padding: 20px 22px; overflow-x: auto; font-size: 13.5px; line-height: 1.6; background: var(--code-bg); color: var(--code-text); }
 .window.dark { border-color: #1f2737; background: var(--code-bg); }
 .window.dark .bar { background: #121827; border-color: #1f2737; }
@@ -306,10 +306,11 @@ ol.steps span { color: var(--muted); font-size: 15.5px; }
 .chart .lineA { stroke: var(--accent); fill: none; stroke-width: 2.5; stroke-linejoin: round; }
 .chart .area { fill: var(--accent-soft); }
 .chart text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
-.twins { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.twin { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 10px; font-size: 12.5px; color: var(--muted); }
-.twin b { display: block; color: var(--text); font-size: 13px; margin-bottom: 8px; font-weight: 600; }
-.swap { display: inline-grid; }
+.live { display: grid; gap: 6px; }
+.live-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 13.5px; font-weight: 600; }
+.live-row small { display: block; font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--muted); }
+.live-sync { text-align: center; font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.swap { display: inline-grid; justify-items: end; white-space: nowrap; }
 .swap span { grid-area: 1 / 1; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; }
 .swap span:first-child { background: var(--warn-soft); color: var(--warn); animation: swapA 6s infinite; }
 .swap span:last-child { background: var(--ok-soft); color: var(--ok); opacity: 0; animation: swapB 6s infinite; }
@@ -336,8 +337,12 @@ ol.steps span { color: var(--muted); font-size: 15.5px; }
 .links a span { color: var(--muted); font-weight: 400; }
 .links a:hover span { color: var(--accent); }
 
+section.intro { border-top: 1px solid var(--line); }
+.community { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 32px; align-items: center; padding: 44px; border-radius: 22px; border: 1px solid var(--line-strong); background: radial-gradient(500px 260px at 0% 0%, var(--glow), transparent 70%), radial-gradient(500px 260px at 100% 100%, var(--glow-2), transparent 70%), var(--surface); }
+.community .sub { margin-bottom: 0; }
+.community .cta { justify-content: flex-start; }
 footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--muted); font-size: 14.5px; }
-.foot { display: grid; grid-template-columns: minmax(0, 1.6fr) repeat(2, minmax(0, 1fr)); gap: 32px; }
+.foot { display: grid; grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr)); gap: 32px; }
 .foot p { margin: 12px 0 0; max-width: 360px; }
 .foot h2 { margin: 0 0 12px; font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 .foot ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -352,7 +357,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--m
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .rot span, .node { transition: none; }
+  .node { transition: none; }
   .swap span { animation: none; }
   .swap span:last-child { display: none; }
   .tab[aria-selected="true"]::after { animation: none; }
@@ -371,6 +376,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--m
   .rules div:nth-child(even), .principles div:nth-child(even) { padding-left: 18px; }
   .foot { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .foot > div:first-child { grid-column: 1 / -1; }
+  .community { grid-template-columns: minmax(0, 1fr); padding: 28px 22px; }
 }
 @media (max-width: 720px) {
   nav a.hide-sm { display: none; }
@@ -399,13 +405,12 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--m
   .rules div + div, .principles div + div { border-top: 1px solid var(--line); }
   .notice .tag, .hide-xs { display: none; }
   .media .soon { position: static; transform: none; margin: 10px; white-space: normal; }
-  .twins { grid-template-columns: minmax(0, 1fr); }
 }
 </style>
 </head>
 <body>
 <a class="skip" href="#noi-dung">Bỏ qua tới nội dung</a>
-<div class="notice"><span class="tag">Đang phát triển</span>Triển khai Kubernetes, KEDA và cập nhật trực tiếp đã có trên nhánh chính. <a href="https://github.com/nguyentin05/opendx-os/blob/main/CHANGELOG.md">Xem nhật ký thay đổi →</a></div>
+<div class="notice"><span class="tag">Mã nguồn mở</span>Một nền tảng cho mọi ứng dụng nội bộ, chạy trên Docker Compose hoặc bất kỳ cụm Kubernetes nào. <a href="https://github.com/nguyentin05/opendx-os/releases">Xem bản phát hành →</a></div>
 <header class="top">
   <div class="wrap">
     <a class="brand" href="./"><img src="assets/landing/logo.webp" alt="" width="32" height="26">OpenDX-OS</a>
@@ -425,9 +430,9 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--m
 <main id="noi-dung">
   <div class="hero">
     <div class="wrap">
-      <span class="pill"><b>v0.3.0</b>Mã nguồn mở · Apache-2.0<span class="hide-xs"> · Tự vận hành</span></span>
-      <h1><span class="sr">Ứng dụng nghiệp vụ chỉ là khai báo</span><span aria-hidden="true">Ứng dụng <span class="rot" id="rot"><span class="on">nghiệp vụ</span><span>mua sắm</span><span>bảo trì</span><span>chấm công</span></span><br>chỉ là khai báo</span></h1>
-      <p class="lead">Nền tảng mã nguồn mở ba tầng cho chuyển đổi số nội bộ. Viết một manifest, nền tảng dựng bảng, phân quyền, API, giao diện và quy trình, ngay khi hệ thống đang chạy.</p>
+      <span class="pill"><i aria-hidden="true"></i>Mã nguồn mở · Apache-2.0<span class="hide-xs"> · Tự vận hành</span></span>
+      <h1>Ứng dụng nội bộ,<br><em>không cần viết backend</em></h1>
+      <p class="lead">Mỗi ứng dụng chỉ là một gói khai báo: dữ liệu, vai trò và quy trình duyệt. OpenDX-OS biến gói đó thành ứng dụng hoàn chỉnh, có phân quyền, giao diện và lịch sử, và cài được ngay khi hệ thống đang chạy.</p>
       <div class="cta">
         <a class="btn primary" href="get-started/">Bắt đầu
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
@@ -463,9 +468,23 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--m
     </div>
   </div>
 
+  <section class="intro" aria-labelledby="gioi-thieu">
+    <div class="wrap">
+      <p class="eyebrow">Giới thiệu</p>
+      <h2 id="gioi-thieu">OpenDX-OS là gì?</h2>
+      <p class="sub">OpenDX-OS là nền tảng mã nguồn mở giúp một tổ chức đưa các quy trình nội bộ như mua sắm, bảo trì thiết bị hay chấm công lên cùng một hệ thống. Thay vì mua hoặc viết một phần mềm riêng cho từng việc, tổ chức mô tả mỗi quy trình bằng một gói khai báo, và nền tảng lo phần còn lại.</p>
+      <div class="principles">
+        <div class="reveal"><span class="n">Vấn đề</span><h3>Mỗi quy trình một phần mềm</h3><p>Tài khoản, phân quyền và dữ liệu nằm rải rác, khó biết ai được làm gì và đã làm gì.</p></div>
+        <div class="reveal"><span class="n">Cách làm</span><h3>Một nền tảng dùng chung</h3><p>Đăng nhập, phân quyền, lưu trữ, quy trình và giao diện do nền tảng lo; ứng dụng chỉ khai báo phần nghiệp vụ.</p></div>
+        <div class="reveal"><span class="n">Kết quả</span><h3>Một cổng cho mọi ứng dụng</h3><p>Một lần đăng nhập, một nơi cấp quyền, lịch sử đầy đủ cho mỗi hồ sơ.</p></div>
+        <div class="reveal"><span class="n">Mở rộng</span><h3>Thêm ứng dụng khi đang chạy</h3><p>Cài hoặc gỡ một ứng dụng trong vài giây, không build và không deploy lại.</p></div>
+      </div>
+    </div>
+  </section>
+
   <section class="alt" aria-labelledby="ba-tang">
     <div class="wrap">
-      <p class="eyebrow">01 · Kiến trúc</p>
+      <p class="eyebrow">Kiến trúc</p>
       <h2 id="ba-tang">Ba tầng, ranh giới rõ ràng</h2>
       <p class="sub">Ứng dụng không bao giờ kèm code backend. Ứng dụng dùng năng lực của tầng 2, tầng 2 chạy trên một nền tảng headless chỉ cung cấp API.</p>
       <div class="layer reveal" style="--c:var(--t3);--cs:var(--t3-soft)">
@@ -508,7 +527,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--m
 
   <section aria-labelledby="khai-bao">
     <div class="wrap">
-      <p class="eyebrow">02 · Thêm ứng dụng</p>
+      <p class="eyebrow">Thêm ứng dụng</p>
       <h2 id="khai-bao">Từ manifest tới màn hình, không deploy lại</h2>
       <p class="sub">Một ứng dụng mới được cài khi hệ thống đang chạy. Trên Kubernetes, gói ứng dụng là một tài nguyên <code>DXApplication</code>.</p>
       <div class="tabs reveal" id="tabs">
@@ -576,7 +595,7 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
 
   <section class="alt" id="demo" aria-labelledby="demo-title">
     <div class="wrap">
-      <p class="eyebrow">03 · Thử ngay</p>
+      <p class="eyebrow">Thử ngay</p>
       <h2 id="demo-title">Đưa một yêu cầu qua chuỗi phê duyệt</h2>
       <p class="sub">Bản mô phỏng ứng dụng Mua sắm vật tư chạy ngay trên trang này, với đúng máy trạng thái, nhãn và vai trò trong manifest. Đổi vai trò để thấy mỗi người chỉ có các thao tác của mình.</p>
       <div class="sim reveal">
@@ -628,7 +647,7 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
       <div class="shots">
         <figure class="reveal">
           <div class="window"><div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>Hồ sơ yêu cầu</span></div>
-            <img src="assets/landing/detail.webp" width="1280" height="960" loading="lazy"
+            <img src="assets/landing/detail.webp" width="1280" height="800" loading="lazy"
                  alt="Trang chi tiết một yêu cầu đã duyệt: tệp báo giá đã quét an toàn và lịch sử bốn bước từ người đề nghị, trưởng phòng tới tài chính"></div>
           <figcaption><b>Ảnh thật: hồ sơ và lịch sử</b>Tệp đính kèm chỉ tải được sau khi ClamAV quét sạch. Mỗi bước ghi rõ ai làm, lúc nào, với vai trò gì.</figcaption>
         </figure>
@@ -651,7 +670,7 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
   <section aria-labelledby="quan-tri">
     <div class="wrap split">
       <div>
-        <p class="eyebrow">04 · Quản trị</p>
+        <p class="eyebrow">Quản trị</p>
         <h2 id="quan-tri">Keycloak xác thực, nền tảng phân quyền</h2>
         <p class="sub">Tài khoản nằm ở Keycloak hoặc danh bạ mà Keycloak liên kết. Vai trò và phòng ban nằm ở nền tảng, được kiểm lại ở mỗi request.</p>
         <ol class="steps">
@@ -670,7 +689,7 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
 
   <section class="alt" aria-labelledby="van-hanh">
     <div class="wrap">
-      <p class="eyebrow">05 · Vận hành</p>
+      <p class="eyebrow">Vận hành</p>
       <h2 id="van-hanh">Từ máy cá nhân tới cụm Kubernetes</h2>
       <p class="sub">Cùng một bộ cấu hình chạy bằng Docker Compose trên máy hoặc trên bất kỳ cụm Kubernetes nào; một workflow kiểm tra hai cách triển khai không lệch nhau.</p>
       <div class="bento">
@@ -696,9 +715,10 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
         <div class="cell reveal">
           <div class="txt"><h3>Cập nhật trực tiếp</h3><p>Subscription GraphQL qua WebSocket; quyền của kết nối được kiểm lại mỗi phút.</p></div>
           <div class="vis">
-            <div class="twins" aria-hidden="true">
-              <div class="twin"><b>Người đề nghị</b><span class="swap"><span>Chờ quản lý duyệt</span><span>Chờ duyệt ngân sách</span></span></div>
-              <div class="twin"><b>Trưởng phòng</b><span class="swap"><span>Chờ quản lý duyệt</span><span>Chờ duyệt ngân sách</span></span></div>
+            <div class="live" aria-hidden="true">
+              <div class="live-row"><span><small>Trưởng phòng</small>Màn hình 27 inch</span><span class="swap"><span>Chờ quản lý duyệt</span><span>Chờ duyệt ngân sách</span></span></div>
+              <div class="live-sync">↕ tự cập nhật sau ~3 giây</div>
+              <div class="live-row"><span><small>Người đề nghị</small>Màn hình 27 inch</span><span class="swap"><span>Chờ quản lý duyệt</span><span>Chờ duyệt ngân sách</span></span></div>
             </div>
           </div>
         </div>
@@ -723,7 +743,7 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
 
   <section aria-labelledby="nguyen-tac">
     <div class="wrap">
-      <p class="eyebrow">06 · Nguyên tắc</p>
+      <p class="eyebrow">Nguyên tắc</p>
       <h2 id="nguyen-tac">Nguyên tắc thiết kế</h2>
       <p class="sub">Những quyết định giữ cho nền tảng nhỏ, dễ hiểu và tự vận hành được.</p>
       <div class="principles">
@@ -759,6 +779,23 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
       </div>
     </div>
   </section>
+  <section aria-labelledby="cong-dong">
+    <div class="wrap">
+      <div class="community reveal">
+        <div>
+          <p class="eyebrow">Cộng đồng</p>
+          <h2 id="cong-dong">Cùng xây OpenDX-OS</h2>
+          <p class="sub">Hỏi đáp, góp ý tính năng và chia sẻ cách tổ chức của bạn dùng OpenDX-OS. Mọi đóng góp, từ báo lỗi tới một ứng dụng mẫu mới, đều được chào đón.</p>
+        </div>
+        <div class="cta">
+          <!-- Discord invite: replace DISCORD_INVITE with the server's invite code. -->
+          <a class="btn primary" href="https://discord.gg/DISCORD_INVITE"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01"/></svg>Tham gia Discord</a>
+          <a class="btn" href="https://github.com/nguyentin05/opendx-os/issues">Báo lỗi trên GitHub</a>
+          <a class="btn" href="https://github.com/nguyentin05/opendx-os/blob/main/CONTRIBUTING.md">Hướng dẫn đóng góp</a>
+        </div>
+      </div>
+    </div>
+  </section>
 </main>
 
 <footer>
@@ -776,8 +813,12 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
         <h2>Dự án</h2>
         <ul><li><a href="https://github.com/nguyentin05/opendx-os">GitHub</a></li><li><a href="https://github.com/nguyentin05/opendx-os/releases">Bản phát hành</a></li><li><a href="https://github.com/nguyentin05/opendx-os/blob/main/CHANGELOG.md">Nhật ký thay đổi</a></li></ul>
       </div>
+      <div>
+        <h2>Cộng đồng</h2>
+        <ul><li><a href="https://discord.gg/DISCORD_INVITE">Discord</a></li><li><a href="https://github.com/nguyentin05/opendx-os/issues">Báo lỗi</a></li><li><a href="https://github.com/nguyentin05/opendx-os/blob/main/CONTRIBUTING.md">Đóng góp</a></li></ul>
+      </div>
     </div>
-    <div class="legal"><span>Apache-2.0 · v0.3.0</span><span>© 2026 DX-OS Open-Core Contributors</span></div>
+    <div class="legal"><span>Apache-2.0</span><span>© 2026 DX-OS Open-Core Contributors</span></div>
   </div>
 </footer>
 
@@ -801,14 +842,6 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
     } catch (e) {}
   });
 
-  // Rotating word in the headline (the full sentence is in a screen-reader span).
-  if (!still) {
-    var words = $('rot').children, w = 0;
-    setInterval(function () {
-      words[w].classList.remove('on'); w = (w + 1) % words.length; words[w].classList.add('on');
-    }, 2600);
-  }
-
   // Copy buttons.
   document.querySelectorAll('[data-copy]').forEach(function (b) {
     b.addEventListener('click', function () {
@@ -821,12 +854,14 @@ procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
   });
 
   // Tabs: keyboard support; they advance on their own until the reader picks one.
+  // Panels share one grid cell, so the box keeps the tallest panel's height.
   var box = $('tabs'), tabs = [].slice.call(box.querySelectorAll('[role=tab]')), timer;
   function show(i, focus) {
     tabs.forEach(function (t, k) {
       var on = k === i;
       t.setAttribute('aria-selected', on); t.tabIndex = on ? 0 : -1;
-      $(t.getAttribute('aria-controls')).hidden = !on;
+      var panel = $(t.getAttribute('aria-controls'));
+      panel.classList.toggle('off', !on); panel.inert = !on;
     });
     if (focus) tabs[i].focus();
   }
