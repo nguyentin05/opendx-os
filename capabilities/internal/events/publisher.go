@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
+	"github.com/opendx-os/opendx-os/capabilities/internal/telemetry"
 )
 
 // Config is where and how events reach the workflow engine.
@@ -73,6 +74,7 @@ func NewPublisher(db *sql.DB, client *http.Client, cfg Config) (*Publisher, erro
 		client = &http.Client{Timeout: 20 * time.Second}
 	}
 	copyClient := *client
+	copyClient.Transport = telemetry.Client(copyClient.Transport)
 	copyClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	if copyClient.Timeout <= 0 || copyClient.Timeout > 20*time.Second {
 		copyClient.Timeout = 20 * time.Second

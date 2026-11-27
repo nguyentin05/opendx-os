@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"slices"
 	"strings"
@@ -27,6 +26,7 @@ import (
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
+	"github.com/opendx-os/opendx-os/capabilities/internal/telemetry"
 )
 
 // Handler serves:
@@ -74,7 +74,7 @@ func Handler(r *Resolver) http.Handler {
 			deny(w, "role not held; name one held role in X-Hasura-Role")
 			return
 		case err != nil:
-			log.Printf("authorization lookup failed: %v", err)
+			telemetry.Logger(req.Context()).Error("authorization lookup failed", "error", err)
 			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "authorization unavailable"})
 			return
 		}
@@ -115,7 +115,7 @@ func Handler(r *Resolver) http.Handler {
 		}
 		apps, err := r.store.Apps(req.Context(), ids)
 		if err != nil {
-			log.Printf("application lookup failed: %v", err)
+			telemetry.Logger(req.Context()).Error("application lookup failed", "error", err)
 			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "registry unavailable"})
 			return
 		}
@@ -206,7 +206,7 @@ func resolve(w http.ResponseWriter, req *http.Request, r *Resolver) (*Session, b
 		deny(w, "invalid token or disabled account")
 		return nil, false
 	case err != nil:
-		log.Printf("authorization lookup failed: %v", err)
+		telemetry.Logger(req.Context()).Error("authorization lookup failed", "error", err)
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "authorization unavailable"})
 		return nil, false
 	}

@@ -42,6 +42,32 @@ ALLOWED = {
     ('keycloak', 'KC_HTTP_ENABLED'): 'k8s only: production mode on PostgreSQL (#170); Compose keeps start-dev with a file store',
     ('keycloak', 'KC_CACHE'): 'k8s only: production mode would form a cluster cache; one replica keeps it local',
     ('keycloak', 'KC_HOSTNAME_ADMIN'): 'k8s only: the admin console answers only through a port-forward; Compose serves it on localhost',
+    # Telemetry is opt-in on Kubernetes: the components/otel overlay sets these
+    # on the workloads, while Compose reads them from .env. The base stays
+    # unchanged when the component is not used.
+    ('authz', 'OTEL_EXPORTER_OTLP_ENDPOINT'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('authz', 'OTEL_SERVICE_NAME'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('authz', 'OTEL_RESOURCE_ATTRIBUTES'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('cap-hr', 'OTEL_EXPORTER_OTLP_ENDPOINT'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('cap-hr', 'OTEL_SERVICE_NAME'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('cap-hr', 'OTEL_RESOURCE_ATTRIBUTES'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('cap-process', 'OTEL_EXPORTER_OTLP_ENDPOINT'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('cap-process', 'OTEL_SERVICE_NAME'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('cap-process', 'OTEL_RESOURCE_ATTRIBUTES'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('keycloak', 'KC_FEATURES'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('keycloak', 'KC_TRACING_ENABLED'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('keycloak', 'KC_TRACING_ENDPOINT'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('keycloak', 'KC_TRACING_PROTOCOL'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('keycloak', 'KC_METRICS_ENABLED'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('keycloak', 'KC_LOG_CONSOLE_OUTPUT'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('kestra', 'KESTRA_OTEL_ENABLED'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('kestra', 'KESTRA_TRACES_ROOT'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('kestra', 'KESTRA_OTLP_METRICS_ENABLED'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('kestra', 'OTEL_EXPORTER_OTLP_ENDPOINT'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('kestra', 'KESTRA_OTEL_ENDPOINT'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('kestra', 'OTEL_TRACES_EXPORTER'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('apisix', 'OTEL_APISIX_SAMPLER'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
+    ('apisix', 'OTEL_COLLECTOR_ADDRESS'): 'compose only: the opt-in deploy/k8s/components/otel component sets it on Kubernetes',
 }
 # The controller is configured from its own Secret (dxos-operator-config) and
 # operator/config/default, not from per-variable environment entries.

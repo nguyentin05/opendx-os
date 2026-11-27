@@ -37,5 +37,28 @@ class GatewayLimits(unittest.TestCase):
             self.assertLessEqual(REQUIRED_PLUGINS, set(enabled))
 
 
+
+class TelemetryPlugins(unittest.TestCase):
+    """The gateway exports traces and scrapes metrics on the internal network."""
+
+    def setUp(self):
+        self.config = yaml.safe_load((ROOT / 'platform/apisix/config.yaml').read_text())
+        self.routes = yaml.safe_load((ROOT / 'platform/apisix/apisix.yaml').read_text())['routes']
+
+    def test_plugins_are_loaded_with_a_collector_address_and_scrape_port(self):
+        self.assertIn('opentelemetry', self.config['plugins'])
+        self.assertIn('prometheus', self.config['plugins'])
+        collector = self.config['plugin_attr']['opentelemetry']['collector']['address']
+        self.assertIn('OTEL_COLLECTOR_ADDRESS', collector)
+        export = self.config['plugin_attr']['prometheus']['export_addr']
+        self.assertEqual(export['port'], 9091)
+        for route in self.routes:
+            self.assertIn('opentelemetry', route['plugins'], route['id'])
+            self.assertIn('prometheus', route['plugins'], route['id'])
+            # Off unless OTEL_APISIX_SAMPLER turns it on: without a Collector every export would log an error.
+            self.assertEqual(route['plugins']['opentelemetry']['sampler']['name'],
+                             '${{OTEL_APISIX_SAMPLER:=always_off}}', route['id'])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -48,7 +48,18 @@ deploy/k8s/
   components/
     gateway-routes/     the public routes as Gateway API HTTPRoutes, shared by aks and onprem
     keda/               opt-in: Tier 2 services and ClamAV run only while they have work (needs KEDA)
+    otel/               opt-in: OpenTelemetry variables, scrape annotations and an example Collector
 ```
+
+## Observability
+
+`components/otel` turns on traces, metrics and JSON logs for the Go services,
+Keycloak, Kestra and APISIX, and points them at an OpenTelemetry Collector you
+operate. It is off unless an overlay lists it under `components:`; the base
+renders exactly as before. The Collector itself is not deployed by the platform:
+copy and adapt `components/otel/collector-example.yaml`. See
+[docs/operations/observability.md](../docs/operations/observability.md) for the
+variables, what each component emits and the Hasura CE limits.
 
 Each service folder holds one object per file: `service.yaml`,
 `deployment.yaml` (`statefulset.yaml` for PostgreSQL), `pvc.yaml` when it keeps

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
+	"github.com/opendx-os/opendx-os/capabilities/internal/telemetry"
 )
 
 // Person is one account of the identity provider.
@@ -137,7 +138,7 @@ func NewKeycloakAccounts(baseURL, realm, clientSecret string) (*KeycloakAccounts
 		return nil, err
 	}
 	return &KeycloakAccounts{BaseURL: base, Realm: realm, Token: cc.Token,
-		Client: &http.Client{Timeout: 10 * time.Second}}, nil
+		Client: &http.Client{Timeout: 10 * time.Second, Transport: telemetry.Client(nil)}}, nil
 }
 
 // keycloakPage and keycloakLimit bound one read.
