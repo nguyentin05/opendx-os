@@ -21,7 +21,7 @@ COPY . .
 RUN npm run build
 
 # The unprivileged variant runs as the nginx user and listens on 8080.
-FROM nginxinc/nginx-unprivileged:1.31-alpine@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e
+FROM nginxinc/nginx-unprivileged:1.31-alpine@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e AS runtime
 # The base image lags Alpine security fixes; images.yml fails on any left over.
 USER root
 RUN apk upgrade --no-cache
