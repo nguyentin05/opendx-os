@@ -27,7 +27,6 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-	"go.opentelemetry.io/otel/trace"
 )
 
 // enableRecords installs an in-memory tracer provider and marks telemetry as
@@ -162,5 +161,3 @@ func TestHandlerIsTheIdentityWithoutConfiguration(t *testing.T) {
 		t.Fatal("the unwrapped handler must still serve")
 	}
 }
-
-var _ trace.TracerProvider = otel.GetTracerProvider()
