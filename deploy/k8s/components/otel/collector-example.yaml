@@ -28,16 +28,28 @@ receivers:
           metrics_path: /metrics
           static_configs:
             - targets: ["keycloak.dxos.svc.cluster.local:9000"]
+        # The controller has no metrics Service; discover its pod and rewrite
+        # the port to the one the otel component enables.
         - job_name: dxos-controller
           metrics_path: /metrics
-          static_configs:
-            - targets: ["dxos-operator-controller-manager-metrics-service.dxos-operator-system.svc.cluster.local:8080"]
+          kubernetes_sd_configs:
+            - role: pod
+              namespaces:
+                names: [dxos-operator-system]
+          relabel_configs:
+            - source_labels: [__meta_kubernetes_pod_label_control_plane]
+              regex: controller-manager
+              action: keep
+            - source_labels: [__address__]
+              regex: '([^:]+)(?::\d+)?'
+              replacement: '$1:8080'
+              target_label: __address__
 
   # Container logs on stdout. The platform does not export logs over OTLP;
   # this receiver attaches the Kubernetes metadata a backend needs to find
   # them. Point include_file_paths at your container runtime's log location.
   filelog:
-    include: [/var/log/pods/dxos_*/*/*.log]
+    include: [/var/log/pods/dxos_*/*/*.log, /var/log/pods/dxos-operator-system_*/*/*.log]
     start_at: end
     include_file_path: true
     operators:
