@@ -148,8 +148,10 @@ import is a follow-up that changes no behaviour.
   stateless apart from its short cache, and health-checked; if it is down or
   cannot reach the database, GraphQL requests fail closed. Each request costs
   one local HTTP call; each cache miss adds one indexed query.
-- Hasura calls the webhook when a subscription connection starts, so a revoked
-  role keeps an already open subscription until the client reconnects.
+- Hasura calls the webhook when a subscription connection starts. Its answer
+  carries `Cache-Control: max-age=60`, so Hasura closes the WebSocket after a
+  minute and the client authorizes again: a revoked role or a disabled account
+  loses an open subscription within that time.
 - Hasura uses a single authentication mode; the JWT mode configuration is
   removed.
 - cap-process must stop reading roles from token claims, as part of its

@@ -11,7 +11,8 @@ import { ChildGrid } from './ChildGrid';
 import { CommandPanel } from './CommandPanel';
 import type { CommandAttempts, CommandFeedback } from './CommandPanel';
 import { FileField } from './FileField';
-import { GraphQLRequestError, isRecordID, loadRecord, loadSharedNames, referenceLabelColumn, sharedName, sharedNameColumns } from './graphql';
+import { GraphQLRequestError, isRecordID, loadRecord, loadSharedNames, recordQuery, referenceLabelColumn, sharedName, sharedNameColumns } from './graphql';
+import { useLiveVersion } from './live';
 import { allowedFields, canEditRecord, columnLabel, isAttachmentColumn, tableLabel } from './registry';
 import { RecordHistory } from './RecordHistory';
 
@@ -115,6 +116,9 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
     setRevision(current => current + 1);
   }, []);
   const { role } = context;
+  // A change made elsewhere reloads the record in place, keeping the current view meanwhile.
+  const watched = recordQuery(role, table, selection);
+  const live = useLiveVersion(context, typeof watched === 'string' ? undefined : watched.query, { id: recordID });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -129,7 +133,7 @@ function RecordContents(props: RecordDetailProps & { fields: ReturnType<typeof d
       }
     });
     return () => controller.abort();
-  }, [context, table, recordID, selection, revision]);
+  }, [context, table, recordID, selection, revision, live]);
 
   const current = result?.revision === revision ? result.value : undefined;
   const record = current && 'record' in current ? current.record : undefined;

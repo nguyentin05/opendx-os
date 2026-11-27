@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 DX-OS Open-Core Contributors
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { formatValue } from '../../core/labels';
 import type { AppRoleContext } from '../../core/session-context';
 import type { InstalledTable } from '../../types/registry';
 import { executeGraphQL, GraphQLRequestError, isRecord, loadSharedNames, sharedName, sharedNameColumns } from './graphql';
+import { useLiveVersion } from './live';
 import { allowedFields, columnLabel, tableGraphQLName, tableLabel } from './registry';
 
 export interface TableListProps {
@@ -147,18 +148,18 @@ function PaginatedTable({ context, onOpen, description }: Pick<TableListProps, '
   const [result, setResult] = useState<{ options: PageOptions; page: PageResult }>();
   const { token, role } = context;
 
-  useEffect(() => {
-    const controller = new AbortController();
+  const variables = useMemo(() => {
     const orderBy: Record<string, SortDirection>[] = [{ [options.sort]: options.direction }];
     if (canOpen && options.sort !== 'id') orderBy.push({ id: 'asc' });
     const where = filterColumn && options.filter ? { [filterColumn]: { _eq: options.filter } } : {};
+    return { limit: requestLimit, offset: options.offset, orderBy, where };
+  }, [options, canOpen, filterColumn]);
+  // A change made elsewhere (another person, a workflow) reloads this page.
+  const live = useLiveVersion({ token, role }, query, variables);
 
-    void executeGraphQL<Record<string, unknown>>({ token, role }, query, {
-      limit: requestLimit,
-      offset: options.offset,
-      orderBy,
-      where,
-    }, controller.signal).then(async data => {
+  useEffect(() => {
+    const controller = new AbortController();
+    void executeGraphQL<Record<string, unknown>>({ token, role }, query, variables, controller.signal).then(async data => {
       if (controller.signal.aborted) return;
       const rows = readRows(data[root], selected);
       const names = await loadSharedNames({ token, role }, context.app, table, rows, controller.signal);
@@ -170,7 +171,7 @@ function PaginatedTable({ context, onOpen, description }: Pick<TableListProps, '
       }
     });
     return () => controller.abort();
-  }, [token, role, query, root, options, selected, canOpen, filterColumn, attempt]);
+  }, [token, role, query, root, options, variables, selected, attempt, live]);
 
   const page = result?.options === options ? result.page : undefined;
   const rows = page && 'rows' in page ? page.rows : [];

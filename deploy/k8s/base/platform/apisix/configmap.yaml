@@ -11,6 +11,8 @@ data:
     routes:
       - id: hasura-graphql
         uri: /v1/graphql
+        # GraphQL subscriptions (live updates) use a WebSocket on the same path.
+        enable_websocket: true
         plugins:
           cors:
             allow_origins: "http://localhost:5173,http://localhost:15173"
