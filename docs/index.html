@@ -24,58 +24,83 @@
 <meta name="twitter:title" content="OpenDX-OS: ứng dụng nghiệp vụ chỉ là khai báo">
 <meta name="twitter:description" content="Nền tảng mã nguồn mở ba tầng cho chuyển đổi số nội bộ.">
 <meta name="twitter:image" content="https://nguyentin05.github.io/opendx-os/assets/landing/og-card.png">
+<!-- The docs pages (Material) already load their font from Google Fonts. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Loaded without blocking the first paint; the system font shows until it arrives. -->
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap"></noscript>
 <script>
 // Follow the colour scheme chosen on the documentation site (Material stores it per site scope).
 (function () {
+  var root = document.documentElement;
+  root.classList.add('js');
   try {
     var p = JSON.parse(localStorage.getItem(new URL('./', location.href).pathname + '.__palette'));
-    if (p && p.color) document.documentElement.setAttribute('data-theme', p.color.scheme === 'slate' ? 'dark' : 'light');
+    if (p && p.color) root.setAttribute('data-theme', p.color.scheme === 'slate' ? 'dark' : 'light');
   } catch (e) {}
 })();
 </script>
 <style>
 :root {
-  --bg: #f7f8fc; --surface: #ffffff; --surface-2: #f1f3fa; --text: #141b2d; --muted: #556070;
-  --line: #dfe3ee; --accent: #3949ab; --accent-strong: #283593; --accent-soft: #e8eaf6; --on-accent: #ffffff;
-  --code-bg: #f3f5fa; --ok: #166b3d; --ok-soft: #e3f4ea; --warn: #9a5b00; --warn-soft: #fff1d6; --bad: #b3261e; --bad-soft: #fde7e5;
-  --shadow: 0 18px 50px -20px rgba(31, 41, 100, .35); --glow-a: rgba(57, 73, 171, .14); --glow-b: rgba(0, 150, 136, .10);
+  --bg: #f8f9fc; --surface: #ffffff; --surface-2: #f1f3f9; --text: #10172a; --muted: #4f5a6d; --faint: #6b7489;
+  --line: #e1e5ef; --line-strong: #cfd5e3;
+  --accent: #3949ab; --accent-strong: #283593; --accent-soft: #e8eaf6; --on-accent: #ffffff;
+  --t1: #3949ab; --t2: #00796b; --t3: #b35000; --t1-soft: #eef0fa; --t2-soft: #e6f4f1; --t3-soft: #fdf0e4;
+  --ok: #166b3d; --ok-soft: #e3f4ea; --warn: #8a5200; --warn-soft: #fff1d6; --bad: #b3261e; --bad-soft: #fde7e5;
+  --code-bg: #0d1220; --code-text: #d7deea; --code-muted: #8a97ae; --code-key: #a8b2ff; --code-ok: #8fd4a8;
+  --dot: rgba(40, 53, 147, .16); --glow: rgba(57, 73, 171, .18); --glow-2: rgba(0, 137, 123, .14);
+  --shadow: 0 30px 80px -30px rgba(31, 41, 100, .45);
+  --font: "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0f131c; --surface: #161c28; --surface-2: #1b2232; --text: #e7ebf3; --muted: #a0abbd;
-    --line: #2a3346; --accent: #9fa8ff; --accent-strong: #c5cae9; --accent-soft: #232a4a; --on-accent: #0f131c;
-    --code-bg: #0c1018; --ok: #6fd19a; --ok-soft: #173326; --warn: #f2c26b; --warn-soft: #3a2c12; --bad: #ff9a8f; --bad-soft: #3b1d1b;
-    --shadow: 0 18px 50px -20px rgba(0, 0, 0, .7); --glow-a: rgba(159, 168, 255, .12); --glow-b: rgba(100, 220, 200, .07);
+    --bg: #0b0f19; --surface: #121826; --surface-2: #171e2e; --text: #e8ecf4; --muted: #a3adc0; --faint: #8b95ab;
+    --line: #232b3d; --line-strong: #2f394f;
+    --accent: #9fa8ff; --accent-strong: #c5cae9; --accent-soft: #1f2547; --on-accent: #0b0f19;
+    --t1: #9fa8ff; --t2: #5fd3c0; --t3: #ffb36b; --t1-soft: #1a2040; --t2-soft: #112b27; --t3-soft: #2f210f;
+    --ok: #6fd19a; --ok-soft: #133024; --warn: #f2c26b; --warn-soft: #36290f; --bad: #ff9a8f; --bad-soft: #3a1c1a;
+    --code-bg: #070a12; --dot: rgba(159, 168, 255, .13); --glow: rgba(159, 168, 255, .16); --glow-2: rgba(95, 211, 192, .10);
+    --shadow: 0 30px 80px -30px rgba(0, 0, 0, .8);
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0f131c; --surface: #161c28; --surface-2: #1b2232; --text: #e7ebf3; --muted: #a0abbd;
-  --line: #2a3346; --accent: #9fa8ff; --accent-strong: #c5cae9; --accent-soft: #232a4a; --on-accent: #0f131c;
-  --code-bg: #0c1018; --ok: #6fd19a; --ok-soft: #173326; --warn: #f2c26b; --warn-soft: #3a2c12; --bad: #ff9a8f; --bad-soft: #3b1d1b;
-  --shadow: 0 18px 50px -20px rgba(0, 0, 0, .7); --glow-a: rgba(159, 168, 255, .12); --glow-b: rgba(100, 220, 200, .07);
+  --bg: #0b0f19; --surface: #121826; --surface-2: #171e2e; --text: #e8ecf4; --muted: #a3adc0; --faint: #8b95ab;
+  --line: #232b3d; --line-strong: #2f394f;
+  --accent: #9fa8ff; --accent-strong: #c5cae9; --accent-soft: #1f2547; --on-accent: #0b0f19;
+  --t1: #9fa8ff; --t2: #5fd3c0; --t3: #ffb36b; --t1-soft: #1a2040; --t2-soft: #112b27; --t3-soft: #2f210f;
+  --ok: #6fd19a; --ok-soft: #133024; --warn: #f2c26b; --warn-soft: #36290f; --bad: #ff9a8f; --bad-soft: #3a1c1a;
+  --code-bg: #070a12; --dot: rgba(159, 168, 255, .13); --glow: rgba(159, 168, 255, .16); --glow-2: rgba(95, 211, 192, .10);
+  --shadow: 0 30px 80px -30px rgba(0, 0, 0, .8);
 }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-body {
-  margin: 0; background: var(--bg); color: var(--text); overflow-x: hidden;
-  font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
-}
+body { margin: 0; background: var(--bg); color: var(--text); overflow-x: hidden; font: 16px/1.65 var(--font); -webkit-font-smoothing: antialiased; }
 a { color: var(--accent); }
-a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+a:focus-visible, button:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
 img { max-width: 100%; height: auto; display: block; }
-.skip { position: absolute; left: -999px; top: 8px; background: var(--surface); padding: 8px 12px; z-index: 10; }
+code, pre, .mono { font-family: var(--mono); }
+code { font-size: .9em; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.skip { position: absolute; left: -999px; top: 8px; background: var(--surface); padding: 8px 12px; z-index: 20; }
 .skip:focus { left: 16px; }
-.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding: 0 16px; }
+button { font: inherit; }
 
-/* Header */
-header.top { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
-header.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; gap: 12px; }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 750; color: var(--text); text-decoration: none; letter-spacing: -.01em; }
-nav { display: flex; align-items: center; gap: 4px; }
-nav a { padding: 6px 10px; color: var(--muted); text-decoration: none; border-radius: 8px; font-size: 15px; }
+/* Announcement and header */
+.notice { background: var(--text); color: var(--bg); font-size: 14px; text-align: center; padding: 8px 16px; }
+.notice a { color: inherit; font-weight: 600; text-underline-offset: 3px; }
+.notice .tag { font-family: var(--mono); font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; margin-right: 8px; }
+header.top { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: saturate(1.4) blur(12px); border-bottom: 1px solid var(--line); }
+header.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 62px; gap: 12px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 750; color: var(--text); text-decoration: none; letter-spacing: -.01em; font-size: 17px; }
+nav { display: flex; align-items: center; gap: 2px; }
+nav a { padding: 6px 11px; color: var(--muted); text-decoration: none; border-radius: 8px; font-size: 15px; font-weight: 500; }
 nav a:hover { color: var(--text); background: var(--surface-2); }
-.theme { display: grid; place-items: center; width: 38px; height: 38px; margin-left: 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--text); cursor: pointer; }
+nav a.gh { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); margin-left: 6px; color: var(--text); }
+nav a.gh svg { width: 16px; height: 16px; }
+.theme { display: grid; place-items: center; width: 38px; height: 38px; margin-left: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--text); cursor: pointer; }
 .theme svg { width: 18px; height: 18px; }
 .theme .sun { display: none; }
 :root[data-theme="dark"] .theme .sun { display: block; }
@@ -86,118 +111,309 @@ nav a:hover { color: var(--text); background: var(--surface-2); }
 }
 
 /* Hero */
-.hero { position: relative; padding: 72px 0 64px; }
+.hero { position: relative; padding: 84px 0 40px; text-align: center; isolation: isolate; }
 .hero::before {
-  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
-  background: radial-gradient(600px 320px at 15% 10%, var(--glow-a), transparent 70%),
-              radial-gradient(520px 300px at 85% 30%, var(--glow-b), transparent 70%);
+  content: ""; position: absolute; inset: 0 0 30%; z-index: -1; pointer-events: none;
+  background-image: radial-gradient(var(--dot) 1.2px, transparent 1.2px); background-size: 22px 22px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 80% at 50% 0%, #000 30%, transparent 75%); mask-image: radial-gradient(ellipse 70% 80% at 50% 0%, #000 30%, transparent 75%);
 }
-.hero .wrap { display: grid; gap: 48px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); align-items: center; }
-.badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
-.badge { font-size: 13px; font-weight: 650; padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); }
-:root[data-theme="dark"] .badge { color: var(--accent); }
-h1 { font-size: clamp(34px, 5.4vw, 56px); line-height: 1.06; margin: 0 0 18px; letter-spacing: -.03em; }
-h1 em { font-style: normal; background: linear-gradient(90deg, var(--accent), #00897b); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.lead { font-size: 18.5px; color: var(--muted); margin: 0 0 28px; max-width: 560px; }
-.cta { display: flex; flex-wrap: wrap; gap: 12px; }
-.btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; border-radius: 10px; text-decoration: none; font-weight: 650; border: 1px solid var(--line); color: var(--text); background: var(--surface); }
+.hero::after {
+  content: ""; position: absolute; inset: 0; z-index: -2; pointer-events: none;
+  background: radial-gradient(700px 360px at 30% 8%, var(--glow), transparent 70%), radial-gradient(600px 340px at 75% 20%, var(--glow-2), transparent 70%);
+}
+.pill { display: inline-flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 13px; color: var(--muted); padding: 5px 14px 5px 6px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface); }
+.pill b { font-weight: 500; color: var(--on-accent); background: var(--accent); border-radius: 999px; padding: 1px 9px; }
+h1 { font-size: clamp(38px, 6.6vw, 76px); line-height: 1.06; margin: 24px auto 22px; letter-spacing: -.035em; font-weight: 800; max-width: 920px; }
+.rot { display: inline-grid; vertical-align: bottom; text-align: left; }
+.rot span { grid-area: 1 / 1; background: linear-gradient(90deg, var(--accent), var(--t2)); -webkit-background-clip: text; background-clip: text; color: transparent; padding-bottom: .08em; transition: opacity .45s ease, transform .45s ease; }
+.rot span:not(.on) { opacity: 0; transform: translateY(.35em); }
+.lead { font-size: clamp(17px, 2.1vw, 20px); color: var(--muted); margin: 0 auto 34px; max-width: 680px; }
+.cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 11px; text-decoration: none; font-weight: 600; border: 1px solid var(--line-strong); color: var(--text); background: var(--surface); }
 .btn:hover { border-color: var(--accent); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); box-shadow: 0 8px 24px -10px var(--accent); }
 .btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
-.window { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); overflow: hidden; }
-.window .bar { display: flex; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
-.window .bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
-.stats { grid-column: 1 / -1; display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 8px; }
-.stat { padding: 14px 16px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); }
-.stat b { display: block; font-size: 22px; letter-spacing: -.02em; }
-.stat span { color: var(--muted); font-size: 14px; }
+.btn svg { width: 16px; height: 16px; }
+.clip { display: inline-flex; align-items: center; gap: 4px; margin-top: 18px; max-width: 100%; font-family: var(--mono); color: var(--muted); border: 1px dashed var(--line-strong); border-radius: 11px; padding: 6px 6px 6px 14px; background: var(--surface); }
+.clip code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+.clip code::before { content: "$ "; color: var(--faint); }
+.copy { display: inline-grid; place-items: center; min-width: 34px; height: 30px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; font-family: var(--mono); font-size: 12.5px; }
+.copy:hover { background: var(--surface-2); color: var(--text); }
+.copy svg { width: 16px; height: 16px; }
+
+/* Product frame and video slot */
+.stage { position: relative; max-width: 1060px; margin: 56px auto 0; padding: 0 16px; }
+.stage::before { content: ""; position: absolute; inset: 8% 6% -4%; z-index: -1; background: linear-gradient(120deg, var(--glow), var(--glow-2)); filter: blur(60px); border-radius: 40px; }
+.window { position: relative; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); overflow: hidden; text-align: left; }
+.bar { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); }
+.bar span { flex: 1; margin: 0 40px 0 12px; text-align: center; font-family: var(--mono); font-size: 12px; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 2px 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.media { position: relative; }
+.media .soon { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 10px; padding: 9px 16px 9px 9px; border-radius: 999px; background: rgba(13, 18, 32, .88); color: #fff; font-size: 14px; font-weight: 500; white-space: nowrap; backdrop-filter: blur(6px); }
+.media .soon i { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: #fff; color: #0d1220; font-style: normal; font-size: 12px; padding-left: 2px; }
+
+/* Stats and stack */
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 56px auto 0; border-block: 1px solid var(--line); text-align: left; }
+.stat { padding: 22px 22px 20px; border-left: 1px solid var(--line); }
+.stat:first-child { border-left: 0; }
+.stat b { display: block; font-size: 30px; font-weight: 750; letter-spacing: -.03em; line-height: 1.1; }
+.stat span { color: var(--muted); font-size: 14.5px; }
+.stack { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px 30px; margin-top: 30px; color: var(--faint); font-family: var(--mono); font-size: 14px; }
+.stack small { width: 100%; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; }
+.stack span { color: var(--muted); font-weight: 500; }
 
 /* Sections */
-section { padding: 72px 0; }
+section { padding: 96px 0; }
 section.alt { background: var(--surface-2); border-block: 1px solid var(--line); }
-.eyebrow { color: var(--accent); font-weight: 700; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 8px; }
-h2 { font-size: clamp(26px, 3.4vw, 34px); line-height: 1.15; margin: 0 0 12px; letter-spacing: -.02em; }
-h3 { margin: 0 0 8px; font-size: 18px; letter-spacing: -.01em; }
-.sub { color: var(--muted); margin: 0 0 36px; max-width: 720px; font-size: 17px; }
-.grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); }
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
-.card p { margin: 0; color: var(--muted); }
-.icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 11px; background: var(--accent-soft); color: var(--accent); margin-bottom: 14px; }
-.icon svg { width: 22px; height: 22px; }
+.eyebrow { display: flex; align-items: center; gap: 12px; color: var(--accent); font-family: var(--mono); font-size: 13px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; margin: 0 0 14px; }
+.eyebrow::after { content: ""; height: 1px; width: 48px; background: currentColor; opacity: .5; }
+h2 { font-size: clamp(28px, 3.8vw, 42px); line-height: 1.14; margin: 0 0 14px; letter-spacing: -.03em; font-weight: 750; max-width: 780px; }
+h3 { margin: 0 0 6px; font-size: 18px; letter-spacing: -.015em; font-weight: 650; }
+.sub { color: var(--muted); margin: 0 0 44px; max-width: 700px; font-size: 17.5px; }
 
-/* Tiers */
-.tiers { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); }
-.tier { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 24px 22px 20px; overflow: hidden; }
-.tier::before { content: ""; position: absolute; inset: 0 0 auto; height: 4px; background: var(--c); }
-.tier .num { font-size: 13px; font-weight: 750; color: var(--c); letter-spacing: .06em; text-transform: uppercase; }
-.tier ul { margin: 12px 0 0; padding: 0; list-style: none; }
-.tier li { padding: 7px 0; border-top: 1px dashed var(--line); color: var(--muted); }
-.tier li:first-child { border-top: 0; }
-.tier li b { color: var(--text); font-weight: 650; }
-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; }
-.tier code { color: var(--text); }
+/* 01 Tiers */
+.layer { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 28px; padding: 26px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); position: relative; }
+.layer::before { content: ""; position: absolute; left: -1px; top: 18px; bottom: 18px; width: 3px; border-radius: 3px; background: var(--c); }
+.layer .num { font-family: var(--mono); font-size: 12.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--c); font-weight: 500; }
+.layer h3 { margin-top: 6px; }
+.layer p { margin: 0; color: var(--muted); font-size: 15px; }
+.chips { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(190px, 100%), 1fr)); align-content: start; }
+.chip { padding: 10px 13px; border-radius: 11px; background: var(--cs); border: 1px solid color-mix(in srgb, var(--c) 22%, transparent); font-size: 14.5px; line-height: 1.4; }
+.chip b { display: block; font-weight: 650; color: var(--text); }
+.chip code { font-size: 13px; font-weight: 500; color: var(--text); }
+.chip span { color: var(--muted); font-size: 13.5px; }
+.link { display: flex; justify-content: center; align-items: center; gap: 10px; height: 46px; color: var(--muted); font-family: var(--mono); font-size: 12.5px; }
+.link::before, .link::after { content: ""; width: 1px; height: 14px; background: var(--line-strong); }
 
-/* Steps and code */
-.split { display: grid; gap: 40px; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); align-items: start; }
-ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 0; }
-ol.steps li { counter-increment: s; position: relative; padding: 0 0 22px 50px; }
-ol.steps li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 34px; height: 34px; border-radius: 10px; background: var(--accent); color: var(--on-accent); font-weight: 750; display: grid; place-items: center; }
-ol.steps strong { display: block; font-size: 17px; }
-ol.steps span { color: var(--muted); }
-pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 14px; padding: 18px; overflow-x: auto; font-size: 13.5px; line-height: 1.55; margin: 0; }
-.c { color: var(--muted); }
-.k { color: var(--accent); }
+/* 02 Tabs */
+.tabs { display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: 36px; align-items: start; }
+.tablist { display: grid; gap: 8px; }
+.tab { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: 34px 1fr; gap: 4px 14px; padding: 18px; border-radius: 14px; border: 1px solid transparent; position: relative; overflow: hidden; }
+.tab .n { grid-row: span 2; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--line-strong); font-family: var(--mono); font-size: 13px; color: var(--muted); }
+.tab strong { font-size: 17px; font-weight: 650; }
+.tab span:last-child { color: var(--muted); font-size: 15px; }
+.tab:hover { background: var(--surface-2); }
+.tab:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.tab[aria-selected="true"] { background: var(--surface); border-color: var(--line); box-shadow: 0 10px 30px -20px rgba(31, 41, 100, .4); }
+.tab[aria-selected="true"] .n { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.tab[aria-selected="true"]::after { content: ""; position: absolute; left: 0; bottom: 0; height: 2px; width: 100%; background: var(--accent); transform-origin: left; animation: fill 7s linear; }
+.tabs.paused .tab[aria-selected="true"]::after { animation-play-state: paused; }
+.tabs.manual .tab[aria-selected="true"]::after { animation: none; opacity: .4; }
+@keyframes fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.panels .panel + .panel { margin-top: 20px; }
+.js .panels .panel + .panel { margin-top: 0; }
+pre { margin: 0; padding: 20px 22px; overflow-x: auto; font-size: 13.5px; line-height: 1.6; background: var(--code-bg); color: var(--code-text); }
+.window.dark { border-color: #1f2737; background: var(--code-bg); }
+.window.dark .bar { background: #121827; border-color: #1f2737; }
+.window.dark .bar i { background: #2c3549; }
+.window.dark .bar span { background: #0d1220; border-color: #1f2737; color: #93a0b8; }
+pre .c { color: var(--code-muted); }
+pre .k { color: var(--code-key); }
+pre .p { color: var(--code-ok); user-select: none; }
+pre .ok { color: var(--code-ok); }
+.facts { display: grid; gap: 8px; margin: 0; padding: 18px 22px 22px; list-style: none; border-top: 1px solid #1f2737; background: var(--code-bg); color: var(--code-text); font-size: 14.5px; }
+.facts li { display: flex; gap: 10px; }
+.facts li::before { content: "✓"; color: var(--code-ok); font-family: var(--mono); }
 
-/* Demo */
-.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 28px; }
-.state { font-size: 14px; font-weight: 650; padding: 6px 12px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
-.state.go { background: var(--accent-soft); color: var(--accent); }
-.state.ok { background: var(--ok-soft); color: var(--ok); }
-.state.no { background: var(--bad-soft); color: var(--bad); }
-.arrow { color: var(--muted); }
-.gallery { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); margin-bottom: 28px; }
+/* 03 Simulator */
+.sim { display: grid; gap: 22px; }
+.flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 34px; padding: 26px 26px 24px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+.node { position: relative; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--bg); font-weight: 600; font-size: 15px; transition: border-color .3s, background .3s, box-shadow .3s; }
+.node small { display: block; font-family: var(--mono); font-weight: 400; font-size: 11.5px; color: var(--muted); letter-spacing: .04em; }
+.flow > .node:not(:nth-child(4))::after { content: "→"; position: absolute; right: -27px; top: 50%; transform: translateY(-50%); color: var(--faint); font-weight: 400; }
+.edge { font-size: 13px; color: var(--muted); padding: 8px 2px 0; line-height: 1.45; }
+.edge code { color: var(--text); font-size: 12px; font-weight: 500; }
+.branch { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 34px; margin-top: 18px; padding-top: 18px; border-top: 1px dashed var(--line-strong); }
+.branch .node { grid-row: 1; }
+.branch .edge { grid-row: 2; }
+.branch .wide2 { grid-column: 2 / span 2; }
+.node.done { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.node.current { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
+.node.current.good { border-color: var(--ok); background: var(--ok-soft); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 18%, transparent); }
+.node.current.stop { border-color: var(--bad); background: var(--bad-soft); box-shadow: 0 0 0 4px color-mix(in srgb, var(--bad) 18%, transparent); }
+.console { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 22px; }
+.panel-box { border: 1px solid var(--line); border-radius: 18px; background: var(--surface); padding: 22px; }
+.roles { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); margin-bottom: 18px; }
+.roles button { flex: 1 1 140px; border: 0; background: transparent; color: var(--muted); padding: 8px 10px; border-radius: 9px; cursor: pointer; text-align: left; line-height: 1.3; }
+.roles button b { display: block; color: var(--text); font-weight: 600; font-size: 14.5px; }
+.roles button span { font-size: 12.5px; }
+.roles button[aria-pressed="true"] { background: var(--surface); box-shadow: 0 4px 14px -8px rgba(31, 41, 100, .5); }
+.roles button[aria-pressed="true"] b { color: var(--accent); }
+.rec { display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; margin: 0 0 18px; font-size: 15px; }
+.rec dt { color: var(--muted); }
+.rec dd { margin: 0; font-weight: 500; }
+.badge { display: inline-block; font-size: 13.5px; font-weight: 600; padding: 3px 11px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
+.badge.draft { background: var(--accent-soft); color: var(--accent-strong); }
+:root[data-theme="dark"] .badge.draft { color: var(--accent); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .badge.draft { color: var(--accent); } }
+.badge.good { background: var(--ok-soft); color: var(--ok); }
+.badge.stop { background: var(--bad-soft); color: var(--bad); }
+.safe { color: var(--ok); font-size: 13.5px; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; min-height: 44px; }
+.actions button { border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); padding: 9px 16px; border-radius: 10px; cursor: pointer; font-weight: 600; }
+.actions button.main { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.actions button.danger { color: var(--bad); }
+.actions button:hover { border-color: var(--accent); }
+.hint { margin: 14px 0 0; color: var(--muted); font-size: 14.5px; min-height: 2.9em; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.tools button { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font-size: 14px; text-decoration: underline; text-underline-offset: 3px; }
+.log-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+.log-head h3 { margin: 0; font-size: 16px; }
+.log-head span { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.log { list-style: none; margin: 0; padding: 0; max-height: 330px; overflow-y: auto; }
+.log li { position: relative; padding: 0 0 14px 22px; font-size: 14px; line-height: 1.45; }
+.log li::before { content: ""; position: absolute; left: 4px; top: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.log li::after { content: ""; position: absolute; left: 7.5px; top: 18px; bottom: 2px; width: 1px; background: var(--line-strong); }
+.log li:last-child::after { display: none; }
+.log li.bad::before { background: var(--bad); }
+.log li.bad { color: var(--bad); }
+.log time { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-right: 6px; }
+.log .who { color: var(--muted); font-size: 13px; display: block; }
+.log li.bad .who { color: inherit; }
+.shots { display: grid; gap: 22px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 52px; }
 figure { margin: 0; }
-figure .window { transition: transform .2s ease; }
-figure:hover .window { transform: translateY(-3px); }
-@media (prefers-reduced-motion: reduce) { figure .window { transition: none; } figure:hover .window { transform: none; } }
-figcaption { margin-top: 12px; color: var(--muted); font-size: 15px; }
-figcaption b { color: var(--text); display: block; }
+figcaption { margin-top: 14px; color: var(--muted); font-size: 15px; }
+figcaption b { color: var(--text); display: block; font-weight: 650; }
+.rules { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 52px; border-top: 1px solid var(--line); }
+.rules div { padding: 22px 22px 0 0; }
+.rules div + div { padding-left: 22px; border-left: 1px solid var(--line); }
+.rules p, .principles p { margin: 0; color: var(--muted); font-size: 15px; }
 
-/* Quick start */
-.term { background: #0c1018; color: #d7deea; border-color: #1f2735; }
-.term .c { color: #7d8aa0; }
-.term .p { color: #8fd4a8; user-select: none; }
-.links { display: grid; gap: 12px; margin-top: 18px; }
-.links a { display: flex; justify-content: space-between; gap: 12px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; text-decoration: none; color: var(--text); font-weight: 600; }
-.links a:hover { border-color: var(--accent); }
+/* 04 Admin */
+.split { display: grid; gap: 48px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); align-items: center; }
+ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 0; }
+ol.steps li { counter-increment: s; position: relative; padding: 16px 0 16px 52px; border-top: 1px solid var(--line); }
+ol.steps li:first-child { border-top: 0; }
+ol.steps li::before { content: "0" counter(s); position: absolute; left: 0; top: 18px; font-family: var(--mono); font-size: 13px; color: var(--accent); font-weight: 500; }
+ol.steps strong { display: block; font-size: 17px; font-weight: 650; }
+ol.steps span { color: var(--muted); font-size: 15.5px; }
+
+/* 05 Bento */
+.bento { display: grid; gap: 18px; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.cell { grid-column: span 2; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); overflow: hidden; }
+.cell.wide { grid-column: span 4; }
+.cell .txt { padding: 22px 22px 18px; }
+.cell .txt p { margin: 0; color: var(--muted); font-size: 15px; }
+.cell .vis { margin-top: auto; padding: 0 22px 22px; }
+.overlays { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.overlays span { font-family: var(--mono); font-size: 13px; padding: 5px 11px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface-2); }
+.overlays span.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.mini-term { border-radius: 12px; background: var(--code-bg); color: var(--code-text); font-family: var(--mono); font-size: 13px; padding: 14px 16px; line-height: 1.7; overflow-x: auto; white-space: nowrap; }
+.mini-term .p { color: var(--code-ok); }
+.mini-term .c { color: var(--code-muted); }
+.chart { width: 100%; height: auto; display: block; }
+.chart .grid { stroke: var(--line); }
+.chart .lineA { stroke: var(--accent); fill: none; stroke-width: 2.5; stroke-linejoin: round; }
+.chart .area { fill: var(--accent-soft); }
+.chart text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
+.twins { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.twin { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 10px; font-size: 12.5px; color: var(--muted); }
+.twin b { display: block; color: var(--text); font-size: 13px; margin-bottom: 8px; font-weight: 600; }
+.swap { display: inline-grid; }
+.swap span { grid-area: 1 / 1; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; }
+.swap span:first-child { background: var(--warn-soft); color: var(--warn); animation: swapA 6s infinite; }
+.swap span:last-child { background: var(--ok-soft); color: var(--ok); opacity: 0; animation: swapB 6s infinite; }
+@keyframes swapA { 0%, 45% { opacity: 1; } 50%, 95% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes swapB { 0%, 45% { opacity: 0; } 50%, 95% { opacity: 1; } 100% { opacity: 0; } }
+.chat { display: grid; gap: 8px; font-size: 13.5px; }
+.chat .q { justify-self: end; max-width: 85%; background: var(--accent); color: var(--on-accent); padding: 8px 12px; border-radius: 14px 14px 4px 14px; }
+.chat .a { max-width: 92%; background: var(--surface-2); border: 1px solid var(--line); padding: 8px 12px; border-radius: 14px 14px 14px 4px; }
+.chat sup { font-family: var(--mono); font-size: 10.5px; color: var(--accent-strong); background: var(--accent-soft); padding: 0 5px; border-radius: 5px; }
+.chat .src { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.pipe { display: grid; gap: 8px; }
+.pipe span { display: flex; justify-content: space-between; align-items: center; font-family: var(--mono); font-size: 13px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
+.pipe span::after { content: "✓ pass"; color: var(--ok); font-size: 12px; }
+
+/* 06 Principles and quick start */
+.principles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line); }
+.principles div { padding: 26px 24px 0 0; }
+.principles div + div { padding-left: 24px; border-left: 1px solid var(--line); }
+.principles .n { display: block; font-family: var(--mono); font-size: 13px; color: var(--accent); margin-bottom: 18px; }
+.qs .copy { color: #b4bdcf; margin-left: auto; }
+.qs .copy:hover { background: #1b2233; color: #fff; }
+.links { display: grid; margin-top: 8px; border-top: 1px solid var(--line); }
+.links a { display: flex; justify-content: space-between; gap: 12px; padding: 16px 2px; border-bottom: 1px solid var(--line); text-decoration: none; color: var(--text); font-weight: 600; }
 .links a span { color: var(--muted); font-weight: 400; }
+.links a:hover span { color: var(--accent); }
 
-footer { border-top: 1px solid var(--line); padding: 32px 0 44px; color: var(--muted); font-size: 14.5px; }
-footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 28px; justify-content: space-between; align-items: center; }
-footer a { color: var(--muted); }
-footer .brand { font-size: 15px; }
+footer { border-top: 1px solid var(--line); padding: 56px 0 48px; color: var(--muted); font-size: 14.5px; }
+.foot { display: grid; grid-template-columns: minmax(0, 1.6fr) repeat(2, minmax(0, 1fr)); gap: 32px; }
+.foot p { margin: 12px 0 0; max-width: 360px; }
+.foot h2 { margin: 0 0 12px; font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.foot ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.foot a { color: var(--muted); text-decoration: none; }
+.foot a:hover { color: var(--text); text-decoration: underline; }
+.legal { margin-top: 40px; padding-top: 22px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; font-size: 13.5px; color: var(--muted); }
 
-@media (max-width: 900px) {
-  .hero .wrap { grid-template-columns: minmax(0, 1fr); gap: 36px; }
-  .hero { padding: 48px 0 40px; }
+/* Scroll reveal: only with JavaScript and when motion is welcome */
+@media (prefers-reduced-motion: no-preference) {
+  .js .reveal { opacity: 0; transform: translateY(18px); transition: opacity .7s ease, transform .7s ease; }
+  .js .reveal.in { opacity: 1; transform: none; }
 }
-@media (max-width: 640px) {
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .rot span, .node { transition: none; }
+  .swap span { animation: none; }
+  .swap span:last-child { display: none; }
+  .tab[aria-selected="true"]::after { animation: none; }
+}
+
+@media (max-width: 960px) {
+  .tabs, .split, .console { grid-template-columns: minmax(0, 1fr); }
+  .layer { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .bento { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cell, .cell.wide { grid-column: span 2; }
+  .stats, .rules, .principles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stat:nth-child(3) { border-left: 0; }
+  .stat:nth-child(n+3) { border-top: 1px solid var(--line); }
+  .rules div, .principles div { padding: 22px 18px 22px 0; }
+  .rules div:nth-child(odd), .principles div:nth-child(odd) { padding-left: 0; border-left: 0; }
+  .rules div:nth-child(even), .principles div:nth-child(even) { padding-left: 18px; }
+  .foot { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .foot > div:first-child { grid-column: 1 / -1; }
+}
+@media (max-width: 720px) {
   nav a.hide-sm { display: none; }
-  .stats { grid-template-columns: minmax(0, 1fr); }
-  section { padding: 56px 0; }
+  .hero { padding-top: 56px; }
+  section { padding: 68px 0; }
+  .flow, .branch { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .flow > .node:not(:nth-child(4))::after { content: "↓"; right: auto; left: 18px; top: auto; bottom: -26px; transform: none; }
+  .flow > .node { margin-bottom: 4px; }
+  .flow > .edge { padding: 6px 0 14px 34px; }
+  .flow > .node:nth-child(1) { order: 1; } .flow > .edge:nth-child(5) { order: 2; }
+  .flow > .node:nth-child(2) { order: 3; } .flow > .edge:nth-child(6) { order: 4; }
+  .flow > .node:nth-child(3) { order: 5; } .flow > .edge:nth-child(7) { order: 6; }
+  .flow > .node:nth-child(4) { order: 7; } .flow > .edge:nth-child(8) { display: none; }
+  .branch { order: 9; }
+  .branch .node, .branch .edge, .branch .wide2 { grid-row: auto; grid-column: auto; }
+  .branch .edge { padding: 6px 0 14px; }
+  .branch > :nth-child(1) { order: 1; } .branch > :nth-child(3) { order: 2; } .branch > :nth-child(2) { order: 3; } .branch > :nth-child(4) { order: 4; }
+  .shots { grid-template-columns: minmax(0, 1fr); }
+  .bar span { display: none; }
+}
+@media (max-width: 520px) {
+  .stats, .rules, .principles { grid-template-columns: minmax(0, 1fr); }
+  .stat { border-left: 0; border-top: 1px solid var(--line); }
+  .stat:first-child { border-top: 0; }
+  .rules div, .principles div, .rules div:nth-child(even), .principles div:nth-child(even) { padding: 20px 0; border-left: 0; }
+  .rules div + div, .principles div + div { border-top: 1px solid var(--line); }
+  .notice .tag, .hide-xs { display: none; }
+  .media .soon { position: static; transform: none; margin: 10px; white-space: normal; }
+  .twins { grid-template-columns: minmax(0, 1fr); }
 }
 </style>
 </head>
 <body>
 <a class="skip" href="#noi-dung">Bỏ qua tới nội dung</a>
+<div class="notice"><span class="tag">Đang phát triển</span>Triển khai Kubernetes, KEDA và cập nhật trực tiếp đã có trên nhánh chính. <a href="https://github.com/nguyentin05/opendx-os/blob/main/CHANGELOG.md">Xem nhật ký thay đổi →</a></div>
 <header class="top">
   <div class="wrap">
-    <a class="brand" href="./"><img src="assets/logo.png" alt="" width="32" height="26">OpenDX-OS</a>
+    <a class="brand" href="./"><img src="assets/landing/logo.webp" alt="" width="32" height="26">OpenDX-OS</a>
     <nav aria-label="Liên kết chính">
       <a href="get-started/">Tài liệu</a>
       <a class="hide-sm" href="architecture/">Kiến trúc</a>
       <a class="hide-sm" href="en/get-started/" hreflang="en" lang="en">English docs</a>
-      <a class="hide-sm" href="https://github.com/nguyentin05/opendx-os">GitHub</a>
+      <a class="gh hide-sm" href="https://github.com/nguyentin05/opendx-os"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
       <button class="theme" type="button" id="theme" aria-label="Đổi giao diện sáng hoặc tối">
         <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
         <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
@@ -209,92 +425,102 @@ footer .brand { font-size: 15px; }
 <main id="noi-dung">
   <div class="hero">
     <div class="wrap">
-      <div>
-        <div class="badges">
-          <span class="badge">Bản phát hành v0.3.0</span>
-          <span class="badge">Apache-2.0</span>
-          <span class="badge">Docker Compose · Kubernetes</span>
-        </div>
-        <h1>Ứng dụng nghiệp vụ <em>chỉ là khai báo</em></h1>
-        <p class="lead">OpenDX-OS là nền tảng mã nguồn mở ba tầng cho chuyển đổi số nội bộ. Mỗi ứng dụng là một gói khai báo gồm dữ liệu, vai trò, máy trạng thái, workflow và tri thức. Nền tảng biến gói đó thành bảng, phân quyền, API, giao diện và luồng xử lý, ngay khi hệ thống đang chạy.</p>
-        <div class="cta">
-          <a class="btn primary" href="get-started/">Bắt đầu
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
-          <a class="btn" href="architecture/">Đọc kiến trúc</a>
-          <a class="btn" href="https://github.com/nguyentin05/opendx-os">Mã nguồn</a>
-        </div>
+      <span class="pill"><b>v0.3.0</b>Mã nguồn mở · Apache-2.0<span class="hide-xs"> · Tự vận hành</span></span>
+      <h1><span class="sr">Ứng dụng nghiệp vụ chỉ là khai báo</span><span aria-hidden="true">Ứng dụng <span class="rot" id="rot"><span class="on">nghiệp vụ</span><span>mua sắm</span><span>bảo trì</span><span>chấm công</span></span><br>chỉ là khai báo</span></h1>
+      <p class="lead">Nền tảng mã nguồn mở ba tầng cho chuyển đổi số nội bộ. Viết một manifest, nền tảng dựng bảng, phân quyền, API, giao diện và quy trình, ngay khi hệ thống đang chạy.</p>
+      <div class="cta">
+        <a class="btn primary" href="get-started/">Bắt đầu
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+        <a class="btn" href="#demo">Thử luồng phê duyệt</a>
       </div>
+      <div class="clip"><code id="clone">git clone https://github.com/nguyentin05/opendx-os</code><button class="copy" type="button" data-copy="clone" aria-label="Chép lệnh git clone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button></div>
+    </div>
+    <div class="stage reveal">
       <div class="window">
-        <div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
-        <img src="assets/landing/list.webp" width="1280" height="800" fetchpriority="high"
-             alt="Cổng làm việc OpenDX-OS: danh sách yêu cầu mua sắm của các phòng ban, có nhà cung cấp, số tiền, tệp báo giá đã quét và trạng thái phê duyệt">
+        <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>Cổng làm việc · Mua sắm vật tư</span></div>
+        <!-- Video slot: replace the image and the "soon" label with
+             <video muted loop playsinline preload="none" poster="assets/landing/list.webp" width="1280" height="800">
+               <source src="assets/landing/install.webm" type="video/webm"><source src="assets/landing/install.mp4" type="video/mp4"></video>
+             and play it from the script only when it is on screen and motion is welcome. -->
+        <div class="media">
+          <img src="assets/landing/list.webp" width="1280" height="800" fetchpriority="high"
+               alt="Cổng làm việc OpenDX-OS: danh sách yêu cầu mua sắm của các phòng ban, có nhà cung cấp, số tiền, tệp báo giá đã quét và trạng thái phê duyệt">
+          <span class="soon"><i aria-hidden="true">▶</i>Video 20 giây sắp có: cài một ứng dụng khi hệ thống đang chạy</span>
+        </div>
       </div>
     </div>
     <div class="wrap">
-      <div class="stats">
+      <div class="stats reveal">
         <div class="stat"><b>3 tầng</b><span>hạ tầng headless, năng lực dùng chung, ứng dụng khai báo</span></div>
-        <div class="stat"><b>Dưới 30 giây</b><span>để cài một ứng dụng mới, không cần deploy lại</span></div>
-        <div class="stat"><b>Vài giây</b><span>để thay đổi của người khác hiện trên màn hình đang mở</span></div>
+        <div class="stat"><b>&lt; 30 giây</b><span>để cài một ứng dụng, không build, không deploy lại</span></div>
+        <div class="stat"><b>~ 3 giây</b><span>để thay đổi của người khác hiện trên màn hình đang mở</span></div>
+        <div class="stat"><b>0 pod</b><span>cho năng lực đang rảnh, khi bật KEDA</span></div>
+      </div>
+      <div class="stack" aria-label="Xây trên các dự án mã nguồn mở">
+        <small>Xây trên</small>
+        <span>PostgreSQL</span><span>Hasura</span><span>Keycloak</span><span>APISIX</span><span>Kestra</span><span>SeaweedFS</span><span>ClamAV</span><span>Kubernetes</span><span>KEDA</span>
       </div>
     </div>
   </div>
 
   <section class="alt" aria-labelledby="ba-tang">
     <div class="wrap">
-      <p class="eyebrow">Kiến trúc</p>
+      <p class="eyebrow">01 · Kiến trúc</p>
       <h2 id="ba-tang">Ba tầng, ranh giới rõ ràng</h2>
-      <p class="sub">Ứng dụng không bao giờ kèm code backend. Ứng dụng dùng các năng lực dùng chung ở tầng 2, chạy trên một nền tảng headless chỉ cung cấp API ở tầng 1.</p>
-      <div class="tiers">
-        <div class="tier" style="--c:#3949ab">
-          <span class="num">Tầng 1 · Nền tảng headless</span>
-          <h3>Dịch vụ lõi dùng chung</h3>
-          <ul>
-            <li><b>PostgreSQL 17</b> và <b>Hasura</b> GraphQL</li>
-            <li><b>Keycloak</b> xác thực, <code>dxos-authz</code> phân quyền ở mỗi request</li>
-            <li>Gateway <b>APISIX</b> và workflow engine <b>Kestra</b></li>
-            <li>Lưu trữ <b>SeaweedFS</b>, quét virus <b>ClamAV</b></li>
-            <li><code>dxos-operator</code> và controller Kubernetes cài gói ứng dụng</li>
-          </ul>
+      <p class="sub">Ứng dụng không bao giờ kèm code backend. Ứng dụng dùng năng lực của tầng 2, tầng 2 chạy trên một nền tảng headless chỉ cung cấp API.</p>
+      <div class="layer reveal" style="--c:var(--t3);--cs:var(--t3-soft)">
+        <div><span class="num">Tầng 3 · Ứng dụng</span><h3>Gói khai báo</h3><p>Manifest, workflow và tri thức. Cài và gỡ khi hệ thống đang chạy.</p></div>
+        <div class="chips">
+          <div class="chip"><b>Mua sắm vật tư</b><span>phê duyệt liên phòng ban</span></div>
+          <div class="chip"><b>Bảo trì thiết bị</b><span>công việc theo thiết bị</span></div>
+          <div class="chip"><b>Bảng công nhân viên</b><span>chấm công và duyệt</span></div>
+          <div class="chip"><b>Thư viện cá nhân</b><span>tài liệu riêng cho Trợ lý</span></div>
         </div>
-        <div class="tier" style="--c:#00897b">
-          <span class="num">Tầng 2 · Năng lực H-P-D-I</span>
-          <h3>Năng lực và giao diện</h3>
-          <ul>
-            <li><code>cap-hr</code> (H): phòng ban và nhân sự</li>
-            <li><code>cap-process</code> (P): command có version, tệp, lịch sử, sự kiện</li>
-            <li><code>cap-work</code>: việc được giao, hiện trong “Việc của tôi”</li>
-            <li><code>cap-data</code> (D): dữ liệu thiết bị</li>
-            <li><code>cap-ai</code> (I): Trợ lý và tri thức có trích dẫn</li>
-            <li><b>Cổng làm việc</b> dựng giao diện từ manifest</li>
-          </ul>
+      </div>
+      <div class="link" aria-hidden="true">dùng năng lực qua API</div>
+      <div class="layer reveal" style="--c:var(--t2);--cs:var(--t2-soft)">
+        <div><span class="num">Tầng 2 · Năng lực H-P-D-I</span><h3>Năng lực và giao diện</h3><p>Dùng chung cho mọi ứng dụng, mỗi năng lực một dịch vụ riêng.</p></div>
+        <div class="chips">
+          <div class="chip"><code>cap-hr</code> <span>(H) phòng ban, nhân sự</span></div>
+          <div class="chip"><code>cap-process</code> <span>(P) command, tệp, lịch sử</span></div>
+          <div class="chip"><code>cap-data</code> <span>(D) dữ liệu thiết bị</span></div>
+          <div class="chip"><code>cap-ai</code> <span>(I) Trợ lý, tri thức</span></div>
+          <div class="chip"><code>cap-work</code> <span>“Việc của tôi”</span></div>
+          <div class="chip"><b>Cổng làm việc</b><span>dựng giao diện từ manifest</span></div>
         </div>
-        <div class="tier" style="--c:#ef6c00">
-          <span class="num">Tầng 3 · Ứng dụng</span>
-          <h3>Gói khai báo</h3>
-          <ul>
-            <li><b>Mua sắm vật tư</b>: phê duyệt liên phòng ban</li>
-            <li><b>Bảo trì thiết bị</b>: công việc theo thiết bị</li>
-            <li><b>Bảng công nhân viên</b>: chấm công và duyệt</li>
-            <li><b>Thư viện cá nhân</b>: tài liệu riêng cho Trợ lý</li>
-          </ul>
+      </div>
+      <div class="link" aria-hidden="true">chỉ gọi API của tầng 1</div>
+      <div class="layer reveal" style="--c:var(--t1);--cs:var(--t1-soft)">
+        <div><span class="num">Tầng 1 · Nền tảng headless</span><h3>Dịch vụ lõi dùng chung</h3><p>Không giao diện, chỉ API. Mọi request đều qua gateway và được kiểm quyền.</p></div>
+        <div class="chips">
+          <div class="chip"><b>PostgreSQL 17</b><span>dữ liệu và lịch sử</span></div>
+          <div class="chip"><b>Hasura</b><span>GraphQL và subscription</span></div>
+          <div class="chip"><b>Keycloak</b><span>xác thực, SSO</span></div>
+          <div class="chip"><code>dxos-authz</code> <span>phân quyền mỗi request</span></div>
+          <div class="chip"><b>APISIX</b><span>gateway</span></div>
+          <div class="chip"><b>Kestra</b><span>workflow</span></div>
+          <div class="chip"><b>SeaweedFS + ClamAV</b><span>tệp đã quét virus</span></div>
+          <div class="chip"><code>dxos-operator</code> <span>cài gói ứng dụng</span></div>
         </div>
       </div>
     </div>
   </section>
 
   <section aria-labelledby="khai-bao">
-    <div class="wrap split">
-      <div>
-        <p class="eyebrow">Thêm ứng dụng</p>
-        <h2 id="khai-bao">Khai báo, operator lo phần còn lại</h2>
-        <p class="sub">Một ứng dụng mới được cài khi hệ thống đang chạy, không build và không deploy lại.</p>
-        <ol class="steps">
-          <li><strong>Viết manifest</strong><span>Vai trò, bảng, cột mỗi vai trò được xem, máy trạng thái và các command.</span></li>
-          <li><strong>Operator cài gói</strong><span>Tạo bảng, trigger, quyền GraphQL, flow Kestra và vai trò, rồi báo <code>Ready</code>. Trên Kubernetes, gói là một tài nguyên <code>DXApplication</code>.</span></li>
-          <li><strong>Giao diện tự xuất hiện</strong><span>Cổng làm việc đọc manifest và dựng danh sách, form, trang chi tiết cho đúng vai trò.</span></li>
-        </ol>
-      </div>
-      <pre><code><span class="c"># apps/procurement/manifest.yaml (trích)</span>
+    <div class="wrap">
+      <p class="eyebrow">02 · Thêm ứng dụng</p>
+      <h2 id="khai-bao">Từ manifest tới màn hình, không deploy lại</h2>
+      <p class="sub">Một ứng dụng mới được cài khi hệ thống đang chạy. Trên Kubernetes, gói ứng dụng là một tài nguyên <code>DXApplication</code>.</p>
+      <div class="tabs reveal" id="tabs">
+        <div class="tablist" role="tablist" aria-label="Các bước thêm ứng dụng" aria-orientation="vertical">
+          <button class="tab" type="button" role="tab" id="tab-1" aria-controls="panel-1" aria-selected="true"><span class="n">01</span><strong>Viết manifest</strong><span>Vai trò, bảng, cột mỗi vai trò được xem, máy trạng thái và các command.</span></button>
+          <button class="tab" type="button" role="tab" id="tab-2" aria-controls="panel-2" aria-selected="false" tabindex="-1"><span class="n">02</span><strong>Operator cài gói</strong><span>Tạo bảng, trigger, quyền GraphQL, flow Kestra và vai trò, rồi báo Ready.</span></button>
+          <button class="tab" type="button" role="tab" id="tab-3" aria-controls="panel-3" aria-selected="false" tabindex="-1"><span class="n">03</span><strong>Giao diện tự xuất hiện</strong><span>Cổng làm việc đọc manifest và dựng danh sách, form, trang chi tiết đúng vai trò.</span></button>
+        </div>
+        <div class="panels">
+          <div class="panel" role="tabpanel" id="panel-1" aria-labelledby="tab-1" tabindex="0">
+            <div class="window dark"><div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>apps/procurement/manifest.yaml</span></div>
+<pre><code><span class="c"># apps/procurement/manifest.yaml (trích)</span>
 <span class="k">kind</span>: DXApplication
 <span class="k">spec</span>:
   <span class="k">roles</span>:
@@ -319,40 +545,105 @@ footer .brand { font-size: 15px; }
         payload:
         - column: rejection_reason
           required: true   <span class="c"># từ chối phải nêu lý do</span></code></pre>
+            </div>
+          </div>
+          <div class="panel" role="tabpanel" id="panel-2" aria-labelledby="tab-2" tabindex="0">
+            <div class="window dark"><div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
+<pre><code><span class="p">$ </span>dxos-operator export-crd apps/procurement | kubectl apply -f -
+dxapplication.dxos.io/procurement created
+<span class="p">$ </span>kubectl get dxapplications -w
+NAME          VERSION   READY   AGE
+procurement   0.3.0             0s
+procurement   0.3.0     <span class="ok">True</span>    14s</code></pre>
+              <ul class="facts">
+                <li>Bảng, khoá ngoại, trigger version và lịch sử trong PostgreSQL</li>
+                <li>Quyền GraphQL theo cột và theo dòng cho từng vai trò</li>
+                <li>Flow Kestra cho các command và việc được giao</li>
+                <li>Ready sau khoảng 10 đến 20 giây trên cụm EKS thử nghiệm</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel" role="tabpanel" id="panel-3" aria-labelledby="tab-3" tabindex="0">
+            <div class="window"><div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>Cổng làm việc · Mua sắm vật tư</span></div>
+              <img src="assets/landing/list.webp" width="1280" height="800" loading="lazy"
+                   alt="Danh sách yêu cầu mua sắm do Cổng làm việc dựng từ manifest: cột, bộ lọc, sắp xếp và nhãn trạng thái tiếng Việt">
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
-  <section class="alt" aria-labelledby="demo">
+  <section class="alt" id="demo" aria-labelledby="demo-title">
     <div class="wrap">
-      <p class="eyebrow">Ứng dụng minh hoạ</p>
-      <h2 id="demo">Phê duyệt mua sắm liên phòng ban</h2>
-      <p class="sub">Người đề nghị gửi yêu cầu kèm báo giá đã quét virus. Trưởng phòng duyệt, rồi tài chính xét ngân sách. Mỗi bước là một command có version, được ghi vào lịch sử và gửi tới workflow.</p>
-      <div class="flow" aria-label="Các trạng thái của yêu cầu mua sắm">
-        <span class="state go">Nháp</span><span class="arrow" aria-hidden="true">→</span>
-        <span class="state">Chờ quản lý duyệt</span><span class="arrow" aria-hidden="true">→</span>
-        <span class="state">Chờ duyệt ngân sách</span><span class="arrow" aria-hidden="true">→</span>
-        <span class="state ok">Đã duyệt</span><span class="arrow" aria-hidden="true">hoặc</span>
-        <span class="state no">Bị từ chối</span>
+      <p class="eyebrow">03 · Thử ngay</p>
+      <h2 id="demo-title">Đưa một yêu cầu qua chuỗi phê duyệt</h2>
+      <p class="sub">Bản mô phỏng ứng dụng Mua sắm vật tư chạy ngay trên trang này, với đúng máy trạng thái, nhãn và vai trò trong manifest. Đổi vai trò để thấy mỗi người chỉ có các thao tác của mình.</p>
+      <div class="sim reveal">
+        <div class="flow" id="flow" aria-label="Máy trạng thái của yêu cầu mua sắm">
+          <div class="node" data-s="DRAFT"><small>DRAFT</small>Nháp</div>
+          <div class="node" data-s="SUBMITTED"><small>SUBMITTED</small>Chờ quản lý duyệt</div>
+          <div class="node" data-s="BUDGET_REVIEW"><small>BUDGET_REVIEW</small>Chờ duyệt ngân sách</div>
+          <div class="node" data-s="APPROVED"><small>APPROVED</small>Đã duyệt</div>
+          <div class="edge"><code>Gửi duyệt</code> · người đề nghị</div>
+          <div class="edge"><code>Duyệt</code> · trưởng phòng, không tự duyệt</div>
+          <div class="edge"><code>Duyệt ngân sách</code> · tài chính</div>
+          <div class="edge"></div>
+          <div class="branch">
+            <div class="node" data-s="CANCELLED"><small>CANCELLED</small>Đã huỷ</div>
+            <div class="node wide2" data-s="REJECTED"><small>REJECTED</small>Bị từ chối</div>
+            <div class="edge"><code>Huỷ yêu cầu</code> · người đề nghị, từ Nháp hoặc Chờ quản lý duyệt</div>
+            <div class="edge wide2"><code>Từ chối</code> · trưởng phòng hoặc tài chính, phải nêu lý do</div>
+          </div>
+        </div>
+        <div class="console">
+          <div class="panel-box">
+            <div class="roles" role="group" aria-label="Xem với vai trò" id="roles">
+              <button type="button" data-r="req" aria-pressed="true"><b>Người đề nghị</b><span>Nguyễn Văn An</span></button>
+              <button type="button" data-r="mgr" aria-pressed="false"><b>Trưởng phòng</b><span>Lê Minh Cường</span></button>
+              <button type="button" data-r="fin" aria-pressed="false"><b>Tài chính</b><span>Võ Hoàng Giang</span></button>
+            </div>
+            <dl class="rec">
+              <dt>Mô tả hàng hoá</dt><dd>Màn hình 27 inch</dd>
+              <dt>Nhà cung cấp</dt><dd>Phong Vũ</dd>
+              <dt>Số tiền báo giá</dt><dd>6.900.000 ₫</dd>
+              <dt>Tệp báo giá</dt><dd>bao-gia.pdf <span class="safe">· đã quét an toàn</span></dd>
+              <dt>Trạng thái</dt><dd><span class="badge draft" id="state">Nháp</span></dd>
+              <dt>Phiên bản</dt><dd class="mono" id="ver">1</dd>
+            </dl>
+            <div class="actions" id="actions"></div>
+            <p class="hint" id="hint" aria-live="polite"></p>
+            <div class="tools">
+              <button type="button" id="stale">Thử gửi command với phiên bản cũ</button>
+              <button type="button" id="reset">Làm lại từ đầu</button>
+            </div>
+          </div>
+          <div class="panel-box">
+            <div class="log-head"><h3>Lịch sử</h3><span>mô phỏng</span></div>
+            <ol class="log" id="log" aria-live="polite"></ol>
+          </div>
+        </div>
+        <noscript><p class="sub">Bật JavaScript để dùng bản mô phỏng.</p></noscript>
       </div>
-      <div class="gallery">
-        <figure>
-          <div class="window"><div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="shots">
+        <figure class="reveal">
+          <div class="window"><div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>Hồ sơ yêu cầu</span></div>
             <img src="assets/landing/detail.webp" width="1280" height="960" loading="lazy"
                  alt="Trang chi tiết một yêu cầu đã duyệt: tệp báo giá đã quét an toàn và lịch sử bốn bước từ người đề nghị, trưởng phòng tới tài chính"></div>
-          <figcaption><b>Hồ sơ và lịch sử</b>Tệp đính kèm chỉ tải được sau khi ClamAV quét sạch. Mỗi bước ghi rõ ai làm, lúc nào, với vai trò gì.</figcaption>
+          <figcaption><b>Ảnh thật: hồ sơ và lịch sử</b>Tệp đính kèm chỉ tải được sau khi ClamAV quét sạch. Mỗi bước ghi rõ ai làm, lúc nào, với vai trò gì.</figcaption>
         </figure>
-        <figure>
-          <div class="window"><div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
+        <figure class="reveal">
+          <div class="window"><div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>Việc của tôi</span></div>
             <img src="assets/landing/work.webp" width="1280" height="800" loading="lazy"
                  alt="Trang Việc của tôi của trưởng phòng: hộp chờ xử lý và danh sách việc duyệt yêu cầu mua sắm do workflow giao"></div>
-          <figcaption><b>Việc của tôi</b>Workflow giao việc duyệt cho đúng trưởng phòng; việc tự đóng khi yêu cầu được duyệt hoặc từ chối.</figcaption>
+          <figcaption><b>Ảnh thật: Việc của tôi</b>Workflow giao việc duyệt cho đúng trưởng phòng; việc tự đóng khi yêu cầu được duyệt hoặc từ chối.</figcaption>
         </figure>
       </div>
-      <div class="grid">
-        <div class="card"><h3>Phạm vi phòng ban</h3><p>Trưởng phòng chỉ thấy và duyệt yêu cầu của phòng mình; tài chính thấy mọi phòng.</p></div>
-        <div class="card"><h3>Không tự duyệt</h3><p>Trưởng phòng không duyệt được yêu cầu do chính mình tạo; nền tảng từ chối.</p></div>
-        <div class="card"><h3>Không ghi đè dữ liệu mới</h3><p>Command mang version đã cũ bị từ chối, không đè lên quyết định mới hơn.</p></div>
-        <div class="card"><h3>Cập nhật trực tiếp</h3><p>Khi người khác duyệt, danh sách và hồ sơ đang mở tự đổi sau vài giây, không cần tải lại.</p></div>
+      <div class="rules">
+        <div><h3>Phạm vi phòng ban</h3><p>Trưởng phòng chỉ thấy và duyệt yêu cầu của phòng mình; tài chính thấy mọi phòng.</p></div>
+        <div><h3>Không tự duyệt</h3><p>Trưởng phòng không duyệt được yêu cầu do chính mình tạo; nền tảng từ chối.</p></div>
+        <div><h3>Không ghi đè</h3><p>Command mang phiên bản đã cũ bị từ chối, không đè lên quyết định mới hơn.</p></div>
+        <div><h3>Cập nhật trực tiếp</h3><p>Khi người khác duyệt, danh sách và hồ sơ đang mở tự đổi sau vài giây.</p></div>
       </div>
     </div>
   </section>
@@ -360,7 +651,7 @@ footer .brand { font-size: 15px; }
   <section aria-labelledby="quan-tri">
     <div class="wrap split">
       <div>
-        <p class="eyebrow">Quản trị</p>
+        <p class="eyebrow">04 · Quản trị</p>
         <h2 id="quan-tri">Keycloak xác thực, nền tảng phân quyền</h2>
         <p class="sub">Tài khoản nằm ở Keycloak hoặc danh bạ mà Keycloak liên kết. Vai trò và phòng ban nằm ở nền tảng, được kiểm lại ở mỗi request.</p>
         <ol class="steps">
@@ -369,8 +660,8 @@ footer .brand { font-size: 15px; }
           <li><strong>Tổ chức theo phòng ban</strong><span>Màn hình “Tổ chức” quản lý cây phòng ban và nhân sự, quyết định ai thấy dòng dữ liệu nào.</span></li>
         </ol>
       </div>
-      <figure>
-        <div class="window"><div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
+      <figure class="reveal">
+        <div class="window"><div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>Người dùng &amp; quyền</span></div>
           <img src="assets/landing/people.webp" width="1280" height="800" loading="lazy"
                alt="Màn hình Người dùng và quyền: danh sách tài khoản, trạng thái và vai trò đang giữ"></div>
       </figure>
@@ -379,25 +670,52 @@ footer .brand { font-size: 15px; }
 
   <section class="alt" aria-labelledby="van-hanh">
     <div class="wrap">
-      <p class="eyebrow">Vận hành</p>
+      <p class="eyebrow">05 · Vận hành</p>
       <h2 id="van-hanh">Từ máy cá nhân tới cụm Kubernetes</h2>
       <p class="sub">Cùng một bộ cấu hình chạy bằng Docker Compose trên máy hoặc trên bất kỳ cụm Kubernetes nào; một workflow kiểm tra hai cách triển khai không lệch nhau.</p>
-      <div class="grid">
-        <div class="card">
-          <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l8.7 5v10L12 22l-8.7-5V7z"/><path d="M12 22V12M20.7 7L12 12 3.3 7"/></svg></div>
-          <h3>Kubernetes cho mọi cụm</h3><p>Manifest theo tầng, Pod đã siết bảo mật, overlay mẫu cho EKS, GKE, AKS và cụm tự dựng. Đã chạy thật trên EKS.</p>
+      <div class="bento">
+        <div class="cell wide reveal">
+          <div class="txt"><h3>Kubernetes cho mọi cụm</h3><p>Manifest theo tầng, Pod đã siết bảo mật, overlay mẫu cho từng nền tảng. Đã chạy thật trên EKS với HTTPS qua ALB.</p></div>
+          <div class="vis">
+            <div class="overlays" aria-label="Các overlay và component có sẵn"><span class="on">eks</span><span>gke</span><span>aks</span><span>onprem</span><span>+ keda</span><span>+ gateway-routes</span></div>
+            <div class="mini-term"><span class="p">$ </span>deploy/k8s/apply.sh eks ~/dxos-k8s.env<br><span class="c"># mật khẩu đọc từ file của bạn, không nằm trong Git</span></div>
+          </div>
         </div>
-        <div class="card">
-          <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></div>
-          <h3>Không dùng thì không chạy</h3><p>Với component KEDA tuỳ chọn, các dịch vụ tầng 2 và ClamAV về 0 khi không có việc và tự khởi động khi có request hay việc tồn đọng.</p>
+        <div class="cell reveal">
+          <div class="txt"><h3>Không dùng thì không chạy</h3><p>Với component KEDA, năng lực tầng 2 và ClamAV về 0 khi rảnh, tự bật khi có việc.</p></div>
+          <div class="vis">
+            <svg class="chart" viewBox="0 0 240 110" role="img" aria-label="Số pod theo thời gian: 0, tăng lên 1 khi có request, rồi về 0 khi rảnh">
+              <line class="grid" x1="40" y1="20" x2="236" y2="20"/><line class="grid" x1="40" y1="86" x2="236" y2="86"/>
+              <text x="0" y="24">1 pod</text><text x="0" y="90">0</text>
+              <path class="area" d="M40 86 H86 V20 H172 V86 H236 V86 H40 Z"/>
+              <path class="lineA" d="M40 86 H86 V20 H172 V86 H236"/>
+              <text x="88" y="104">request</text><text x="174" y="104">rảnh</text>
+            </svg>
+          </div>
         </div>
-        <div class="card">
-          <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3"/><path d="M18 3v4h-4M6 21v-4h4"/></svg></div>
-          <h3>Thời gian thực</h3><p>Subscription GraphQL qua WebSocket; quyền của kết nối hết hạn sau một phút để thu quyền luôn có tác dụng.</p>
+        <div class="cell reveal">
+          <div class="txt"><h3>Cập nhật trực tiếp</h3><p>Subscription GraphQL qua WebSocket; quyền của kết nối được kiểm lại mỗi phút.</p></div>
+          <div class="vis">
+            <div class="twins" aria-hidden="true">
+              <div class="twin"><b>Người đề nghị</b><span class="swap"><span>Chờ quản lý duyệt</span><span>Chờ duyệt ngân sách</span></span></div>
+              <div class="twin"><b>Trưởng phòng</b><span class="swap"><span>Chờ quản lý duyệt</span><span>Chờ duyệt ngân sách</span></span></div>
+            </div>
+          </div>
         </div>
-        <div class="card">
-          <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l8 4v6c0 5-3.4 8.6-8 10-4.6-1.4-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg></div>
-          <h3>Bí mật ngoài Git</h3><p>Mọi mật khẩu sinh lúc cài đặt; quét gitleaks, Trivy và CodeQL trên mỗi thay đổi.</p>
+        <div class="cell reveal">
+          <div class="txt"><h3>Trợ lý có trích dẫn</h3><p>Trả lời từ tài liệu của tổ chức, kèm nguồn; thư viện cá nhân cho tài liệu riêng.</p></div>
+          <div class="vis">
+            <div class="chat" aria-hidden="true">
+              <div class="q">Yêu cầu mua sắm cần ai duyệt?</div>
+              <div class="a">Trưởng phòng duyệt trước, sau đó tài chính xét ngân sách <sup>1</sup><br><span class="src">[1] quy-trinh-mua-sam.pdf</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="cell reveal">
+          <div class="txt"><h3>Bí mật ngoài Git</h3><p>Mọi mật khẩu sinh lúc cài đặt; mỗi thay đổi đều được quét.</p></div>
+          <div class="vis">
+            <div class="pipe" role="list" aria-label="Các bước quét trên mỗi thay đổi"><span role="listitem">gitleaks</span><span role="listitem">trivy</span><span role="listitem">codeql</span></div>
+          </div>
         </div>
       </div>
     </div>
@@ -405,18 +723,19 @@ footer .brand { font-size: 15px; }
 
   <section aria-labelledby="nguyen-tac">
     <div class="wrap">
-      <p class="eyebrow">Nguyên tắc</p>
+      <p class="eyebrow">06 · Nguyên tắc</p>
       <h2 id="nguyen-tac">Nguyên tắc thiết kế</h2>
-      <div class="grid">
-        <div class="card"><h3>Khai báo thay cho code</h3><p>Quy tắc nghiệp vụ nằm trong manifest và workflow, nên cài ứng dụng không cần deploy.</p></div>
-        <div class="card"><h3>Một nguồn quyền duy nhất</h3><p>Vai trò nằm trong <code>core.user_roles</code>; Keycloak chỉ trả lời “bạn là ai”.</p></div>
-        <div class="card"><h3>Một tổ chức, ứng dụng tách biệt</h3><p>Dữ liệu tách theo ứng dụng và phòng ban, không theo khoá tenant.</p></div>
-        <div class="card"><h3>Mã nguồn mở hoàn toàn</h3><p>Code Apache-2.0 trên hạ tầng mã nguồn mở mà tổ chức tự vận hành được.</p></div>
+      <p class="sub">Những quyết định giữ cho nền tảng nhỏ, dễ hiểu và tự vận hành được.</p>
+      <div class="principles">
+        <div class="reveal"><span class="n">01</span><h3>Khai báo thay cho code</h3><p>Quy tắc nghiệp vụ nằm trong manifest và workflow, nên cài ứng dụng không cần deploy.</p></div>
+        <div class="reveal"><span class="n">02</span><h3>Một nguồn quyền</h3><p>Vai trò nằm trong <code>core.user_roles</code>; Keycloak chỉ trả lời “bạn là ai”.</p></div>
+        <div class="reveal"><span class="n">03</span><h3>Không dùng thì không chạy</h3><p>Năng lực chỉ chạy khi có ứng dụng cần đến và có việc để làm.</p></div>
+        <div class="reveal"><span class="n">04</span><h3>Mã nguồn mở hoàn toàn</h3><p>Code Apache-2.0 trên hạ tầng mã nguồn mở mà tổ chức tự vận hành được.</p></div>
       </div>
     </div>
   </section>
 
-  <section class="alt" aria-labelledby="chay-thu">
+  <section class="alt qs" aria-labelledby="chay-thu">
     <div class="wrap split">
       <div>
         <p class="eyebrow">Chạy thử</p>
@@ -428,39 +747,194 @@ footer .brand { font-size: 15px; }
           <a href="guides/knowledge/personal-library/">Trợ lý và thư viện cá nhân <span>Tri thức →</span></a>
         </div>
       </div>
-      <pre class="term"><code><span class="p">$ </span>git clone https://github.com/nguyentin05/opendx-os
+      <div class="window dark reveal">
+        <div class="bar"><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i><button class="copy" type="button" data-copy="quick" aria-label="Chép các lệnh chạy thử">Chép</button></div>
+<pre><code id="quick"><span class="p">$ </span>git clone https://github.com/nguyentin05/opendx-os
 <span class="p">$ </span>cd opendx-os
 <span class="p">$ </span>scripts/init-env.sh
 <span class="p">$ </span>docker compose up -d --build
 <span class="p">$ </span>scripts/test-compose.sh
 <span class="p">$ </span>scripts/seed-demo.py seed
 <span class="p">$ </span>scripts/seed-demo.py flow</code></pre>
+      </div>
     </div>
   </section>
 </main>
 
 <footer>
   <div class="wrap">
-    <span class="brand"><img src="assets/logo.png" alt="" width="24" height="19">OpenDX-OS · Apache-2.0 · v0.3.0</span>
-    <span><a href="get-started/">Tài liệu</a> · <a href="architecture/">Kiến trúc</a> · <a href="adr/">ADR</a> · <a href="https://github.com/nguyentin05/opendx-os/releases">Bản phát hành</a> · <a href="en/get-started/" hreflang="en" lang="en">English docs</a> · <a href="https://github.com/nguyentin05/opendx-os">GitHub</a></span>
+    <div class="foot">
+      <div>
+        <a class="brand" href="./"><img src="assets/landing/logo.webp" alt="" width="28" height="23">OpenDX-OS</a>
+        <p>Nền tảng mã nguồn mở ba tầng cho chuyển đổi số nội bộ, nơi ứng dụng nghiệp vụ chỉ là khai báo.</p>
+      </div>
+      <div>
+        <h2>Tài liệu</h2>
+        <ul><li><a href="get-started/">Bắt đầu</a></li><li><a href="architecture/">Kiến trúc</a></li><li><a href="adr/">Quyết định kiến trúc</a></li><li><a href="en/get-started/" hreflang="en" lang="en">English docs</a></li></ul>
+      </div>
+      <div>
+        <h2>Dự án</h2>
+        <ul><li><a href="https://github.com/nguyentin05/opendx-os">GitHub</a></li><li><a href="https://github.com/nguyentin05/opendx-os/releases">Bản phát hành</a></li><li><a href="https://github.com/nguyentin05/opendx-os/blob/main/CHANGELOG.md">Nhật ký thay đổi</a></li></ul>
+      </div>
+    </div>
+    <div class="legal"><span>Apache-2.0 · v0.3.0</span><span>© 2026 DX-OS Open-Core Contributors</span></div>
   </div>
 </footer>
 
 <script>
-// Writes the same palette entry Material uses, so the docs pages follow this choice too.
-document.getElementById('theme').addEventListener('click', function () {
+(function () {
   var root = document.documentElement;
-  var current = root.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-  var next = current === 'dark' ? 'light' : 'dark';
-  root.setAttribute('data-theme', next);
-  try {
-    localStorage.setItem(new URL('./', location.href).pathname + '.__palette', JSON.stringify({
-      index: next === 'dark' ? 1 : 0,
-      color: { media: next === 'dark' ? '(prefers-color-scheme: dark)' : '(prefers-color-scheme: light)',
-               scheme: next === 'dark' ? 'slate' : 'default', primary: 'indigo', accent: 'indigo' }
-    }));
-  } catch (e) {}
-});
+  var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var $ = function (id) { return document.getElementById(id); };
+
+  // Theme: writes the same palette entry Material uses, so the docs pages follow this choice too.
+  $('theme').addEventListener('click', function () {
+    var current = root.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    var next = current === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try {
+      localStorage.setItem(new URL('./', location.href).pathname + '.__palette', JSON.stringify({
+        index: next === 'dark' ? 1 : 0,
+        color: { media: next === 'dark' ? '(prefers-color-scheme: dark)' : '(prefers-color-scheme: light)',
+                 scheme: next === 'dark' ? 'slate' : 'default', primary: 'indigo', accent: 'indigo' }
+      }));
+    } catch (e) {}
+  });
+
+  // Rotating word in the headline (the full sentence is in a screen-reader span).
+  if (!still) {
+    var words = $('rot').children, w = 0;
+    setInterval(function () {
+      words[w].classList.remove('on'); w = (w + 1) % words.length; words[w].classList.add('on');
+    }, 2600);
+  }
+
+  // Copy buttons.
+  document.querySelectorAll('[data-copy]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var text = $(b.dataset.copy).textContent.replace(/^\$ /gm, '');
+      var label = b.innerHTML;
+      navigator.clipboard.writeText(text).then(function () {
+        b.textContent = 'Đã chép'; setTimeout(function () { b.innerHTML = label; }, 1600);
+      });
+    });
+  });
+
+  // Tabs: keyboard support; they advance on their own until the reader picks one.
+  var box = $('tabs'), tabs = [].slice.call(box.querySelectorAll('[role=tab]')), timer;
+  function show(i, focus) {
+    tabs.forEach(function (t, k) {
+      var on = k === i;
+      t.setAttribute('aria-selected', on); t.tabIndex = on ? 0 : -1;
+      $(t.getAttribute('aria-controls')).hidden = !on;
+    });
+    if (focus) tabs[i].focus();
+  }
+  function manual() { clearInterval(timer); box.classList.add('manual'); }
+  tabs.forEach(function (t, i) {
+    t.addEventListener('click', function () { manual(); show(i); });
+    t.addEventListener('keydown', function (e) {
+      var d = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+      if (d) { e.preventDefault(); manual(); show((i + d + tabs.length) % tabs.length, true); }
+    });
+  });
+  show(0);
+  if (still) box.classList.add('manual');
+  else {
+    var at = 0;
+    box.addEventListener('mouseenter', function () { box.classList.add('paused'); });
+    box.addEventListener('mouseleave', function () { box.classList.remove('paused'); });
+    new IntersectionObserver(function (es) {
+      if (es[0].isIntersecting && !timer && !box.classList.contains('manual')) {
+        timer = setInterval(function () {
+          if (box.classList.contains('paused')) return;
+          at = (at + 1) % tabs.length; show(at);
+        }, 7000);
+      }
+    }).observe(box);
+  }
+
+  // Approval simulator: the state machine, labels and roles of apps/procurement/manifest.yaml.
+  var STATES = { DRAFT: 'Nháp', SUBMITTED: 'Chờ quản lý duyệt', BUDGET_REVIEW: 'Chờ duyệt ngân sách',
+                 APPROVED: 'Đã duyệt', REJECTED: 'Bị từ chối', CANCELLED: 'Đã huỷ' };
+  var PEOPLE = { req: ['Nguyễn Văn An', 'người đề nghị'], mgr: ['Lê Minh Cường', 'trưởng phòng'], fin: ['Võ Hoàng Giang', 'tài chính'] };
+  var COMMANDS = [
+    { label: 'Gửi duyệt', from: ['DRAFT'], to: 'SUBMITTED', roles: ['req'], kind: 'main' },
+    { label: 'Duyệt', from: ['SUBMITTED'], to: 'BUDGET_REVIEW', roles: ['mgr'], kind: 'main' },
+    { label: 'Duyệt ngân sách', from: ['BUDGET_REVIEW'], to: 'APPROVED', roles: ['fin'], kind: 'main' },
+    { label: 'Từ chối', from: ['SUBMITTED', 'BUDGET_REVIEW'], to: 'REJECTED', roles: ['mgr', 'fin'], kind: 'danger', reason: 'Vượt ngân sách quý này' },
+    { label: 'Huỷ yêu cầu', from: ['DRAFT', 'SUBMITTED'], to: 'CANCELLED', roles: ['req'], kind: '' }
+  ];
+  var NEXT = { SUBMITTED: 'mgr', BUDGET_REVIEW: 'fin' };
+  var st, role, ver, seen;
+
+  function now() { var d = new Date(); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
+  function log(text, who, bad) {
+    var li = document.createElement('li'), t = document.createElement('time'), w = document.createElement('span');
+    if (bad) li.className = 'bad';
+    t.textContent = now(); w.className = 'who'; w.textContent = who;
+    li.appendChild(t); li.appendChild(document.createTextNode(text)); li.appendChild(w);
+    $('log').appendChild(li); $('log').scrollTop = $('log').scrollHeight;
+  }
+  function tone(s) { return s === 'APPROVED' ? ' good' : (s === 'REJECTED' || s === 'CANCELLED') ? ' stop' : ''; }
+  function render() {
+    $('state').textContent = STATES[st];
+    $('state').className = 'badge' + (st === 'DRAFT' ? ' draft' : tone(st));
+    $('ver').textContent = ver;
+    document.querySelectorAll('#flow .node').forEach(function (n) {
+      var s = n.dataset.s;
+      n.classList.remove('current', 'done', 'good', 'stop');
+      if (s === st) n.className += ' current' + tone(s); else if (seen.indexOf(s) >= 0) n.classList.add('done');
+    });
+    document.querySelectorAll('#roles button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.r === role); });
+    var actions = $('actions'); actions.innerHTML = '';
+    var open = COMMANDS.filter(function (c) { return c.from.indexOf(st) >= 0; });
+    open.filter(function (c) { return c.roles.indexOf(role) >= 0; }).forEach(function (c) {
+      var b = document.createElement('button'); b.type = 'button'; b.textContent = c.label; b.className = c.kind;
+      b.addEventListener('click', function () { run(c); }); actions.appendChild(b);
+    });
+    var hint;
+    if (!open.length) hint = 'Hồ sơ đã ở trạng thái cuối (' + STATES[st] + '). Bấm “Làm lại từ đầu” để thử lại.';
+    else if (!actions.children.length) {
+      var who = [];
+      open.forEach(function (c) { c.roles.forEach(function (r) { if (who.indexOf(r) < 0) who.push(r); }); });
+      hint = 'Vai trò ' + PEOPLE[role][1] + ' không có thao tác nào ở trạng thái này: nền tảng ẩn nút và từ chối nếu gọi thẳng API. Hãy đổi sang ' +
+             who.map(function (r) { return PEOPLE[r][1]; }).join(' hoặc ') + '.';
+    } else hint = 'Bạn đang là ' + PEOPLE[role][0] + ' (' + PEOPLE[role][1] + '). Các nút trên là mọi thao tác vai trò này được làm lúc này.';
+    $('hint').textContent = hint;
+    $('stale').hidden = ver < 2 || !open.length;
+  }
+  function run(c) {
+    var from = st, by = PEOPLE[role];
+    st = c.to; ver += 1; if (seen.indexOf(st) < 0) seen.push(st);
+    log(c.label + ': ' + STATES[from] + ' → ' + STATES[st] + (c.reason ? '. Lý do: ' + c.reason : ''), by[0] + ' · ' + by[1] + ' · phiên bản ' + ver);
+    if (NEXT[st]) role = NEXT[st];
+    render();
+  }
+  function reset() {
+    st = 'DRAFT'; role = 'req'; ver = 1; seen = ['DRAFT']; $('log').innerHTML = '';
+    log('Tạo hồ sơ: Nháp', 'Nguyễn Văn An · người đề nghị · phiên bản 1');
+    render();
+  }
+  document.querySelectorAll('#roles button').forEach(function (b) {
+    b.addEventListener('click', function () { role = b.dataset.r; render(); });
+  });
+  $('reset').addEventListener('click', reset);
+  $('stale').addEventListener('click', function () {
+    log('Bị từ chối: command mang phiên bản ' + (ver - 1) + ' nhưng hồ sơ đã ở phiên bản ' + ver, 'Một tab mở từ trước · không có gì bị ghi đè', true);
+  });
+  reset();
+
+  // Reveal blocks as they scroll into view.
+  var items = document.querySelectorAll('.reveal');
+  if (still || !('IntersectionObserver' in window)) items.forEach(function (e) { e.classList.add('in'); });
+  else {
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+    }, { rootMargin: '0px 0px -8% 0px' });
+    items.forEach(function (e) { io.observe(e); });
+  }
+})();
 </script>
 </body>
 </html>
