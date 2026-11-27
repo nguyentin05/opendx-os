@@ -2,7 +2,7 @@
 # Copyright 2026 DX-OS Open-Core Contributors
 FROM ghcr.io/astral-sh/uv:0.13.3 AS uv
 
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim-bookworm AS app
 COPY --from=uv /uv /usr/local/bin/uv
 RUN apt-get update && apt-get install -y --no-install-recommends \
       libgl1 libglib2.0-0 tesseract-ocr tesseract-ocr-eng \
@@ -23,6 +23,13 @@ COPY src ./src
 RUN uv sync --locked --no-dev --no-editable
 COPY --from=legal LICENSE NOTICE COPYRIGHT.txt THIRD_PARTY_LICENSES.txt /usr/share/licenses/opendx-os/
 RUN cp /usr/share/common-licenses/GPL-3 /usr/share/licenses/opendx-os/GPL-3.0.txt
+
+FROM app AS runtime
+# Apply the Debian PAM security update in the stage rebuilt by image CI.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends --only-upgrade \
+      libpam-modules libpam-modules-bin libpam-runtime libpam0g \
+    && rm -rf /var/lib/apt/lists/*
 USER dxos
 EXPOSE 8084
 CMD ["uvicorn", "dxos_ai.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8084"]

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 DX-OS Open-Core Contributors
-FROM pgvector/pgvector:0.8.7-pg17@sha256:b513c48566e4777cd3370451400000c78eda6a08131d68f4c31d4a76f27bd8fd
+FROM pgvector/pgvector:0.8.7-pg17@sha256:b513c48566e4777cd3370451400000c78eda6a08131d68f4c31d4a76f27bd8fd AS extensions
 ADD --checksum=sha256:ba8bd2cc4023bfab8a5f02859aaddf7670fad0d3fbb3c39dbb21f8dc275753ff \
     https://codeload.github.com/pgmq/pgmq/tar.gz/51468f6ba2afeb4a4a9a67e9a532f37b590a0929 /tmp/pgmq.tar.gz
 RUN tar -xzf /tmp/pgmq.tar.gz --strip-components=2 -C /tmp \
@@ -14,6 +14,13 @@ RUN tar -xzf /tmp/pgmq.tar.gz --strip-components=2 -C /tmp \
     && rm -rf /tmp/pgmq.tar.gz /tmp/pgmq.control /tmp/sql \
     && rm -f /usr/local/bin/gosu /usr/local/bin/gosu.asc
 COPY --from=legal LICENSE NOTICE COPYRIGHT.txt THIRD_PARTY_LICENSES.txt /usr/share/licenses/opendx-os/
+
+FROM extensions AS runtime
+# Apply the Debian PAM security update in the stage rebuilt by image CI.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends --only-upgrade \
+      libpam-modules libpam-modules-bin libpam-runtime libpam0g \
+    && rm -rf /var/lib/apt/lists/*
 # The upstream entrypoint only uses gosu to drop privileges when started as
 # root. Run as postgres directly so no root-run Go helper ships in the image.
 USER postgres
