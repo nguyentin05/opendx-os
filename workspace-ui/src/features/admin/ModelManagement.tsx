@@ -45,7 +45,9 @@ const dataClasses: Array<{ value: DataClass; label: string }> = [
 ];
 
 type ActiveColumn = { purpose: Purpose; model: Model; provider: Provider; revision: string };
-type DerivedCell = { checked: boolean; disabled: boolean; label: string; exceptions: string[] };
+type DerivedCell = {
+  checked: boolean; disabled: boolean; blocked: boolean; label: string; exceptions: string[]; allowId: string | null;
+};
 
 function activeColumns(registry: Registry): ActiveColumn[] {
   return purposes.flatMap(purpose => {
@@ -64,41 +66,81 @@ function deriveCell(registry: Registry, column: ActiveColumn, dataClass: DataCla
   const global = scoped.filter(row => row.app_id === null);
   const wildcardDeny = global.some(row => row.decision === 'DENY' && row.revision === null);
   const exactDeny = global.some(row => row.decision === 'DENY' && row.revision === column.revision);
-  const allow = global.some(row => row.decision === 'ALLOW' && row.revision === column.revision);
+  const allowed = global.find(row => row.decision === 'ALLOW' && row.revision === column.revision);
   const exceptions = [...new Set(scoped
     .filter(row => row.app_id !== null && row.decision === 'DENY'
       && (row.revision === null || row.revision === column.revision))
     .map(row => row.app_id as string))].sort();
+  const allowId = allowed?.id ?? null;
 
   if (column.provider.execution === 'LOCAL') {
     return {
-      checked: false, disabled: true, exceptions,
+      checked: false, disabled: true, allowId: null, exceptions, blocked: wildcardDeny || exactDeny,
       label: wildcardDeny || exactDeny ? 'Bị chặn' : 'Không cần phê duyệt',
     };
   }
   if (wildcardDeny) {
     return {
-      checked: false, disabled: true, exceptions,
+      checked: false, disabled: true, allowId: null, exceptions, blocked: true,
       label: 'Chặn toàn hệ thống — xóa chính sách chặn trong danh sách để thay đổi.',
     };
   }
   if (exactDeny) {
     return {
-      checked: false, disabled: false, exceptions,
+      checked: false, disabled: false, allowId: null, exceptions, blocked: true,
       label: 'Đang chặn — đánh dấu để thay bằng phê duyệt mô hình này.',
     };
   }
-  if (allow) {
-    return { checked: true, disabled: false, exceptions, label: 'Đã phê duyệt toàn hệ thống.' };
+  if (allowId) {
+    return { checked: true, disabled: false, allowId, exceptions, blocked: false, label: 'Đã phê duyệt toàn hệ thống.' };
   }
-  return { checked: false, disabled: false, exceptions, label: 'Chưa phê duyệt' };
+  return { checked: false, disabled: false, allowId: null, exceptions, blocked: false, label: 'Chưa phê duyệt' };
+}
+
+const warningText: Record<string, Partial<Record<Purpose, string>>> = {
+  QUERY: {
+    LLM: 'Assistant không trả lời được.',
+    EMBEDDING: 'Tìm kiếm ngữ nghĩa không tạo được vector câu hỏi; vẫn có thể tìm theo từ khóa.',
+  },
+  PERSONAL: {
+    EMBEDDING: 'Tài liệu cá nhân nạp mới có thể không có vector.',
+    LLM: 'Assistant không thể gửi tài liệu cá nhân tới LLM này.',
+  },
+  APPLICATION: {
+    EMBEDDING: 'Chưa phê duyệt toàn hệ thống cho embedding tài liệu ứng dụng; app riêng có thể có policy khác.',
+    LLM: 'Chưa phê duyệt toàn hệ thống cho LLM xử lý tài liệu ứng dụng; app riêng có thể có policy khác.',
+  },
+};
+
+function missingApprovals(registry: Registry): string[] {
+  const columns = new Map(activeColumns(registry).map(column => [column.purpose, column]));
+  return dataClasses.flatMap<string>(({ value }) =>
+    (Object.keys(warningText[value]) as Purpose[]).flatMap<string>(purpose => {
+      const column = columns.get(purpose);
+      if (!column || column.provider.execution !== 'HOSTED') return [];
+      const derived = deriveCell(registry, column, value);
+      if (derived.checked || derived.blocked) return [];
+      return [warningText[value][purpose] as string];
+    }));
+}
+
+function policyName(registry: Registry, policy: Policy) {
+  if (policy.revision === null) return 'mọi mô hình';
+  return registry.models.find(row => row.revision === policy.revision)?.name ?? String(policy.revision);
+}
+
+function isInactive(registry: Registry, policy: Policy) {
+  if (policy.revision === null) return false;
+  return !activeColumns(registry).some(column => column.revision === policy.revision && column.purpose === policy.purpose);
 }
 
 function executionLabel(execution: Provider['execution']) {
   return execution === 'HOSTED' ? 'Bên ngoài' : 'Nội bộ';
 }
 
-function PolicyMatrix({ registry }: { registry: Registry }) {
+function PolicyMatrix({ registry, locked, onToggle }: {
+  registry: Registry; locked: boolean; onToggle: (column: ActiveColumn, dataClass: DataClass, derived: DerivedCell) => void;
+}) {
   const columns = activeColumns(registry);
   if (!columns.length) {
     return <p role="status">Hãy chọn mô hình đang hoạt động cho từng mục đích để xem chính sách xử lý dữ liệu.</p>;
@@ -123,8 +165,8 @@ function PolicyMatrix({ registry }: { registry: Registry }) {
                 type="checkbox"
                 aria-label={`${dataClass.label} · ${column.purpose} · ${column.model.name}`}
                 checked={derived.checked}
-                disabled={derived.disabled}
-                readOnly
+                disabled={derived.disabled || locked}
+                onChange={() => onToggle(column, dataClass.value, derived)}
               />{' '}
               {derived.label}
               {derived.exceptions.length > 0 && <> · Ngoại lệ theo ứng dụng: {derived.exceptions.join(', ')}</>}
@@ -134,6 +176,55 @@ function PolicyMatrix({ registry }: { registry: Registry }) {
       </tbody>
     </table>
   </div>;
+}
+
+function PolicyInventory({ registry, locked, onDelete }: {
+  registry: Registry; locked: boolean; onDelete: (id: string) => void;
+}) {
+  const inactive = registry.policies.filter(policy => isInactive(registry, policy));
+  const groups = [
+    { name: 'Chính sách toàn hệ thống', rows: registry.policies.filter(policy => policy.app_id === null) },
+    { name: 'Chính sách theo ứng dụng', rows: registry.policies.filter(policy => policy.app_id !== null) },
+  ];
+  return <section aria-label="Danh sách chính sách">
+    <p>{activeColumns(registry).length === 0 ? 'Chưa có mô hình đang hoạt động.' : 'Phê duyệt cho biết đã cho phép, không bảo đảm mô hình đang khỏe mạnh.'}
+      {' '}Phê duyệt toàn hệ thống có thể áp dụng cho cả ứng dụng thêm sau này và không cấp quyền ĐỌC tài liệu.</p>
+    {inactive.length > 0 && <p>{inactive.length} chính sách phiên bản không còn hoạt động.</p>}
+    {groups.map(group => group.rows.length === 0 ? null : <section key={group.name} aria-label={group.name}>
+      <h3>{group.name}</h3>
+      {group.rows.map(policy => {
+        const off = isInactive(registry, policy);
+        const name = policyName(registry, policy);
+        const state = policy.revision === null ? 'toàn bộ phiên bản' : off ? 'phiên bản không hoạt động' : 'phiên bản đang hoạt động';
+        const target = `${policy.data_class} · ${policy.purpose} · ${name}`;
+        return <div key={policy.id} className="workspace-ai-item">
+          <span>
+            {policy.app_id ?? 'Toàn hệ thống'} · {target} · {policy.decision === 'ALLOW' ? 'Cho phép' : 'Chặn'} · {state}
+            {off && ' · Phiên bản không hoạt động'}
+          </span>
+          <button
+            type="button"
+            disabled={locked}
+            onClick={() => onDelete(policy.id)}
+          >Xóa chính sách {target}{off ? ' (không hoạt động)' : ''}</button>
+        </div>;
+      })}
+    </section>)}
+  </section>;
+}
+
+function PolicyWarnings({ registry }: { registry: Registry }) {
+  const missing = missingApprovals(registry);
+  const absent = activeColumns(registry).length === 0
+    ? ['Chưa có mô hình đang hoạt động cho LLM hoặc EMBEDDING; tính năng liên quan tạm không dùng được.']
+    : (['LLM', 'EMBEDDING'] as Purpose[])
+      .filter(purpose => !activeColumns(registry).some(column => column.purpose === purpose))
+      .map(purpose => `Chưa có mô hình ${purpose} đang hoạt động; tính năng liên quan tạm không dùng được.`);
+  return <section aria-label="Cảnh báo xử lý dữ liệu">
+    {missing.length === 0 && absent.length === 0
+      ? <p>Đã phê duyệt đủ các cặp bắt buộc cho mô hình đang hoạt động.</p>
+      : <ul>{[...absent, ...missing].map(text => <li key={text}>{text}</li>)}</ul>}
+  </section>;
 }
 
 function fields(event: FormEvent<HTMLFormElement>) {
@@ -152,14 +243,22 @@ export function ModelManagement({ token }: { token: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
+  const [stale, setStale] = useState(false);
   const active = useRef<AbortController | null>(null);
+
+  function reload(signal: AbortSignal) {
+    return request<Registry>(token, signal, '/registry').then(value => {
+      if (!signal.aborted) {
+        setRegistry(value);
+        setStale(false);
+      }
+    });
+  }
 
   useEffect(() => {
     const controller = new AbortController();
     active.current = controller;
-    void request<Registry>(token, controller.signal, '/registry').then(value => {
-      if (!controller.signal.aborted) setRegistry(value);
-    }).catch(reason => {
+    void reload(controller.signal).catch(reason => {
       if (!controller.signal.aborted) setError(reason.message);
     });
     return () => controller.abort();
@@ -167,21 +266,37 @@ export function ModelManagement({ token }: { token: string }) {
 
   async function change(path: string, method: string, body?: object, probe = false) {
     const signal = active.current?.signal;
-    if (busy || !signal || signal.aborted) return;
+    if (busy || stale || !signal || signal.aborted) return;
     setBusy(true);
     setError('');
     setStatus('');
+    let written = false;
     try {
       const result = await request<{ state?: string } | undefined>(token, signal, path, method, body);
-      const updated = await request<Registry>(token, signal, '/registry');
-      if (!signal.aborted) {
-        setRegistry(updated);
-        setStatus(probe ? 'Kết quả kiểm tra: ' + result?.state : 'Đã lưu thay đổi.');
-      }
+      written = true;
+      await reload(signal);
+      if (!signal.aborted) setStatus(probe ? 'Kết quả kiểm tra: ' + result?.state : 'Đã lưu thay đổi.');
     } catch (reason) {
-      if (!signal.aborted) setError(reason instanceof Error ? reason.message : 'Không lưu được thay đổi.');
+      if (!signal.aborted) {
+        if (written) {
+          setStale(true);
+          setError('Đã lưu nhưng chưa đọc lại được cấu hình. Hãy đọc lại trước khi thay đổi tiếp.');
+        } else {
+          setError(reason instanceof Error ? reason.message : 'Không lưu được thay đổi.');
+        }
+      }
     } finally {
       if (!signal.aborted) setBusy(false);
+    }
+  }
+
+  function toggle(column: ActiveColumn, dataClass: DataClass, derived: DerivedCell) {
+    if (derived.checked && derived.allowId) {
+      void change('/policy/' + derived.allowId, 'DELETE');
+    } else {
+      void change('/policy', 'PUT', {
+        app_id: null, data_class: dataClass, purpose: column.purpose, revision: column.revision, decision: 'ALLOW',
+      });
     }
   }
 
@@ -195,6 +310,17 @@ export function ModelManagement({ token }: { token: string }) {
   return <section aria-labelledby="ai-management">
     <h1 id="ai-management">Quản trị AI</h1>
     {error && <p role="alert">{error}</p>}
+    {stale && <button type="button" disabled={busy} onClick={() => {
+      const signal = active.current?.signal;
+      if (!signal || signal.aborted) return;
+      setBusy(true);
+      setError('');
+      void reload(signal).catch(reason => {
+        if (!signal.aborted) setError(reason.message);
+      }).finally(() => {
+        if (!signal.aborted) setBusy(false);
+      });
+    }}>Đọc lại cấu hình</button>}
     {status && <p role="status">{status}</p>}
     {!registry && !error && <p role="status">Đang tải cấu hình…</p>}
     {registry && <div className="workspace-ai-management">
@@ -274,33 +400,26 @@ export function ModelManagement({ token }: { token: string }) {
         </select></label>)}
       </fieldset>
 
-      <fieldset disabled={busy}>
+      <fieldset disabled={busy || stale}>
         <legend>Chính sách xử lý dữ liệu</legend>
-        <PolicyMatrix registry={registry} />
+        <PolicyMatrix registry={registry} locked={busy || stale} onToggle={toggle} />
+        <PolicyWarnings registry={registry} />
         <form onSubmit={event => {
-          const form = fields(event);
+          event.preventDefault();
           void change('/policy', 'PUT', {
-            purpose: policyPurpose, data_class: dataClass, app_id: form.get('app') || null,
-            revision: form.get('revision') || null, decision: form.get('decision'),
+            app_id: null, data_class: dataClass, purpose: policyPurpose, revision: null, decision: 'DENY',
           });
         }}>
-          <label>Loại dữ liệu <select value={dataClass} onChange={event => setDataClass(event.target.value)}>
+          <label>Loại dữ liệu để chặn <select value={dataClass} onChange={event => setDataClass(event.target.value)}>
             <option value="QUERY">Câu hỏi</option><option value="PERSONAL">Thư viện cá nhân</option><option value="APPLICATION">Tài liệu ứng dụng</option>
           </select></label>
-          {dataClass === 'APPLICATION' && <label>Mã ứng dụng (để trống áp dụng toàn hệ thống) <input name="app" /></label>}
           <label>Mục đích <select value={policyPurpose} onChange={event => setPolicyPurpose(event.target.value as Purpose)}>
             {purposes.map(value => <option key={value}>{value}</option>)}
           </select></label>
-          <label>Phiên bản mô hình <select name="revision" key={policyPurpose}>
-            <option value="">Tất cả (chỉ dùng để chặn)</option>{modelOptions(policyPurpose)}
-          </select></label>
-          <label>Quyết định <select name="decision"><option value="DENY">Chặn</option><option value="ALLOW">Cho phép</option></select></label>
-          <button type="submit">Lưu chính sách</button>
+          <button type="submit">Chặn toàn hệ thống</button>
         </form>
-        {registry.policies.map(policy => <div key={policy.id} className="workspace-ai-item">
-          <span>{policy.app_id ?? 'Toàn hệ thống'} · {policy.data_class} · {policy.purpose} · {policy.decision}</span>
-          <button type="button" onClick={() => void change('/policy/' + policy.id, 'DELETE')}>Xóa</button>
-        </div>)}
+        <p>Chặn toàn hệ thống áp dụng cho mọi phiên bản mô hình và mọi ứng dụng; hãy xóa chính sách chặn trong danh sách để bỏ chặn.</p>
+        <PolicyInventory registry={registry} locked={busy || stale} onDelete={id => void change('/policy/' + id, 'DELETE')} />
       </fieldset>
 
       <section aria-labelledby="ai-operations">
