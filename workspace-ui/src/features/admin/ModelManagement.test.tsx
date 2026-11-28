@@ -261,7 +261,7 @@ it('disables a cell when a wildcard global DENY applies and removing it exposes 
   const table = await screen.findByRole('table', { name: 'Chính sách xử lý dữ liệu' });
   expect(cell(table, /^Câu hỏi · LLM · gpt-4o/).box.disabled).toBe(true);
   expect(screen.queryByText('Assistant không trả lời được.')).toBeNull();
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Xóa chính sách QUERY · LLM · mọi mô hình' })); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Xóa chính sách toàn hệ thống · QUERY · LLM · mọi mô hình · Chặn' })); });
   expect(state.mutations).toEqual([{ delete: 'wild' }]);
   const reopened = await screen.findByRole('table', { name: 'Chính sách xử lý dữ liệu' });
   const nowAllowed = cell(reopened, /^Câu hỏi · LLM · gpt-4o/);
@@ -303,10 +303,10 @@ it('lists policy rows with scope and state and deletes any row including inactiv
   expect(await screen.findByText(/1 chính sách phiên bản không còn hoạt động/)).toBeTruthy();
   const system = within(screen.getByRole('region', { name: 'Chính sách toàn hệ thống' }));
   const scoped = within(screen.getByRole('region', { name: 'Chính sách theo ứng dụng' }));
-  expect(system.getByText(/Phiên bản không hoạt động/)).toBeTruthy();
+  expect(system.getByText(/phiên bản không hoạt động/)).toBeTruthy();
   expect(scoped.getByText(/maintenance/)).toBeTruthy();
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: 'Xóa chính sách QUERY · LLM · rev-old (không hoạt động)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Xóa chính sách toàn hệ thống · QUERY · LLM · rev-old · Cho phép · phiên bản không hoạt động' }));
   });
   expect(state.mutations).toEqual([{ delete: 'keep' }]);
 });
@@ -404,7 +404,7 @@ it('counts an inactive revision policy, keeps it unchecked, and restores it when
   const table = await screen.findByRole('table', { name: 'Chính sách xử lý dữ liệu' });
   expect(cell(table, /^Câu hỏi · LLM · gpt-4o/).box.checked).toBe(false);
   expect(screen.getByText('1 chính sách phiên bản không còn hoạt động.')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Xóa chính sách QUERY · LLM · rev-llm-old (không hoạt động)' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Xóa chính sách toàn hệ thống · QUERY · LLM · rev-llm-old · Cho phép · phiên bản không hoạt động' })).toBeTruthy();
   unmount();
 
   serve({
@@ -499,5 +499,75 @@ it('shows an explicit block summary instead of an all-approved claim', async () 
   const warnings = within(screen.getByRole('region', { name: 'Cảnh báo xử lý dữ liệu' }));
   expect(warnings.getByText(/Câu hỏi · LLM.*Đang chặn/)).toBeTruthy();
   expect(warnings.queryByText(/Đã phê duyệt đủ các cặp bắt buộc/)).toBeNull();
+});
+
+it('does not claim all-approved when only local models are bound', async () => {
+  await renderMatrix({
+    providers: [local], models: [localLLM, localEmbedding],
+    slots: slots({ LLM: 'rev-llm-local', EMBEDDING: 'rev-emb-local' }),
+    policies: [],
+    operations: [],
+  });
+  const warnings = within(screen.getByRole('region', { name: 'Cảnh báo xử lý dữ liệu' }));
+  expect(warnings.getByText(/Mô hình nội bộ không cần phê duyệt/)).toBeTruthy();
+  expect(warnings.queryByText(/Đã phê duyệt đủ các cặp bắt buộc/)).toBeNull();
+});
+
+it('gives each policy delete control a unique accessible name', async () => {
+  await renderMatrix({
+    providers: [hosted], models: [hostedLLM], slots: slots({ LLM: 'rev-llm-hosted' }),
+    policies: [
+      { id: 'm', app_id: 'maintenance', data_class: 'APPLICATION', purpose: 'LLM', revision: 'rev-llm-hosted', decision: 'DENY' },
+      { id: 'p', app_id: 'procurement', data_class: 'APPLICATION', purpose: 'LLM', revision: 'rev-llm-hosted', decision: 'ALLOW' },
+    ],
+    operations: [],
+  });
+  expect(screen.getByRole('button', { name: /Xóa chính sách maintenance.*Chặn/ })).toBeTruthy();
+  expect(screen.getByRole('button', { name: /Xóa chính sách procurement.*Cho phép/ })).toBeTruthy();
+});
+
+it('associates a blocked cell state with its checkbox for assistive technology', async () => {
+  const table = await renderMatrix({
+    providers: [hosted], models: [hostedLLM], slots: slots({ LLM: 'rev-llm-hosted' }),
+    policies: [{ id: 'block', app_id: null, data_class: 'QUERY', purpose: 'LLM', revision: 'rev-llm-hosted', decision: 'DENY' }],
+    operations: [],
+  });
+  const box = cell(table, /^Câu hỏi · LLM · gpt-4o/).box;
+  const describedBy = box.getAttribute('aria-describedby');
+  expect(describedBy).toBeTruthy();
+  expect(document.getElementById(describedBy as string)?.textContent).toContain('Đang chặn');
+});
+
+it('clears busy state and old context when the token changes mid-write', async () => {
+  let release: (value: Response) => void = () => {};
+  const gate = new Promise<Response>(resolve => { release = resolve; });
+  let reads = 0;
+  vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
+    if (input === '/api/cap/ai/admin/registry') {
+      reads += 1;
+      if (init?.signal?.aborted) throw new DOMException('aborted', 'AbortError');
+      return Response.json({
+        providers: [hosted], models: [hostedLLM], slots: slots({ LLM: 'rev-llm-hosted' }),
+        policies: reads > 1
+          ? [{ id: 'fresh', app_id: null, data_class: 'QUERY', purpose: 'LLM', revision: 'rev-llm-hosted', decision: 'ALLOW' }]
+          : [],
+        operations: [],
+      });
+    }
+    if (init?.signal?.aborted) throw new DOMException('aborted', 'AbortError');
+    return gate;
+  }));
+  const { rerender } = render(<ModelManagement token="tok" />);
+  const table = await screen.findByRole('table', { name: 'Chính sách xử lý dữ liệu' });
+  await act(async () => { fireEvent.click(cell(table, /^Câu hỏi · LLM · gpt-4o/).box); });
+  rerender(<ModelManagement token="tok-2" />);
+  const reloaded = await screen.findByRole('table', { name: 'Chính sách xử lý dữ liệu' });
+  const box = cell(reloaded, /^Câu hỏi · LLM · gpt-4o/).box;
+  expect(box.disabled).toBe(false);
+  expect(box.checked).toBe(true);
+  await act(async () => {
+    release(Response.json({ id: 'ok' }));
+    await gate;
+  });
 });
 

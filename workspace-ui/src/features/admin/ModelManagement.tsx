@@ -97,7 +97,7 @@ function deriveCell(registry: Registry, column: ActiveColumn, dataClass: DataCla
   return { checked: false, disabled: false, allowId: null, exceptions, blocked: false, label: 'Chưa phê duyệt' };
 }
 
-const warningText: Record<string, Partial<Record<Purpose, string>>> = {
+const warningText: Partial<Record<DataClass, Partial<Record<Purpose, string>>>> = {
   QUERY: {
     LLM: 'Assistant không trả lời được.',
     EMBEDDING: 'Tìm kiếm ngữ nghĩa không tạo được vector câu hỏi; vẫn có thể tìm theo từ khóa.',
@@ -114,14 +114,16 @@ const warningText: Record<string, Partial<Record<Purpose, string>>> = {
 
 function missingApprovals(registry: Registry): string[] {
   const columns = new Map(activeColumns(registry).map(column => [column.purpose, column]));
-  return dataClasses.flatMap<string>(({ value }) =>
-    (Object.keys(warningText[value]) as Purpose[]).flatMap<string>(purpose => {
+  return dataClasses.flatMap<string>(({ value }) => {
+    const texts = warningText[value] ?? {};
+    return (Object.keys(texts) as Purpose[]).flatMap<string>(purpose => {
       const column = columns.get(purpose);
       if (!column || column.provider.execution !== 'HOSTED') return [];
       const derived = deriveCell(registry, column, value);
       if (derived.checked || derived.blocked) return [];
-      return [warningText[value][purpose] as string];
-    }));
+      return [texts[purpose] as string];
+    });
+  });
 }
 
 function policyName(registry: Registry, policy: Policy) {
@@ -160,16 +162,23 @@ function PolicyMatrix({ registry, locked, onToggle }: {
           <th scope="row">{dataClass.label}</th>
           {columns.map(column => {
             const derived = deriveCell(registry, column, dataClass.value);
+            const name = `${dataClass.label} · ${column.purpose} · ${column.model.name}`;
+            const describedBy = `${dataClass.value}-${column.purpose}-status`;
             return <td key={column.purpose}>
               <input
                 type="checkbox"
-                aria-label={`${dataClass.label} · ${column.purpose} · ${column.model.name}`}
+                aria-label={derived.blocked && !derived.disabled
+                  ? `${name} — đang chặn, đánh dấu để thay bằng phê duyệt`
+                  : name}
+                aria-describedby={describedBy}
                 checked={derived.checked}
                 disabled={derived.disabled || locked}
                 onChange={() => onToggle(column, dataClass.value, derived)}
               />{' '}
-              {derived.label}
-              {derived.exceptions.length > 0 && <> · Ngoại lệ theo ứng dụng: {derived.exceptions.join(', ')}</>}
+              <span id={describedBy}>
+                {derived.label}
+                {derived.exceptions.length > 0 && <> · Ngoại lệ theo ứng dụng: {derived.exceptions.join(', ')}</>}
+              </span>
             </td>;
           })}
         </tr>)}
@@ -195,18 +204,18 @@ function PolicyInventory({ registry, locked, onDelete }: {
       {group.rows.map(policy => {
         const off = isInactive(registry, policy);
         const name = policyName(registry, policy);
+        const scope = policy.app_id ?? 'toàn hệ thống';
+        const decision = policy.decision === 'ALLOW' ? 'Cho phép' : 'Chặn';
         const state = policy.revision === null ? 'toàn bộ phiên bản' : off ? 'phiên bản không hoạt động' : 'phiên bản đang hoạt động';
         const target = `${policy.data_class} · ${policy.purpose} · ${name}`;
         return <div key={policy.id} className="workspace-ai-item">
-          <span>
-            {policy.app_id ?? 'Toàn hệ thống'} · {target} · {policy.decision === 'ALLOW' ? 'Cho phép' : 'Chặn'} · {state}
-            {off && ' · Phiên bản không hoạt động'}
-          </span>
+          <span>{scope} · {target} · {decision} · {state}</span>
           <button
             type="button"
             disabled={locked}
+            aria-label={`Xóa chính sách ${scope} · ${target} · ${decision}${off ? ' · phiên bản không hoạt động' : ''}`}
             onClick={() => onDelete(policy.id)}
-          >Xóa chính sách {target}{off ? ' (không hoạt động)' : ''}</button>
+          >Xóa</button>
         </div>;
       })}
     </section>)}
@@ -229,10 +238,13 @@ function PolicyWarnings({ registry }: { registry: Registry }) {
       const derived = deriveCell(registry, column, value);
       return derived.blocked ? [`${label} · ${column.purpose} · ${column.model.name} — Đang chặn.`] : [];
     }));
+  const hostedRequired = [...required.values()].filter(column => column.provider.execution === 'HOSTED');
   const messages = [...absent, ...blocks, ...missing];
   return <section aria-label="Cảnh báo xử lý dữ liệu">
     {messages.length === 0
-      ? <p>Đã phê duyệt đủ các cặp bắt buộc cho mô hình đang hoạt động.</p>
+      ? <p>{hostedRequired.length > 0
+        ? 'Đã phê duyệt đủ các cặp bắt buộc cho mô hình đang hoạt động.'
+        : 'Mô hình nội bộ không cần phê duyệt.'}</p>
       : <ul>{messages.map(text => <li key={text}>{text}</li>)}</ul>}
   </section>;
 }
@@ -268,6 +280,11 @@ export function ModelManagement({ token }: { token: string }) {
   useEffect(() => {
     const controller = new AbortController();
     active.current = controller;
+    setRegistry(undefined);
+    setStale(false);
+    setBusy(false);
+    setStatus('');
+    setError('');
     void reload(controller.signal).catch(reason => {
       if (!controller.signal.aborted) setError(reason.message);
     });
@@ -296,7 +313,7 @@ export function ModelManagement({ token }: { token: string }) {
         }
       }
     } finally {
-      if (!signal.aborted) setBusy(false);
+      setBusy(false);
     }
   }
 
