@@ -7,10 +7,10 @@
 FROM postgres:17-alpine@sha256:f9cf3e1f0066f0eb0c48707d864f0ac5941e9ff454a072077d97a4d278d07d73 AS extensions
 # Build tools exist only in this stage and are removed before the runtime image.
 RUN apk add --no-cache --virtual .build-deps \
-      build-base clang llvm \
+      build-base \
     && apk upgrade --no-cache
-# pgvector 0.8.7 from its release tag. LLVM is present so PGXS can emit
-# bitcode; extension bitcode is optional and the build does not need it.
+# pgvector 0.8.7 from its release tag. with_llvm=no skips the optional JIT
+# bitcode, so the build needs no clang or llvm.
 ADD --checksum=sha256:cac0b10c360f05b2d521200105ba3697e773d4cd3731f5a915a7e37ebe0bea85 \
     https://github.com/pgvector/pgvector/archive/refs/tags/v0.8.7.tar.gz /tmp/pgvector.tar.gz
 ADD --checksum=sha256:ba8bd2cc4023bfab8a5f02859aaddf7670fad0d3fbb3c39dbb21f8dc275753ff \
