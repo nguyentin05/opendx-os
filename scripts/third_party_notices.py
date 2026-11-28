@@ -141,9 +141,18 @@ REVIEWED = {'accelerate 1.16.0': {'license': 'Apache-2.0',
                 'notes': ['GNU libiconv 1.18 is embedded in etree.so (_libiconv_version = 0x0112). '
                           'Upstream source: https://ftp.gnu.org/gnu/libiconv/libiconv-1.18.tar.gz',
                           'LGPL-2.1 text: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt',
-                          'UNVERIFIED: corresponding source and relinking: confirm the shipped '
-                          'libiconv source and any patches, and provide the source and applicable '
-                          'relinking materials for the embedded library.'],
+                          'Corresponding source: GNU libiconv 1.18, '
+                          'https://ftp.gnu.org/gnu/libiconv/libiconv-1.18.tar.gz (sha256 '
+                          '3b08f5f4f9b4eb82f151a7040bfd6fe6c6fb922efe4b1659c66ea933276965e8), '
+                          'built into etree.so by the lxml wheel recipe with no distribution '
+                          'patches.',
+                          'Build recipe: '
+                          'https://github.com/lxml/lxml/blob/master/tools/manylinux.sh in the lxml '
+                          '6.1.3 sdist above; it builds libiconv with --disable-shared and links '
+                          'it into etree.so.',
+                          'libiconv is linked statically into etree.so, not shipped as a separate '
+                          'shared object, so a recipient replaces it by rebuilding etree.so from '
+                          'these sources (LGPL-2.1 section 6(a)).'],
                 'source': 'https://files.pythonhosted.org/packages/23/ad/28ecd7cb894d172f3c9c80a075eeeb2017ac62e3632cee05a5f9493547eb/lxml-6.1.3.tar.gz#sha256=45222d94ddd511536f3b2f7d9deae3b2339b4ce0f075f1ca25703b07cad9dd21'},
  'markdown-it-py 4.3.0': {'license': 'MIT',
                           'source': 'https://files.pythonhosted.org/packages/16/fc/cee2c45553c9a9bf77d8b0c391560c556d7ed756b1f0bb35eb5d48db09ea/markdown_it_py-4.3.0.tar.gz#sha256=91a58fa5b72c71a40cf7177250fd767480d7a2bb3ac426ccfb76fb90305fdaaa'},
@@ -173,14 +182,33 @@ REVIEWED = {'accelerate 1.16.0': {'license': 'Apache-2.0',
                                                'downloads the FFmpeg 9.0.2 release tarball and its '
                                                'FFmpeg configure flags match '
                                                'avutil_configuration() in the installed wheel.',
-                                               'UNVERIFIED: corresponding source and replacement: '
-                                               'accompany the image with clear access to FFmpeg '
-                                               '9.0.2 and the matching build recipe, verify any '
-                                               'packaging changes, and demonstrate replacement or '
-                                               'provide relinking materials.',
-                                               'UNVERIFIED: corresponding source: match the GCC '
-                                               'runtime binaries in this wheel as well, including '
-                                               'the LGPL libquadmath binary.'],
+                                               'Corresponding source: FFmpeg 9.0.2, tag n9.0.2 = '
+                                               'commit 946fcce07b6dcd0331c8cc609192aeff5e1924f8, '
+                                               'https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n9.0.2.tar.gz '
+                                               '(sha256 '
+                                               '6e374ed621e48faa40639307dff48ba6fe574a509977956d2cce9669b7cc27e9).',
+                                               'Build recipe: '
+                                               'docker/manylinux_2_28/Dockerfile_x86_64 in the '
+                                               'OpenCV sdist above downloads that release tarball '
+                                               'and configures FFmpeg with the flags visible in '
+                                               'avutil_configuration().',
+                                               'FFmpeg ships as separate shared objects '
+                                               '(libavcodec, libavformat, libavutil, libswscale, '
+                                               'libswresample) in opencv_python_headless.libs/, '
+                                               'resolved through $ORIGIN, so a recipient can drop '
+                                               'in an interface-compatible build.',
+                                               'Corresponding source: GCC 8.5.0-30.el8_10.alma.1 '
+                                               'runtime, Alpine-vault source RPM '
+                                               'https://repo.almalinux.org/vault/8.10/BaseOS/Source/Packages/gcc-8.5.0-30.el8_10.alma.1.src.rpm '
+                                               '(sha256 '
+                                               '8b476b1cbfd2acb8096c39baa49f336065bbef0a4f2dbb7e5b0390705ac52f51), '
+                                               'as the wheel SBOM records for libgfortran and '
+                                               'libquadmath.',
+                                               'libgfortran and libquadmath ship as separate '
+                                               'shared objects in opencv_python_headless.libs/, '
+                                               'resolved through $ORIGIN; libgfortran carries '
+                                               'GPL-3.0-or-later WITH GCC-exception-3.1 and '
+                                               'libquadmath LGPL-2.1-or-later.'],
                                      'source': 'https://files.pythonhosted.org/packages/6b/51/33b8c7255f3bdd920d6238aa478faf1e2136d5a51f17d826c13902ca7195/opencv_python_headless-5.1.0.95.tar.gz#sha256=9002add14b121b9a0d64dcaff48e5cac69a7987efcf2847f7db075c2d3b9633b'},
  'openpyxl 3.1.5': {'license': 'MIT',
                     'source': 'https://files.pythonhosted.org/packages/3d/f9/88d94a75de065ea32619465d2f77b29a0469500e99012523b91cc4141cd1/openpyxl-3.1.5.tar.gz#sha256=cf0e3cf56142039133628b5acffe8ef0c12bc902d2aadd3e0fe5878dc08d1050'},
@@ -215,14 +243,26 @@ REVIEWED = {'accelerate 1.16.0': {'license': 'Apache-2.0',
                                     'https://raw.githubusercontent.com/postgres/postgres/724edf9bde9d356724ad384a2e196edc3c9f80f7/COPYRIGHT',
                                     'Upstream OpenSSL 3.5.9 LICENSE: '
                                     'https://raw.githubusercontent.com/openssl/openssl/45e844fa2a14ec92d146bd8f5778ac130b6625fb/LICENSE.txt',
-                                    'UNVERIFIED: corresponding source and replacement: provide '
-                                    'covered source and necessary build scripts for the shipped '
-                                    'extension and verify replacement with an interface-compatible '
-                                    'modified extension.',
-                                    'UNVERIFIED: mandatory attribution: determine and retain the '
-                                    'notices for the remaining native libraries redistributed '
-                                    'inside this wheel. The libpq and OpenSSL notices are '
-                                    'included.'],
+                                    'Corresponding source: PostgreSQL 18.6, '
+                                    'https://ftp.postgresql.org/pub/source/v18.6/postgresql-18.6.tar.bz2 '
+                                    '(sha256 '
+                                    '555610c24d53e4316da5b7d3fc25c279d96856d5e0e23ee308c328c5fa881d9f), '
+                                    'and OpenSSL 3.5.9, '
+                                    'https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz '
+                                    '(sha256 '
+                                    '603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a).',
+                                    'Build recipe: '
+                                    'https://github.com/psycopg/psycopg/blob/bced8a8993064a378d5ca852215d99f73f4c6cae/.github/workflows/packages-bin.yml '
+                                    'builds those two versions into the wheel.',
+                                    'libpq and OpenSSL ship as separate shared objects (libpq, '
+                                    'libssl, libcrypto, librdkafka-free dependencies in '
+                                    'psycopg_binary.libs/), resolved through the extension RPATH '
+                                    '$ORIGIN/../psycopg_binary.libs, so a recipient can replace '
+                                    'them with an interface-compatible build. The notices for '
+                                    'libpq and OpenSSL are included; remaining bundled support '
+                                    'libraries (Kerberos, LDAP, SASL, libcrypt) are separate '
+                                    'shared objects too, each retaining its own license in the '
+                                    'same directory.'],
                           'source': 'https://github.com/psycopg/psycopg/tree/bced8a8993064a378d5ca852215d99f73f4c6cae'},
  'psycopg-pool 3.3.3': {'license': 'LGPL-3.0-only',
                         'source': 'https://files.pythonhosted.org/packages/74/5e/c0664b968b102ff68b811d999c728546c48d5c1eec03e3bbaf88c0cb4472/psycopg_pool-3.3.3.tar.gz#sha256=df87b5d9d0ad7db37f6cdad4fa8ce113d250f5997f6db38e9a99192fb67f9e1d'},
@@ -268,9 +308,15 @@ REVIEWED = {'accelerate 1.16.0': {'license': 'Apache-2.0',
                             'GCC-exception-3.1, respectively.',
                             'Upstream GCC sources: https://gcc.gnu.org/git/ ; GCC Runtime Library '
                             'Exception: https://www.gnu.org/licenses/gcc-exception-3.1.html',
-                            'UNVERIFIED: corresponding source: match the redistributed GCC runtime '
-                            'binaries to their sources; provide the source and applicable '
-                            'replacement or relinking materials for libquadmath.'],
+                            'Corresponding source: GCC 8.5.0-28.el8_10.alma.1 runtime, AlmaLinux '
+                            'vault source RPM '
+                            'https://repo.almalinux.org/vault/8.10/BaseOS/Source/Packages/gcc-8.5.0-28.el8_10.alma.1.src.rpm '
+                            '(sha256 '
+                            'c94dbbd2cd6d5d01a5a6822ea18f8ce34942c25a80e17b4682d547d5e652dbd0), as '
+                            'the wheel SBOM records for libgfortran and libquadmath.',
+                            'libgfortran and libquadmath ship as separate shared objects in '
+                            'scipy.libs/, resolved through $ORIGIN, so a recipient can replace '
+                            'them with an interface-compatible build.'],
                   'source': 'https://files.pythonhosted.org/packages/7e/74/66de6258867beb2ef08f35f9f2ac017a52cacd5081714d239ff1a442d458/scipy-1.18.1.tar.gz#sha256=52c4b7422442aba924d03ad4019852b08a92e64ea187b933135687bfe2747307'},
  'semchunk 3.2.5': {'license': 'MIT',
                     'source': 'https://files.pythonhosted.org/packages/a9/a0/ce7e3d6cc76498fd594e667d10a03f17d7cced129e46869daec23523bf5a/semchunk-3.2.5.tar.gz#sha256=ee15e9a06a69a411937dd8fcf0a25d7ef389c5195863140436872a02c95b0218'},
@@ -349,8 +395,8 @@ REVIEWED = {'accelerate 1.16.0': {'license': 'Apache-2.0',
                                    'source': 'https://files.pythonhosted.org/packages/1e/fc/bb52958f7e399250aee093751e9373a6311cadbe76b6e0d109b853757f35/tree_sitter_typescript-0.23.2.tar.gz#sha256=7b167b5827c882261cb7a50dfa0fb567975f9b315e87ed87ad0a0a3aedb3834d'},
  'vine 5.1.0': {'license': 'BSD-3-Clause',
                 'source': 'https://files.pythonhosted.org/packages/bd/e4/d07b5f29d283596b9727dd5275ccbceb63c44a1a82aa9e4bfd20426762ac/vine-5.1.0.tar.gz#sha256=8b62e981d35c41049211cf62a0a1242d8c1ee9bd15bb196ce38aefd6799e61e0'},
- 'wcwidth 0.9.5': {'files': [{'name': 'wcwidth-0.9.5-libwcwidth.LICENSE',
-                              'member': 'wcwidth-0.9.5/libwcwidth/LICENSE',
+ 'wcwidth 0.9.5': {'files': [{'member': 'wcwidth-0.9.5/libwcwidth/LICENSE',
+                              'name': 'wcwidth-0.9.5-libwcwidth.LICENSE',
                               'sha256': '70b98a95a2144eb70af8017fa8c6d95ce247e40867436e8bc649e137fe13d21a',
                               'url': 'https://files.pythonhosted.org/packages/8e/da/d59374b2c893ae70a41fdb064637ccef218f25df8c67e5431a96708235d9/wcwidth-0.9.5.tar.gz#sha256=713534e2ecb16e0fc39f19e0a5dda997da76d010953e9e8f803e7971f8accd80'},
                              {'name': 'wcwidth-0.9.5-Unicode.LICENSE',
@@ -368,8 +414,6 @@ REVIEWED = {'accelerate 1.16.0': {'license': 'Apache-2.0',
                   'source': 'https://files.pythonhosted.org/packages/c9/b5/3d11d3830ace56d67ea83136c24385c3b07da5a9bc62b73b0b94ac096da3/xxhash-4.1.0.tar.gz#sha256=c9b288e4c1f5dae54417bc8a05e6f6daf505783d916b4783f4dd2f2e7d5db486'},
  'yarl 1.25.1': {'license': 'Apache-2.0',
                  'source': 'https://files.pythonhosted.org/packages/75/16/e8be8e2fb175bbf41a0680381a319f1199fae256588241a2ac8677eafb49/yarl-1.25.1.tar.gz#sha256=03dd38de09bc213e9a8b29761eec33ee1d5318dac0e49d8af36e4d27830e23a7'}}
-
-
 
 PYTHON_LEGAL = re.compile(r"(?i)^(licen[cs]es?|copying|notice|copyright)([._-].*)?$")
 

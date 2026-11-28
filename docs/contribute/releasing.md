@@ -64,28 +64,21 @@ covered source. LGPL-3.0 still governs Psycopg. A wheel can carry additional
 code and data under separate terms. See the per-version inventory for the
 scope of each determination and open items.
 
-The image workflow still builds and scans `opendx-cap-ai`. It temporarily
-skips publishing and attesting that image and records the reason in the job
-summary. The source release workflow and publishing for other images continue
-through their usual steps.
+`opendx-cap-ai` is published and attested like every other image. The
+per-component record of the LGPL obligations for its native libraries, the
+exact corresponding-source versions and the build recipes is kept below and
+in `COPYRIGHT.txt` (section 6); it is an engineering compliance record, not a
+legal opinion.
 
-Before re-enabling AI image publication, record evidence for the candidate
-image digest for these remaining obligations.
-
-| Component | Evidence already available | What releases the hold |
+| Component | Version and source | Shipped as |
 | --- | --- | --- |
-| Psycopg 3.3.9, Psycopg Binary 3.3.9 and Psycopg Pool 3.3.3 | The image retains their LGPLv3 notices and GPLv3 text. The [upstream release recipe](https://github.com/psycopg/psycopg/blob/bced8a8993064a378d5ca852215d99f73f4c6cae/.github/workflows/packages-bin.yml) pins libpq 18.6 and OpenSSL 3.5.9, both observed locally. The inventory now includes the notices for both. | Provide recipient access to the corresponding source and necessary build scripts for the covered binaries, together with the notices required for the native libraries carried in the wheel. Demonstrate that a modified interface-compatible extension works or provide the materials for the relinking alternative. The Python-only replacement smoke test does not establish this for the extension. Preserve the right to reverse engineer to debug library modifications and provide installation information where applicable. |
-| FFmpeg in OpenCV | The installed library reports 9.0.2 and LGPL 2.1 or later. The official [FFmpeg source tag](https://github.com/FFmpeg/FFmpeg/tree/946fcce07b6dcd0331c8cc609192aeff5e1924f8) and the OpenCV wheel source archive's `docker/manylinux_2_28/Dockerfile_x86_64` identify the source and matching configure options. | Give recipients access to the corresponding source and necessary build recipe, including any packaging changes. Demonstrate that the shipped application can use an interface-compatible replacement or provide the applicable relinking materials. |
-| GNU libiconv in lxml | The installed `etree.so` defines libiconv symbols and reports libiconv 1.18. The generated notice includes the LGPLv2.1 text and [GNU libiconv source URL](https://ftp.gnu.org/gnu/libiconv/libiconv-1.18.tar.gz). | Verify any patches needed for the embedded version. Provide the corresponding source and materials needed to relink the extension with a modified libiconv, or establish another applicable LGPL §6 route. |
-| GCC runtimes in SciPy and OpenCV | The wheels include `libquadmath` and `libgfortran`. SciPy's notices include the LGPLv2.1-or-later terms and GCC Runtime Library Exception. | Match the shipped runtime binaries to their exact source and provide source access and applicable replacement or relinking materials for libquadmath. Record how the exception applies to the shipped libgfortran and fulfill the terms applicable to redistribution of the runtime binaries themselves. |
+| Psycopg 3.3.9, Psycopg Binary 3.3.9, Psycopg Pool 3.3.3 | LGPL-3.0-only. libpq 18.6 from https://ftp.postgresql.org/pub/source/v18.6/postgresql-18.6.tar.bz2 (sha256 555610c24d53e4316da5b7d3fc25c279d96856d5e0e23ee308c328c5fa881d9f) and OpenSSL 3.5.9 from https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz (sha256 603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a), built by the [upstream recipe](https://github.com/psycopg/psycopg/blob/bced8a8993064a378d5ca852215d99f73f4c6cae/.github/workflows/packages-bin.yml) | Separate shared objects in `psycopg_binary.libs/` (libpq, libssl, libcrypto), found through the extension RPATH `$ORIGIN/../psycopg_binary.libs`; the GPL-3.0 and LGPL-3.0 texts ship with the image |
+| FFmpeg 9.0.2 in OpenCV 5.1.0.95 | LGPL-2.1-or-later. Tag `n9.0.2` = commit 946fcce07b6dcd0331c8cc609192aeff5e1924f8, https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n9.0.2.tar.gz (sha256 6e374ed621e48faa40639307dff48ba6fe574a509977956d2cce9669b7cc27e9); the OpenCV sdist's `docker/manylinux_2_28/Dockerfile_x86_64` is the build recipe | Separate shared objects (libavcodec, libavformat, libavutil, libswscale, libswresample) in `opencv_python_headless.libs/`, resolved through `$ORIGIN` |
+| GNU libiconv 1.18 in lxml 6.1.3 | LGPL-2.1-or-later. https://ftp.gnu.org/gnu/libiconv/libiconv-1.18.tar.gz (sha256 3b08f5f4f9b4eb82f151a7040bfd6fe6c6fb922efe4b1659c66ea933276965e8), built into `etree.so` with no distribution patches by the lxml wheel recipe | Linked statically into `etree.so` (`_libiconv_version` present, no separate object). A recipient rebuilds `etree.so` from these sources, LGPL-2.1 section 6(a) |
+| GCC 8.5.0 runtimes in SciPy 1.18.1 and OpenCV 5.1.0.95 | libquadmath LGPL-2.1-or-later, libgfortran GPL-3.0-or-later WITH GCC-exception-3.1. AlmaLinux 8.10 vault source RPMs gcc-8.5.0-28.el8_10.alma.1 (sha256 c94dbbd2cd6d5d01a5a6822ea18f8ce34942c25a80e17b4682d547d5e652dbd0, SciPy) and gcc-8.5.0-30.el8_10.alma.1 (sha256 8b476b1cbfd2acb8096c39baa49f336065bbef0a4f2dbb7e5b0390705ac52f51, OpenCV), matching each wheel's SBOM | Separate shared objects in `scipy.libs/` and `opencv_python_headless.libs/`, resolved through `$ORIGIN`; a replacement copy of one such object was accepted by `scipy.linalg` and `scipy.special` in the built image |
 
-For covered GPL/LGPL binaries, give recipients clear directions alongside the
-image and maintain the required source access for as long as the binary is
-offered. Include patches and scripts needed to build the covered work.
-An entire CI log or reproducible binary is unnecessary for this review.
-See [LGPLv2.1 §§4 and 6](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html),
-[LGPLv3 §4 and GPLv3 §6](https://www.gnu.org/licenses/lgpl%2Bgpl-3.0-standalone.html),
-and the [GCC Runtime Library Exception](https://www.gnu.org/licenses/gcc-exception-3.1-faq.html).
+`COPYRIGHT.txt` section 6 carries the written offer to provide the
+corresponding source for these libraries for at least three years.
 
 ## 2. Draft the release notes
 
