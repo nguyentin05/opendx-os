@@ -23,4 +23,4 @@ A clear and concise description of what you expected to happen.
 **Relevant Logs or Output**
 Relevant logs or error output (redact any secrets).
 
-> Do not report security vulnerabilities here – see [SECURITY.md](../../SECURITY.md).
+> Do not report security vulnerabilities here – see [SECURITY.en.md](../../SECURITY.en.md).

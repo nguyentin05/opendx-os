@@ -1,62 +1,62 @@
-# Contributor Covenant Code of Conduct
+# Bộ quy tắc ứng xử Contributor Covenant
 
-## Our Pledge
+**Tiếng Việt** | [English](CODE_OF_CONDUCT.en.md)
 
-We as members, contributors, and maintainers pledge to make participation in our
-community a harassment-free experience for everyone, regardless of age, body
-size, visible or invisible disability, ethnicity, sex characteristics, gender
-identity and expression, level of experience, education, socio-economic status,
-nationality, personal appearance, race, caste, color, religion, or sexual
-identity and orientation.
+## Cam kết của chúng tôi
 
-We pledge to act and interact in ways that contribute to an open, welcoming,
-diverse, inclusive, and healthy community.
+Với tư cách là thành viên, người đóng góp và người duy trì dự án, chúng tôi cam
+kết biến việc tham gia cộng đồng thành trải nghiệm không có quấy rối cho mọi
+người, bất kể tuổi tác, vóc dáng, khuyết tật nhìn thấy được hay không, dân tộc,
+đặc điểm giới tính, bản dạng và biểu hiện giới, trình độ kinh nghiệm, học vấn,
+địa vị kinh tế xã hội, quốc tịch, ngoại hình, chủng tộc, đẳng cấp, màu da, tôn
+giáo, hay bản dạng và xu hướng tính dục.
 
-## Our Standards
+Chúng tôi cam kết hành động và tương tác theo cách góp phần xây dựng một cộng
+đồng cởi mở, thân thiện, đa dạng, hoà nhập và lành mạnh.
 
-Examples of behavior that contributes to a positive environment for our
-community include:
+## Tiêu chuẩn của chúng tôi
 
-* Demonstrating empathy and kindness toward other people
-* Being respectful of differing opinions, viewpoints, and experiences
-* Giving and gracefully accepting constructive feedback
-* Accepting responsibility and apologizing to those affected by our mistakes,
-  and learning from the experience
-* Focusing on what is best not just for us as individuals, but for the overall
-  community
+Ví dụ về những hành vi góp phần tạo môi trường tích cực cho cộng đồng:
 
-Examples of unacceptable behavior include:
+* Thể hiện sự đồng cảm và tử tế với người khác
+* Tôn trọng những ý kiến, quan điểm và trải nghiệm khác nhau
+* Đưa ra và đón nhận góp ý mang tính xây dựng một cách lịch sự
+* Nhận trách nhiệm, xin lỗi những người bị ảnh hưởng bởi sai sót của mình và
+  rút kinh nghiệm từ đó
+* Hướng tới điều tốt nhất không chỉ cho bản thân mà cho cả cộng đồng
 
-* The use of sexualized language or imagery, and sexual attention or advances of
-  any kind
-* Trolling, insulting or derogatory comments, and personal or political attacks
-* Public or private harassment
-* Publishing others' private information, such as a physical or email address,
-  without their explicit permission
-* Other conduct which could reasonably be considered inappropriate in a
-  professional setting
+Ví dụ về những hành vi không được chấp nhận:
 
-## Enforcement Responsibilities
+* Dùng ngôn từ hoặc hình ảnh mang tính tình dục, và mọi hình thức gạ gẫm hay
+  tiếp cận tình dục
+* Khiêu khích, bình luận xúc phạm hoặc hạ thấp người khác, và công kích cá nhân
+  hay chính trị
+* Quấy rối công khai hoặc riêng tư
+* Công khai thông tin cá nhân của người khác, chẳng hạn địa chỉ nhà hoặc email,
+  khi chưa có sự cho phép rõ ràng của họ
+* Những hành vi khác có thể bị coi một cách hợp lý là không phù hợp trong môi
+  trường chuyên nghiệp
 
-Project maintainers are responsible for clarifying and enforcing our standards of
-acceptable behavior and will take appropriate and fair corrective action in
-response to any behavior that they deem inappropriate, threatening, offensive,
-or harmful.
+## Trách nhiệm thực thi
 
-## Scope
+Nhóm duy trì dự án có trách nhiệm làm rõ và thực thi các tiêu chuẩn về hành vi
+được chấp nhận, và sẽ có biện pháp khắc phục phù hợp, công bằng với bất kỳ hành
+vi nào mà họ cho là không phù hợp, đe doạ, xúc phạm hoặc gây hại.
 
-This Code of Conduct applies within all project spaces, including repositories,
-issue trackers, pull requests, and official communication channels.
+## Phạm vi áp dụng
 
-## Enforcement
+Bộ quy tắc này áp dụng trong mọi không gian của dự án, gồm repository, trình
+theo dõi issue, pull request và các kênh liên lạc chính thức.
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the project maintainers via the repository issue tracker or security
-contact channel. All complaints will be reviewed and investigated promptly and
-fairly.
+## Thực thi
 
-## Attribution
+Các trường hợp lạm dụng, quấy rối hoặc hành vi không được chấp nhận khác có thể
+được báo cho nhóm duy trì dự án qua trình theo dõi issue của repository hoặc kênh
+liên hệ bảo mật. Mọi khiếu nại sẽ được xem xét và điều tra nhanh chóng, công bằng.
 
-This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org),
-version 2.1, available at
+## Ghi nhận nguồn
+
+Bộ quy tắc ứng xử này được điều chỉnh từ [Contributor Covenant](https://www.contributor-covenant.org),
+phiên bản 2.1, có tại
 <https://www.contributor-covenant.org/version/2/1/code_of_conduct.html>.
+Bản dịch tiếng Việt dựa trên [bản dịch chính thức](https://www.contributor-covenant.org/vi/version/2/1/code_of_conduct/).

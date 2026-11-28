@@ -1,24 +1,31 @@
-# Contributing to OpenDX-OS
+# Đóng góp cho OpenDX-OS
 
-Contributions should follow the [architecture and accepted decisions](docs/architecture/index.md)
-and the contracts relevant to the change:
+**Tiếng Việt** | [English](CONTRIBUTING.en.md)
 
-- [Data and manifests](docs/reference/data-contracts/index.md)
-- [Security and acceptance criteria](docs/reference/security/index.md)
-- [Licensing and source hygiene](docs/contribute/source-hygiene.md)
-- [Verification and evidence](docs/contribute/verification.md)
-- [Adding an app](docs/guides/adding-an-app.md) and [releasing](docs/contribute/releasing.md)
+Đóng góp cần tuân theo [kiến trúc và các quyết định đã thông qua](docs/architecture/index.md)
+cùng các hợp đồng liên quan tới thay đổi:
 
-For a shared interface change, identify affected producers and consumers, update
-the canonical contract and examples, and describe compatibility or migration
-needs. Follow the architecture document's decision-change process when changing
-an accepted design.
+- [Dữ liệu và manifest](docs/reference/data-contracts/index.md)
+- [Tiêu chí bảo mật và nghiệm thu](docs/reference/security/index.md)
+- [Giấy phép và vệ sinh mã nguồn](docs/contribute/source-hygiene.md)
+- [Kiểm chứng và bằng chứng](docs/contribute/verification.md)
+- [Thêm một ứng dụng](docs/guides/adding-an-app.md) và [phát hành](docs/contribute/releasing.md)
 
-Keep the change focused and preserve unrelated work. Use a branch or worktree
-when isolation helps; link a related issue when one exists. Describe the problem,
-resulting behavior, relevant checks, and unverified parts in a hand-off or PR.
-Clear commit messages should name the affected part and purpose, for example
-`feat(operator): reconcile excess Hasura column permissions`.
+Khi thay đổi một giao diện dùng chung, hãy xác định các bên tạo và bên dùng bị
+ảnh hưởng, cập nhật hợp đồng gốc cùng các ví dụ, và mô tả yêu cầu về tương thích
+hoặc chuyển đổi. Khi thay đổi một thiết kế đã thông qua, hãy làm theo quy trình
+thay đổi quyết định trong tài liệu kiến trúc.
 
-Original contributions are licensed under [Apache-2.0](LICENSE). See the source
-hygiene document for format-specific headers and third-party exceptions.
+Giữ thay đổi tập trung và không làm hỏng phần việc không liên quan. Dùng nhánh
+hoặc worktree khi cần tách biệt; liên kết tới issue liên quan nếu có. Trong
+bàn giao hoặc PR, hãy mô tả vấn đề, hành vi sau thay đổi, các bước kiểm tra đã
+chạy và những phần chưa kiểm chứng. Commit message cần rõ ràng, nêu phần bị ảnh
+hưởng và mục đích, ví dụ `feat(operator): reconcile excess Hasura column permissions`.
+
+Tài liệu dự án viết bằng tiếng Anh và bản tiếng Anh là bản gốc. Các file cộng
+đồng ở thư mục gốc (`README`, `CONTRIBUTING`, `CODE_OF_CONDUCT`, `SECURITY`,
+`ROADMAP`) có hai bản: `X.en.md` là bản gốc tiếng Anh, `X.md` là bản dịch tiếng
+Việt. Khi sửa một bản, hãy sửa bản còn lại trong cùng PR.
+
+Đóng góp gốc được cấp phép theo [Apache-2.0](LICENSE). Xem tài liệu vệ sinh mã
+nguồn để biết header theo từng định dạng và các ngoại lệ của bên thứ ba.

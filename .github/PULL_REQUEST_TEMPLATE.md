@@ -11,7 +11,7 @@
 - [ ] `make test` passes locally
 - [ ] `cd workspace-ui && npm test && npm run build` passes (if dashboard changed)
 - [ ] Tests added/updated for new behavior
-- [ ] Preserves architectural invariants (zero domain leakage, composite FKs, version-checked transitions, clean file quarantine, audit hash-chain) – see `CONTRIBUTING.md`
+- [ ] Preserves architectural invariants (zero domain leakage, composite FKs, version-checked transitions, clean file quarantine, audit hash-chain) – see `CONTRIBUTING.en.md`
 
 ### Documentation
 
