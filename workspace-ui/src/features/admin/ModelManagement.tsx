@@ -7,9 +7,11 @@ import { bearer } from '../../auth';
 
 const purposes = ['LLM', 'EMBEDDING', 'VLM', 'RERANKER'] as const;
 type Purpose = typeof purposes[number];
-type Provider = { id: string; name: string; endpoint: string; enabled: boolean; has_api_key: boolean };
+type DataClass = 'QUERY' | 'PERSONAL' | 'APPLICATION';
+type Decision = 'ALLOW' | 'DENY';
+type Provider = { id: string; name: string; endpoint: string; enabled: boolean; has_api_key: boolean; execution: 'HOSTED' | 'LOCAL' };
 type Model = { revision: string; name: string; provider_id: string; purpose: Purpose };
-type Policy = { id: string; data_class: string; app_id: string | null; purpose: Purpose; decision: string };
+type Policy = { id: string; data_class: DataClass; app_id: string | null; purpose: Purpose; decision: Decision; revision: string | null };
 type Registry = {
   providers: Provider[];
   models: Model[];
@@ -34,6 +36,104 @@ async function request<T>(token: string, signal: AbortSignal, path: string, meth
           : 'Dịch vụ quản trị AI tạm thời không khả dụng.',
   );
   return (response.status === 204 ? undefined : await response.json()) as T;
+}
+
+const dataClasses: Array<{ value: DataClass; label: string }> = [
+  { value: 'QUERY', label: 'Câu hỏi' },
+  { value: 'PERSONAL', label: 'Thư viện cá nhân' },
+  { value: 'APPLICATION', label: 'Tài liệu ứng dụng — mọi ứng dụng' },
+];
+
+type ActiveColumn = { purpose: Purpose; model: Model; provider: Provider; revision: string };
+type DerivedCell = { checked: boolean; disabled: boolean; label: string; exceptions: string[] };
+
+function activeColumns(registry: Registry): ActiveColumn[] {
+  return purposes.flatMap(purpose => {
+    const revision = registry.slots.find(row => row.purpose === purpose)?.revision;
+    if (!revision) return [];
+    const model = registry.models.find(row => row.revision === revision && row.purpose === purpose);
+    if (!model) return [];
+    const provider = registry.providers.find(row => row.id === model.provider_id);
+    if (!provider?.enabled) return [];
+    return [{ purpose, model, provider, revision }];
+  });
+}
+
+function deriveCell(registry: Registry, column: ActiveColumn, dataClass: DataClass): DerivedCell {
+  const scoped = registry.policies.filter(row => row.data_class === dataClass && row.purpose === column.purpose);
+  const global = scoped.filter(row => row.app_id === null);
+  const wildcardDeny = global.some(row => row.decision === 'DENY' && row.revision === null);
+  const exactDeny = global.some(row => row.decision === 'DENY' && row.revision === column.revision);
+  const allow = global.some(row => row.decision === 'ALLOW' && row.revision === column.revision);
+  const exceptions = [...new Set(scoped
+    .filter(row => row.app_id !== null && row.decision === 'DENY'
+      && (row.revision === null || row.revision === column.revision))
+    .map(row => row.app_id as string))].sort();
+
+  if (column.provider.execution === 'LOCAL') {
+    return {
+      checked: false, disabled: true, exceptions,
+      label: wildcardDeny || exactDeny ? 'Bị chặn' : 'Không cần phê duyệt',
+    };
+  }
+  if (wildcardDeny) {
+    return {
+      checked: false, disabled: true, exceptions,
+      label: 'Chặn toàn hệ thống — xóa chính sách chặn trong danh sách để thay đổi.',
+    };
+  }
+  if (exactDeny) {
+    return {
+      checked: false, disabled: false, exceptions,
+      label: 'Đang chặn — đánh dấu để thay bằng phê duyệt mô hình này.',
+    };
+  }
+  if (allow) {
+    return { checked: true, disabled: false, exceptions, label: 'Đã phê duyệt toàn hệ thống.' };
+  }
+  return { checked: false, disabled: false, exceptions, label: 'Chưa phê duyệt' };
+}
+
+function executionLabel(execution: Provider['execution']) {
+  return execution === 'HOSTED' ? 'Bên ngoài' : 'Nội bộ';
+}
+
+function PolicyMatrix({ registry }: { registry: Registry }) {
+  const columns = activeColumns(registry);
+  if (!columns.length) {
+    return <p role="status">Hãy chọn mô hình đang hoạt động cho từng mục đích để xem chính sách xử lý dữ liệu.</p>;
+  }
+  return <div className="workspace-table">
+    <table aria-label="Chính sách xử lý dữ liệu">
+      <thead>
+        <tr>
+          <td />
+          {columns.map(column => <th key={column.purpose} scope="col">
+            {column.purpose} · {column.model.name} · {executionLabel(column.provider.execution)}
+          </th>)}
+        </tr>
+      </thead>
+      <tbody>
+        {dataClasses.map(dataClass => <tr key={dataClass.value}>
+          <th scope="row">{dataClass.label}</th>
+          {columns.map(column => {
+            const derived = deriveCell(registry, column, dataClass.value);
+            return <td key={column.purpose}>
+              <input
+                type="checkbox"
+                aria-label={`${dataClass.label} · ${column.purpose} · ${column.model.name}`}
+                checked={derived.checked}
+                disabled={derived.disabled}
+                readOnly
+              />{' '}
+              {derived.label}
+              {derived.exceptions.length > 0 && <> · Ngoại lệ theo ứng dụng: {derived.exceptions.join(', ')}</>}
+            </td>;
+          })}
+        </tr>)}
+      </tbody>
+    </table>
+  </div>;
 }
 
 function fields(event: FormEvent<HTMLFormElement>) {
@@ -176,6 +276,7 @@ export function ModelManagement({ token }: { token: string }) {
 
       <fieldset disabled={busy}>
         <legend>Chính sách xử lý dữ liệu</legend>
+        <PolicyMatrix registry={registry} />
         <form onSubmit={event => {
           const form = fields(event);
           void change('/policy', 'PUT', {
