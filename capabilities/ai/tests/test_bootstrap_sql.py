@@ -8,7 +8,6 @@ the Core platform schemas provisioned and no AI roles present.
 """
 
 import os
-from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -30,7 +29,7 @@ def database():
             "SELECT name FROM pg_available_extensions WHERE name IN ('pgmq', 'vector')")))
     if available != {"pgmq", "vector"}:
         engine.dispose()
-        pytest.skip("requires a PostgreSQL with the pgvector and PGMQ extensions (platform/postgres/image)")
+        pytest.skip("requires PostgreSQL with the pgvector and PGMQ extensions")
     try:
         yield engine
     finally:
@@ -47,10 +46,13 @@ def test_bootstrap_is_idempotent(database, monkeypatch) -> None:
         connection.execute(text("DROP EXTENSION IF EXISTS pgmq CASCADE"))
         connection.execute(text("DROP EXTENSION IF EXISTS vector CASCADE"))
         for role in ("dxos_ai_api", "dxos_ai_worker", "dxos_ai_dispatcher", BROKER_ROLE):
-            if connection.scalar(text("SELECT EXISTS (SELECT FROM pg_roles WHERE rolname = :name)"), {"name": role}):
+            exists = connection.scalar(text(
+                "SELECT EXISTS (SELECT FROM pg_roles WHERE rolname = :name)"), {"name": role})
+            if exists:
                 connection.execute(text(f"DROP OWNED BY {role}"))
                 connection.execute(text(f"DROP ROLE {role}"))
-        connection.execute(text("UPDATE core.capabilities SET enabled = false WHERE cap_id = 'cap-ai'"))
+        connection.execute(text(
+            "UPDATE core.capabilities SET enabled = false WHERE cap_id = 'cap-ai'"))
 
     for _ in range(2):
         with database.begin() as connection:
@@ -62,11 +64,12 @@ def test_bootstrap_is_idempotent(database, monkeypatch) -> None:
         )).all())
         assert extensions == {"pgmq": "1.13.2", "vector": "0.8.7"}
         assert connection.scalar(text(
-            "SELECT count(*) FROM pg_roles WHERE rolname IN "
-            "('dxos_ai_owner','dxos_ai_api','dxos_ai_worker','dxos_ai_dispatcher','dxos_ai_broker')"
+            "SELECT count(*) FROM pg_roles WHERE rolname IN ('dxos_ai_owner',"
+            "'dxos_ai_api','dxos_ai_worker','dxos_ai_dispatcher','dxos_ai_broker')"
         )) == 5
         assert connection.scalar(text(
-            "SELECT enabled AND base_route = '/api/cap/ai' FROM core.capabilities WHERE cap_id = 'cap-ai'"
+            "SELECT enabled AND base_route = '/api/cap/ai' FROM core.capabilities "
+            "WHERE cap_id = 'cap-ai'"
         )) is True
         assert connection.scalar(text(
             "SELECT to_regclass('pgmq.q_" + QUEUE + "') IS NOT NULL"
@@ -78,5 +81,7 @@ def test_bootstrap_is_idempotent(database, monkeypatch) -> None:
 
 def test_bootstrap_requires_the_broker_password(database, monkeypatch) -> None:
     monkeypatch.delenv("AI_BROKER_DATABASE_PASSWORD", raising=False)
-    with database.begin() as connection, pytest.raises(RuntimeError, match="AI_BROKER_DATABASE_PASSWORD"):
+    with database.begin() as connection, pytest.raises(
+        RuntimeError, match="AI_BROKER_DATABASE_PASSWORD"
+    ):
         bootstrap(connection)
