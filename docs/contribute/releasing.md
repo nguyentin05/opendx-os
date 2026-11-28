@@ -46,12 +46,13 @@ a competition score.
 
 ### Python AI image license review
 
-The generator records exact-version review evidence from
-`licenses/python/reviewed.json`. Source distribution links use the SHA-256
-from `capabilities/ai/uv.lock`. Where the wheel omitted the license text, the
-repository carries a verbatim copy from the upstream release commit. Keep
-that provenance with the text and review the evidence again when a version
-changes.
+The generator holds the exact-version review evidence in its `REVIEWED`
+constant: the license, the pinned source distribution (or upstream tag) link,
+and, where a wheel omits a text, the pinned upstream URL and the SHA-256 of the
+bytes reproduced in `THIRD_PARTY_LICENSES.txt`. It downloads those texts at
+generation time into a cache outside Git, refuses a hash mismatch, and embeds
+them, so no license text is committed outside `THIRD_PARTY_LICENSES.txt`.
+Review that evidence again when a version changes.
 
 The [OSI list](https://opensource.org/licenses) confirms approval of the MIT,
 BSD-2-Clause, BSD-3-Clause, ISC, Apache-2.0, MPL-2.0 and LGPL-3.0 licenses used
@@ -168,7 +169,7 @@ image when `main` or a `v*` tag is pushed:
 | `opendx-cap-hr` | `capabilities` | `capabilities/Dockerfile` | `SERVICE=cap-hr` |
 | `opendx-cap-data` | `capabilities` | `capabilities/Dockerfile` | `SERVICE=cap-data` |
 | `opendx-cap-ai` | `capabilities/ai` | `capabilities/ai/Dockerfile` | API, worker and Alembic share this image |
-| `opendx-ai-postgres` | `platform/postgres/ai` | `platform/postgres/ai/Dockerfile` | PostgreSQL with pgvector and PGMQ |
+| `opendx-postgres` | `platform/postgres/image` | `platform/postgres/image/Dockerfile` | PostgreSQL 17 Alpine with pgvector and PGMQ; the default `postgres` service |
 | `opendx-workspace-ui` | `workspace-ui` | `workspace-ui/Dockerfile` | |
 
 Tag pushes publish `X.Y.Z` and `X.Y` tags; `main` pushes publish `main` and a
