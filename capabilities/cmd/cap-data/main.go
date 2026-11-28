@@ -57,7 +57,7 @@ func main() {
 
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://dxos_app:dxos_secret@localhost:5432/dxos_db?sslmode=disable"
+		log.Fatal("DATABASE_URL is required")
 	}
 
 	db, err := sql.Open("postgres", dsn)

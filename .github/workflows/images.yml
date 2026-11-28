@@ -73,9 +73,9 @@ jobs:
             context: capabilities/ai
             file: capabilities/ai/Dockerfile
             build-args: ""
-          - image: opendx-ai-postgres
-            context: platform/postgres/ai
-            file: platform/postgres/ai/Dockerfile
+          - image: opendx-postgres
+            context: platform/postgres/image
+            file: platform/postgres/image/Dockerfile
             build-args: ""
           - image: opendx-workspace-ui
             context: workspace-ui
@@ -150,15 +150,10 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
 
-      - name: Report temporary AI publication hold
-        if: github.event_name != 'pull_request' && matrix.image == 'opendx-cap-ai'
-        run: |
-          echo "AI image publication and attestation are on hold pending corresponding-source and notice verification. See docs/contribute/releasing.md." >> "$GITHUB_STEP_SUMMARY"
-
       # Same inputs, so every layer comes from the cache of the scanned build.
       - name: Build and push
         id: build
-        if: github.event_name != 'pull_request' && matrix.image != 'opendx-cap-ai'
+        if: github.event_name != 'pull_request'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ matrix.context }}
@@ -177,7 +172,7 @@ jobs:
           no-cache-filters: runtime
 
       - name: Attest image provenance
-        if: github.event_name != 'pull_request' && matrix.image != 'opendx-cap-ai'
+        if: github.event_name != 'pull_request'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/nguyentin05/${{ matrix.image }}

@@ -25,10 +25,11 @@ COPY --from=legal LICENSE NOTICE COPYRIGHT.txt THIRD_PARTY_LICENSES.txt /usr/sha
 RUN cp /usr/share/common-licenses/GPL-3 /usr/share/licenses/opendx-os/GPL-3.0.txt
 
 FROM app AS runtime
-# Apply the Debian PAM security update in the stage rebuilt by image CI.
+# Apply Debian security updates in the stage rebuilt by image CI, so the next
+# update needs no edit to a package list.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends --only-upgrade \
-      libpam-modules libpam-modules-bin libpam-runtime libpam0g \
+    && apt-get -y upgrade --no-install-recommends \
+    && apt-get -y dist-upgrade --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 USER dxos
 EXPOSE 8084

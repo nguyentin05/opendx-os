@@ -4845,6 +4845,7 @@ docling 2.154.0 (Python; AI image)
 Declared license expression: MIT
 Reviewed upstream license: MIT
 Upstream license evidence: https://raw.githubusercontent.com/docling-project/docling/6b5ab0d12ace4e222cb454051492a1ae5db8aa99/LICENSE
+Supplemental text docling-2.154.0.LICENSE (edb765d1e3e60d0c7a7d5fba5f2bb2c3c29f7465cecb5c22cf1185c884954e4c): https://raw.githubusercontent.com/docling-project/docling/6b5ab0d12ace4e222cb454051492a1ae5db8aa99/LICENSE
 --- docling-2.154.0.LICENSE ---
 MIT License
 
@@ -6420,6 +6421,7 @@ latex2mathml 3.81.1 (Python; AI image)
 ===============================================================================
 Reviewed upstream license: MIT
 Upstream license evidence: https://raw.githubusercontent.com/roniemartinez/latex2mathml/fb724a91658cf41d2fad0192da0845b05446f208/LICENSE
+Supplemental text latex2mathml-3.81.1.LICENSE (4ac1e1da07f6b343d54191c5e1716840534e08591b3f9eaec90d6800cdc47543): https://raw.githubusercontent.com/roniemartinez/latex2mathml/fb724a91658cf41d2fad0192da0845b05446f208/LICENSE
 --- latex2mathml-3.81.1.LICENSE ---
 MIT License
 
@@ -6513,9 +6515,12 @@ lxml 6.1.3 (Python; AI image)
 ===============================================================================
 Reviewed upstream license: BSD-3-Clause for lxml
 Upstream license evidence: https://files.pythonhosted.org/packages/23/ad/28ecd7cb894d172f3c9c80a075eeeb2017ac62e3632cee05a5f9493547eb/lxml-6.1.3.tar.gz#sha256=45222d94ddd511536f3b2f7d9deae3b2339b4ce0f075f1ca25703b07cad9dd21
+Supplemental text lxml-6.1.3-libiconv-1.18.LGPL-2.1 (20e50fe7aae3e56378ebf0417d9de904f55a0e61e4df315333e632a4d3555d95): https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt
 GNU libiconv 1.18 is embedded in etree.so (_libiconv_version = 0x0112). Upstream source: https://ftp.gnu.org/gnu/libiconv/libiconv-1.18.tar.gz
 LGPL-2.1 text: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt
-UNVERIFIED: corresponding source and relinking: confirm the shipped libiconv source and any patches, and provide the source and applicable relinking materials for the embedded library.
+Corresponding source: GNU libiconv 1.18, https://ftp.gnu.org/gnu/libiconv/libiconv-1.18.tar.gz (sha256 3b08f5f4f9b4eb82f151a7040bfd6fe6c6fb922efe4b1659c66ea933276965e8), built into etree.so by the lxml wheel recipe with no distribution patches.
+Build recipe: https://github.com/lxml/lxml/blob/master/tools/manylinux.sh in the lxml 6.1.3 sdist above; it builds libiconv with --disable-shared and links it into etree.so.
+libiconv is linked statically into etree.so, not shipped as a separate shared object, so a recipient replaces it by rebuilding etree.so from these sources (LGPL-2.1 section 6(a)).
 --- LICENSE.txt ---
 BSD 3-Clause License
 
@@ -9778,8 +9783,11 @@ Reviewed upstream license: MIT for the wheel packaging, Apache-2.0 for OpenCV
 Upstream license evidence: https://files.pythonhosted.org/packages/6b/51/33b8c7255f3bdd920d6238aa478faf1e2136d5a51f17d826c13902ca7195/opencv_python_headless-5.1.0.95.tar.gz#sha256=9002add14b121b9a0d64dcaff48e5cac69a7987efcf2847f7db075c2d3b9633b
 The bundled libavutil reports FFmpeg 9.0.2 and LGPL version 2.1 or later. FFmpeg upstream source: https://github.com/FFmpeg/FFmpeg/tree/946fcce07b6dcd0331c8cc609192aeff5e1924f8
 The pinned OpenCV source archive contains docker/manylinux_2_28/Dockerfile_x86_64. It downloads the FFmpeg 9.0.2 release tarball and its FFmpeg configure flags match avutil_configuration() in the installed wheel.
-UNVERIFIED: corresponding source and replacement: accompany the image with clear access to FFmpeg 9.0.2 and the matching build recipe, verify any packaging changes, and demonstrate replacement or provide relinking materials.
-UNVERIFIED: corresponding source: match the GCC runtime binaries in this wheel as well, including the LGPL libquadmath binary.
+Corresponding source: FFmpeg 9.0.2, tag n9.0.2 = commit 946fcce07b6dcd0331c8cc609192aeff5e1924f8, https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n9.0.2.tar.gz (sha256 6e374ed621e48faa40639307dff48ba6fe574a509977956d2cce9669b7cc27e9).
+Build recipe: docker/manylinux_2_28/Dockerfile_x86_64 in the OpenCV sdist above downloads that release tarball and configures FFmpeg with the flags visible in avutil_configuration().
+FFmpeg ships as separate shared objects (libavcodec, libavformat, libavutil, libswscale, libswresample) in opencv_python_headless.libs/, resolved through $ORIGIN, so a recipient can drop in an interface-compatible build.
+Corresponding source: GCC 8.5.0-30.el8_10.alma.1 runtime, Alpine-vault source RPM https://repo.almalinux.org/vault/8.10/BaseOS/Source/Packages/gcc-8.5.0-30.el8_10.alma.1.src.rpm (sha256 8b476b1cbfd2acb8096c39baa49f336065bbef0a4f2dbb7e5b0390705ac52f51), as the wheel SBOM records for libgfortran and libquadmath.
+libgfortran and libquadmath ship as separate shared objects in opencv_python_headless.libs/, resolved through $ORIGIN; libgfortran carries GPL-3.0-or-later WITH GCC-exception-3.1 and libquadmath LGPL-2.1-or-later.
 --- LICENSE-3RD-PARTY.txt ---
 OpenCV library is redistributed within opencv-python package.
 This license applies to OpenCV binary in the directory cv2/.
@@ -17716,6 +17724,7 @@ pgmq 1.1.4 (Python; AI image)
 Declared license expression: Apache-2.0
 Reviewed upstream license: Apache-2.0
 Upstream license evidence: https://raw.githubusercontent.com/pgmq/pgmq-py/7e5f139d9b9a1eaf2457b2de3eceda0518159a78/LICENSE
+Supplemental text pgmq-1.1.4.LICENSE (c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4): https://raw.githubusercontent.com/pgmq/pgmq-py/7e5f139d9b9a1eaf2457b2de3eceda0518159a78/LICENSE
 --- pgmq-1.1.4.LICENSE ---
 [Apache License, Version 2.0: full terms in LICENSE at the repository root]
 
@@ -19623,11 +19632,14 @@ psycopg-binary 3.3.9 (Python; AI image)
 Declared license expression: LGPL-3.0-only
 Reviewed upstream license: LGPL-3.0-only for Psycopg
 Upstream license evidence: https://github.com/psycopg/psycopg/tree/bced8a8993064a378d5ca852215d99f73f4c6cae
+Supplemental text psycopg-binary-3.3.9-libpq-18.6.COPYRIGHT (3d6af92ff8a4c2cdf69afb1cf44edea727922f5cd0cf8b5f72b11cdecac8fdfd): https://raw.githubusercontent.com/postgres/postgres/724edf9bde9d356724ad384a2e196edc3c9f80f7/COPYRIGHT
+Supplemental text psycopg-binary-3.3.9-openssl-3.5.9.LICENSE (7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a): https://raw.githubusercontent.com/openssl/openssl/45e844fa2a14ec92d146bd8f5778ac130b6625fb/LICENSE.txt
 Bundled libpq 18.6 and OpenSSL 3.5.9 were observed. Upstream wheel recipe: https://github.com/psycopg/psycopg/blob/bced8a8993064a378d5ca852215d99f73f4c6cae/.github/workflows/packages-bin.yml
 Upstream libpq 18.6 COPYRIGHT: https://raw.githubusercontent.com/postgres/postgres/724edf9bde9d356724ad384a2e196edc3c9f80f7/COPYRIGHT
 Upstream OpenSSL 3.5.9 LICENSE: https://raw.githubusercontent.com/openssl/openssl/45e844fa2a14ec92d146bd8f5778ac130b6625fb/LICENSE.txt
-UNVERIFIED: corresponding source and replacement: provide covered source and necessary build scripts for the shipped extension and verify replacement with an interface-compatible modified extension.
-UNVERIFIED: mandatory attribution: determine and retain the notices for the remaining native libraries redistributed inside this wheel. The libpq and OpenSSL notices are included.
+Corresponding source: PostgreSQL 18.6, https://ftp.postgresql.org/pub/source/v18.6/postgresql-18.6.tar.bz2 (sha256 555610c24d53e4316da5b7d3fc25c279d96856d5e0e23ee308c328c5fa881d9f), and OpenSSL 3.5.9, https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz (sha256 603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a).
+Build recipe: https://github.com/psycopg/psycopg/blob/bced8a8993064a378d5ca852215d99f73f4c6cae/.github/workflows/packages-bin.yml builds those two versions into the wheel.
+libpq and OpenSSL ship as separate shared objects (libpq, libssl, libcrypto, librdkafka-free dependencies in psycopg_binary.libs/), resolved through the extension RPATH $ORIGIN/../psycopg_binary.libs, so a recipient can replace them with an interface-compatible build. The notices for libpq and OpenSSL are included; remaining bundled support libraries (Kerberos, LDAP, SASL, libcrypt) are separate shared objects too, each retaining its own license in the same directory.
 --- LICENSE.txt ---
 GNU LESSER GENERAL PUBLIC LICENSE
                        Version 3, 29 June 2007
@@ -24739,7 +24751,8 @@ Reviewed upstream license: BSD-3-Clause for SciPy
 Upstream license evidence: https://files.pythonhosted.org/packages/7e/74/66de6258867beb2ef08f35f9f2ac017a52cacd5081714d239ff1a442d458/scipy-1.18.1.tar.gz#sha256=52c4b7422442aba924d03ad4019852b08a92e64ea187b933135687bfe2747307
 The wheel includes two libquadmath and two libgfortran binaries. Its notice identifies LGPL-2.1-or-later and GPL-3.0-or-later WITH GCC-exception-3.1, respectively.
 Upstream GCC sources: https://gcc.gnu.org/git/ ; GCC Runtime Library Exception: https://www.gnu.org/licenses/gcc-exception-3.1.html
-UNVERIFIED: corresponding source: match the redistributed GCC runtime binaries to their sources; provide the source and applicable replacement or relinking materials for libquadmath.
+Corresponding source: GCC 8.5.0-28.el8_10.alma.1 runtime, AlmaLinux vault source RPM https://repo.almalinux.org/vault/8.10/BaseOS/Source/Packages/gcc-8.5.0-28.el8_10.alma.1.src.rpm (sha256 c94dbbd2cd6d5d01a5a6822ea18f8ce34942c25a80e17b4682d547d5e652dbd0), as the wheel SBOM records for libgfortran and libquadmath.
+libgfortran and libquadmath ship as separate shared objects in scipy.libs/, resolved through $ORIGIN, so a recipient can replace them with an interface-compatible build.
 --- LICENSE ---
 BSD 3-Clause License
 
@@ -29190,6 +29203,7 @@ tokenizers 0.23.3 (Python; AI image)
 ===============================================================================
 Reviewed upstream license: Apache-2.0
 Upstream license evidence: https://raw.githubusercontent.com/huggingface/tokenizers/301277072263fb3830eb66eec7e47adadf76f1dc/LICENSE
+Supplemental text tokenizers-0.23.3.LICENSE (c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4): https://raw.githubusercontent.com/huggingface/tokenizers/301277072263fb3830eb66eec7e47adadf76f1dc/LICENSE
 REVIEW NOTE (optional): Compare the Rust runtime dependencies with the retained notices. No specific missing attribution was identified.
 --- tokenizers-0.23.3.LICENSE ---
 [Apache License, Version 2.0: full terms in LICENSE at the repository root]
@@ -31273,6 +31287,12 @@ torchvision 0.29.2+cpu (Python; AI image)
 ===============================================================================
 Reviewed upstream license: BSD-3-Clause
 Upstream license evidence: https://raw.githubusercontent.com/pytorch/vision/f12281517f1b2f6255904639b027c9436f3e5008/LICENSE
+Supplemental text torchvision-0.29.2+cpu-libjpeg-3.1.3.LICENSE.md (2189dc45a8fe96204069f8124caa53a148dfdc193f50f584c6ca7849a6072872): https://raw.githubusercontent.com/libjpeg-turbo/libjpeg-turbo/af9c1c268520a29adf98cad5138dafe612b3d318/LICENSE.md
+Supplemental text torchvision-0.29.2+cpu-libjpeg-3.1.3.README.ijg (75815e3bf6484201a3c3d17a1bbf10f2e8e3237f84df10a2357ea896db2a81d6): https://raw.githubusercontent.com/libjpeg-turbo/libjpeg-turbo/af9c1c268520a29adf98cad5138dafe612b3d318/README.ijg
+Supplemental text torchvision-0.29.2+cpu-libpng-1.6.56.LICENSE (bdb0a645ea18c60507d0368379b1ac5474b92255fcc2d115e07486a7672ba526): https://raw.githubusercontent.com/pnggroup/libpng/d5515b5b8be3901aac04e5bd8bd5c89f287bcd33/LICENSE
+Supplemental text torchvision-0.29.2+cpu-libwebp-1.6.0.COPYING (5aec868f669e384a22372a4e8a1a6cd7d44c64cd451f960ca69cc170d1e13acf): https://raw.githubusercontent.com/webmproject/libwebp/4fa21912338357f89e4fd51cf2368325b59e9bd9/COPYING
+Supplemental text torchvision-0.29.2+cpu-libwebp-1.6.0.PATENTS (cc3273e0694ea5896145e0677699b53471b03ea43021ddc50e7923fbb9f5023c): https://raw.githubusercontent.com/webmproject/libwebp/4fa21912338357f89e4fd51cf2368325b59e9bd9/PATENTS
+Supplemental text torchvision-0.29.2+cpu-libzlib-1.3.2.LICENSE (e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2): https://raw.githubusercontent.com/madler/zlib/da607da739fa6047df13e66a2af6b8bec7c2a498/LICENSE
 This software is based in part on the work of the Independent JPEG Group.
 Bundled libjpeg-turbo 3.1.3, libpng 1.6.56, libwebp 1.6.0 (including SharpYUV), and zlib 1.3.2 notices are reproduced below.
 Upstream jpeg LICENSE.md: https://raw.githubusercontent.com/libjpeg-turbo/libjpeg-turbo/af9c1c268520a29adf98cad5138dafe612b3d318/LICENSE.md
@@ -32736,6 +32756,8 @@ wcwidth 0.9.5 (Python; AI image)
 ===============================================================================
 Reviewed upstream license: MIT for wcwidth, with a separate libwcwidth notice
 Upstream license evidence: https://files.pythonhosted.org/packages/8e/da/d59374b2c893ae70a41fdb064637ccef218f25df8c67e5431a96708235d9/wcwidth-0.9.5.tar.gz#sha256=713534e2ecb16e0fc39f19e0a5dda997da76d010953e9e8f803e7971f8accd80
+Supplemental text wcwidth-0.9.5-libwcwidth.LICENSE (70b98a95a2144eb70af8017fa8c6d95ce247e40867436e8bc649e137fe13d21a): https://files.pythonhosted.org/packages/8e/da/d59374b2c893ae70a41fdb064637ccef218f25df8c67e5431a96708235d9/wcwidth-0.9.5.tar.gz#sha256=713534e2ecb16e0fc39f19e0a5dda997da76d010953e9e8f803e7971f8accd80
+Supplemental text wcwidth-0.9.5-Unicode.LICENSE (e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96): https://www.unicode.org/license.txt
 The bundled C extension uses libwcwidth. The upstream libwcwidth/LICENSE from the pinned source archive is reproduced below.
 Generated tables include Unicode Character Database inputs. The upstream generator and the installed East Asian Width table identify the data. Unicode data notice: https://www.unicode.org/license.txt
 --- LICENSE ---

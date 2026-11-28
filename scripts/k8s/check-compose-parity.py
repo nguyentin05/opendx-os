@@ -73,6 +73,13 @@ ALLOWED = {
 # operator/config/default, not from per-variable environment entries.
 SKIP_ENV = {'operator'}
 
+# Compose builds an image; Kubernetes runs the upstream one. Services in this
+# set compare ports and variables as usual but not the image.
+BUILT_VS_UPSTREAM = {
+    'postgres': 'Kubernetes keeps postgres:17-alpine without pgvector and PGMQ; '
+                'the AI database image follows in a separate issue',
+}
+
 
 def default(value):
     """'${VAR:-default}' -> 'default'; anything else unchanged."""
@@ -125,7 +132,9 @@ def main():
         if k is None:
             problems.append(f'{name}: in compose.yaml but not in deploy/k8s/base')
             continue
-        if c['built']:
+        if c['built'] and name in BUILT_VS_UPSTREAM:
+            pass
+        elif c['built']:
             if not re.fullmatch(rf'ghcr\.io/[^/]+/opendx-(dxos-)?{re.escape(name if name != "operator" else "dxos-controller")}:.+',
                                 k['image']):
                 problems.append(f'{name}: built from source in compose, but k8s runs {k["image"]}')
