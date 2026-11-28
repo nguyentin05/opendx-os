@@ -29,7 +29,13 @@ SCRIPT = ROOT / "scripts" / "init-env.sh"
 SECRETS = ("POSTGRES_PASSWORD", "HASURA_ADMIN_SECRET", "KEYCLOAK_ADMIN_PASSWORD", "KESTRA_PASSWORD",
            "KESTRA_WEBHOOK_KEY", "WORKFLOW_SERVICE_TOKEN", "KESTRA_DATABASE_PASSWORD", "HASURA_DATABASE_PASSWORD",
            "PROCESS_DATABASE_PASSWORD", "AUTHZ_DATABASE_PASSWORD", "HR_DATABASE_PASSWORD",
-           "KEYCLOAK_DIRECTORY_SECRET", "KEYCLOAK_DATABASE_PASSWORD")
+           "KEYCLOAK_DIRECTORY_SECRET", "KEYCLOAK_DATABASE_PASSWORD",
+           "AI_DATABASE_PASSWORD", "AI_WORKER_DATABASE_PASSWORD", "AI_DISPATCHER_DATABASE_PASSWORD",
+           "AI_BROKER_DATABASE_PASSWORD", "RAG_WORKER_CLIENT_SECRET", "RAG_FILE_CLIENT_SECRET",
+           "RAG_DISPATCHER_CLIENT_SECRET")
+# AI_MODEL_MASTER_KEY is random too, but must be a Fernet key (32 bytes, urlsafe base64).
+FERNET = "AI_MODEL_MASTER_KEY"
+HOSTED_ENDPOINTS = "AI_HOSTED_MODEL_ENDPOINTS"
 
 
 def parse(path: pathlib.Path) -> dict[str, str]:
@@ -53,9 +59,18 @@ class InitEnvTest(unittest.TestCase):
                 self.assertRegex(a[key], re.compile(r"^[A-Za-z0-9]{32}$"), key)
                 self.assertNotEqual(a[key], example[key], key)
                 self.assertNotEqual(a[key], b[key], key)
+            # A Fernet key is 32 random bytes in urlsafe base64 (44 chars, one '=').
+            self.assertRegex(a[FERNET], re.compile(r"^[A-Za-z0-9_-]{43}=$"), FERNET)
+            self.assertNotEqual(a[FERNET], example[FERNET], FERNET)
+            self.assertNotEqual(a[FERNET], b[FERNET], FERNET)
+            # The allowlist admits OpenAI and OpenRouter out of the box.
+            self.assertEqual(a[HOSTED_ENDPOINTS],
+                             '\'["https://api.openai.com/v1","https://openrouter.ai/api/v1"]\'')
+            self.assertEqual(a[HOSTED_ENDPOINTS], example[HOSTED_ENDPOINTS])
             # Everything else is the example's.
-            self.assertEqual({k: v for k, v in a.items() if k not in SECRETS},
-                             {k: v for k, v in example.items() if k not in SECRETS})
+            special = set(SECRETS) | {FERNET}
+            self.assertEqual({k: v for k, v in a.items() if k not in special},
+                             {k: v for k, v in example.items() if k not in special})
             self.assertEqual(stat.S_IMODE(first.stat().st_mode), 0o600)
             again = subprocess.run(["bash", str(SCRIPT), str(first)], capture_output=True)
             self.assertNotEqual(again.returncode, 0)

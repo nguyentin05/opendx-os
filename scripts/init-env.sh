@@ -16,8 +16,10 @@
 
 # Writes a .env from .env.example with a fresh random value for every secret:
 # database and runtime role passwords, the Hasura admin secret, Keycloak's
-# admin password and Kestra's credentials. Refuses to overwrite an existing
-# file unless --force is given.
+# admin password, Kestra's credentials, the restricted AI database logins, the
+# knowledge service client secrets and the model credential key. Also seeds the
+# hosted model endpoint allowlist. Refuses to overwrite an existing file unless
+# --force is given.
 #
 #   scripts/init-env.sh [--force] [path]      (default path: .env)
 #
@@ -53,7 +55,20 @@ SECRETS=(
     HR_DATABASE_PASSWORD
     KEYCLOAK_DIRECTORY_SECRET
     KEYCLOAK_DATABASE_PASSWORD
+    # Restricted AI logins and broker, used by the compose.rag.yaml overlay.
+    AI_DATABASE_PASSWORD
+    AI_WORKER_DATABASE_PASSWORD
+    AI_DISPATCHER_DATABASE_PASSWORD
+    AI_BROKER_DATABASE_PASSWORD
+    # Keycloak service clients the worker, File Service and dispatcher use.
+    RAG_WORKER_CLIENT_SECRET
+    RAG_FILE_CLIENT_SECRET
+    RAG_DISPATCHER_CLIENT_SECRET
 )
+
+# Hosted provider allowlist: a provider can only be registered for a base URL
+# listed here. Add a URL to approve another OpenAI-compatible provider.
+HOSTED_MODEL_ENDPOINTS='["https://api.openai.com/v1","https://openrouter.ai/api/v1"]'
 
 random_secret() {
     # 32 characters from [A-Za-z0-9]: safe in URLs, YAML and shell. A bounded
@@ -63,18 +78,34 @@ random_secret() {
     printf '%s' "${chars:0:32}"
 }
 
+fernet_key() {
+    # 32 random bytes, urlsafe base64: the format AI_MODEL_MASTER_KEY expects.
+    head -c 32 /dev/urandom | base64 | tr '/+' '_-' | tr -d '\n'
+}
+
+require_key() {
+    if ! grep -q "^${1}=" "$tmp"; then
+        echo "[init-env] .env.example has no ${1}" >&2
+        exit 1
+    fi
+}
+
 tmp="$(mktemp "${target}.XXXXXX")"
 trap 'rm -f "$tmp"' EXIT
 cp "$ROOT/.env.example" "$tmp"
 for key in "${SECRETS[@]}"; do
-    if ! grep -q "^${key}=" "$tmp"; then
-        echo "[init-env] .env.example has no ${key}" >&2
-        exit 1
-    fi
+    require_key "$key"
     value="$(random_secret)"
     sed -i "s|^${key}=.*|${key}=${value}|" "$tmp"
 done
+
+require_key AI_MODEL_MASTER_KEY
+sed -i "s|^AI_MODEL_MASTER_KEY=.*|AI_MODEL_MASTER_KEY=$(fernet_key)|" "$tmp"
+
+require_key AI_HOSTED_MODEL_ENDPOINTS
+sed -i "s|^AI_HOSTED_MODEL_ENDPOINTS=.*|AI_HOSTED_MODEL_ENDPOINTS='${HOSTED_MODEL_ENDPOINTS}'|" "$tmp"
+
 chmod 600 "$tmp"
 mv "$tmp" "$target"
 trap - EXIT
-echo "[init-env] wrote $target with ${#SECRETS[@]} random secrets (mode 600)"
+echo "[init-env] wrote $target with $(( ${#SECRETS[@]} + 1 )) random secrets and the hosted endpoint allowlist (mode 600)"

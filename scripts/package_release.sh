@@ -28,7 +28,7 @@ trap 'rm -rf "${STAGE_DIR}"' EXIT
 mkdir -p "${DIST_DIR}" "${STAGE_DIR}/${ARCHIVE_NAME}"
 printf 'v%s\n' "${VERSION#v}" > "${STAGE_DIR}/${ARCHIVE_NAME}/VERSION"
 
-# From a checkout, ship tracked files only, so local secrets (.env.rag),
+# From a checkout, ship tracked files only, so local secrets (.env),
 # virtualenvs and build output never reach an archive.
 if git -C "${REPO_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     mapfile -d '' SOURCES < <(git -C "${REPO_ROOT}" ls-files -z)
@@ -55,9 +55,12 @@ tar -C "${REPO_ROOT}" \
     --exclude="vendor" \
     --exclude=".venv" \
     --exclude="__pycache__" \
-    --exclude=".env" \
-    --exclude=".env.rag" \
     -cf - "${SOURCES[@]}" | tar -C "${STAGE_DIR}/${ARCHIVE_NAME}" -xf -
+
+# Local environment files hold generated secrets; only .env.example ships.
+# Prune after extraction: a tar --exclude would also drop the explicit
+# .env.example entry.
+find "${STAGE_DIR}/${ARCHIVE_NAME}" -name '.env*' ! -name '.env.example' -delete
 
 tar -C "${STAGE_DIR}" -czf "${ARCHIVE_FILE}" "${ARCHIVE_NAME}"
 (cd "${DIST_DIR}" && sha256sum "${ARCHIVE_NAME}.tar.gz" > "${ARCHIVE_NAME}.tar.gz.sha256")

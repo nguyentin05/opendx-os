@@ -64,9 +64,14 @@ tar -C "${WORK}/forbidden" -czf "${WORK}/forbidden.tar.gz" package
 expect_fail "${WORK}/forbidden.tar.gz"
 
 new_tree "${WORK}/secrets"
-echo "AI_DATABASE_PASSWORD=generated" > "${WORK}/secrets/package/.env.rag"
+echo "AI_DATABASE_PASSWORD=generated" > "${WORK}/secrets/package/.env"
 tar -C "${WORK}/secrets" -czf "${WORK}/secrets.tar.gz" package
 expect_fail "${WORK}/secrets.tar.gz"
+
+new_tree "${WORK}/secrets-variant"
+echo "AI_DATABASE_PASSWORD=generated" > "${WORK}/secrets-variant/package/.env.backup"
+tar -C "${WORK}/secrets-variant" -czf "${WORK}/secrets-variant.tar.gz" package
+expect_fail "${WORK}/secrets-variant.tar.gz"
 
 new_tree "${WORK}/missing"
 rm "${WORK}/missing/package/LICENSE"

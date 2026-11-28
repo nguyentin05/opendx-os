@@ -188,7 +188,7 @@ before cleaning only temporary directories created for this run.
 Keep project contracts, architecture, and development documentation, including
 shared designs and integration handoffs, in the distribution. From a checkout
 the packager takes only files tracked by git, so local secrets such as
-`.env.rag`, virtualenvs and build output never ship, and
+`.env`, virtualenvs and build output never ship, and
 `scripts/release/verify-archive.sh` refuses any `.env` file other than
 `.env.example`. It also excludes user-local material (`.scratch/`, `.claude/`), agent guidance
 (`.agents/`, `AGENTS.md`, `AGENTS.local.md`, `CLAUDE.md`), the private

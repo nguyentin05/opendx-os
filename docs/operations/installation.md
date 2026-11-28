@@ -68,8 +68,8 @@ The Compose files:
    `ENABLED_CAPABILITIES` leaves off, which the operator refuses to install.
 
    For AI, start with `make ai-up` on a fresh named Compose project. It creates
-   service credentials in `.env.rag` (set `AI_ENV_FILE=.env` to keep them in
-   `.env` instead), initializes PostgreSQL and enables the
+   service credentials in `.env` (set `AI_ENV_FILE` to another path to keep them
+   in a separate file), initializes PostgreSQL and enables the
    Personal Library after its application is Ready. Configure an LLM in
    Workspace AI Management to enable generated answers.
    [AI installation and setup](../guides/knowledge/models.md).

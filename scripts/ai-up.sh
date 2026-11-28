@@ -15,14 +15,13 @@
 # limitations under the License.
 
 # Start the base stack with the knowledge overlay, without manual token setup.
-# Generated secrets live in AI_ENV_FILE (default .env.rag) and are never printed.
-# Point AI_ENV_FILE at .env to keep every setting in one file.
+# Generated secrets live in AI_ENV_FILE (default .env) and are never printed.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-ENV_FILE="${AI_ENV_FILE:-.env.rag}"
+ENV_FILE="${AI_ENV_FILE:-.env}"
 
 fail() {
     printf '[ai-up] FAIL: %s\n' "$*" >&2
