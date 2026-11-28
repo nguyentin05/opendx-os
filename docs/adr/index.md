@@ -25,6 +25,7 @@ with explicit supersession instead of rewriting the old one.
 | [0008](0008-an-application-declares-several-tables.md) | An application declares several tables | Accepted | 2026-11-14 |
 | [0009](0009-native-rag-identity-and-source-boundaries.md) | Native RAG identity and source boundaries | Accepted; implemented in part; D10, reservation/settlement and the applied-migration rule superseded by ADR 0010 | 2026-11-13 |
 | [0010](0010-model-operations-without-monetary-admission.md) | Model operations without monetary admission | Accepted | 2026-11-23 |
+| [0011](0011-python-intelligence-runtime.md) | Python Intelligence runtime | Accepted | 2026-11-26 |
 
 ## Reading the old decisions
 

@@ -38,4 +38,4 @@ for sql_file in "$CAP_DIR"/*.sql; do
     fi
 done
 
-# cap-ai metadata migrations run at 09_rag_migrations.sh after Core registry setup.
+# The AI overlay runs Alembic after the Core bootstrap.

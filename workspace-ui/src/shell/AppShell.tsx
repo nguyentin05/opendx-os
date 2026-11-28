@@ -136,6 +136,11 @@ export function AppShell({
             Người dùng & quyền
           </WorkspaceLink>
         )}
+        {session && canAdministerPeople(session.user) && (
+          <WorkspaceLink href="/ai-management" onNavigate={go} current={!auxiliaryViewActive && route.kind === 'ai-management'}>
+            Quản trị AI
+          </WorkspaceLink>
+        )}
         {session && canAdministerOrganization(session.user) && (
           <WorkspaceLink href="/organization" onNavigate={go} current={!auxiliaryViewActive && route.kind === 'organization'}>
             Tổ chức

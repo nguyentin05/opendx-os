@@ -7,21 +7,20 @@ package files
 import (
 	"context"
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 	"net/http/httptest"
 	"testing"
 	"time"
 )
 
 type changingDelegation struct {
-	grant knowledge.SourceGrant
+	grant SourceGrant
 	calls int
 }
 
-func (v *changingDelegation) ValidateDelegation(context.Context, string, string, string) (knowledge.SourceGrant, error) {
+func (v *changingDelegation) ValidateDelegation(context.Context, string, string, string) (SourceGrant, error) {
 	v.calls++
 	if v.calls > 1 {
-		return knowledge.SourceGrant{}, knowledge.ErrNotFound
+		return SourceGrant{}, ErrDenied
 	}
 	return v.grant, nil
 }
@@ -39,7 +38,7 @@ func TestDelegatedRevokedAfterFetch(t *testing.T) {
 	verifier := serviceVerifier(func(context.Context, string) (auth.Subject, error) {
 		return auth.Subject{UserID: service, ExpiresAt: time.Now().Add(time.Hour)}, nil
 	})
-	v := &changingDelegation{grant: knowledge.SourceGrant{SourceKind: "UPLOAD", SourceID: f.ID, SHA256: hash, OwnerID: a.UserID, ExpiresAt: time.Now().Add(time.Minute)}}
+	v := &changingDelegation{grant: SourceGrant{SourceKind: "UPLOAD", SourceID: f.ID, SHA256: hash, OwnerID: a.UserID, ExpiresAt: time.Now().Add(time.Minute)}}
 	h := s.DelegatedHandler(verifier, service, v)
 	r := httptest.NewRequest("GET", "/internal/v1/files/"+f.ID, nil)
 	r.Header.Set("Authorization", "Bearer service-token")

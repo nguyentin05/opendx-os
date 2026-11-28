@@ -248,7 +248,7 @@ def main():
         request(f"/admin/realms/{REALM}/clients/{client['id']}", client, token=admin, method="PUT")
 
     # Confidential service clients ship disabled with a generated secret, so a
-    # stack without the knowledge overlay cannot mint service tokens. rag-up
+    # stack without the knowledge overlay cannot mint service tokens. ai-up
     # enables them with its own secrets; the check below does the same.
     for client_id, subject in SERVICE_CLIENTS:
         clients = request(f"/admin/realms/{REALM}/clients?clientId={client_id}", token=admin)

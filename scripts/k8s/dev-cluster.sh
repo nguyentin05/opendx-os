@@ -119,7 +119,7 @@ create_init_configmaps() {
     done
     kc -n "$PLATFORM_NS" create configmap postgres-capabilities "${args[@]}" --dry-run=client -o yaml | kc apply -f - >/dev/null
     args=(--from-file="ledger.sql=$ROOT/platform/postgres/migrations/ledger.sql")
-    for scope in core cap_ai; do
+    for scope in core; do
         for f in "$ROOT"/platform/postgres/migrations/"$scope"/*.sql; do
             args+=(--from-file="${scope}-$(basename "$f")=$f")
         done

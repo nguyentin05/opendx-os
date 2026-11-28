@@ -8,6 +8,7 @@ import { canAdministerOrganization, canAdministerPeople, toTableURL, useWorkspac
 import type { WorkspaceRoute } from './core/routes';
 import { resolveAppRole, useSessionContext } from './core/session-context';
 import { listAccounts } from './features/admin/client';
+import { ModelManagement } from './features/admin/ModelManagement';
 import { People } from './features/admin/People';
 import { AgentDrawer, agentDrawerID } from './features/agent/AgentDrawer';
 import type { Pending } from './features/agent/AgentChat';
@@ -267,6 +268,9 @@ function SignedInWorkspace({ token, initialSession, onSignOut }: {
     }
     if (route.kind === 'work') {
       return <MyWork session={session} onOpenWorkItem={openWorkItem} />;
+    }
+    if (route.kind === 'ai-management' && canAdministerPeople(session.user)) {
+      return <ModelManagement key={session.user.id} token={token} />;
     }
     if (route.kind === 'people' && canAdministerPeople(session.user)) {
       return <People

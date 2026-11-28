@@ -11,6 +11,16 @@ is published; see [Releasing](docs/contribute/releasing.md).
 
 ## [Unreleased]
 
+### Changed
+
+- AI: `make rag-up` and `scripts/rag-up.sh` are now `make ai-up` and
+  `scripts/ai-up.sh`, and the `RAG_ENV_FILE` override is now `AI_ENV_FILE`.
+  The helper writes the generated secrets to `.env` with every other setting;
+  set `AI_ENV_FILE` to another path to keep them in a separate file.
+  An installation created with `.env.rag` must move those values into `.env`
+  before the next `make ai-up`, because PostgreSQL applies role passwords only
+  on first initialization and a fresh value would not match the existing volume.
+
 ## [0.3.0] - 2026-11-23
 
 ### Added

@@ -33,7 +33,6 @@ import (
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
 	"github.com/opendx-os/opendx-os/capabilities/internal/authz"
 	"github.com/opendx-os/opendx-os/capabilities/internal/files"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 	"github.com/opendx-os/opendx-os/capabilities/internal/process"
 	"github.com/opendx-os/opendx-os/capabilities/internal/registry"
 	"github.com/opendx-os/opendx-os/capabilities/internal/telemetry"
@@ -108,11 +107,8 @@ func main() {
 	if err != nil {
 		log.Fatal("strict identity unavailable")
 	}
-	fileAuthority := knowledge.NewAuthority(strictAuthn, db)
+	fileAuthority := files.NewAuthority(strictAuthn, db)
 	if address := os.Getenv("RAG_INTERNAL_LISTEN"); address != "" {
-		if os.Getenv("RAG_SOURCE_QUALIFIED") != "true" {
-			log.Fatal("internal source service requires qualified sources")
-		}
 		serviceToken, err := auth.TokenGetterFrom(os.Getenv("RAG_INTERNAL_BEARER_TOKEN"), os.Getenv("OIDC_TOKEN_URL"), os.Getenv("RAG_FILE_CLIENT_ID"), os.Getenv("RAG_FILE_CLIENT_SECRET"))
 		if err != nil {
 			log.Fatal("invalid internal source token configuration")
@@ -125,7 +121,7 @@ func main() {
 		if err != nil {
 			log.Fatal("service verification unavailable")
 		}
-		_, err = knowledge.StartInternalListener(ctx, address, os.Getenv("RAG_WORKER_SERVICE_SUBJECT"), os.Getenv("RAG_FILE_SERVICE_SUBJECT"), fileService.DelegatedHandler(serviceVerifier, os.Getenv("RAG_WORKER_SERVICE_SUBJECT"), validator))
+		_, err = files.StartInternalListener(ctx, address, os.Getenv("RAG_WORKER_SERVICE_SUBJECT"), os.Getenv("RAG_FILE_SERVICE_SUBJECT"), fileService.DelegatedHandler(serviceVerifier, os.Getenv("RAG_WORKER_SERVICE_SUBJECT"), validator))
 		if err != nil {
 			log.Fatal("invalid internal source listener configuration")
 		}

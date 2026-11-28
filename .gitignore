@@ -1,7 +1,6 @@
 # Local environment & secrets
 .env
 .env.*
-.env.rag
 !.env.example
 
 # Private local planning and per-user agent guidance

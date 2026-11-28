@@ -49,7 +49,7 @@ the row would move to another parent. Both refusals use SQLSTATE `23514` with a
 stable prefix: `the parent record can no longer be changed (status <status>)` and
 `a row cannot move to another parent record`. Existing installations apply the
 redefined function with
-`scripts/migrate-rag.sh --database-url-env DATABASE_URL --scope core --through 0005`
+`scripts/migrate-core.sh --database-url-env DATABASE_URL --through 0005`
 (the same runner applies `0004_attachment_refusal.sql`).
 
 ## Identity, roles, and commands
@@ -126,7 +126,7 @@ one record serialize: a completion closes only items created by earlier events,
 and a creation is skipped when a later completion is already recorded, so the
 open set follows event order rather than arrival order. Existing installations
 apply `0007_work_item_source_version.sql` with
-`scripts/migrate-rag.sh --database-url-env DATABASE_URL --scope core --through 0007`.
+`scripts/migrate-core.sh --database-url-env DATABASE_URL --through 0007`.
 
 ## Fixtures and checks
 

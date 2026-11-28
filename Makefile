@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.PHONY: help check check-hygiene check-architecture test test-unit test-integration k8s-config rag-up clean
+.PHONY: help check check-hygiene check-architecture test test-unit test-integration k8s-config ai-up clean
 
 help:
 	@echo "OpenDX-OS (DX-OS Open-Core) Build & Verification Targets:"
@@ -24,7 +24,7 @@ help:
 	@echo "  make test-unit          Run fast unit and contract tests without external service dependencies"
 	@echo "  make test-integration   Run real-database and service integration suites (requires TEST_DATABASE_URL)"
 	@echo "  make k8s-config         Regenerate the Kubernetes ConfigMaps from platform/"
-	@echo "  make rag-up             Start the stack with cap-ai, the personal library and FTS-only Assistant"
+	@echo "  make ai-up              Start the stack with cap-ai, the personal library and Python Assistant"
 	@echo "  make clean              Remove temporary build and dist artifacts"
 
 check: check-hygiene check-architecture
@@ -32,8 +32,8 @@ check: check-hygiene check-architecture
 k8s-config: ## Regenerate deploy/k8s ConfigMaps from platform/
 	@python3 scripts/k8s/render-configmaps.py
 
-rag-up: ## Start the stack with cap-ai and the personal library
-	@scripts/rag-up.sh
+ai-up: ## Start the stack with cap-ai and the personal library
+	@scripts/ai-up.sh
 
 check-hygiene:
 	@python3 scripts/check_hygiene.py
@@ -49,6 +49,8 @@ test-unit: check
 	(cd capabilities && go test ./... -count=1); \
 	echo "[test-unit] Running contract and hygiene tests..."; \
 	python3 -m unittest discover -s tests/ -p "test_*.py" -v; \
+	echo "[test-unit] Running source-gate helper tests..."; \
+	python3 -m unittest discover -s scripts/integration -p "test_*.py" -v; \
 	if [ -d workspace-ui ] && [ -d workspace-ui/node_modules ]; then \
 		echo "[test-unit] Running workspace-ui tests..."; \
 		(cd workspace-ui && npm test && npm run build); \
@@ -72,3 +74,7 @@ test: test-unit
 
 clean:
 	rm -rf dist/ build/ coverage/
+
+.PHONY: test-ai
+test-ai: ## Run the focused AI suite against disposable PostgreSQL and PGMQ
+	./scripts/test-ai.sh

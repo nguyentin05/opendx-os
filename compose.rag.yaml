@@ -1,18 +1,22 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 DX-OS Open-Core Contributors
-# Use with compose.yaml on a qualified installation. See docs/guides/knowledge/models.md.
-x-qualified: &qualified
-  RAG_SOURCE_QUALIFIED: ${RAG_SOURCE_QUALIFIED:-false}
-  RAG_METADATA_QUALIFIED: ${RAG_METADATA_QUALIFIED:-false}
-  RAG_PARSER_QUALIFIED: ${RAG_PARSER_QUALIFIED:-false}
+# Fresh installation: docker compose -f compose.yaml -f compose.rag.yaml up --build
+# AI migrations run in ai-migrate after PostgreSQL initialization.
+x-ai-image: &ai-image
+  image: dxos-ai:dev
 
 x-subjects: &subjects
   RAG_WORKER_SERVICE_SUBJECT: ${RAG_WORKER_SERVICE_SUBJECT:?set the worker OIDC subject}
   RAG_FILE_SERVICE_SUBJECT: ${RAG_FILE_SERVICE_SUBJECT:?set the File Service OIDC subject}
 
 services:
+  # The AI overlay uses the same postgres image as the default stack; only the
+  # passwords and enabled capabilities change. ai-migrate creates the AI
+  # roles, extensions and queue itself, so an installation that started
+  # without AI gains them without a fresh volume.
   postgres:
     environment:
+      AI_BROKER_DATABASE_PASSWORD: ${AI_BROKER_DATABASE_PASSWORD:?set the broker password}
       ENABLED_CAPABILITIES: ${ENABLED_CAPABILITIES:-cap-process,cap-hr,cap-work,cap-data,cap-ai}
       AI_DATABASE_PASSWORD: ${AI_DATABASE_PASSWORD:?set the API database password}
       AI_WORKER_DATABASE_PASSWORD: ${AI_WORKER_DATABASE_PASSWORD:?set the worker database password}
@@ -28,41 +32,80 @@ services:
   cap-process:
     environment:
       <<: *subjects
-      RAG_PRIVATE_UPLOAD_ENABLED: ${RAG_PRIVATE_UPLOAD_ENABLED:-false}
-      RAG_SOURCE_QUALIFIED: ${RAG_SOURCE_QUALIFIED:-false}
+      RAG_PRIVATE_UPLOAD_ENABLED: ${RAG_PRIVATE_UPLOAD_ENABLED:-true}
       RAG_INTERNAL_LISTEN: ":8181"
-      RAG_INTERNAL_AI_URL: http://cap-ai:8184
+      RAG_INTERNAL_AI_URL: http://cap-ai:8084
       OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/token}
       RAG_FILE_CLIENT_ID: ${RAG_FILE_CLIENT_ID:-dxos-file-service}
       RAG_FILE_CLIENT_SECRET: ${RAG_FILE_CLIENT_SECRET:-}
       RAG_INTERNAL_BEARER_TOKEN: ${RAG_INTERNAL_BEARER_TOKEN:-${RAG_FILE_BEARER_TOKEN:-}}
 
+  ai-migrate:
+    <<: *ai-image
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      AI_MIGRATION_DATABASE_URL: postgres://${POSTGRES_USER:-dxos_admin}:${POSTGRES_PASSWORD:-dxos_secret}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
+      # Creates the AI roles, extensions, capability row and broker queue on
+      # every run, so adding AI to an existing installation needs no new volume.
+      AI_BROKER_DATABASE_PASSWORD: ${AI_BROKER_DATABASE_PASSWORD:?set the broker password}
+      AI_DATABASE_PASSWORD: ${AI_DATABASE_PASSWORD:?set the API database password}
+      AI_WORKER_DATABASE_PASSWORD: ${AI_WORKER_DATABASE_PASSWORD:?set the worker database password}
+      AI_DISPATCHER_DATABASE_PASSWORD: ${AI_DISPATCHER_DATABASE_PASSWORD:?set the dispatcher database password}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   cap-ai:
+    <<: *ai-image
     build:
-      context: ./capabilities
+      context: ./capabilities/ai
       additional_contexts:
         legal: .
-      args:
-        SERVICE: cap-ai
     restart: unless-stopped
     environment:
-      <<: [*qualified, *subjects]
-      PORT: "8084"
+      <<: *subjects
       DATABASE_URL: postgres://dxos_ai_api:${AI_DATABASE_PASSWORD}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
-      AI_WORKER_DATABASE_URL: &worker-db postgres://dxos_ai_worker:${AI_WORKER_DATABASE_PASSWORD}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
-      AI_DISPATCHER_DATABASE_URL: &dispatcher-db postgres://dxos_ai_dispatcher:${AI_DISPATCHER_DATABASE_PASSWORD}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
+      AI_MODEL_MASTER_KEY: &model-key ${AI_MODEL_MASTER_KEY:-}
+      AI_HOSTED_MODEL_ENDPOINTS: &hosted-endpoints ${AI_HOSTED_MODEL_ENDPOINTS:-[]}
+      AI_LOCAL_MODEL_ENDPOINTS: &local-endpoints ${AI_LOCAL_MODEL_ENDPOINTS:-{}}
+      AI_BROKER_URL: &broker-db pgmq://dxos_ai_broker:${AI_BROKER_DATABASE_PASSWORD}@postgres:5432/${POSTGRES_DB:-dxos_db}
       OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-http://localhost:8085/realms/dxos}
       OIDC_JWKS_URL: ${OIDC_JWKS_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/certs}
       OIDC_AUDIENCE: ${OIDC_AUDIENCE:-dxos-runtime}
-      RAG_INTERNAL_LISTEN: ":8184"
       RAG_DISPATCHER_SERVICE_SUBJECT: ${RAG_DISPATCHER_SERVICE_SUBJECT:?set the dispatcher OIDC subject}
-      RAG_FILE_API_URL: http://cap-process:8081
       RAG_PACKAGE_ARTIFACT_ROOT: /var/lib/dxos/package-artifacts
-      RAG_METADATA_ENABLED: ${RAG_METADATA_ENABLED:-false}
-      RAG_PACKAGE_ENABLED: ${RAG_PACKAGE_ENABLED:-false}
-      RAG_PERSONAL_ENABLED: ${RAG_PERSONAL_ENABLED:-false}
-      RAG_AGENT_ENABLED: ${RAG_AGENT_ENABLED:-false}
-      AI_AGENT_PROCESSING_APP_ID: ${AI_AGENT_PROCESSING_APP_ID:-}
+    volumes:
+      - type: volume
+        source: package-artifacts
+        target: /var/lib/dxos/package-artifacts
+        read_only: true
+        volume:
+          nocopy: true
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8084/readyz', timeout=3)"]
+      interval: 5s
+      timeout: 4s
+      retries: 10
+    depends_on:
+      ai-migrate:
+        condition: service_completed_successfully
+
+  cap-ai-worker:
+    <<: *ai-image
+    command: ["celery", "-A", "dxos_ai.worker", "worker", "--loglevel=INFO", "--without-gossip", "--without-mingle", "--without-heartbeat"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://dxos_ai_worker:${AI_WORKER_DATABASE_PASSWORD}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
+      AI_BROKER_URL: *broker-db
+      AI_MODEL_MASTER_KEY: *model-key
+      AI_HOSTED_MODEL_ENDPOINTS: *hosted-endpoints
+      AI_LOCAL_MODEL_ENDPOINTS: *local-endpoints
+      OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/token}
+      RAG_WORKER_CLIENT_ID: ${RAG_WORKER_CLIENT_ID:-dxos-rag-worker}
+      RAG_WORKER_CLIENT_SECRET: ${RAG_WORKER_CLIENT_SECRET:-}
+      RAG_WORKER_BEARER_TOKEN: ${RAG_WORKER_BEARER_TOKEN:-}
+      RAG_INTERNAL_FILE_URL: http://cap-process:8181
+      RAG_PACKAGE_ARTIFACT_ROOT: /var/lib/dxos/package-artifacts
     volumes:
       - type: volume
         source: package-artifacts
@@ -71,74 +114,8 @@ services:
         volume:
           nocopy: true
     depends_on:
-      postgres:
-        condition: service_healthy
-      keycloak:
-        condition: service_healthy
-
-  cap-ai-parser:
-    build:
-      context: ./capabilities
-      additional_contexts:
-        legal: .
-      dockerfile: Dockerfile.parser
-    restart: unless-stopped
-    network_mode: none
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    mem_limit: 512m
-    cpus: 1
-    pids_limit: 64
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=220m
-    environment:
-      PARSER_SOCKET: &socket /run/dxos-parser/parser.sock
-      PARSER_SERVICE_TOKEN: &parser-token ${PARSER_SERVICE_TOKEN:?set a private parser token of at least 32 characters}
-    # This single parser owns the private socket, including stale entries after a crash.
-    entrypoint: ["/bin/sh", "-ec", 'if [ -S "$$PARSER_SOCKET" ]; then rm "$$PARSER_SOCKET"; fi; exec /usr/local/bin/parser']
-    volumes:
-      - parser-socket:/run/dxos-parser
-    healthcheck:
-      test: ["CMD-SHELL", 'test -S "$$PARSER_SOCKET"']
-      interval: 2s
-      timeout: 2s
-      retries: 10
-
-  cap-ai-worker:
-    build:
-      context: ./capabilities
-      additional_contexts:
-        legal: .
-      args:
-        SERVICE: cap-ai-worker
-    restart: unless-stopped
-    environment:
-      <<: *qualified
-      AI_WORKER_DATABASE_URL: *worker-db
-      RAG_WORKER_SERVICE_SUBJECT: ${RAG_WORKER_SERVICE_SUBJECT}
-      OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/token}
-      RAG_WORKER_CLIENT_ID: ${RAG_WORKER_CLIENT_ID:-dxos-rag-worker}
-      RAG_WORKER_CLIENT_SECRET: ${RAG_WORKER_CLIENT_SECRET:-}
-      RAG_WORKER_BEARER_TOKEN: ${RAG_WORKER_BEARER_TOKEN:-}
-      RAG_INTERNAL_FILE_URL: http://cap-process:8181
-      RAG_INTERNAL_AI_URL: http://cap-ai:8184
-      PARSER_SOCKET: *socket
-      PARSER_SERVICE_TOKEN: *parser-token
-    volumes:
-      - type: volume
-        source: parser-socket
-        target: /run/dxos-parser
-        read_only: true
-        volume:
-          nocopy: true
-    depends_on:
-      cap-ai-parser:
-        condition: service_healthy
-      cap-ai:
-        condition: service_started
-      cap-process:
-        condition: service_started
+      ai-migrate:
+        condition: service_completed_successfully
 
   knowledge-dispatcher:
     build:
@@ -148,9 +125,8 @@ services:
     entrypoint: ["/usr/local/bin/dxos-knowledge-dispatcher"]
     restart: unless-stopped
     environment:
-      <<: *qualified
-      DATABASE_URL: *dispatcher-db
-      RAG_INTERNAL_AI_URL: http://cap-ai:8184
+      DATABASE_URL: postgres://dxos_ai_dispatcher:${AI_DISPATCHER_DATABASE_PASSWORD}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
+      RAG_INTERNAL_AI_URL: http://cap-ai:8084
       OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:-http://keycloak:8085/realms/dxos/protocol/openid-connect/token}
       RAG_DISPATCHER_CLIENT_ID: ${RAG_DISPATCHER_CLIENT_ID:-dxos-rag-dispatcher}
       RAG_DISPATCHER_CLIENT_SECRET: ${RAG_DISPATCHER_CLIENT_SECRET:-}
@@ -160,4 +136,3 @@ services:
 
 volumes:
   package-artifacts:
-  parser-socket:

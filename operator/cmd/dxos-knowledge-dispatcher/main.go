@@ -27,9 +27,6 @@ func main() {
 	if err != nil {
 		log.Fatal("invalid package dispatcher token configuration")
 	}
-	if os.Getenv("RAG_SOURCE_QUALIFIED") != "true" || os.Getenv("RAG_METADATA_QUALIFIED") != "true" || os.Getenv("RAG_PARSER_QUALIFIED") != "true" {
-		log.Fatal("package dispatcher requires qualified predecessor slices")
-	}
 	db, e := sql.Open("postgres", os.Getenv("DATABASE_URL"))
 	if e != nil {
 		log.Fatal("dispatcher database unavailable")

@@ -10,6 +10,9 @@ last_reviewed: 2026-11-20
 
 # ADR 0009: Native RAG identity and source boundaries
 
+[ADR 0011](0011-python-intelligence-runtime.md) updates the runtime,
+model administration, parser and deployment decisions below.
+
 - **Status:** Accepted; implemented in part. Package and personal knowledge
   ingestion, scoped retrieval, citations, and owner conversations shipped in
   #70 (v0.2.0) and #103. The register below lists the gates that remain open.

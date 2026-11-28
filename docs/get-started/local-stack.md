@@ -36,7 +36,7 @@ changing them, recreate the volume with `docker compose down -v`.
 | PostgreSQL | `localhost:5432` |
 
 The knowledge services (cap-ai, the personal library and the Assistant) are not
-in this stack; start them with `make rag-up`
+in this stack; start them with `make ai-up`
 ([installation](../operations/installation.md)).
 
 The `operator` service reconciles `apps/` every 30 seconds. It installs new or

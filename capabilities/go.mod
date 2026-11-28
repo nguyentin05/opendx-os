@@ -4,7 +4,6 @@ go 1.27.4
 
 require (
 	github.com/lib/pq v1.12.3
-	github.com/yuin/goldmark v1.8.7
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.72.0
 	go.opentelemetry.io/otel v1.47.0

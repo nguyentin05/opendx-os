@@ -41,7 +41,7 @@ always runs.
    ```bash
    kubectl -n dxos port-forward svc/postgres 15432:5432 &
    export MIGRATE_URL="postgres://dxos_admin:<POSTGRES_PASSWORD>@localhost:15432/dxos_db?sslmode=disable"
-   scripts/migrate-rag.sh --database-url-env MIGRATE_URL --scope core --through <version>
+   scripts/migrate-core.sh --database-url-env MIGRATE_URL --through <version>
    ```
 
    A new installation runs every migration when PostgreSQL first initializes.
@@ -55,6 +55,36 @@ always runs.
 
 Each apply leaves the previous generation of the generated ConfigMap
 `dxos-public-<hash>` behind. Delete the ones no pod uses any more.
+
+## Python AI cutover
+
+The base overlay does not deploy Python AI. If your installation adds AI,
+prepare an overlay for the API and Celery worker using the same locked image,
+plus a one-shot Alembic migration Job. Follow the authority and deployment
+boundaries in [ADR 0011](../adr/0011-python-intelligence-runtime.md).
+
+1. Schedule downtime for the legacy AI API and workers, stop new AI work, and
+   back up PostgreSQL and private object storage. Verify the restore before
+   starting the cutover.
+2. Confirm the target PostgreSQL 17 server provides pgvector and PGMQ. The
+   stock PostgreSQL image in the base overlay needs an extension-capable
+   replacement or an equivalent managed database. Enable `vector` and
+   `pgmq` in the application database. Provision the AI database roles and
+   the `dxos_ai_ingest` queue with its restricted broker grants before
+   starting the new runtime.
+3. Apply pending Core migrations separately. Alembic refuses a legacy
+   `cap_ai` schema without `cap_ai.alembic_version` or legacy `cap-ai`
+   entries in `core.schema_migrations`. Use a fresh AI baseline or have
+   the database owner approve an AI-only rebuild that addresses those legacy
+   markers. Preserve Core data and Core migration history, application data,
+   file metadata and original private objects. Treat legacy AI data as
+   outside the in-place migration path, including queued jobs, indexes, model
+   settings and conversation history. Re-register app packages and private
+   originals under current authority and re-ingest where needed.
+4. Run `alembic upgrade head` once with `AI_MIGRATION_DATABASE_URL` set to
+   the migration login. The Job manages only `cap_ai` and must succeed before
+   the API and worker start. Verify readiness and ingestion against the new
+   baseline before reopening AI traffic.
 
 ## Secrets
 

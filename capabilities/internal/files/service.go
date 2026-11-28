@@ -31,7 +31,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/opendx-os/opendx-os/capabilities/internal/auth"
-	"github.com/opendx-os/opendx-os/capabilities/internal/knowledge"
 )
 
 func readContent(r io.Reader) ([]byte, string, error) {
@@ -64,7 +63,7 @@ func (s *Service) Upload(ctx context.Context, actor *auth.Identity, appID, fileN
 }
 
 func (s *Service) UploadPrivate(ctx context.Context, actor *auth.Identity, appID, fileName string, content io.Reader) (*FileObject, error) {
-	if err := knowledge.CheckIdentity(ctx, s.db, actor); err != nil {
+	if err := CheckIdentity(ctx, s.db, actor); err != nil {
 		return nil, privateAuthorityError(err)
 	}
 	a, err := s.apps.Load(ctx, appID)

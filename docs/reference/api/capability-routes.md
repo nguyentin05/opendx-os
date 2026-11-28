@@ -67,6 +67,6 @@ others fail, the response carries the generic `SEARCH_INCOMPLETE` warning and
 may still use authorized evidence. Scope denials are concealed.
 Reusing a key with different text or posting a competing intent returns 409.
 Unauthorized callers receive 401, foreign conversations and inaccessible
-citations return 404, and disabled chat on cap-ai returns 503. Source
+citations return 404, and an unavailable model yields a distinct Assistant outcome. Source
 revocation preserves the owner's delivered transcript and restricts future
 citation access and model context. See the [processing policy](../rag/authorization.md).

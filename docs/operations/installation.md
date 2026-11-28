@@ -21,8 +21,7 @@ The Compose files:
 | File | Adds |
 | --- | --- |
 | `compose.yaml` | PostgreSQL, Hasura, `dxos-authz`, Keycloak, SeaweedFS, ClamAV, Kestra, the operator, cap-process, cap-hr, APISIX and the Workspace UI |
-| `compose.rag.yaml` | cap-ai, its parser and worker, and `dxos-knowledge-dispatcher`; started by `make rag-up` ([knowledge models](../guides/knowledge/models.md#compose-installation)) |
-| `compose.models.yaml` | On top of `compose.rag.yaml`: pgvector (`pgvector/pgvector:pg17`) and deployment-controlled model configuration ([knowledge models](../guides/knowledge/models.md)) |
+| `compose.rag.yaml` | Python AI API and worker, one-shot Alembic, PostgreSQL with pgvector and PGMQ, and the Go publication dispatcher. Start with [the AI installation steps](../guides/knowledge/models.md#compose-installation). |
 | `compose.integration.yaml` | Fixtures for the integration test suite only |
 
 ## Prerequisites
@@ -68,11 +67,12 @@ The Compose files:
    package in `apps/` to be Ready, except a package that declares a capability
    `ENABLED_CAPABILITIES` leaves off, which the operator refuses to install.
 
-   To run cap-ai, the personal library and the FTS-only Assistant, use
-   `make rag-up` instead of the plain `docker compose up -d` above. It creates
-   local secrets in `.env.rag`, starts `compose.rag.yaml`, and enables the
-   Assistant once `personal_library` is `Ready`
-   ([knowledge models](../guides/knowledge/models.md#compose-installation)).
+   For AI, start with `make ai-up` on a fresh named Compose project. It creates
+   service credentials in `.env` (set `AI_ENV_FILE` to another path to keep them
+   in a separate file), initializes PostgreSQL and enables the
+   Personal Library after its application is Ready. Configure an LLM in
+   Workspace AI Management to enable generated answers.
+   [AI installation and setup](../guides/knowledge/models.md).
 
    Sign-in uses Keycloak (realm `dxos`, client `dxos-portal`, browser flow with
    PKCE). Create accounts in the Keycloak admin console
@@ -83,7 +83,7 @@ The Compose files:
    department can be given before their first sign-in, and an account disabled
    or deleted in Keycloak is refused within minutes (`ACCOUNT_SYNC_INTERVAL`,
    default `5m`). An existing database needs the core migration 0008 for that:
-   `scripts/migrate-rag.sh --database-url-env <VAR> --scope core --through 0008`,
+   `scripts/migrate-core.sh --database-url-env <VAR> --through 0008`,
    with `<VAR>` naming a variable that holds the administrator's connection URL.
    The one-shot service
    `keycloak-directory` sets up the Keycloak client `dxos-directory` for this; it
@@ -173,49 +173,29 @@ The Compose files:
 
 ## Rebuilding an existing model installation
 
-The optional model migrations `cap_ai/0004_models_vectors.sql` and
-`0005_model_registry.sql` were rebased for the coordinated baseline
-([ADR 0010](../adr/0010-model-operations-without-monetary-admission.md)). An
-installation that applied the earlier checksums must rebuild, not upgrade.
+The Alembic deployment command checks the legacy AI migration ledger and schema
+before creating any AI objects. It rejects a Go AI database with a clear error.
+Keep the original installation and recovery backup available during cutover.
 
-What changes for that installation:
+1. Identify the database, Compose project, private object bucket, and deployment
+   identities. Coordinate any rebuild with the installation owner.
+2. Create a fresh named target. Preserve the Core schema and migration ledger,
+   application authority, private file metadata and original object bytes with
+   the installation's reviewed restore procedure.
+3. Run the AI deployment against the fresh target. For a rebuild in place,
+   prepare a separate DBA-reviewed procedure for retiring only the legacy
+   `cap_ai` schema and its `cap-ai` ledger entries after taking a verified backup.
+   No startup or installation command removes them.
+4. Republish application packages and register private originals again under
+   their current owners. Reissue document grants and review every hosted policy
+   for the new model revision. Old AI UUIDs, citations and conversations stop
+   resolving. Originals protected by Core stay in their existing storage.
+5. Check health, ingestion, current role access, and model admission before
+   routing user traffic to the target.
 
-- both migration runners refuse an old applied model checksum before any domain
-  SQL, with or without the optional schema flags, and exit non-zero;
-- the model capability has no budget, reservation, allocation, usage ledger or
-  priced-profile objects, and a fixed set of durable operation rows instead;
-- model calls are admitted by durable operation state, not by an account;
-- the Agent consumer setting is `AI_AGENT_PROCESSING_APP_ID`; the retired
-  `AI_AGENT_BILLING_APP_ID` is not read;
-- catalog documents must declare `schema_version: 2` without price fields.
-
-What the owner must do, for the named target only:
-
-1. Inventory the actual installation (Compose project, kind cluster, CI or shared
-   development target) and record the applied `cap-ai` versions and checksums.
-2. Confirm scope with the responsible human and stop only the services that use
-   that database; verify writes have ceased. This document triggers no drop, no
-   volume removal, no ledger edit and no checksum bypass.
-3. If the retained data matters, take a backup and prove its recoverability in an
-   isolated target before any rebuild. Keep the old stack and its recovery path
-   available.
-4. Provision or rebuild a named database on the approved revision, bootstrap it
-   with the required capability and schema settings, and point the matching
-   binaries, configuration and catalog revision at it.
-5. Re-derive the model capability state: re-publish application packages,
-   re-register knowledge sources, re-import `schema_version: 2` candidates,
-   re-approve processing policies and re-issue document grants.
-6. Do not restore legacy application data wholesale over the rebased schema. A
-   full `cap_ai` dump reinstates the removed monetary relations and rows and
-   carries operation rows that no longer match the schema. Data in other
-   capability schemas follows that schema owner's own migration decision; it is
-   never a justification for restoring `cap_ai`.
-7. Verify before resuming traffic: schema objects and grants, the operation
-   interfaces, model qualification, catalog v2 acceptance, lexical fallback and
-   the smoke checks against the named target. Record the revision and results.
-
-The rebuild is a human execution gate. Plan an interruption window with each
-owner and record it with the confirmation; no automated reset is provided.
+The [AI deployment guide](../guides/knowledge/models.md) lists the bootstrap
+inputs. [ADR 0011](../adr/0011-python-intelligence-runtime.md) records cutover
+ownership and the parser deployment limitation.
 
 ## Kubernetes Operator (development cluster)
 

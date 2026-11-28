@@ -54,3 +54,15 @@ misconfigurations:
       /var/log/clamav and /run/clamav, then runs freshclam and clamd as the clamav
       user. Its capabilities are limited to the five that setup needs (CHOWN,
       DAC_OVERRIDE, FOWNER, SETGID, SETUID), without privilege escalation. #170.
+  - id: KSV-0109
+    paths:
+      - deploy/k8s/base/platform/apisix/configmap.yaml
+      - deploy/k8s/base/platform/kestra/configmap.yaml
+      - deploy/k8s/base/platform/keycloak/configmap.yaml
+      - deploy/k8s/base/platform/postgres/configmap.yaml
+    statement: >-
+      These ConfigMaps carry configuration templates and init scripts that read
+      credentials from environment variables or reference Secret names; no secret
+      value is stored here. Kestra's local default placeholder and the scripts'
+      password quotes are the scanner matching variable syntax. Real credentials
+      come from Kubernetes Secrets.

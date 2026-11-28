@@ -8,6 +8,7 @@ export type WorkspaceRoute =
   | { kind: 'home' }
   | { kind: 'work' }
   | { kind: 'people' }
+  | { kind: 'ai-management' }
   | { kind: 'organization'; userID?: string }
   | {
     kind: 'app';
@@ -23,6 +24,7 @@ const appPath = /^\/apps\/([^/]+)(?:\/tables\/([^/]+)(?:\/([^/]+)(\/edit)?)?)?$/
 export function parseRoute(pathname: string, search: string): WorkspaceRoute {
   if (pathname === '/my-work') return { kind: 'work' };
   if (pathname === '/people') return { kind: 'people' };
+  if (pathname === '/ai-management') return { kind: 'ai-management' };
   if (pathname === '/organization') {
     const userID = new URLSearchParams(search).get('user');
     return userID ? { kind: 'organization', userID } : { kind: 'organization' };

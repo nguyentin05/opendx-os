@@ -46,7 +46,7 @@ raises SQLSTATE `23514` (`check_violation`) with the stable prefix
 `the parent record can no longer be changed (status <status>)` or
 `a row cannot move to another parent record`. Existing installations apply
 `0005_parent_refusal.sql` with
-`scripts/migrate-rag.sh --database-url-env DATABASE_URL --scope core --through 0005`
+`scripts/migrate-core.sh --database-url-env DATABASE_URL --through 0005`
 (see [runtime rules](../runtime-rules.md)).
 
 The process tables of the sample applications:

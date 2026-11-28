@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 DX-OS Open-Core Contributors
+FROM ghcr.io/astral-sh/uv:0.13.3 AS uv
+
+FROM python:3.12-slim-bookworm AS app
+COPY --from=uv /uv /usr/local/bin/uv
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libgl1 libglib2.0-0 tesseract-ocr tesseract-ocr-eng \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --uid 10001 --create-home dxos
+WORKDIR /app
+ENV UV_PYTHON_DOWNLOADS=never UV_COMPILE_BYTECODE=1 PATH="/app/.venv/bin:$PATH"
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked --no-dev --no-install-project
+RUN hf download docling-project/docling-layout-heron \
+      config.json preprocessor_config.json model.safetensors README.md \
+      --revision 8f39ad3c0b4c58e9c2d2c84a38465abf757272d8 \
+      --local-dir /opt/docling-models/docling-project--docling-layout-heron
+ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HAYSTACK_TELEMETRY_ENABLED=false LANGSMITH_TRACING=false
+COPY alembic.ini ./
+COPY migrations ./migrations
+COPY src ./src
+RUN uv sync --locked --no-dev --no-editable
+COPY --from=legal LICENSE NOTICE COPYRIGHT.txt THIRD_PARTY_LICENSES.txt /usr/share/licenses/opendx-os/
+RUN cp /usr/share/common-licenses/GPL-3 /usr/share/licenses/opendx-os/GPL-3.0.txt
+
+FROM app AS runtime
+# Apply Debian security updates in the stage rebuilt by image CI, so the next
+# update needs no edit to a package list.
+RUN apt-get update \
+    && apt-get -y upgrade --no-install-recommends \
+    && apt-get -y dist-upgrade --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+USER dxos
+EXPOSE 8084
+CMD ["uvicorn", "dxos_ai.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8084"]

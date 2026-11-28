@@ -14,12 +14,11 @@
 -- limitations under the License.
 
 -- Tier 2 Pluggable Capability Schema: cap-ai ([I])
--- Manages: OCR of clean files and policy knowledge RAG
+-- Registers the capability; Alembic owns the cap_ai schema (ADR 0011).
 
 -- Register cap-ai in capability registry
 INSERT INTO core.capabilities (cap_id, display_name, category_hpdi, base_route, enabled)
-VALUES ('cap-ai', 'AI OCR & Policy Knowledge RAG', 'I', '/api/cap/ai', true)
+VALUES ('cap-ai', 'AI Assistant & Knowledge', 'I', '/api/cap/ai', true)
 ON CONFLICT (cap_id) DO UPDATE SET enabled = true, updated_at = now();
 
--- Metadata DDL is versioned under migrations/cap_ai. The bootstrap applies
--- it through 09_rag_migrations.sh after Core's app-capability registry exists.
+-- The AI service owns its schema migrations through Alembic.
