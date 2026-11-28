@@ -36,4 +36,10 @@ Follow links as needed; there is no requirement to load the entire set.
 - Write project documentation in English, preserving technical names and API
   identifiers. English pages are the source; an optional Vietnamese translation
   (`page.vi.md`) never adds requirements, and English wins when they differ.
+- The root community files `README`, `CONTRIBUTING`, `CODE_OF_CONDUCT`,
+  `SECURITY` and `ROADMAP` come in two versions: `X.en.md` is the English
+  source to read and cite, and `X.md` is its Vietnamese translation, which
+  GitHub shows. Change both in the same pull request; English wins when they
+  differ. `LICENSE`, `NOTICE`, `COPYRIGHT.txt`, `THIRD_PARTY_LICENSES.txt`,
+  `CHANGELOG.md` and the `.github/` templates stay English only.
   Keep the root README focused on the software project.

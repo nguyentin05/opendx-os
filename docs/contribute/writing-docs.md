@@ -110,7 +110,7 @@ results to the local host. `mkdocs serve` does not reload changes under
 - Repository files outside `docs/` are not part of the site; name them in code
   style instead of linking to them.
 - After moving a page, add a redirect in `mkdocs.yml` and update references in
-  `AGENTS.md`, the root `README.md`, and `contracts/`.
+  `AGENTS.md`, the root `README.en.md` and `README.md`, and `contracts/`.
 
 ## Run the checks
 

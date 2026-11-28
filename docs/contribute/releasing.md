@@ -21,8 +21,8 @@ a competition score.
    A mandatory check marked `NOT_RUN` prevents a readiness conclusion. The
    release workflow does not repeat these checks on the tag, so tag only a
    revision whose evidence is already recorded.
-2. Complete `LICENSE`, `NOTICE`, `COPYRIGHT.txt`, `README.md`, `CHANGELOG.md`,
-   `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `Makefile`,
+2. Complete `LICENSE`, `NOTICE`, `COPYRIGHT.txt`, `CHANGELOG.md`, both versions
+   of `README`, `CONTRIBUTING`, `CODE_OF_CONDUCT`, `SECURITY` and `ROADMAP`, `Makefile`,
    `.env.example` and the installation instructions. Run
    `python3 scripts/third_party_notices.py --check` (with the Go module cache and
    `workspace-ui/node_modules` present); when it reports the file stale, rerun it

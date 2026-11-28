@@ -15,7 +15,7 @@ declares its data, permissions, workflows, and UI configuration in a package; th
 platform generates and serves it without a per-application backend.
 
 This section describes the architecture and says, where it matters, which parts
-are implemented and which are planned. The [roadmap](https://github.com/nguyentin05/opendx-os/blob/main/ROADMAP.md)
+are implemented and which are planned. The [roadmap](https://github.com/nguyentin05/opendx-os/blob/main/ROADMAP.en.md)
 tracks the planned parts.
 
 | Page | Covers |

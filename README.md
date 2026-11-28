@@ -1,90 +1,92 @@
 # OpenDX-OS
 
-**OpenDX-OS (DX-OS Open-Core)** is a composable platform for business applications,
-developed for OLP PMNM 2026. Applications declare their data, permissions,
-workflows, and UI configuration while sharing infrastructure and capabilities.
+**Tiếng Việt** | [English](README.en.md)
 
-## Project structure
+**OpenDX-OS (DX-OS Open-Core)** là nền tảng lắp ghép cho các ứng dụng nghiệp vụ,
+phát triển cho kỳ thi OLP PMNM 2026. Mỗi ứng dụng khai báo dữ liệu, quyền,
+quy trình và cấu hình giao diện của mình, còn hạ tầng và các capability thì dùng chung.
 
-| Area | Purpose |
+## Cấu trúc dự án
+
+| Thư mục | Mục đích |
 | --- | --- |
-| `platform/`, `operator/` | Shared infrastructure and the Go control plane that plans application configuration |
-| `capabilities/`, `workspace-ui/` | Reusable H-P-D-I services and a React/TypeScript App Shell |
-| `apps/` | Maintenance, procurement, and timesheet example packages |
+| `platform/`, `operator/` | Hạ tầng dùng chung và control plane viết bằng Go, lập kế hoạch cấu hình cho từng ứng dụng |
+| `capabilities/`, `workspace-ui/` | Các dịch vụ H-P-D-I dùng lại được và App Shell viết bằng React/TypeScript |
+| `apps/` | Các gói ứng dụng mẫu: bảo trì, mua sắm và chấm công |
 
-See the [architecture](docs/architecture/index.md) for tier boundaries, planned
-components, and accepted design decisions.
+Xem [kiến trúc](docs/architecture/index.md) để biết ranh giới giữa các tầng, các
+thành phần đã lên kế hoạch và các quyết định thiết kế đã thông qua.
 
-## Development status
+## Tình trạng phát triển
 
-The repository contains database initialization SQL, local Compose configuration,
-the Operator, capability services, Workspace UI, and sample applications.
-Workspace UI signs in through Keycloak, discovers authorized apps from the
-runtime registry, and renders record lists, forms, child records, and workflow
-actions from app metadata. My Workspace previews work across authorized apps
-and the Assistant opens alongside the current page.
+Repository gồm SQL khởi tạo cơ sở dữ liệu, cấu hình Compose để chạy trên máy,
+Operator, các dịch vụ capability, Workspace UI và các ứng dụng mẫu.
+Workspace UI đăng nhập qua Keycloak, tìm các ứng dụng người dùng được phép dùng
+từ registry lúc chạy, rồi dựng danh sách bản ghi, biểu mẫu, bản ghi con và các
+thao tác quy trình từ metadata của ứng dụng. Trang Việc của tôi gom công việc từ
+mọi ứng dụng được phép, và Trợ lý mở ngay bên cạnh trang đang xem.
 
-The project is under development. Deployment lifecycle and end-to-end
-acceptance evidence are tracked in the project documentation.
+Dự án đang được phát triển. Vòng đời triển khai và bằng chứng nghiệm thu đầu
+cuối được theo dõi trong tài liệu dự án.
 
-The [roadmap](ROADMAP.md) tracks planned milestones. The
-[data and manifest contract](docs/reference/data-contracts/index.md) describes intended
-behavior and known serialization gaps; existing code does not enforce every
-requirement yet.
+[Lộ trình](ROADMAP.md) theo dõi các mốc đã lên kế hoạch.
+[Hợp đồng dữ liệu và manifest](docs/reference/data-contracts/index.md) mô tả hành
+vi dự kiến và những chỗ tuần tự hoá còn thiếu; code hiện tại chưa thực thi mọi
+yêu cầu trong đó.
 
-## Local development and checks
+## Phát triển và kiểm tra trên máy
 
-Python 3 is needed for the repository checks; the Python test suite also needs
-PyYAML. The Go modules declare their toolchain/dependency requirements in
-[operator/go.mod](operator/go.mod) and [capabilities/go.mod](capabilities/go.mod).
-The UI uses Node/npm and [its package manifest](workspace-ui/package.json).
+Các bước kiểm tra của repository cần Python 3; bộ test Python cần thêm PyYAML.
+Các module Go khai báo toolchain và dependency trong
+[operator/go.mod](operator/go.mod) và [capabilities/go.mod](capabilities/go.mod).
+Giao diện dùng Node/npm và [package manifest của nó](workspace-ui/package.json).
 
-From the repository root:
+Từ thư mục gốc của repository:
 
 ```bash
 make check
 python3 -m unittest discover -s tests -v
 ```
 
-`make test` also runs the available Go suites and, when UI dependencies are
-installed, UI tests and a build. See [verification](docs/contribute/verification.md)
-for module commands, prerequisites, and coverage limits.
+`make test` chạy thêm các bộ test Go hiện có và, khi đã cài dependency của giao
+diện, cả test giao diện lẫn bước build. Xem [kiểm chứng](docs/contribute/verification.md)
+để biết lệnh cho từng module, điều kiện cần và giới hạn của độ bao phủ.
 
-## Run locally
+## Chạy trên máy
 
-Docker Compose starts the platform: PostgreSQL, Hasura, the operator, Keycloak,
-SeaweedFS, ClamAV, Kestra, cap-process, APISIX and the workspace UI.
+Docker Compose khởi động nền tảng: PostgreSQL, Hasura, operator, Keycloak,
+SeaweedFS, ClamAV, Kestra, cap-process, APISIX và Workspace UI.
 
 ```bash
-scripts/init-env.sh     # .env with random secrets (optional locally)
+scripts/init-env.sh     # tạo .env với secret ngẫu nhiên (không bắt buộc khi chạy trên máy)
 docker compose up -d --build
-scripts/test-compose.sh # waits for every service and checks it answers
-scripts/seed-demo.py seed    # demo accounts, departments and roles
-scripts/seed-demo.py scopes  # what each demo person sees
-scripts/seed-demo.py flow    # one purchase request through the approval chain
+scripts/test-compose.sh # đợi từng dịch vụ sẵn sàng và kiểm tra nó phản hồi
+scripts/seed-demo.py seed    # tài khoản, phòng ban và vai trò demo
+scripts/seed-demo.py scopes  # mỗi người demo nhìn thấy những gì
+scripts/seed-demo.py flow    # đưa một đề nghị mua sắm qua toàn bộ chuỗi duyệt
 ```
 
-Without a `.env`, Compose uses development defaults and publishes ports on
-127.0.0.1 only. `scripts/init-env.sh` writes a `.env` with random secrets; do
-that before setting `BIND_ADDRESS` to expose the stack. Database roles and
-passwords are set when the data volume is first initialised, so after changing
-them run `docker compose down -v`. The `operator` service installs every application package in `apps/`; copy a
-package in or remove it and the next pass (every 30 seconds) installs or
-uninstalls it (see the [installation guide](docs/operations/installation.md)).
+Khi không có `.env`, Compose dùng giá trị mặc định cho môi trường phát triển và
+chỉ mở cổng trên 127.0.0.1. `scripts/init-env.sh` tạo `.env` với secret ngẫu
+nhiên; hãy chạy nó trước khi đặt `BIND_ADDRESS` để mở stack ra ngoài. Role và mật
+khẩu cơ sở dữ liệu được đặt khi volume dữ liệu khởi tạo lần đầu, nên sau khi đổi
+chúng cần chạy `docker compose down -v`. Dịch vụ `operator` cài mọi gói ứng dụng
+trong `apps/`; chép một gói vào hoặc xoá nó đi thì lượt chạy kế tiếp (mỗi 30 giây)
+sẽ cài hoặc gỡ gói đó (xem [hướng dẫn cài đặt](docs/operations/installation.md)).
 
-## Documentation
+## Tài liệu
 
-The published site is built from `docs/`; the repository map is
+Trang tài liệu được build từ `docs/`; sơ đồ repository nằm ở
 [docs/README.md](docs/README.md).
 
-- [Architecture](docs/architecture/index.md) and [ADRs](docs/adr/index.md)
-- [Data and manifest contract](docs/reference/data-contracts/index.md)
-- [Security and acceptance](docs/reference/security/index.md)
-- [Adding an application](docs/guides/adding-an-app.md)
-- [Release requirements](docs/contribute/releasing.md)
-- [Contributing](CONTRIBUTING.md) and [security reporting](SECURITY.md)
+- [Kiến trúc](docs/architecture/index.md) và [ADR](docs/adr/index.md)
+- [Hợp đồng dữ liệu và manifest](docs/reference/data-contracts/index.md)
+- [Bảo mật và nghiệm thu](docs/reference/security/index.md)
+- [Thêm một ứng dụng](docs/guides/adding-an-app.md)
+- [Yêu cầu phát hành](docs/contribute/releasing.md)
+- [Đóng góp](CONTRIBUTING.md) và [báo cáo lỗ hổng bảo mật](SECURITY.md)
 
-## License
+## Giấy phép
 
-Original project code is licensed under [Apache-2.0](LICENSE). See [NOTICE](NOTICE)
-and [COPYRIGHT.txt](COPYRIGHT.txt) for attribution and dependency information.
+Code gốc của dự án được cấp phép theo [Apache-2.0](LICENSE). Xem [NOTICE](NOTICE)
+và [COPYRIGHT.txt](COPYRIGHT.txt) để biết thông tin ghi công và dependency.

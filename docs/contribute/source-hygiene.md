@@ -30,8 +30,9 @@ Copyright for self-written code: `Copyright 2026 DX-OS Open-Core Contributors`. 
 library only. It verifies that:
 
 - the required distribution metadata exists and is non-empty: `LICENSE`,
-  `NOTICE`, `COPYRIGHT.txt`, `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`,
-  `CODE_OF_CONDUCT.md`, and `SECURITY.md`;
+  `NOTICE`, `COPYRIGHT.txt`, `CHANGELOG.md`, and both versions of `README`,
+  `CONTRIBUTING`, `CODE_OF_CONDUCT`, `SECURITY` and `ROADMAP` (`X.en.md`, the
+  English source, and `X.md`, its Vietnamese translation);
 - the self-written source formats listed above carry the SPDX header and
   copyright line;
 - text files use UTF-8 and LF line endings.

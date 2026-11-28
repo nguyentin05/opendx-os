@@ -1,27 +1,29 @@
-# Security Policy
+# Chính sách bảo mật
 
-## Supported Versions
+**Tiếng Việt** | [English](SECURITY.en.md)
 
-| Version | Supported |
+## Phiên bản được hỗ trợ
+
+| Phiên bản | Được hỗ trợ |
 | :--- | :--- |
-| `main` (Unreleased) | Yes |
+| `main` (chưa phát hành) | Có |
 
-## Security Architecture Invariants
+## Các bất biến của kiến trúc bảo mật
 
-The intended security requirements and acceptance scenarios are defined in
-[security and acceptance criteria](docs/reference/security/index.md),
-with mechanisms in the [data contract](docs/reference/data-contracts/index.md).
-The implementation is under development; those requirements are not a claim
-that all security properties have been verified in the running system.
+Các yêu cầu bảo mật dự kiến và kịch bản nghiệm thu được định nghĩa trong
+[tiêu chí bảo mật và nghiệm thu](docs/reference/security/index.md),
+còn cơ chế nằm trong [hợp đồng dữ liệu](docs/reference/data-contracts/index.md).
+Phần triển khai vẫn đang phát triển; các yêu cầu đó không có nghĩa là mọi thuộc
+tính bảo mật đã được kiểm chứng trên hệ thống đang chạy.
 
-## Reporting a Vulnerability
+## Báo cáo lỗ hổng
 
-Please do **not** report security vulnerabilities through public GitHub issues.
-Instead, use GitHub Private Vulnerability Reporting (Security Advisories) on the
-repository to submit:
+Vui lòng **không** báo cáo lỗ hổng bảo mật qua GitHub issue công khai.
+Hãy dùng tính năng GitHub Private Vulnerability Reporting (Security Advisories)
+của repository và gửi kèm:
 
-- Affected component and revision
-- Step-by-step reproduction instructions or proof-of-concept
-- Potential impact on workspace isolation, authorization, file quarantine, or audit integrity
+- Thành phần bị ảnh hưởng và phiên bản
+- Các bước tái hiện hoặc proof-of-concept
+- Mức ảnh hưởng có thể có tới việc cách ly workspace, phân quyền, cách ly tệp hoặc tính toàn vẹn của nhật ký kiểm toán
 
-The maintainers will acknowledge receipt within 48 hours and coordinate a fix and disclosure timeline.
+Nhóm duy trì sẽ xác nhận đã nhận báo cáo trong vòng 48 giờ và phối hợp lịch sửa lỗi cùng thời điểm công bố.

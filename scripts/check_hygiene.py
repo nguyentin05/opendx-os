@@ -17,10 +17,16 @@ REQUIRED_FILES = [
     "COPYRIGHT.txt",
     "THIRD_PARTY_LICENSES.txt",
     "README.md",
+    "README.en.md",
     "CHANGELOG.md",
     "CONTRIBUTING.md",
+    "CONTRIBUTING.en.md",
     "CODE_OF_CONDUCT.md",
+    "CODE_OF_CONDUCT.en.md",
     "SECURITY.md",
+    "SECURITY.en.md",
+    "ROADMAP.md",
+    "ROADMAP.en.md",
 ]
 HEADER_EXTENSIONS = {
     ".go",

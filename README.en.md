@@ -1,0 +1,92 @@
+# OpenDX-OS
+
+[Tiếng Việt](README.md) | **English**
+
+**OpenDX-OS (DX-OS Open-Core)** is a composable platform for business applications,
+developed for OLP PMNM 2026. Applications declare their data, permissions,
+workflows, and UI configuration while sharing infrastructure and capabilities.
+
+## Project structure
+
+| Area | Purpose |
+| --- | --- |
+| `platform/`, `operator/` | Shared infrastructure and the Go control plane that plans application configuration |
+| `capabilities/`, `workspace-ui/` | Reusable H-P-D-I services and a React/TypeScript App Shell |
+| `apps/` | Maintenance, procurement, and timesheet example packages |
+
+See the [architecture](docs/architecture/index.md) for tier boundaries, planned
+components, and accepted design decisions.
+
+## Development status
+
+The repository contains database initialization SQL, local Compose configuration,
+the Operator, capability services, Workspace UI, and sample applications.
+Workspace UI signs in through Keycloak, discovers authorized apps from the
+runtime registry, and renders record lists, forms, child records, and workflow
+actions from app metadata. My Workspace previews work across authorized apps
+and the Assistant opens alongside the current page.
+
+The project is under development. Deployment lifecycle and end-to-end
+acceptance evidence are tracked in the project documentation.
+
+The [roadmap](ROADMAP.en.md) tracks planned milestones. The
+[data and manifest contract](docs/reference/data-contracts/index.md) describes intended
+behavior and known serialization gaps; existing code does not enforce every
+requirement yet.
+
+## Local development and checks
+
+Python 3 is needed for the repository checks; the Python test suite also needs
+PyYAML. The Go modules declare their toolchain/dependency requirements in
+[operator/go.mod](operator/go.mod) and [capabilities/go.mod](capabilities/go.mod).
+The UI uses Node/npm and [its package manifest](workspace-ui/package.json).
+
+From the repository root:
+
+```bash
+make check
+python3 -m unittest discover -s tests -v
+```
+
+`make test` also runs the available Go suites and, when UI dependencies are
+installed, UI tests and a build. See [verification](docs/contribute/verification.md)
+for module commands, prerequisites, and coverage limits.
+
+## Run locally
+
+Docker Compose starts the platform: PostgreSQL, Hasura, the operator, Keycloak,
+SeaweedFS, ClamAV, Kestra, cap-process, APISIX and the workspace UI.
+
+```bash
+scripts/init-env.sh     # .env with random secrets (optional locally)
+docker compose up -d --build
+scripts/test-compose.sh # waits for every service and checks it answers
+scripts/seed-demo.py seed    # demo accounts, departments and roles
+scripts/seed-demo.py scopes  # what each demo person sees
+scripts/seed-demo.py flow    # one purchase request through the approval chain
+```
+
+Without a `.env`, Compose uses development defaults and publishes ports on
+127.0.0.1 only. `scripts/init-env.sh` writes a `.env` with random secrets; do
+that before setting `BIND_ADDRESS` to expose the stack. Database roles and
+passwords are set when the data volume is first initialised, so after changing
+them run `docker compose down -v`. The `operator` service installs every application package in `apps/`; copy a
+package in or remove it and the next pass (every 30 seconds) installs or
+uninstalls it (see the [installation guide](docs/operations/installation.md)).
+
+## Documentation
+
+The published site is built from `docs/`; the repository map is
+[docs/README.md](docs/README.md).
+
+- [Architecture](docs/architecture/index.md) and [ADRs](docs/adr/index.md)
+- [Data and manifest contract](docs/reference/data-contracts/index.md)
+- [Security and acceptance](docs/reference/security/index.md)
+- [Adding an application](docs/guides/adding-an-app.md)
+- [Release requirements](docs/contribute/releasing.md)
+- [Contributing](CONTRIBUTING.en.md) and [security reporting](SECURITY.en.md)
+
+## License
+
+Original project code is licensed under [Apache-2.0](LICENSE). See [NOTICE](NOTICE)
+and [COPYRIGHT.txt](COPYRIGHT.txt) for attribution and dependency information.
