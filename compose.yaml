@@ -22,7 +22,14 @@ name: opendx-os
 
 services:
   postgres:
-    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
+    # Built from platform/postgres/image: PostgreSQL 17 Alpine, the base the
+    # default stack and Kubernetes run, with pgvector and PGMQ. The AI overlay
+    # adds no image of its own; POSTGRES_IMAGE still overrides this.
+    image: ${POSTGRES_IMAGE:-dxos-postgres:dev}
+    build:
+      context: ./platform/postgres/image
+      additional_contexts:
+        legal: .
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-dxos_admin}

@@ -6,6 +6,7 @@ import os
 from alembic import context
 from sqlalchemy import create_engine, text
 
+from dxos_ai.bootstrap import bootstrap
 from dxos_ai.database import postgres_url
 
 
@@ -29,11 +30,10 @@ def migrate() -> None:
                 "Legacy AI baseline detected. Use a fresh database or coordinate an AI-only "
                 "rebuild that preserves Core and original files."
             )
-        extensions = set(connection.scalars(text(
-            "SELECT extname FROM pg_extension WHERE extname IN ('pgmq', 'vector')"
-        )))
-        if extensions != {"pgmq", "vector"}:
-            raise RuntimeError("The AI deployment requires both PGMQ and pgvector")
+        # The Core init scripts run only on an empty volume, so an installation
+        # that started without AI has no AI roles, extensions or queue. Create
+        # them here, idempotently, before the schema needs them.
+        bootstrap(connection)
         connection.execute(text("CREATE SCHEMA IF NOT EXISTS cap_ai AUTHORIZATION dxos_ai_owner"))
         connection.execute(text("SET LOCAL ROLE dxos_ai_owner"))
         context.configure(connection=connection, version_table_schema="cap_ai")

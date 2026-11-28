@@ -10,21 +10,17 @@ x-subjects: &subjects
   RAG_FILE_SERVICE_SUBJECT: ${RAG_FILE_SERVICE_SUBJECT:?set the File Service OIDC subject}
 
 services:
+  # The AI overlay uses the same postgres image as the default stack; only the
+  # passwords and enabled capabilities change. ai-migrate creates the AI
+  # roles, extensions and queue itself, so an installation that started
+  # without AI gains them without a fresh volume.
   postgres:
-    image: dxos-ai-postgres:dev
-    build:
-      context: ./platform/postgres/ai
-      additional_contexts:
-        legal: .
     environment:
       AI_BROKER_DATABASE_PASSWORD: ${AI_BROKER_DATABASE_PASSWORD:?set the broker password}
       ENABLED_CAPABILITIES: ${ENABLED_CAPABILITIES:-cap-process,cap-hr,cap-work,cap-data,cap-ai}
       AI_DATABASE_PASSWORD: ${AI_DATABASE_PASSWORD:?set the API database password}
       AI_WORKER_DATABASE_PASSWORD: ${AI_WORKER_DATABASE_PASSWORD:?set the worker database password}
       AI_DISPATCHER_DATABASE_PASSWORD: ${AI_DISPATCHER_DATABASE_PASSWORD:?set the dispatcher database password}
-
-    volumes:
-      - ./platform/postgres/ai/bootstrap.sh:/docker-entrypoint-initdb.d/10_ai_extensions.sh:ro
 
   operator:
     environment:
@@ -49,6 +45,12 @@ services:
     command: ["alembic", "upgrade", "head"]
     environment:
       AI_MIGRATION_DATABASE_URL: postgres://${POSTGRES_USER:-dxos_admin}:${POSTGRES_PASSWORD:-dxos_secret}@postgres:5432/${POSTGRES_DB:-dxos_db}?sslmode=disable
+      # Creates the AI roles, extensions, capability row and broker queue on
+      # every run, so adding AI to an existing installation needs no new volume.
+      AI_BROKER_DATABASE_PASSWORD: ${AI_BROKER_DATABASE_PASSWORD:?set the broker password}
+      AI_DATABASE_PASSWORD: ${AI_DATABASE_PASSWORD:?set the API database password}
+      AI_WORKER_DATABASE_PASSWORD: ${AI_WORKER_DATABASE_PASSWORD:?set the worker database password}
+      AI_DISPATCHER_DATABASE_PASSWORD: ${AI_DISPATCHER_DATABASE_PASSWORD:?set the dispatcher database password}
     depends_on:
       postgres:
         condition: service_healthy
