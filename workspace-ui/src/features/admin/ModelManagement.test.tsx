@@ -488,3 +488,16 @@ it('reports a missing active embedding model distinctly from a missing approval'
   expect(warnings.queryByText(/Đã phê duyệt đủ các cặp bắt buộc/)).toBeNull();
 });
 
+it('shows an explicit block summary instead of an all-approved claim', async () => {
+  await renderMatrix({
+    providers: [hosted], models: [hostedLLM], slots: slots({ LLM: 'rev-llm-hosted' }),
+    policies: [
+      { id: 'block', app_id: null, data_class: 'QUERY', purpose: 'LLM', revision: 'rev-llm-hosted', decision: 'DENY' },
+    ],
+    operations: [],
+  });
+  const warnings = within(screen.getByRole('region', { name: 'Cảnh báo xử lý dữ liệu' }));
+  expect(warnings.getByText(/Câu hỏi · LLM.*Đang chặn/)).toBeTruthy();
+  expect(warnings.queryByText(/Đã phê duyệt đủ các cặp bắt buộc/)).toBeNull();
+});
+

@@ -214,16 +214,26 @@ function PolicyInventory({ registry, locked, onDelete }: {
 }
 
 function PolicyWarnings({ registry }: { registry: Registry }) {
+  const columns = activeColumns(registry);
   const missing = missingApprovals(registry);
-  const absent = activeColumns(registry).length === 0
+  const required = new Map<Purpose, ActiveColumn>(columns
+    .filter(column => column.purpose === 'LLM' || column.purpose === 'EMBEDDING')
+    .map(column => [column.purpose, column]));
+  const absent = columns.length === 0
     ? ['Chưa có mô hình đang hoạt động cho LLM hoặc EMBEDDING; tính năng liên quan tạm không dùng được.']
     : (['LLM', 'EMBEDDING'] as Purpose[])
-      .filter(purpose => !activeColumns(registry).some(column => column.purpose === purpose))
+      .filter(purpose => !required.has(purpose))
       .map(purpose => `Chưa có mô hình ${purpose} đang hoạt động; tính năng liên quan tạm không dùng được.`);
+  const blocks = dataClasses.flatMap(({ value, label }) =>
+    [...required.values()].flatMap(column => {
+      const derived = deriveCell(registry, column, value);
+      return derived.blocked ? [`${label} · ${column.purpose} · ${column.model.name} — Đang chặn.`] : [];
+    }));
+  const messages = [...absent, ...blocks, ...missing];
   return <section aria-label="Cảnh báo xử lý dữ liệu">
-    {missing.length === 0 && absent.length === 0
+    {messages.length === 0
       ? <p>Đã phê duyệt đủ các cặp bắt buộc cho mô hình đang hoạt động.</p>
-      : <ul>{[...absent, ...missing].map(text => <li key={text}>{text}</li>)}</ul>}
+      : <ul>{messages.map(text => <li key={text}>{text}</li>)}</ul>}
   </section>;
 }
 
