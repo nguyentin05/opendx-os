@@ -393,3 +393,98 @@ it('does not overlap writes on rapid toggles', async () => {
   expect(reads).toBeGreaterThanOrEqual(2);
 });
 
+it('counts an inactive revision policy, keeps it unchecked, and restores it when rebound', async () => {
+  const old = { id: 'old', app_id: null, data_class: 'QUERY', purpose: 'LLM', revision: 'rev-llm-old', decision: 'ALLOW' };
+  const registry = {
+    providers: [hosted], models: [hostedLLM], slots: slots({ LLM: 'rev-llm-hosted' }),
+    policies: [old], operations: [],
+  };
+  serve(registry);
+  const { unmount } = render(<ModelManagement token="tok" />);
+  const table = await screen.findByRole('table', { name: 'Chính sách xử lý dữ liệu' });
+  expect(cell(table, /^Câu hỏi · LLM · gpt-4o/).box.checked).toBe(false);
+  expect(screen.getByText('1 chính sách phiên bản không còn hoạt động.')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Xóa chính sách QUERY · LLM · rev-llm-old (không hoạt động)' })).toBeTruthy();
+  unmount();
+
+  serve({
+    ...registry,
+    providers: [hosted],
+    models: [hostedLLM, { revision: 'rev-llm-old', name: 'gpt-4', provider_id: 'p-openai', purpose: 'LLM' }],
+    slots: slots({ LLM: 'rev-llm-old' }),
+  });
+  render(<ModelManagement token="tok" />);
+  const rebound = await screen.findByRole('table', { name: 'Chính sách xử lý dữ liệu' });
+  expect(cell(rebound, /^Câu hỏi · LLM · gpt-4/).box.checked).toBe(true);
+  expect(screen.queryByText(/chính sách phiên bản không còn hoạt động/)).toBeNull();
+});
+
+it('does not warn about a local column, even when a global deny blocks it', async () => {
+  const table = await renderMatrix({
+    providers: [local], models: [localLLM], slots: slots({ LLM: 'rev-llm-local' }),
+    policies: [{ id: 'd', app_id: null, data_class: 'QUERY', purpose: 'LLM', revision: null, decision: 'DENY' }],
+    operations: [],
+  });
+  expect(cell(table, /^Câu hỏi · LLM · llama-3/).text()).toContain('Bị chặn');
+  const warnings = within(screen.getByRole('region', { name: 'Cảnh báo xử lý dữ liệu' }));
+  expect(warnings.queryByText('Assistant không trả lời được.')).toBeNull();
+});
+
+it('replaces an exact global DENY with an ALLOW when the checkbox is ticked', async () => {
+  const state = mutableFixture({
+    providers: [hosted], models: [hostedLLM], slots: slots({ LLM: 'rev-llm-hosted' }),
+    policies: [{ id: 'deny-q', app_id: null, data_class: 'QUERY', purpose: 'LLM', revision: 'rev-llm-hosted', decision: 'DENY' }],
+    operations: [],
+  });
+  render(<ModelManagement token="tok" />);
+  const table = await screen.findByRole('table', { name: 'Chính sách xử lý dữ liệu' });
+  const blocked = cell(table, /^Câu hỏi · LLM · gpt-4o/);
+  expect(blocked.text()).toContain('Đang chặn');
+  await act(async () => { fireEvent.click(blocked.box); });
+  expect(state.mutations).toEqual([{
+    app_id: null, data_class: 'QUERY', purpose: 'LLM', revision: 'rev-llm-hosted', decision: 'ALLOW',
+  }]);
+  const updated = await screen.findByRole('table', { name: 'Chính sách xử lý dữ liệu' });
+  expect(cell(updated, /^Câu hỏi · LLM · gpt-4o/).box.checked).toBe(true);
+});
+
+it('drops responses from a superseded token instead of committing them', async () => {
+  let resolveFirst: (value: Response) => void = () => {};
+  const first = new Promise<Response>(resolve => { resolveFirst = resolve; });
+  const fetch = vi.fn(async (_input: string, init?: RequestInit) => {
+    if (init?.signal?.aborted) throw new DOMException('aborted', 'AbortError');
+    if (fetch.mock.calls.length === 1) return first;
+    return Response.json({
+      providers: [hosted], models: [hostedLLM], slots: slots({ LLM: 'rev-llm-hosted' }),
+      policies: [{ id: 'fresh', app_id: null, data_class: 'QUERY', purpose: 'LLM', revision: 'rev-llm-hosted', decision: 'ALLOW' }],
+      operations: [],
+    });
+  });
+  vi.stubGlobal('fetch', fetch);
+  const { rerender } = render(<ModelManagement token="tok" />);
+  rerender(<ModelManagement token="tok-2" />);
+  const table = await screen.findByRole('table', { name: 'Chính sách xử lý dữ liệu' });
+  expect(cell(table, /^Câu hỏi · LLM · gpt-4o/).box.checked).toBe(true);
+  await act(async () => {
+    resolveFirst(Response.json({
+      providers: [hosted], models: [hostedLLM], slots: slots({ LLM: 'rev-llm-hosted' }),
+      policies: [], operations: [],
+    }));
+    await first;
+  });
+  const after = screen.getByRole('table', { name: 'Chính sách xử lý dữ liệu' });
+  expect(cell(after, /^Câu hỏi · LLM · gpt-4o/).box.checked).toBe(true);
+});
+
+it('reports a missing active embedding model distinctly from a missing approval', async () => {
+  await renderMatrix({
+    providers: [hosted], models: [hostedLLM], slots: slots({ LLM: 'rev-llm-hosted' }),
+    policies: [],
+    operations: [],
+  });
+  const warnings = within(screen.getByRole('region', { name: 'Cảnh báo xử lý dữ liệu' }));
+  expect(warnings.getByText(/Chưa có mô hình EMBEDDING đang hoạt động/)).toBeTruthy();
+  expect(warnings.getByText('Assistant không trả lời được.')).toBeTruthy();
+  expect(warnings.queryByText(/Đã phê duyệt đủ các cặp bắt buộc/)).toBeNull();
+});
+
