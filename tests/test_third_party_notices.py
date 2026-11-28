@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 DX-OS Open-Core Contributors
 
+import hashlib
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
 from scripts import third_party_notices as notices
 
@@ -59,15 +61,20 @@ class PythonNoticesTest(unittest.TestCase):
             metadata = site / "example-1.dist-info"
             metadata.mkdir(parents=True)
             (metadata / "METADATA").write_text("Name: example\nVersion: 1\n")
-            license_file = root / "LICENSE"
-            license_file.write_text("upstream copyright and license")
+            # A cached text whose SHA-256 matches is used without a download.
+            payload = b"upstream copyright and license"
+            digest = hashlib.sha256(payload).hexdigest()
+            (root / digest).write_bytes(payload)
             reviewed = {"example 1": {
                 "license": "MIT", "source": "https://example.org/exact/LICENSE",
-                "files": ["LICENSE"],
+                "files": [{"name": "LICENSE", "sha256": digest,
+                           "url": "https://example.org/exact/LICENSE"}],
             }}
-            first, second = notices.python_sections(
-                [("example", "1"), ("example", "2")], site, reviewed, root
-            )
+            with mock.patch.object(notices, "REVIEWED", reviewed), \
+                    mock.patch.object(notices, "CACHE", root):
+                first, second = notices.python_sections(
+                    [("example", "1"), ("example", "2")], site
+                )
             self.assertIn("upstream copyright and license", first)
             self.assertIn("https://example.org/exact/LICENSE", first)
             self.assertNotIn("UNVERIFIED:", first)
